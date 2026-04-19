@@ -1,0 +1,1 @@
+"""Standalone ModernGL 3D simulator package."""

@@ -1,0 +1,15 @@
+E:\Artinx\260111new\Simulator\src\Simulator.Assets\obj\Release\net9.0\Simulator.Assets.GeneratedMSBuildEditorConfig.editorconfig
+E:\Artinx\260111new\Simulator\src\Simulator.Assets\obj\Release\net9.0\Simulator.Assets.AssemblyInfoInputs.cache
+E:\Artinx\260111new\Simulator\src\Simulator.Assets\obj\Release\net9.0\Simulator.Assets.AssemblyInfo.cs
+E:\Artinx\260111new\Simulator\src\Simulator.Assets\obj\Release\net9.0\Simulator.Assets.csproj.CoreCompileInputs.cache
+E:\Artinx\260111new\Simulator\src\Simulator.Assets\bin\Release\net9.0\Simulator.Assets.deps.json
+E:\Artinx\260111new\Simulator\src\Simulator.Assets\bin\Release\net9.0\Simulator.Assets.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Assets\bin\Release\net9.0\Simulator.Assets.pdb
+E:\Artinx\260111new\Simulator\src\Simulator.Assets\bin\Release\net9.0\Simulator.Core.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Assets\bin\Release\net9.0\Simulator.Core.pdb
+E:\Artinx\260111new\Simulator\src\Simulator.Assets\obj\Release\net9.0\Simulator.Assets.csproj.AssemblyReference.cache
+E:\Artinx\260111new\Simulator\src\Simulator.Assets\obj\Release\net9.0\Simulato.73BE204D.Up2Date
+E:\Artinx\260111new\Simulator\src\Simulator.Assets\obj\Release\net9.0\Simulator.Assets.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Assets\obj\Release\net9.0\refint\Simulator.Assets.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Assets\obj\Release\net9.0\Simulator.Assets.pdb
+E:\Artinx\260111new\Simulator\src\Simulator.Assets\obj\Release\net9.0\ref\Simulator.Assets.dll

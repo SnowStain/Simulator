@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Simulator.Core\Simulator.Core.csproj" />
+    <ProjectReference Include="..\Simulator.Assets\Simulator.Assets.csproj" />
+    <ProjectReference Include="..\Simulator.Editors\Simulator.Editors.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

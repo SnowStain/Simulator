@@ -1,0 +1,17 @@
+E:\Artinx\260111new\Simulator\src\Simulator.Editors\bin\Debug\net9.0\Simulator.Editors.deps.json
+E:\Artinx\260111new\Simulator\src\Simulator.Editors\bin\Debug\net9.0\Simulator.Editors.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Editors\bin\Debug\net9.0\Simulator.Editors.pdb
+E:\Artinx\260111new\Simulator\src\Simulator.Editors\bin\Debug\net9.0\Simulator.Assets.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Editors\bin\Debug\net9.0\Simulator.Core.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Editors\bin\Debug\net9.0\Simulator.Core.pdb
+E:\Artinx\260111new\Simulator\src\Simulator.Editors\bin\Debug\net9.0\Simulator.Assets.pdb
+E:\Artinx\260111new\Simulator\src\Simulator.Editors\obj\Debug\net9.0\Simulator.Editors.csproj.AssemblyReference.cache
+E:\Artinx\260111new\Simulator\src\Simulator.Editors\obj\Debug\net9.0\Simulator.Editors.GeneratedMSBuildEditorConfig.editorconfig
+E:\Artinx\260111new\Simulator\src\Simulator.Editors\obj\Debug\net9.0\Simulator.Editors.AssemblyInfoInputs.cache
+E:\Artinx\260111new\Simulator\src\Simulator.Editors\obj\Debug\net9.0\Simulator.Editors.AssemblyInfo.cs
+E:\Artinx\260111new\Simulator\src\Simulator.Editors\obj\Debug\net9.0\Simulator.Editors.csproj.CoreCompileInputs.cache
+E:\Artinx\260111new\Simulator\src\Simulator.Editors\obj\Debug\net9.0\Simulato.505B5B15.Up2Date
+E:\Artinx\260111new\Simulator\src\Simulator.Editors\obj\Debug\net9.0\Simulator.Editors.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Editors\obj\Debug\net9.0\refint\Simulator.Editors.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Editors\obj\Debug\net9.0\Simulator.Editors.pdb
+E:\Artinx\260111new\Simulator\src\Simulator.Editors\obj\Debug\net9.0\ref\Simulator.Editors.dll

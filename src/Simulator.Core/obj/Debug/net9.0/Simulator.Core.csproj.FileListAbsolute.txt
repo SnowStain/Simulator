@@ -1,0 +1,11 @@
+E:\Artinx\260111new\Simulator\src\Simulator.Core\bin\Debug\net9.0\Simulator.Core.deps.json
+E:\Artinx\260111new\Simulator\src\Simulator.Core\bin\Debug\net9.0\Simulator.Core.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Core\bin\Debug\net9.0\Simulator.Core.pdb
+E:\Artinx\260111new\Simulator\src\Simulator.Core\obj\Debug\net9.0\Simulator.Core.GeneratedMSBuildEditorConfig.editorconfig
+E:\Artinx\260111new\Simulator\src\Simulator.Core\obj\Debug\net9.0\Simulator.Core.AssemblyInfoInputs.cache
+E:\Artinx\260111new\Simulator\src\Simulator.Core\obj\Debug\net9.0\Simulator.Core.AssemblyInfo.cs
+E:\Artinx\260111new\Simulator\src\Simulator.Core\obj\Debug\net9.0\Simulator.Core.csproj.CoreCompileInputs.cache
+E:\Artinx\260111new\Simulator\src\Simulator.Core\obj\Debug\net9.0\Simulator.Core.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Core\obj\Debug\net9.0\refint\Simulator.Core.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Core\obj\Debug\net9.0\Simulator.Core.pdb
+E:\Artinx\260111new\Simulator\src\Simulator.Core\obj\Debug\net9.0\ref\Simulator.Core.dll

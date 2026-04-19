@@ -1,0 +1,6 @@
+[requires]
+bullet3/3.25
+
+[generators]
+CMakeDeps
+CMakeToolchain

@@ -1,0 +1,10 @@
+^E:\ARTINX\260111NEW\SENTRYBEHAVIORSIMULATOR\CPP\.TMP_BUILD\CMAKEFILES\624256BC2C27FAE9FCACD8CD2BC1F4A5\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SE:/Artinx/260111new/sentryBehaviorSimulator/cpp -BE:/Artinx/260111new/sentryBehaviorSimulator/cpp/.tmp_build --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file E:/Artinx/260111new/sentryBehaviorSimulator/cpp/.tmp_build/rm26_native.sln
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
