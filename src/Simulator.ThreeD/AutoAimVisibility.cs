@@ -18,13 +18,68 @@ internal static class AutoAimVisibility
             (float)(muzzleX * metersPerWorldUnit),
             (float)muzzleHeightM,
             (float)(muzzleY * metersPerWorldUnit));
-        Vector3 end = new(
-            (float)(plate.X * metersPerWorldUnit),
-            (float)plate.HeightM,
-            (float)(plate.Y * metersPerWorldUnit));
 
-        return !IsTerrainOccluding(runtimeGrid, metersPerWorldUnit, start, end)
-            && !IsEntityOccluding(world, metersPerWorldUnit, shooter, target, start, end);
+        foreach (Vector3 sample in BuildPlateSamplePoints(plate, metersPerWorldUnit))
+        {
+            if (!IsSampleInsideFirstPersonFov(shooter, start, sample))
+            {
+                continue;
+            }
+
+            if (!IsTerrainOccluding(runtimeGrid, metersPerWorldUnit, start, sample)
+                && !IsEntityOccluding(world, metersPerWorldUnit, shooter, target, start, sample))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static IEnumerable<Vector3> BuildPlateSamplePoints(ArmorPlateTarget plate, double metersPerWorldUnit)
+    {
+        float centerX = (float)(plate.X * metersPerWorldUnit);
+        float centerY = (float)plate.HeightM;
+        float centerZ = (float)(plate.Y * metersPerWorldUnit);
+        Vector3 center = new(centerX, centerY, centerZ);
+        float yawRad = (float)(plate.YawDeg * Math.PI / 180.0);
+        Vector3 forward = new(MathF.Cos(yawRad), 0f, MathF.Sin(yawRad));
+        Vector3 side = new(-forward.Z, 0f, forward.X);
+        Vector3 vertical = plate.Id.Contains("top", StringComparison.OrdinalIgnoreCase)
+            ? Vector3.Normalize(forward + Vector3.UnitY)
+            : Vector3.UnitY;
+        float halfSideM = (float)Math.Clamp(plate.SideLengthM * 0.46, 0.025, 0.30);
+
+        yield return center;
+        yield return center + side * halfSideM;
+        yield return center - side * halfSideM;
+        yield return center + vertical * halfSideM;
+        yield return center - vertical * halfSideM;
+        yield return center + side * halfSideM + vertical * halfSideM;
+        yield return center + side * halfSideM - vertical * halfSideM;
+        yield return center - side * halfSideM + vertical * halfSideM;
+        yield return center - side * halfSideM - vertical * halfSideM;
+    }
+
+    private static bool IsSampleInsideFirstPersonFov(SimulationEntity shooter, Vector3 start, Vector3 sample)
+    {
+        if (!shooter.IsPlayerControlled)
+        {
+            return true;
+        }
+
+        Vector3 delta = sample - start;
+        float horizontal = MathF.Sqrt(delta.X * delta.X + delta.Z * delta.Z);
+        if (horizontal <= 1e-5f)
+        {
+            return true;
+        }
+
+        double yawDeg = Math.Atan2(delta.Z, delta.X) * 180.0 / Math.PI;
+        double pitchDeg = Math.Atan2(delta.Y, horizontal) * 180.0 / Math.PI;
+        double yawError = Math.Abs(SimulationCombatMath.NormalizeSignedDeg(yawDeg - shooter.TurretYawDeg));
+        double pitchError = Math.Abs(pitchDeg - shooter.GimbalPitchDeg);
+        return yawError <= 48.0 && pitchError <= 32.0;
     }
 
     private static bool IsTerrainOccluding(RuntimeGridData? runtimeGrid, double metersPerWorldUnit, Vector3 start, Vector3 end)

@@ -597,7 +597,7 @@ internal sealed record RobotAppearanceProfile
     {
         entity.ChassisSubtype = ChassisSubtype;
         entity.BodyShape = BodyShape;
-        entity.WheelStyle = WheelStyle;
+        entity.WheelStyle = ResolveWheelStyle(entity.RoleKey, ChassisSubtype, WheelStyle);
         entity.FrontClimbAssistStyle = FrontClimbAssistStyle;
         entity.RearClimbAssistStyle = RearClimbAssistStyle;
         entity.RearClimbAssistKneeDirection = RearClimbAssistKneeDirection;
@@ -696,10 +696,55 @@ internal sealed record RobotAppearanceProfile
             entity.MaxStepClimbHeightM = 0.35;
         }
 
-        double collisionRadiusM = Math.Max(
-            0.14,
-            Math.Max(BodyLengthM, BodyWidthM * BodyRenderWidthScale) * 0.34 + WheelRadiusM * 0.45);
+        double halfLengthM = Math.Max(BodyLengthM * 0.5, GimbalOffsetXM + GimbalLengthM * 0.5 + BarrelLengthM);
+        double halfWidthM = Math.Max(BodyWidthM * BodyRenderWidthScale * 0.5, Math.Abs(GimbalOffsetYM) + GimbalWidthM * BodyRenderWidthScale * 0.5);
+        halfLengthM = Math.Max(halfLengthM, BodyLengthM * 0.5 + ArmorPlateGapM + ArmorPlateWidthM * 0.5);
+        halfWidthM = Math.Max(halfWidthM, BodyWidthM * BodyRenderWidthScale * 0.5 + ArmorPlateGapM + ArmorPlateWidthM * 0.5);
+        foreach (Vector2 wheelOffset in WheelOffsetsM)
+        {
+            halfLengthM = Math.Max(halfLengthM, Math.Abs(wheelOffset.X) + WheelRadiusM);
+            halfWidthM = Math.Max(halfWidthM, Math.Abs(wheelOffset.Y) * BodyRenderWidthScale + WheelRadiusM);
+        }
+
+        if (!string.Equals(FrontClimbAssistStyle, "none", StringComparison.OrdinalIgnoreCase))
+        {
+            halfLengthM = Math.Max(
+                halfLengthM,
+                BodyLengthM * 0.5 + FrontClimbAssistForwardOffsetM + Math.Max(FrontClimbAssistTopLengthM, FrontClimbAssistBottomLengthM));
+        }
+
+        if (!string.Equals(RearClimbAssistStyle, "none", StringComparison.OrdinalIgnoreCase))
+        {
+            halfLengthM = Math.Max(halfLengthM, BodyLengthM * 0.5 + RearClimbAssistUpperLengthM + RearClimbAssistLowerLengthM);
+            halfWidthM = Math.Max(halfWidthM, BodyWidthM * BodyRenderWidthScale * 0.5 + RearClimbAssistHingeRadiusM);
+        }
+
+        double collisionRadiusM = Math.Max(0.14, Math.Sqrt(halfLengthM * halfLengthM + halfWidthM * halfWidthM) + 0.01);
         entity.CollisionRadiusWorld = collisionRadiusM / Math.Max(metersPerWorldUnit, 1e-6);
+    }
+
+    private static string ResolveWheelStyle(string roleKey, string chassisSubtype, string configuredWheelStyle)
+    {
+        if (roleKey.Equals("base", StringComparison.OrdinalIgnoreCase)
+            || roleKey.Equals("outpost", StringComparison.OrdinalIgnoreCase))
+        {
+            return configuredWheelStyle;
+        }
+
+        if (roleKey.Equals("infantry", StringComparison.OrdinalIgnoreCase))
+        {
+            if (chassisSubtype.Contains("balance", StringComparison.OrdinalIgnoreCase))
+            {
+                return "legged";
+            }
+
+            if (chassisSubtype.Contains("omni", StringComparison.OrdinalIgnoreCase))
+            {
+                return "omni";
+            }
+        }
+
+        return "mecanum";
     }
 
     public static RobotAppearanceProfile CreateDefault(float bodyLength, float bodyWidth, float bodyHeight, float bodyClearance, string roleKey)

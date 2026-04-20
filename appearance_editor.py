@@ -1549,9 +1549,9 @@ class AppearanceEditorApp:
 
     def _build_field_specs(self):
         fields = [
-            {'part': 'body', 'label': '底盘长度', 'kind': 'number', 'key': 'body_length_m', 'min': 0.30, 'max': 2.00, 'step': 0.01},
-            {'part': 'body', 'label': '底盘宽度', 'kind': 'number', 'key': 'body_width_m', 'min': 0.20, 'max': 2.00, 'step': 0.01},
-            {'part': 'body', 'label': '视觉宽度系数', 'kind': 'number', 'key': 'body_render_width_scale', 'min': 0.45, 'max': 2.00, 'step': 0.01},
+            {'part': 'body', 'label': '底盘长度', 'kind': 'number', 'key': 'body_length_m', 'min': 0.30, 'max': 10.00, 'step': 0.01},
+            {'part': 'body', 'label': '底盘宽度', 'kind': 'number', 'key': 'body_width_m', 'min': 0.20, 'max': 10.00, 'step': 0.01},
+            {'part': 'body', 'label': '视觉宽度系数', 'kind': 'number', 'key': 'body_render_width_scale', 'min': 0.45, 'max': 10.00, 'step': 0.01},
             {'part': 'body', 'label': '底盘高度', 'kind': 'number', 'key': 'body_height_m', 'min': 0.10, 'max': 2.40, 'step': 0.01},
             {'part': 'body', 'label': '离地间隙', 'kind': 'number', 'key': 'body_clearance_m', 'min': 0.02, 'max': 2.00, 'step': 0.01},
             {'part': 'turret', 'label': '云台长度', 'kind': 'number', 'key': 'gimbal_length_m', 'min': 0.10, 'max': 2.00, 'step': 0.01},
@@ -1966,6 +1966,11 @@ class AppearanceEditorApp:
         self.screen.blit(surface, pos)
 
     def _iter_3d_preview_primitives(self, profile):
+        role_key = str(profile.get('role_key', '')).lower()
+        if role_key in {'outpost', 'base'}:
+            yield from self._iter_structure_3d_preview_primitives(profile, role_key)
+            return
+
         render_width_scale = float(profile.get('body_render_width_scale', 0.82))
         has_turret = self._profile_has_turret(profile)
         has_mount = self._profile_has_mount(profile)
@@ -2073,6 +2078,36 @@ class AppearanceEditorApp:
                     yield ('barrel_light', (barrel_light_center_x, turret_center_y, turret_offset_z + barrel_light_half_z * 3.0), (barrel_light_half_x, barrel_light_half_y, barrel_light_half_z))
                     yield ('barrel_light', (barrel_light_center_x, turret_center_y, turret_offset_z - barrel_light_half_z * 3.0), (barrel_light_half_x, barrel_light_half_y, barrel_light_half_z))
 
+    def _iter_structure_3d_preview_primitives(self, profile, role_key):
+        if role_key == 'outpost':
+            lift = float(profile.get('structure_base_lift_m', 0.40))
+            tower_height = max(0.8, float(profile.get('body_height_m', 1.878)))
+            top_diameter = max(0.24, float(profile.get('body_width_m', 0.55)))
+            tower_radius = max(0.20, top_diameter * 0.72)
+            base_width = max(0.30, float(profile.get('body_length_m', 0.65)))
+            armor_side = max(0.04, float(profile.get('armor_plate_width_m', 0.13)))
+            armor_thickness = max(0.012, float(profile.get('armor_plate_gap_m', 0.025)))
+            radius = tower_radius + 0.055
+            yield ('body', (0.0, lift + tower_height * 0.48, 0.0), (base_width * 0.45, tower_height * 0.52, base_width * 0.45))
+            yield ('armor', (radius, lift + tower_height - 0.055, 0.0), (armor_side * 0.5, armor_side * 0.5, armor_thickness * 0.5))
+            for index, yaw in enumerate([0.0, math.tau / 3.0, math.tau * 2.0 / 3.0]):
+                height = lift + tower_height - 0.10 + [0.05, 0.0, -0.05][index]
+                yield ('armor', (math.cos(yaw) * radius, height, math.sin(yaw) * radius), (armor_thickness * 0.5, armor_side * 0.5, armor_side * 0.5))
+            yield ('armor_light', (radius * 0.68, lift + tower_height * 0.48, 0.0), (0.020, tower_height * 0.22, 0.080))
+            return
+
+        length = max(0.8, float(profile.get('body_length_m', 1.881)))
+        width = max(0.7, float(profile.get('body_width_m', 1.609))) * max(0.4, float(profile.get('body_render_width_scale', 1.0)))
+        height = max(0.5, float(profile.get('body_height_m', 1.181)))
+        armor_side = max(0.04, float(profile.get('armor_plate_width_m', 0.13)))
+        armor_thickness = max(0.012, float(profile.get('armor_plate_gap_m', 0.025)))
+        yield ('body', (0.0, height * 0.47, 0.0), (length * 0.50, height * 0.50, width * 0.50))
+        yield ('armor', (length * 0.06, height + 0.10, 0.0), (armor_side * 0.5, armor_thickness * 0.5, armor_side * 0.5))
+        yield ('armor', (length * 0.15, height * 0.70, 0.0), (armor_thickness * 0.5, armor_side * 0.5, armor_side * 0.5))
+        for side in (-1.0, 1.0):
+            yield ('armor', (-length * 0.07, height * 0.44, side * width * 0.43), (length * 0.18, height * 0.24, 0.035))
+            yield ('armor_light', (-length * 0.07, height * 0.50, side * width * 0.47), (length * 0.12, height * 0.14, 0.012))
+
     def _project_3d_preview_point(self, point, mvp, size):
         clip = mvp @ np.array([float(point[0]), float(point[1]), float(point[2]), 1.0], dtype='f4')
         if abs(float(clip[3])) <= 1e-6:
@@ -2091,13 +2126,16 @@ class AppearanceEditorApp:
         width, height = rect.size
         if width <= 1 or height <= 1:
             return
-        target = np.array([0.0, float(profile['body_clearance_m']) + float(profile['body_height_m']) * 0.45, 0.0], dtype='f4')
+        role_key = str(profile.get('role_key', '')).lower()
+        structure_lift = float(profile.get('structure_base_lift_m', 0.0)) if role_key in {'outpost', 'base'} else 0.0
+        target = np.array([0.0, structure_lift + float(profile['body_clearance_m']) + float(profile['body_height_m']) * 0.45, 0.0], dtype='f4')
         bounds_radius = max(
             0.6,
             float(profile['body_length_m']) * 0.9,
             float(profile['body_width_m']) * 0.9,
             float(profile.get('gimbal_length_m', 0.0)) + float(profile.get('barrel_length_m', 0.0)) * 0.8,
-            _profile_turret_center_height(profile) + 0.25,
+            structure_lift + _profile_turret_center_height(profile) + 0.25,
+            structure_lift + float(profile.get('body_height_m', 0.0)) + 0.25,
         )
         distance = max(1.4, bounds_radius * 2.9)
         yaw = self.preview_3d_yaw if yaw is None else float(yaw)

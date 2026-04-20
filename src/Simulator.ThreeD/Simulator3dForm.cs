@@ -1138,7 +1138,8 @@ internal sealed partial class Simulator3dForm : Form
         graphics.DrawString(motionText, _tinyHudFont, textBrush, panel.X + 16, panel.Y + 54);
 
         bool inFriendlySupply = _host.MapPreset.Facilities.Any(region =>
-            string.Equals(region.Type, "supply", StringComparison.OrdinalIgnoreCase)
+            (string.Equals(region.Type, "supply", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(region.Type, "buff_supply", StringComparison.OrdinalIgnoreCase))
             && string.Equals(region.Team, entity.Team, StringComparison.OrdinalIgnoreCase)
             && region.Contains(entity.X, entity.Y));
         string supplyPrompt = inFriendlySupply ? "  B 补弹" : string.Empty;

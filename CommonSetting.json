@@ -9,6 +9,21 @@
     "show_facilities": false,
     "show_aim_fov": false,
     "enable_entity_movement": true,
+    "sim3d_map_preset": "blankCanvas",
+    "sim3d_renderer_backend": "native_cpp",
+    "terrain_scene_backend": "native_cpp",
+    "sim3d_selected_team": "blue",
+    "sim3d_selected_entity_id": "blue_robot_3",
+    "player_projectile_ricochet_enabled": true,
+    "match_mode": "full",
+    "single_unit_test_team": "blue",
+    "single_unit_test_entity_key": "robot_1",
+    "sim3d_infantry_mode": "balance",
+    "sim3d_hero_performance_mode": "ranged_priority",
+    "sim3d_infantry_durability_mode": "power_priority",
+    "sim3d_infantry_weapon_mode": "cooling_priority",
+    "sim3d_sentry_control_mode": "full_auto",
+    "sim3d_sentry_stance": "attack",
     "show_entities": true,
     "player_look_sensitivity_deg": 0.21,
     "player_pitch_sensitivity_deg": 0.005,
@@ -55,27 +70,12 @@
     "player_motion_terrain_render_scale": 0.78,
     "player_terrain_scene_max_cells": 18000,
     "terrain_editor_scene_backend": "editor_opengl",
-    "sim3d_renderer_backend": "native_cpp",
-    "terrain_scene_backend": "native_cpp",
-    "player_projectile_ricochet_enabled": true,
     "player_camera_motion_threshold_m": 9999.0,
     "player_terrain_precise_rendering": true,
     "manual_control_ai_scope": "combat_units",
     "manual_control_dispatch_profile": "exclusive_combat",
     "require_pre_match_setup": true,
-    "runtime_entrypoint": "simulator3d",
-    "sim3d_selected_entity_id": "blue_robot_7",
-    "sim3d_selected_team": "blue",
-    "sim3d_map_preset": "blankCanvas",
-    "match_mode": "full",
-    "single_unit_test_team": "blue",
-    "single_unit_test_entity_key": "robot_1",
-    "sim3d_infantry_mode": "balance",
-    "sim3d_hero_performance_mode": "ranged_priority",
-    "sim3d_infantry_durability_mode": "power_priority",
-    "sim3d_infantry_weapon_mode": "cooling_priority",
-    "sim3d_sentry_control_mode": "full_auto",
-    "sim3d_sentry_stance": "attack"
+    "runtime_entrypoint": "simulator3d"
   },
   "ai": {
     "decision_deployment": {
@@ -300,6 +300,8 @@
     }
   },
   "rules": {
+    "damage_system": "伤害机制.png",
+    "health_system": "血量机制.png",
     "game_duration": 420,
     "economy": {
       "initial_gold": 400.0,
@@ -1361,8 +1363,6 @@
       },
       "auto_intervention_cost": 50,
       "semi_auto_intervention_cost": 0
-    },
-    "damage_system": "伤害机制.png",
-    "health_system": "血量机制.png"
+    }
   }
 }

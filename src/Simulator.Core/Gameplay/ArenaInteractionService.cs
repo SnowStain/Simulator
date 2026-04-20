@@ -4,6 +4,18 @@ namespace Simulator.Core.Gameplay;
 
 public sealed class ArenaInteractionService
 {
+    private const double BuffBaseDamageTakenMult = 0.50;
+    private const double BuffCentralHighlandDamageTakenMult = 0.75;
+    private const double BuffTrapezoidHighlandDamageTakenMult = 0.50;
+    private const double BuffOutpostDamageTakenMult = 0.75;
+    private const double BuffHeroDeploymentDamageTakenMult = 0.75;
+    private const double BuffHeroDeploymentDamageDealtMult = 1.50;
+    private const double TerrainHighlandDamageTakenMult = 0.75;
+    private const double TerrainFlySlopeDamageTakenMult = 0.75;
+    private const double TerrainRoadCoolingMult = 2.00;
+    private const double TerrainSlopeDamageTakenMult = 0.90;
+    private const double TerrainSlopeCoolingMult = 1.20;
+
     private readonly RuleSet _rules;
 
     public ArenaInteractionService(RuleSet rules)
@@ -23,6 +35,7 @@ public sealed class ArenaInteractionService
 
         var events = new List<FacilityInteractionEvent>();
         var energyActiveTeams = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        IReadOnlyDictionary<string, string> centralHighlandControl = ResolveCentralHighlandControl(world, facilities);
 
         foreach (SimulationTeamState team in world.Teams.Values)
         {
@@ -32,6 +45,7 @@ public sealed class ArenaInteractionService
         foreach (SimulationEntity entity in world.Entities)
         {
             entity.ResetDynamicEffects();
+            TickTimedBuffs(entity, deltaTimeSec);
             entity.SupplyBuyCooldownSec = Math.Max(0.0, entity.SupplyBuyCooldownSec - deltaTimeSec);
             if (!entity.IsAlive)
             {
@@ -39,6 +53,7 @@ public sealed class ArenaInteractionService
             }
 
             bool touchedDeadZone = false;
+            bool touchedHeroDeployment = false;
 
             foreach (FacilityRegion facility in facilities)
             {
@@ -69,6 +84,21 @@ public sealed class ArenaInteractionService
                     case "energy_mechanism":
                         ApplyEnergyMechanism(world, entity, facility, deltaTimeSec, energyActiveTeams, events);
                         break;
+                    default:
+                        if (facilityType.StartsWith("buff_", StringComparison.OrdinalIgnoreCase))
+                        {
+                            ApplyBuffRegion(
+                                world,
+                                entity,
+                                facility,
+                                facilityType,
+                                deltaTimeSec,
+                                centralHighlandControl,
+                                ref touchedHeroDeployment,
+                                events);
+                        }
+
+                        break;
                 }
             }
 
@@ -76,6 +106,13 @@ public sealed class ArenaInteractionService
             {
                 entity.DeadZoneTimerSec = 0.0;
             }
+
+            if (!touchedHeroDeployment)
+            {
+                entity.HeroDeploymentHoldTimerSec = 0.0;
+            }
+
+            ApplyTimedBuffEffects(entity);
         }
 
         foreach (SimulationTeamState teamState in world.Teams.Values)
@@ -230,6 +267,119 @@ public sealed class ArenaInteractionService
         entity.DynamicCoolingMult *= _rules.Facility.FortCoolingMult;
     }
 
+    private void ApplyBuffRegion(
+        SimulationWorldState world,
+        SimulationEntity entity,
+        FacilityRegion facility,
+        string facilityType,
+        double deltaTimeSec,
+        IReadOnlyDictionary<string, string> centralHighlandControl,
+        ref bool touchedHeroDeployment,
+        ICollection<FacilityInteractionEvent> events)
+    {
+        switch (facilityType)
+        {
+            case "buff_base":
+                if (!IsFriendlyFacility(entity.Team, facility.Team) || !IsRobotEntity(entity))
+                {
+                    return;
+                }
+
+                entity.DynamicDamageTakenMult *= BuffBaseDamageTakenMult;
+                ClearWeakState(entity);
+                return;
+
+            case "buff_outpost":
+                if (!CanUseOutpostBuff(world, entity, facility))
+                {
+                    return;
+                }
+
+                entity.DynamicDamageTakenMult *= BuffOutpostDamageTakenMult;
+                ClearWeakState(entity);
+                return;
+
+            case "buff_trapezoid_highland":
+                if (!IsFriendlyFacility(entity.Team, facility.Team) || !IsRobotEntity(entity))
+                {
+                    return;
+                }
+
+                entity.DynamicDamageTakenMult *= BuffTrapezoidHighlandDamageTakenMult;
+                return;
+
+            case "buff_central_highland":
+                if (!IsCentralHighlandRole(entity)
+                    || !centralHighlandControl.TryGetValue(facility.Id, out string? controlTeam)
+                    || !string.Equals(controlTeam, entity.Team, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
+                entity.DynamicDamageTakenMult *= BuffCentralHighlandDamageTakenMult;
+                return;
+
+            case "buff_supply":
+                if (!IsFriendlyFacility(entity.Team, facility.Team) || !IsRobotEntity(entity))
+                {
+                    return;
+                }
+
+                ApplySupply(world, entity, facility, deltaTimeSec, events);
+                if (string.Equals(entity.RoleKey, "engineer", StringComparison.OrdinalIgnoreCase))
+                {
+                    entity.DynamicDamageTakenMult = 0.0;
+                }
+
+                return;
+
+            case "buff_fort":
+                if (!CanUseFortBuff(world, entity, facility))
+                {
+                    return;
+                }
+
+                entity.DynamicDamageTakenMult *= _rules.Facility.FortDamageTakenMult;
+                entity.DynamicCoolingMult *= _rules.Facility.FortCoolingMult;
+                return;
+
+            case "buff_assembly":
+                if (!IsFriendlyFacility(entity.Team, facility.Team)
+                    || !string.Equals(entity.RoleKey, "engineer", StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
+                entity.DynamicDamageTakenMult = 0.0;
+                return;
+
+            case "buff_hero_deployment":
+                touchedHeroDeployment = true;
+                if (!IsFriendlyFacility(entity.Team, facility.Team)
+                    || !string.Equals(entity.RoleKey, "hero", StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
+                entity.HeroDeploymentHoldTimerSec += deltaTimeSec;
+                if (entity.HeroDeploymentHoldTimerSec >= 2.0)
+                {
+                    entity.DynamicDamageTakenMult *= BuffHeroDeploymentDamageTakenMult;
+                    entity.DynamicDamageDealtMult *= BuffHeroDeploymentDamageDealtMult;
+                }
+
+                return;
+
+            default:
+                if (facilityType.StartsWith("buff_terrain_", StringComparison.OrdinalIgnoreCase))
+                {
+                    ApplyTerrainSequenceBuff(world, entity, facility, facilityType, events);
+                }
+
+                return;
+        }
+    }
+
     private void ApplyDeadZone(
         SimulationWorldState world,
         SimulationEntity entity,
@@ -382,6 +532,265 @@ public sealed class ArenaInteractionService
 
         teamState.EnergyActivationTimerSec = 0.0;
         teamState.EnergyVirtualHits = 0.0;
+    }
+
+    private static IReadOnlyDictionary<string, string> ResolveCentralHighlandControl(
+        SimulationWorldState world,
+        IReadOnlyList<FacilityRegion> facilities)
+    {
+        var control = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (FacilityRegion facility in facilities)
+        {
+            if (!string.Equals(NormalizeFacilityType(facility.Type), "buff_central_highland", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            string? occupyingTeam = null;
+            bool contested = false;
+            foreach (SimulationEntity entity in world.Entities)
+            {
+                if (!entity.IsAlive || !IsCentralHighlandRole(entity) || !facility.Contains(entity.X, entity.Y))
+                {
+                    continue;
+                }
+
+                if (occupyingTeam is null)
+                {
+                    occupyingTeam = entity.Team;
+                    continue;
+                }
+
+                if (!string.Equals(occupyingTeam, entity.Team, StringComparison.OrdinalIgnoreCase))
+                {
+                    contested = true;
+                    break;
+                }
+            }
+
+            if (!contested && !string.IsNullOrWhiteSpace(occupyingTeam))
+            {
+                control[facility.Id] = occupyingTeam;
+            }
+        }
+
+        return control;
+    }
+
+    private static void TickTimedBuffs(SimulationEntity entity, double deltaTimeSec)
+    {
+        entity.TerrainSequenceTimerSec = Math.Max(0.0, entity.TerrainSequenceTimerSec - deltaTimeSec);
+        entity.TerrainRoadLockoutTimerSec = Math.Max(0.0, entity.TerrainRoadLockoutTimerSec - deltaTimeSec);
+        entity.TerrainHighlandDefenseTimerSec = Math.Max(0.0, entity.TerrainHighlandDefenseTimerSec - deltaTimeSec);
+        entity.TerrainFlySlopeDefenseTimerSec = Math.Max(0.0, entity.TerrainFlySlopeDefenseTimerSec - deltaTimeSec);
+        entity.TerrainRoadCoolingTimerSec = Math.Max(0.0, entity.TerrainRoadCoolingTimerSec - deltaTimeSec);
+        entity.TerrainSlopeDefenseTimerSec = Math.Max(0.0, entity.TerrainSlopeDefenseTimerSec - deltaTimeSec);
+        entity.TerrainSlopeCoolingTimerSec = Math.Max(0.0, entity.TerrainSlopeCoolingTimerSec - deltaTimeSec);
+        if (entity.TerrainSequenceTimerSec <= 1e-6)
+        {
+            entity.TerrainSequenceKey = string.Empty;
+        }
+    }
+
+    private static void ApplyTimedBuffEffects(SimulationEntity entity)
+    {
+        if (entity.TerrainHighlandDefenseTimerSec > 1e-6)
+        {
+            entity.DynamicDamageTakenMult *= TerrainHighlandDamageTakenMult;
+        }
+
+        if (entity.TerrainFlySlopeDefenseTimerSec > 1e-6)
+        {
+            entity.DynamicDamageTakenMult *= TerrainFlySlopeDamageTakenMult;
+        }
+
+        if (entity.TerrainRoadCoolingTimerSec > 1e-6)
+        {
+            entity.DynamicCoolingMult *= TerrainRoadCoolingMult;
+        }
+
+        if (entity.TerrainSlopeDefenseTimerSec > 1e-6)
+        {
+            entity.DynamicDamageTakenMult *= TerrainSlopeDamageTakenMult;
+        }
+
+        if (entity.TerrainSlopeCoolingTimerSec > 1e-6)
+        {
+            entity.DynamicCoolingMult *= TerrainSlopeCoolingMult;
+        }
+    }
+
+    private void ApplyTerrainSequenceBuff(
+        SimulationWorldState world,
+        SimulationEntity entity,
+        FacilityRegion facility,
+        string facilityType,
+        ICollection<FacilityInteractionEvent> events)
+    {
+        if (!IsFriendlyFacility(entity.Team, facility.Team)
+            || !IsTerrainBuffEligible(entity))
+        {
+            return;
+        }
+
+        if (facilityType.EndsWith("_start", StringComparison.OrdinalIgnoreCase))
+        {
+            entity.TerrainSequenceKey = ExtractTerrainSequenceKey(facilityType);
+            entity.TerrainSequenceTimerSec = ResolveTerrainSequenceTimeoutSec(facilityType);
+            return;
+        }
+
+        if (!facilityType.EndsWith("_end", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        string sequenceKey = ExtractTerrainSequenceKey(facilityType);
+        if (entity.TerrainSequenceTimerSec <= 1e-6
+            || !string.Equals(entity.TerrainSequenceKey, sequenceKey, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (sequenceKey.Contains("terrain_road", StringComparison.OrdinalIgnoreCase)
+            && entity.TerrainRoadLockoutTimerSec > 1e-6)
+        {
+            entity.TerrainSequenceKey = string.Empty;
+            entity.TerrainSequenceTimerSec = 0.0;
+            return;
+        }
+
+        switch (sequenceKey)
+        {
+            case "terrain_highland_red":
+            case "terrain_highland_blue":
+                entity.TerrainHighlandDefenseTimerSec = Math.Max(entity.TerrainHighlandDefenseTimerSec, 30.0);
+                break;
+            case "terrain_fly_slope_red":
+            case "terrain_fly_slope_blue":
+                entity.TerrainFlySlopeDefenseTimerSec = Math.Max(entity.TerrainFlySlopeDefenseTimerSec, 30.0);
+                break;
+            case "terrain_road_red":
+            case "terrain_road_blue":
+                entity.TerrainRoadCoolingTimerSec = Math.Max(entity.TerrainRoadCoolingTimerSec, 5.0);
+                entity.TerrainRoadLockoutTimerSec = Math.Max(entity.TerrainRoadLockoutTimerSec, 15.0);
+                break;
+            case "terrain_slope_red":
+            case "terrain_slope_blue":
+                entity.TerrainSlopeDefenseTimerSec = Math.Max(entity.TerrainSlopeDefenseTimerSec, 10.0);
+                entity.TerrainSlopeCoolingTimerSec = Math.Max(entity.TerrainSlopeCoolingTimerSec, 120.0);
+                break;
+        }
+
+        entity.TerrainSequenceKey = string.Empty;
+        entity.TerrainSequenceTimerSec = 0.0;
+        events.Add(new FacilityInteractionEvent(
+            world.GameTimeSec,
+            entity.Team,
+            entity.Id,
+            facility.Id,
+            facilityType,
+            $"Activated {sequenceKey}"));
+    }
+
+    private static string ExtractTerrainSequenceKey(string facilityType)
+    {
+        string normalized = NormalizeFacilityType(facilityType);
+        string withoutPrefix = normalized.StartsWith("buff_", StringComparison.OrdinalIgnoreCase)
+            ? normalized["buff_".Length..]
+            : normalized;
+        if (withoutPrefix.EndsWith("_start", StringComparison.OrdinalIgnoreCase))
+        {
+            return withoutPrefix[..^"_start".Length];
+        }
+
+        if (withoutPrefix.EndsWith("_end", StringComparison.OrdinalIgnoreCase))
+        {
+            return withoutPrefix[..^"_end".Length];
+        }
+
+        return withoutPrefix;
+    }
+
+    private static double ResolveTerrainSequenceTimeoutSec(string facilityType)
+    {
+        string key = ExtractTerrainSequenceKey(facilityType);
+        if (key.Contains("terrain_highland", StringComparison.OrdinalIgnoreCase))
+        {
+            return 5.0;
+        }
+
+        if (key.Contains("terrain_slope", StringComparison.OrdinalIgnoreCase))
+        {
+            return 10.0;
+        }
+
+        return 3.0;
+    }
+
+    private static bool IsTerrainBuffEligible(SimulationEntity entity)
+        => string.Equals(entity.RoleKey, "hero", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(entity.RoleKey, "infantry", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsRobotEntity(SimulationEntity entity)
+        => string.Equals(entity.EntityType, "robot", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsCentralHighlandRole(SimulationEntity entity)
+        => string.Equals(entity.RoleKey, "hero", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(entity.RoleKey, "infantry", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase);
+
+    private static void ClearWeakState(SimulationEntity entity)
+    {
+        entity.WeakTimerSec = 0.0;
+        if (string.Equals(entity.State, "weak", StringComparison.OrdinalIgnoreCase)
+            && entity.RespawnAmmoLockTimerSec <= 1e-6)
+        {
+            entity.State = "idle";
+        }
+    }
+
+    private static bool CanUseOutpostBuff(SimulationWorldState world, SimulationEntity entity, FacilityRegion facility)
+    {
+        if (!IsFriendlyFacility(entity.Team, facility.Team)
+            || (!string.Equals(entity.RoleKey, "hero", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(entity.RoleKey, "engineer", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(entity.RoleKey, "infantry", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        SimulationEntity? outpost = FindStructure(world, facility.Team, "outpost");
+        return outpost is not null && outpost.IsAlive;
+    }
+
+    private bool CanUseFortBuff(SimulationWorldState world, SimulationEntity entity, FacilityRegion facility)
+    {
+        if (!IsFriendlyFacility(entity.Team, facility.Team)
+            || (!string.Equals(entity.RoleKey, "infantry", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        SimulationEntity? outpost = FindStructure(world, facility.Team, "outpost");
+        return outpost is null || !outpost.IsAlive;
+    }
+
+    private static SimulationEntity? FindStructure(SimulationWorldState world, string team, string entityType)
+    {
+        foreach (SimulationEntity entity in world.Entities)
+        {
+            if (string.Equals(entity.Team, team, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(entity.EntityType, entityType, StringComparison.OrdinalIgnoreCase))
+            {
+                return entity;
+            }
+        }
+
+        return null;
     }
 
     private bool CanActivateEnergy(SimulationEntity entity)

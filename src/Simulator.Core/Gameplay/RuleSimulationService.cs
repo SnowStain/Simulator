@@ -185,18 +185,33 @@ public sealed class RuleSimulationService
             ApplyResolvedRoleProfile(entity, profile, clampHealthToCurrent: true);
             entity.FireCooldownSec = Math.Max(0.0, entity.FireCooldownSec - dt);
             entity.WeakTimerSec = Math.Max(0.0, entity.WeakTimerSec - dt);
+            entity.RespawnAmmoLockTimerSec = Math.Max(0.0, entity.RespawnAmmoLockTimerSec - dt);
+            entity.RespawnInvincibleTimerSec = Math.Max(0.0, entity.RespawnInvincibleTimerSec - dt);
             entity.HeatLockTimerSec = Math.Max(0.0, entity.HeatLockTimerSec - dt);
+            if (string.Equals(entity.State, "heat_locked", StringComparison.OrdinalIgnoreCase)
+                && entity.Heat > 0.01)
+            {
+                entity.HeatLockTimerSec = Math.Max(entity.HeatLockTimerSec, 0.10);
+            }
 
             entity.Power = Math.Min(
                 entity.MaxPower,
                 entity.Power + profile.PowerRecoveryRate * entity.DynamicPowerRecoveryMult * dt);
             entity.Heat = Math.Max(0.0, entity.Heat - profile.HeatDissipationRate * entity.DynamicCoolingMult * dt);
 
-            if (entity.HeatLockTimerSec <= 0.0
+            if ((entity.HeatLockTimerSec <= 0.0 || string.Equals(entity.State, "heat_locked", StringComparison.OrdinalIgnoreCase))
                 && entity.Heat <= 0.01
                 && string.Equals(entity.State, "heat_locked", StringComparison.OrdinalIgnoreCase))
             {
+                entity.HeatLockTimerSec = 0.0;
                 entity.State = entity.WeakTimerSec > 0 ? "weak" : "idle";
+            }
+
+            if (entity.WeakTimerSec <= 0.0
+                && entity.RespawnAmmoLockTimerSec <= 0.0
+                && string.Equals(entity.State, "weak", StringComparison.OrdinalIgnoreCase))
+            {
+                entity.State = "idle";
             }
         }
     }
@@ -229,9 +244,16 @@ public sealed class RuleSimulationService
 
             if (shooter.IsPlayerControlled && !shouldAutoAim)
             {
-                shooter.AutoAimLocked = false;
-                shooter.AutoAimTargetId = null;
-                shooter.AutoAimPlateId = null;
+                ClearAutoAimState(shooter);
+            }
+            else if (shooter.IsPlayerControlled && shouldAutoAim && !hasPreferredTarget)
+            {
+                ClearAutoAimState(shooter);
+            }
+
+            if (WouldNextShotExceedHeatLimit(shooter))
+            {
+                continue;
             }
 
             if (!HasAmmoForShot(shooter) || !shooter.ConsumeAmmoForShot())
@@ -258,17 +280,17 @@ public sealed class RuleSimulationService
         double yawDeg = shooter.TurretYawDeg;
         if (preferredPlate.HasValue && preferredTarget is not null)
         {
-            (yawDeg, pitchDeg, _) = SimulationCombatMath.ComputeAutoAimAnglesWithError(
+            AutoAimSolution solution = SimulationCombatMath.ComputeAutoAimSolution(
                 world,
                 shooter,
                 preferredTarget,
                 preferredPlate.Value,
                 _rules.Combat.AutoAimMaxDistanceM);
+            yawDeg = solution.YawDeg;
+            pitchDeg = solution.PitchDeg;
             shooter.TurretYawDeg = yawDeg;
             shooter.GimbalPitchDeg = pitchDeg;
-            shooter.AutoAimLocked = true;
-            shooter.AutoAimTargetId = preferredTarget?.Id;
-            shooter.AutoAimPlateId = preferredPlate.Value.Id;
+            StoreAutoAimDiagnostics(shooter, preferredTarget, preferredPlate.Value, solution);
         }
 
         (double muzzleX, double muzzleY, double muzzleHeightM) = SimulationCombatMath.ComputeMuzzlePoint(world, shooter, pitchDeg);
@@ -316,15 +338,7 @@ public sealed class RuleSimulationService
             double startY = projectile.Y;
             double startHeightM = projectile.HeightM;
 
-            double drag = string.Equals(projectile.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase) ? 0.22 : 0.14;
-            projectile.VelocityXWorldPerSec *= Math.Exp(-drag * dt);
-            projectile.VelocityYWorldPerSec *= Math.Exp(-drag * dt);
-            projectile.VelocityZMps = projectile.VelocityZMps * Math.Exp(-drag * dt) - 9.81 * dt;
-
-            projectile.X += projectile.VelocityXWorldPerSec * dt;
-            projectile.Y += projectile.VelocityYWorldPerSec * dt;
-            projectile.HeightM += projectile.VelocityZMps * dt;
-            projectile.RemainingLifeSec -= dt;
+            ApplyProjectilePhysicsStep(projectile, Math.Max(world.MetersPerWorldUnit, 1e-6), dt);
 
             if (SimulationCombatMath.TryFindProjectileHit(
                 world,
@@ -392,17 +406,7 @@ public sealed class RuleSimulationService
                 double startX = projectile.X;
                 double startY = projectile.Y;
                 double startHeightM = projectile.HeightM;
-                double speedScale = Math.Clamp(speedMps / 28.0, 0.0, 1.25);
-                double baseDrag = string.Equals(projectile.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase) ? 0.22 : 0.14;
-                double dragCoeff = baseDrag * (0.88 + speedScale * 0.26);
-                projectile.VelocityXWorldPerSec *= Math.Exp(-dragCoeff * substepDt);
-                projectile.VelocityYWorldPerSec *= Math.Exp(-dragCoeff * substepDt);
-                projectile.VelocityZMps = projectile.VelocityZMps * Math.Exp(-dragCoeff * substepDt) - 9.81 * substepDt;
-
-                projectile.X += projectile.VelocityXWorldPerSec * substepDt;
-                projectile.Y += projectile.VelocityYWorldPerSec * substepDt;
-                projectile.HeightM += projectile.VelocityZMps * substepDt;
-                projectile.RemainingLifeSec -= substepDt;
+                ApplyProjectilePhysicsStep(projectile, metersPerWorldUnit, substepDt);
 
                 if (SimulationCombatMath.TryFindProjectileHit(
                     world,
@@ -456,6 +460,42 @@ public sealed class RuleSimulationService
         }
     }
 
+    private static void ApplyProjectilePhysicsStep(
+        SimulationProjectile projectile,
+        double metersPerWorldUnit,
+        double dt)
+    {
+        double vxMps = projectile.VelocityXWorldPerSec * metersPerWorldUnit;
+        double vyMps = projectile.VelocityYWorldPerSec * metersPerWorldUnit;
+        double vzMps = projectile.VelocityZMps;
+        double speedMps = Math.Sqrt(vxMps * vxMps + vyMps * vyMps + vzMps * vzMps);
+        if (speedMps > 1e-6)
+        {
+            double diameterM = SimulationCombatMath.ProjectileDiameterM(projectile.AmmoType);
+            double areaM2 = Math.PI * diameterM * diameterM * 0.25;
+            double massKg = string.Equals(projectile.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase)
+                ? 0.041
+                : 0.0032;
+            double dragCoefficient = 0.47;
+            double airDensityKgM3 = 1.20;
+            double dragAccelMps2 = 0.5 * airDensityKgM3 * dragCoefficient * areaM2 * speedMps * speedMps / Math.Max(0.001, massKg);
+            dragAccelMps2 = Math.Min(dragAccelMps2, speedMps / Math.Max(dt, 1e-6) * 0.72);
+            double dragStep = dragAccelMps2 * dt / speedMps;
+            vxMps -= vxMps * dragStep;
+            vyMps -= vyMps * dragStep;
+            vzMps -= vzMps * dragStep;
+        }
+
+        vzMps -= 9.81 * dt;
+        projectile.VelocityXWorldPerSec = vxMps / Math.Max(metersPerWorldUnit, 1e-6);
+        projectile.VelocityYWorldPerSec = vyMps / Math.Max(metersPerWorldUnit, 1e-6);
+        projectile.VelocityZMps = vzMps;
+        projectile.X += projectile.VelocityXWorldPerSec * dt;
+        projectile.Y += projectile.VelocityYWorldPerSec * dt;
+        projectile.HeightM += projectile.VelocityZMps * dt;
+        projectile.RemainingLifeSec -= dt;
+    }
+
     private static Dictionary<string, SimulationEntity> BuildEntityLookup(SimulationWorldState world)
     {
         var lookup = new Dictionary<string, SimulationEntity>(world.Entities.Count, StringComparer.OrdinalIgnoreCase);
@@ -467,12 +507,55 @@ public sealed class RuleSimulationService
         return lookup;
     }
 
+    private static void StoreAutoAimDiagnostics(
+        SimulationEntity shooter,
+        SimulationEntity target,
+        ArmorPlateTarget plate,
+        AutoAimSolution solution)
+    {
+        shooter.AutoAimLocked = true;
+        shooter.AutoAimTargetId = target.Id;
+        shooter.AutoAimPlateId = plate.Id;
+        shooter.AutoAimPlateDirection = solution.PlateDirection;
+        shooter.AutoAimAccuracy = solution.Accuracy;
+        shooter.AutoAimDistanceCoefficient = solution.DistanceCoefficient;
+        shooter.AutoAimMotionCoefficient = solution.MotionCoefficient;
+        shooter.AutoAimLeadTimeSec = solution.LeadTimeSec;
+        shooter.AutoAimLeadDistanceM = solution.LeadDistanceM;
+        shooter.AutoAimHasSmoothedAim = true;
+        shooter.AutoAimLockKey = $"{target.Id}:{plate.Id}";
+        shooter.AutoAimSmoothedYawDeg = solution.YawDeg;
+        shooter.AutoAimSmoothedPitchDeg = solution.PitchDeg;
+    }
+
+    private static void ClearAutoAimState(SimulationEntity entity)
+    {
+        entity.AutoAimLocked = false;
+        entity.AutoAimTargetId = null;
+        entity.AutoAimPlateId = null;
+        entity.AutoAimPlateDirection = string.Empty;
+        entity.AutoAimAccuracy = 0.0;
+        entity.AutoAimDistanceCoefficient = 0.0;
+        entity.AutoAimMotionCoefficient = 0.0;
+        entity.AutoAimLeadTimeSec = 0.0;
+        entity.AutoAimLeadDistanceM = 0.0;
+        entity.AutoAimHasSmoothedAim = false;
+        entity.AutoAimLockKey = null;
+    }
+
     private static bool CanShoot(SimulationEntity entity)
     {
         if (entity.IsSimulationSuppressed
             || !entity.IsAlive
             || entity.HeatLockTimerSec > 0
+            || string.Equals(entity.State, "heat_locked", StringComparison.OrdinalIgnoreCase)
+            || entity.RespawnAmmoLockTimerSec > 0
             || string.Equals(entity.AmmoType, "none", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (string.Equals(entity.RoleKey, "engineer", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
@@ -488,6 +571,17 @@ public sealed class RuleSimulationService
         }
 
         return true;
+    }
+
+    private bool WouldNextShotExceedHeatLimit(SimulationEntity entity)
+    {
+        if (entity.MaxHeat <= 1e-6)
+        {
+            return false;
+        }
+
+        double gain = ResolveShotHeatGain(entity);
+        return entity.Heat + gain > entity.MaxHeat + 1e-6;
     }
 
     private static SimulationEntity? FindNearestEnemy(SimulationWorldState world, SimulationEntity shooter)
@@ -542,16 +636,19 @@ public sealed class RuleSimulationService
 
     private void ApplyShotHeat(SimulationEntity shooter)
     {
-        shooter.Heat += string.Equals(shooter.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase)
-            ? _rules.Heat.HeatGain42
-            : _rules.Heat.HeatGain17;
+        shooter.Heat += ResolveShotHeatGain(shooter);
 
         if (shooter.Heat > shooter.MaxHeat && shooter.MaxHeat > 0)
         {
-            shooter.HeatLockTimerSec = Math.Max(shooter.HeatLockTimerSec, _rules.Heat.OverheatLockDurationSec);
+            shooter.HeatLockTimerSec = Math.Max(shooter.HeatLockTimerSec, 0.10);
             shooter.State = "heat_locked";
         }
     }
+
+    private double ResolveShotHeatGain(SimulationEntity shooter)
+        => string.Equals(shooter.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase)
+            ? _rules.Heat.HeatGain42
+            : _rules.Heat.HeatGain17;
 
     private double ComputeDamage(SimulationEntity shooter, SimulationEntity target)
     {
@@ -580,6 +677,11 @@ public sealed class RuleSimulationService
 
     private void ApplyDamage(SimulationWorldState world, SimulationEntity target, double damage)
     {
+        if (target.RespawnInvincibleTimerSec > 1e-6)
+        {
+            return;
+        }
+
         target.Health -= damage;
         if (target.Health > 0)
         {
@@ -589,13 +691,32 @@ public sealed class RuleSimulationService
         target.Health = 0;
         target.IsAlive = false;
         target.TraversalActive = false;
-        target.AutoAimLocked = false;
+        ClearAutoAimState(target);
+        target.Heat = 0.0;
+        target.FireCooldownSec = 0.0;
+        target.HeatLockTimerSec = 0.0;
+        target.RespawnAmmoLockTimerSec = 0.0;
+        target.RespawnInvincibleTimerSec = 0.0;
+        target.TerrainSequenceKey = string.Empty;
+        target.TerrainSequenceTimerSec = 0.0;
+        target.TerrainRoadLockoutTimerSec = 0.0;
+        target.TerrainHighlandDefenseTimerSec = 0.0;
+        target.TerrainFlySlopeDefenseTimerSec = 0.0;
+        target.TerrainRoadCoolingTimerSec = 0.0;
+        target.TerrainSlopeDefenseTimerSec = 0.0;
+        target.TerrainSlopeCoolingTimerSec = 0.0;
+        target.HeroDeploymentHoldTimerSec = 0.0;
+        target.Power = target.MaxPower;
+        if (target.MaxChassisEnergy > 1e-6)
+        {
+            target.ChassisEnergy = target.MaxChassisEnergy;
+        }
 
         if (string.Equals(target.EntityType, "robot", StringComparison.OrdinalIgnoreCase)
             || string.Equals(target.EntityType, "sentry", StringComparison.OrdinalIgnoreCase))
         {
             target.State = "respawning";
-            target.RespawnTimerSec = _rules.Respawn.RobotDelaySec;
+            target.RespawnTimerSec = ComputeRespawnDelaySec(world, target);
             return;
         }
 
@@ -613,17 +734,35 @@ public sealed class RuleSimulationService
     {
         entity.IsAlive = true;
         entity.State = "weak";
-        entity.Health = Math.Max(1.0, entity.MaxHealth * 0.10);
+        entity.Health = Math.Max(1.0, entity.MaxHealth);
         entity.WeakTimerSec = _rules.Respawn.InvalidDurationSec;
+        entity.RespawnAmmoLockTimerSec = _rules.Respawn.InvalidDurationSec;
+        entity.RespawnInvincibleTimerSec = Math.Max(0.0, _rules.Respawn.InvincibleDurationSec);
         entity.Heat = 0;
         entity.HeatLockTimerSec = 0;
+        entity.FireCooldownSec = 0;
         entity.TraversalActive = false;
-        entity.AutoAimLocked = false;
+        entity.TerrainSequenceKey = string.Empty;
+        entity.TerrainSequenceTimerSec = 0.0;
+        entity.TerrainRoadLockoutTimerSec = 0.0;
+        entity.TerrainHighlandDefenseTimerSec = 0.0;
+        entity.TerrainFlySlopeDefenseTimerSec = 0.0;
+        entity.TerrainRoadCoolingTimerSec = 0.0;
+        entity.TerrainSlopeDefenseTimerSec = 0.0;
+        entity.TerrainSlopeCoolingTimerSec = 0.0;
+        entity.HeroDeploymentHoldTimerSec = 0.0;
+        ClearAutoAimState(entity);
 
         ResolvedRoleProfile profile = _rules.ResolveRuntimeProfile(entity);
         ApplyResolvedRoleProfile(entity, profile, clampHealthToCurrent: false);
         entity.Power = profile.MaxPower;
-        entity.AmmoType = profile.AmmoType;
+        entity.AmmoType = string.Equals(entity.RoleKey, "engineer", StringComparison.OrdinalIgnoreCase)
+            ? "none"
+            : profile.AmmoType;
+        if (entity.MaxChassisEnergy > 1e-6)
+        {
+            entity.ChassisEnergy = entity.MaxChassisEnergy;
+        }
 
         if (string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase)
             && string.Equals(entity.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase))
@@ -635,6 +774,15 @@ public sealed class RuleSimulationService
         {
             entity.Ammo17Mm = Math.Max(entity.Ammo17Mm, profile.InitialAllowedAmmo17Mm / 2);
         }
+    }
+
+    private double ComputeRespawnDelaySec(SimulationWorldState world, SimulationEntity entity)
+    {
+        double durationSec = Math.Max(1.0, _rules.GameDurationSec);
+        double remainingSec = Math.Max(0.0, durationSec - world.GameTimeSec);
+        double elapsedFromRoundedRemainingSec = Math.Max(0.0, durationSec - Math.Round(remainingSec));
+        double ruleDelaySec = 10.0 + elapsedFromRoundedRemainingSec / 10.0 + 20.0 * Math.Max(0, entity.InstantReviveCount);
+        return Math.Max(_rules.Respawn.RobotDelaySec, ruleDelaySec);
     }
 
     private static bool HasAmmoForShot(SimulationEntity entity)
@@ -667,6 +815,13 @@ public sealed class RuleSimulationService
         entity.MaxPower = profile.MaxPower;
         entity.MaxHeat = profile.MaxHeat;
         entity.AmmoType = profile.AmmoType;
+        if (string.Equals(entity.RoleKey, "engineer", StringComparison.OrdinalIgnoreCase))
+        {
+            entity.AmmoType = "none";
+            entity.Ammo17Mm = 0;
+            entity.Ammo42Mm = 0;
+        }
+
         entity.RuleDrivePowerLimitW = profile.MaxPower;
         entity.MaxChassisEnergy = profile.MaxChassisEnergy;
         entity.ChassisEcoPowerLimitW = profile.EcoPowerLimitW;
@@ -717,6 +872,16 @@ public sealed class RuleSimulationService
             AutoAimLocked = source.AutoAimLocked,
             AutoAimTargetId = source.AutoAimTargetId,
             AutoAimPlateId = source.AutoAimPlateId,
+            AutoAimPlateDirection = source.AutoAimPlateDirection,
+            AutoAimAccuracy = source.AutoAimAccuracy,
+            AutoAimDistanceCoefficient = source.AutoAimDistanceCoefficient,
+            AutoAimMotionCoefficient = source.AutoAimMotionCoefficient,
+            AutoAimLeadTimeSec = source.AutoAimLeadTimeSec,
+            AutoAimLeadDistanceM = source.AutoAimLeadDistanceM,
+            AutoAimHasSmoothedAim = source.AutoAimHasSmoothedAim,
+            AutoAimLockKey = source.AutoAimLockKey,
+            AutoAimSmoothedYawDeg = source.AutoAimSmoothedYawDeg,
+            AutoAimSmoothedPitchDeg = source.AutoAimSmoothedPitchDeg,
             VelocityXWorldPerSec = source.VelocityXWorldPerSec,
             VelocityYWorldPerSec = source.VelocityYWorldPerSec,
             AngularVelocityDegPerSec = source.AngularVelocityDegPerSec,
@@ -835,6 +1000,9 @@ public sealed class RuleSimulationService
             Heat = source.Heat,
             RespawnTimerSec = source.RespawnTimerSec,
             WeakTimerSec = source.WeakTimerSec,
+            RespawnAmmoLockTimerSec = source.RespawnAmmoLockTimerSec,
+            RespawnInvincibleTimerSec = source.RespawnInvincibleTimerSec,
+            InstantReviveCount = source.InstantReviveCount,
             HeatLockTimerSec = source.HeatLockTimerSec,
             FireCooldownSec = source.FireCooldownSec,
             Ammo17Mm = source.Ammo17Mm,
@@ -846,6 +1014,15 @@ public sealed class RuleSimulationService
             MiningProgressSec = source.MiningProgressSec,
             ExchangeProgressSec = source.ExchangeProgressSec,
             DeadZoneTimerSec = source.DeadZoneTimerSec,
+            TerrainSequenceKey = source.TerrainSequenceKey,
+            TerrainSequenceTimerSec = source.TerrainSequenceTimerSec,
+            TerrainRoadLockoutTimerSec = source.TerrainRoadLockoutTimerSec,
+            TerrainHighlandDefenseTimerSec = source.TerrainHighlandDefenseTimerSec,
+            TerrainFlySlopeDefenseTimerSec = source.TerrainFlySlopeDefenseTimerSec,
+            TerrainRoadCoolingTimerSec = source.TerrainRoadCoolingTimerSec,
+            TerrainSlopeDefenseTimerSec = source.TerrainSlopeDefenseTimerSec,
+            TerrainSlopeCoolingTimerSec = source.TerrainSlopeCoolingTimerSec,
+            HeroDeploymentHoldTimerSec = source.HeroDeploymentHoldTimerSec,
             DynamicDamageTakenMult = source.DynamicDamageTakenMult,
             DynamicDamageDealtMult = source.DynamicDamageDealtMult,
             DynamicCoolingMult = source.DynamicCoolingMult,

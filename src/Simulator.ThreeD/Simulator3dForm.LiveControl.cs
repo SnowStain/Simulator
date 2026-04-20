@@ -68,7 +68,7 @@ internal sealed partial class Simulator3dForm
             return;
         }
 
-        Rectangle panel = new(24, ClientSize.Height - 122, 420, 98);
+        Rectangle panel = new(24, ClientSize.Height - 140, 440, 116);
         using GraphicsPath path = CreateRoundedRectangle(panel, 6);
         using var fill = new SolidBrush(Color.FromArgb(224, 13, 19, 26));
         using var border = new Pen(Color.FromArgb(170, 122, 146, 168), 1f);
@@ -100,13 +100,19 @@ internal sealed partial class Simulator3dForm
         string motionText = $"Ammo {ammoText}   Speed {speedMps:0.0}m/s   P {entity.ChassisPowerDrawW:0}W   Pitch {entity.GimbalPitchDeg:0}deg";
         graphics.DrawString(motionText, _tinyHudFont, textBrush, panel.X + 16, panel.Y + 54);
 
+        string autoAimText = entity.AutoAimLocked
+            ? $"AutoAim {entity.AutoAimPlateDirection}  Acc {entity.AutoAimAccuracy:P0}  lead {entity.AutoAimLeadTimeSec:0.00}s/{entity.AutoAimLeadDistanceM:0.00}m  D{entity.AutoAimDistanceCoefficient:0.00} M{entity.AutoAimMotionCoefficient:0.00}"
+            : "AutoAim free  no visible armor lock";
+        graphics.DrawString(autoAimText, _tinyHudFont, textBrush, panel.X + 16, panel.Y + 72);
+
         bool inFriendlySupply = _host.MapPreset.Facilities.Any(region =>
-            string.Equals(region.Type, "supply", StringComparison.OrdinalIgnoreCase)
+            (string.Equals(region.Type, "supply", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(region.Type, "buff_supply", StringComparison.OrdinalIgnoreCase))
             && string.Equals(region.Team, entity.Team, StringComparison.OrdinalIgnoreCase)
             && region.Contains(entity.X, entity.Y));
         string supplyPrompt = inFriendlySupply ? "   B Resupply" : string.Empty;
         string statusText = $"Lock {(entity.AutoAimLocked ? "Armor" : "Free")}   RMB AutoAim   LMB Fire   Shift Spin   V View{supplyPrompt}";
-        graphics.DrawString(statusText, _tinyHudFont, textBrush, panel.X + 16, panel.Y + 73);
+        graphics.DrawString(statusText, _tinyHudFont, textBrush, panel.X + 16, panel.Y + 91);
     }
 
     private void DrawOrientationWidget(Graphics graphics)

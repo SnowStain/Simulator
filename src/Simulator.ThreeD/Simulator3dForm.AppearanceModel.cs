@@ -98,8 +98,7 @@ internal sealed partial class Simulator3dForm
                 Math.Max(wheel.RadiusM, wheel.CenterHeightM));
             Vector3 wheelForward = new(forward2.X, 0f, forward2.Y);
             Vector3 wheelAxle = lateralAxis;
-            if (string.Equals(profile.WheelStyle, "omni", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(profile.WheelStyle, "mecanum", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(profile.WheelStyle, "omni", StringComparison.OrdinalIgnoreCase))
             {
                 Vector2 inwardLocal = new(-wheel.LocalX, -wheel.LocalY);
                 if (inwardLocal.LengthSquared() > 1e-6f)

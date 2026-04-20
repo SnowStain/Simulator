@@ -10,6 +10,16 @@ public readonly record struct ArmorPlateTarget(
     double YawDeg,
     double SideLengthM = 0.13);
 
+public readonly record struct AutoAimSolution(
+    double YawDeg,
+    double PitchDeg,
+    double Accuracy,
+    double DistanceCoefficient,
+    double MotionCoefficient,
+    double LeadTimeSec,
+    double LeadDistanceM,
+    string PlateDirection);
+
 public static class SimulationCombatMath
 {
     private const double GravityMps2 = 9.81;
@@ -201,9 +211,10 @@ public static class SimulationCombatMath
 
             double dzM = targetHeightM - muzzleHeightM;
             double speedMps = ProjectileSpeedMps(shooter.AmmoType);
+            double effectiveSpeedMps = speedMps * (1.0 - Math.Clamp(horizontalM * 0.012, 0.0, 0.16));
             double ballisticLift = horizontalM <= 1e-4
                 ? 0.0
-                : GravityMps2 * horizontalM * horizontalM / Math.Max(2.0 * speedMps * speedMps, 1e-6);
+                : GravityMps2 * horizontalM * horizontalM / Math.Max(2.0 * effectiveSpeedMps * effectiveSpeedMps, 1e-6);
             pitch = Math.Clamp(
                 RadiansToDegrees(Math.Atan2(dzM + ballisticLift, Math.Max(horizontalM, 1e-4))),
                 -40.0,
@@ -220,10 +231,29 @@ public static class SimulationCombatMath
         ArmorPlateTarget plate,
         double maxDistanceM)
     {
+        AutoAimSolution solution = ComputeAutoAimSolution(world, shooter, target, plate, maxDistanceM);
+        return (solution.YawDeg, solution.PitchDeg, solution.Accuracy);
+    }
+
+    public static AutoAimSolution ComputeAutoAimSolution(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        SimulationEntity target,
+        ArmorPlateTarget plate,
+        double maxDistanceM)
+    {
         double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
         double dxWorld = plate.X - shooter.X;
         double dyWorld = plate.Y - shooter.Y;
         double distanceM = Math.Sqrt(dxWorld * dxWorld + dyWorld * dyWorld) * metersPerWorldUnit;
+        (double predictedX, double predictedY, double predictedHeightM) = PredictArmorPlatePoint(
+            world,
+            shooter,
+            target,
+            plate,
+            distanceM,
+            out double leadTimeSec,
+            out double leadDistanceM);
         double distanceCoefficient = ComputeAutoAimDistanceCoefficient(distanceM, maxDistanceM);
         double motionCoefficient = ComputeAutoAimMotionCoefficient(world, target);
         if (target.AutoAimInstabilityTimerSec > 1e-6)
@@ -234,18 +264,25 @@ public static class SimulationCombatMath
         double accuracy = Math.Clamp(distanceCoefficient * motionCoefficient, 0.05, 1.0);
         if (accuracy >= 0.999)
         {
-            (double perfectYaw, double perfectPitch) = ComputeAimAnglesToPoint(world, shooter, plate.X, plate.Y, plate.HeightM);
-            return (perfectYaw, perfectPitch, 1.0);
+            (double perfectYaw, double perfectPitch) = ComputeAimAnglesToPoint(world, shooter, predictedX, predictedY, predictedHeightM);
+            return new AutoAimSolution(
+                perfectYaw,
+                perfectPitch,
+                1.0,
+                distanceCoefficient,
+                motionCoefficient,
+                leadTimeSec,
+                leadDistanceM,
+                DescribeArmorPlateDirection(target, plate));
         }
 
         double errorRatio = 1.0 - accuracy;
         int seed = StableHash(shooter.Id, target.Id, plate.Id);
-        double phase = world.GameTimeSec * (0.82 + (seed & 0x0F) * 0.035) + (seed & 0xFFFF) * 0.00021;
-        double sideNoise = SmoothSignedNoise(phase, seed);
-        double heightNoise = SmoothSignedNoise(phase * 1.17 + 1.31, seed ^ 0x5A17);
+        double sideNoise = StableSignedUnit(seed);
+        double heightNoise = StableSignedUnit(seed ^ 0x5A17);
         double lateralErrorM = errorRatio * Math.Clamp(distanceM * 0.075, 0.025, 0.42) * sideNoise;
         double heightErrorM = errorRatio * Math.Clamp(0.08 + distanceM * 0.04, 0.08, 0.36) * heightNoise;
-        double plateYawRad = Math.Atan2(dyWorld, dxWorld);
+        double plateYawRad = Math.Atan2(predictedY - shooter.Y, predictedX - shooter.X);
         double sideXWorld = -Math.Sin(plateYawRad) * lateralErrorM / metersPerWorldUnit;
         double sideYWorld = Math.Cos(plateYawRad) * lateralErrorM / metersPerWorldUnit;
 
@@ -254,10 +291,18 @@ public static class SimulationCombatMath
         (double yawDeg, double pitchDeg) = ComputeAimAnglesToPoint(
             world,
             shooter,
-            plate.X + sideXWorld,
-            plate.Y + sideYWorld,
-            plate.HeightM + heightErrorM);
-        return (yawDeg, pitchDeg, accuracy);
+            predictedX + sideXWorld,
+            predictedY + sideYWorld,
+            predictedHeightM + heightErrorM);
+        return new AutoAimSolution(
+            yawDeg,
+            pitchDeg,
+            accuracy,
+            distanceCoefficient,
+            motionCoefficient,
+            leadTimeSec,
+            leadDistanceM,
+            DescribeArmorPlateDirection(target, plate));
     }
 
     public static bool TryFindProjectileHit(
@@ -344,6 +389,48 @@ public static class SimulationCombatMath
             || string.Equals(entity.EntityType, "outpost", StringComparison.OrdinalIgnoreCase);
     }
 
+    public static string DescribeArmorPlateDirection(SimulationEntity target, ArmorPlateTarget plate)
+    {
+        if (plate.Id.StartsWith("armor_", StringComparison.OrdinalIgnoreCase))
+        {
+            double relativeYaw = NormalizeSignedDeg(plate.YawDeg - target.AngleDeg);
+            double abs = Math.Abs(relativeYaw);
+            if (abs <= 45.0)
+            {
+                return "front";
+            }
+
+            if (abs >= 135.0)
+            {
+                return "rear";
+            }
+
+            return relativeYaw > 0.0 ? "left" : "right";
+        }
+
+        if (plate.Id.Equals("outpost_top", StringComparison.OrdinalIgnoreCase))
+        {
+            return "mid tilted";
+        }
+
+        if (plate.Id.StartsWith("outpost_ring_", StringComparison.OrdinalIgnoreCase))
+        {
+            return "rotating ring";
+        }
+
+        if (plate.Id.Equals("base_top_slide", StringComparison.OrdinalIgnoreCase))
+        {
+            return "top sliding";
+        }
+
+        if (plate.Id.Equals("base_core", StringComparison.OrdinalIgnoreCase))
+        {
+            return "core";
+        }
+
+        return plate.Id;
+    }
+
     public static double NormalizeDeg(double degrees)
     {
         double value = degrees % 360.0;
@@ -376,6 +463,62 @@ public static class SimulationCombatMath
     private static double DegreesToRadians(double degrees) => degrees * Math.PI / 180.0;
 
     private static double RadiansToDegrees(double radians) => radians * 180.0 / Math.PI;
+
+    private static (double X, double Y, double HeightM) PredictArmorPlatePoint(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        SimulationEntity target,
+        ArmorPlateTarget plate,
+        double distanceM,
+        out double leadTimeSec,
+        out double leadDistanceM)
+    {
+        double projectileSpeedMps = Math.Max(1.0, ProjectileSpeedMps(shooter.AmmoType));
+        double dragTimeScale = 1.0 + Math.Clamp(distanceM * 0.012, 0.0, 0.18);
+        leadTimeSec = Math.Clamp(distanceM / projectileSpeedMps * dragTimeScale, 0.0, 0.75);
+        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
+
+        if (leadTimeSec <= 1e-4)
+        {
+            leadDistanceM = 0.0;
+            return (plate.X, plate.Y, plate.HeightM);
+        }
+
+        if (IsStructure(target))
+        {
+            ArmorPlateTarget predictedPlate = GetArmorPlateTargets(target, metersPerWorldUnit, world.GameTimeSec + leadTimeSec)
+                .FirstOrDefault(candidate => string.Equals(candidate.Id, plate.Id, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(predictedPlate.Id))
+            {
+                leadDistanceM = DistanceBetweenPlatePointsM(metersPerWorldUnit, plate, predictedPlate);
+                return (predictedPlate.X, predictedPlate.Y, predictedPlate.HeightM);
+            }
+        }
+
+        double offsetXWorld = plate.X - target.X;
+        double offsetYWorld = plate.Y - target.Y;
+        double angularLeadRad = DegreesToRadians(target.AngularVelocityDegPerSec * leadTimeSec);
+        double rotatedOffsetXWorld = offsetXWorld * Math.Cos(angularLeadRad) - offsetYWorld * Math.Sin(angularLeadRad);
+        double rotatedOffsetYWorld = offsetXWorld * Math.Sin(angularLeadRad) + offsetYWorld * Math.Cos(angularLeadRad);
+
+        double predictedX = target.X + target.VelocityXWorldPerSec * leadTimeSec + rotatedOffsetXWorld;
+        double predictedY = target.Y + target.VelocityYWorldPerSec * leadTimeSec + rotatedOffsetYWorld;
+        double predictedHeightM = Math.Max(0.0, plate.HeightM + target.VerticalVelocityMps * leadTimeSec);
+
+        double leadDxM = (predictedX - plate.X) * metersPerWorldUnit;
+        double leadDyM = (predictedY - plate.Y) * metersPerWorldUnit;
+        double leadDzM = predictedHeightM - plate.HeightM;
+        leadDistanceM = Math.Sqrt(leadDxM * leadDxM + leadDyM * leadDyM + leadDzM * leadDzM);
+        return (predictedX, predictedY, predictedHeightM);
+    }
+
+    private static double DistanceBetweenPlatePointsM(double metersPerWorldUnit, ArmorPlateTarget current, ArmorPlateTarget predicted)
+    {
+        double dxM = (predicted.X - current.X) * metersPerWorldUnit;
+        double dyM = (predicted.Y - current.Y) * metersPerWorldUnit;
+        double dzM = predicted.HeightM - current.HeightM;
+        return Math.Sqrt(dxM * dxM + dyM * dyM + dzM * dzM);
+    }
 
     private static IReadOnlyList<ArmorPlateTarget> GetOutpostArmorPlateTargets(
         SimulationEntity target,
@@ -537,6 +680,18 @@ public static class SimulationCombatMath
             }
 
             return hash;
+        }
+    }
+
+    private static double StableSignedUnit(int seed)
+    {
+        unchecked
+        {
+            uint x = (uint)seed;
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            return x / (double)uint.MaxValue * 2.0 - 1.0;
         }
     }
 

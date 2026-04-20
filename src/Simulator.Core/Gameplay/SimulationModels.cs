@@ -77,6 +77,26 @@ public sealed class SimulationEntity
 
     public string? AutoAimPlateId { get; set; }
 
+    public string AutoAimPlateDirection { get; set; } = string.Empty;
+
+    public double AutoAimAccuracy { get; set; }
+
+    public double AutoAimDistanceCoefficient { get; set; }
+
+    public double AutoAimMotionCoefficient { get; set; }
+
+    public double AutoAimLeadTimeSec { get; set; }
+
+    public double AutoAimLeadDistanceM { get; set; }
+
+    public bool AutoAimHasSmoothedAim { get; set; }
+
+    public string? AutoAimLockKey { get; set; }
+
+    public double AutoAimSmoothedYawDeg { get; set; }
+
+    public double AutoAimSmoothedPitchDeg { get; set; }
+
     public double VelocityXWorldPerSec { get; set; }
 
     public double VelocityYWorldPerSec { get; set; }
@@ -316,6 +336,12 @@ public sealed class SimulationEntity
 
     public double WeakTimerSec { get; set; }
 
+    public double RespawnAmmoLockTimerSec { get; set; }
+
+    public double RespawnInvincibleTimerSec { get; set; }
+
+    public int InstantReviveCount { get; set; }
+
     public double HeatLockTimerSec { get; set; }
 
     public double FireCooldownSec { get; set; }
@@ -337,6 +363,24 @@ public sealed class SimulationEntity
     public double ExchangeProgressSec { get; set; }
 
     public double DeadZoneTimerSec { get; set; }
+
+    public string TerrainSequenceKey { get; set; } = string.Empty;
+
+    public double TerrainSequenceTimerSec { get; set; }
+
+    public double TerrainRoadLockoutTimerSec { get; set; }
+
+    public double TerrainHighlandDefenseTimerSec { get; set; }
+
+    public double TerrainFlySlopeDefenseTimerSec { get; set; }
+
+    public double TerrainRoadCoolingTimerSec { get; set; }
+
+    public double TerrainSlopeDefenseTimerSec { get; set; }
+
+    public double TerrainSlopeCoolingTimerSec { get; set; }
+
+    public double HeroDeploymentHoldTimerSec { get; set; }
 
     public double DynamicDamageTakenMult { get; set; } = 1.0;
 
