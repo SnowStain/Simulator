@@ -9,3 +9,4 @@ E:\Artinx\260111new\Simulator\src\Simulator.Core\obj\Release\net9.0\Simulator.Co
 E:\Artinx\260111new\Simulator\src\Simulator.Core\obj\Release\net9.0\refint\Simulator.Core.dll
 E:\Artinx\260111new\Simulator\src\Simulator.Core\obj\Release\net9.0\Simulator.Core.pdb
 E:\Artinx\260111new\Simulator\src\Simulator.Core\obj\Release\net9.0\ref\Simulator.Core.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Core\obj\Release\net9.0\Simulator.Core.sourcelink.json

@@ -26,6 +26,8 @@ except Exception as exc:
 
 
 ROLE_ORDER = (
+    ('outpost', '前哨站'),
+    ('base', '基地'),
     ('hero', '英雄'),
     ('engineer', '工程'),
     ('infantry', '步兵'),
@@ -188,6 +190,94 @@ _BASE_PROFILE_TEMPLATES = {
         'front_climb_assist_style': 'belt_lift',
         'rear_climb_assist_style': 'balance_leg',
     },
+    'outpost': {
+        'body_shape': 'octagon',
+        'body_length_m': 0.65,
+        'body_width_m': 0.55,
+        'body_height_m': 1.878,
+        'body_clearance_m': 0.0,
+        'structure_base_lift_m': 0.40,
+        'wheel_radius_m': 0.03,
+        'gimbal_length_m': 0.0,
+        'gimbal_width_m': 0.0,
+        'gimbal_body_height_m': 0.0,
+        'gimbal_mount_gap_m': 0.0,
+        'gimbal_mount_length_m': 0.0,
+        'gimbal_mount_width_m': 0.0,
+        'gimbal_mount_height_m': 0.0,
+        'barrel_length_m': 0.0,
+        'barrel_radius_m': 0.0,
+        'gimbal_height_m': 0.0,
+        'gimbal_offset_x_m': 0.0,
+        'gimbal_offset_y_m': 0.0,
+        'armor_plate_width_m': 0.13,
+        'armor_plate_length_m': 0.13,
+        'armor_plate_height_m': 0.13,
+        'armor_plate_gap_m': 0.035,
+        'armor_light_length_m': 0.04,
+        'armor_light_width_m': 0.005,
+        'armor_light_height_m': 0.08,
+        'barrel_light_length_m': 0.0,
+        'barrel_light_width_m': 0.0,
+        'barrel_light_height_m': 0.0,
+        'body_render_width_scale': 1.0,
+        'wheel_style': 'structure',
+        'suspension_style': 'none',
+        'arm_style': 'none',
+        'front_climb_assist_style': 'none',
+        'rear_climb_assist_style': 'none',
+        'custom_wheel_positions_m': [],
+        'armor_orbit_yaws_deg': [],
+        'armor_self_yaws_deg': [],
+        'body_color_rgb': [156, 160, 166],
+        'turret_color_rgb': [196, 200, 206],
+        'armor_color_rgb': [206, 212, 218],
+        'wheel_color_rgb': [62, 68, 78],
+    },
+    'base': {
+        'body_shape': 'octagon',
+        'body_length_m': 1.881,
+        'body_width_m': 1.609,
+        'body_height_m': 1.181,
+        'body_clearance_m': 0.0,
+        'structure_base_lift_m': 0.0,
+        'wheel_radius_m': 0.03,
+        'gimbal_length_m': 0.0,
+        'gimbal_width_m': 0.0,
+        'gimbal_body_height_m': 0.0,
+        'gimbal_mount_gap_m': 0.0,
+        'gimbal_mount_length_m': 0.0,
+        'gimbal_mount_width_m': 0.0,
+        'gimbal_mount_height_m': 0.0,
+        'barrel_length_m': 0.0,
+        'barrel_radius_m': 0.0,
+        'gimbal_height_m': 0.0,
+        'gimbal_offset_x_m': 0.0,
+        'gimbal_offset_y_m': 0.0,
+        'armor_plate_width_m': 0.13,
+        'armor_plate_length_m': 0.13,
+        'armor_plate_height_m': 0.13,
+        'armor_plate_gap_m': 0.035,
+        'armor_light_length_m': 0.04,
+        'armor_light_width_m': 0.005,
+        'armor_light_height_m': 0.08,
+        'barrel_light_length_m': 0.0,
+        'barrel_light_width_m': 0.0,
+        'barrel_light_height_m': 0.0,
+        'body_render_width_scale': 1.0,
+        'wheel_style': 'structure',
+        'suspension_style': 'none',
+        'arm_style': 'none',
+        'front_climb_assist_style': 'none',
+        'rear_climb_assist_style': 'none',
+        'custom_wheel_positions_m': [],
+        'armor_orbit_yaws_deg': [],
+        'armor_self_yaws_deg': [],
+        'body_color_rgb': [142, 148, 154],
+        'turret_color_rgb': [196, 200, 206],
+        'armor_color_rgb': [206, 212, 218],
+        'wheel_color_rgb': [62, 68, 78],
+    },
 }
 
 
@@ -267,6 +357,7 @@ def _normalize_profile_constraints(role_key, profile, forced_subtype=None):
     normalized = deepcopy(_BASE_PROFILE_TEMPLATES.get(role_key, _BASE_PROFILE_TEMPLATES['infantry']))
     if isinstance(profile, dict):
         normalized.update(deepcopy(profile))
+    normalized['role_key'] = role_key
     normalized.update({key: deepcopy(value) for key, value in _default_color_profile().items() if key not in normalized})
     _apply_climb_assist_defaults(role_key, normalized)
 
@@ -298,6 +389,31 @@ def _normalize_profile_constraints(role_key, profile, forced_subtype=None):
     normalized['turret_color_rgb'] = _normalize_rgb_triplet(normalized.get('turret_color_rgb'), _default_color_profile()['turret_color_rgb'])
     normalized['armor_color_rgb'] = _normalize_rgb_triplet(normalized.get('armor_color_rgb'), _default_color_profile()['armor_color_rgb'])
     normalized['wheel_color_rgb'] = _normalize_rgb_triplet(normalized.get('wheel_color_rgb'), _default_color_profile()['wheel_color_rgb'])
+
+    if role_key in {'outpost', 'base'}:
+        normalized['body_shape'] = 'octagon'
+        normalized['wheel_style'] = 'structure'
+        normalized['suspension_style'] = 'none'
+        normalized['front_climb_assist_style'] = 'none'
+        normalized['rear_climb_assist_style'] = 'none'
+        normalized['custom_wheel_positions_m'] = []
+        normalized['armor_orbit_yaws_deg'] = []
+        normalized['armor_self_yaws_deg'] = []
+        normalized['structure_base_lift_m'] = max(
+            0.0,
+            min(1.2, float(normalized.get('structure_base_lift_m', 0.40 if role_key == 'outpost' else 0.0))),
+        )
+        normalized['gimbal_length_m'] = 0.0
+        normalized['gimbal_width_m'] = 0.0
+        normalized['gimbal_body_height_m'] = 0.0
+        normalized['gimbal_mount_length_m'] = 0.0
+        normalized['gimbal_mount_width_m'] = 0.0
+        normalized['gimbal_mount_height_m'] = 0.0
+        normalized['gimbal_mount_gap_m'] = 0.0
+        normalized['barrel_length_m'] = 0.0
+        normalized['barrel_radius_m'] = 0.0
+        normalized['gimbal_height_m'] = 0.0
+        return normalized
 
     if float(normalized.get('gimbal_length_m', 0.0)) <= 1e-6 or float(normalized.get('gimbal_body_height_m', 0.0)) <= 1e-6:
         normalized['gimbal_length_m'] = 0.0
@@ -433,6 +549,8 @@ def _clamp_two_link_target_point(anchor_point, target_point, upper_length, lower
 
 
 def _available_preview_actions(role_key, profile):
+    if role_key in {'outpost', 'base'}:
+        return (('idle', '静态'),)
     if role_key == 'infantry':
         subtype = normalize_infantry_chassis_subtype(profile.get('chassis_subtype'))
         if subtype == 'balance_legged':
@@ -929,7 +1047,107 @@ class ModernGLAppearancePreview:
     def _profile_geometry_key(self, profile):
         return json.dumps(profile, sort_keys=True, ensure_ascii=True)
 
+    def _append_structure_outpost_geometry(self, vertices, profile):
+        body_color = profile['body_color_rgb']
+        turret_color = profile['turret_color_rgb']
+        armor_color = profile['armor_color_rgb']
+        dark_color = profile.get('wheel_color_rgb', [62, 68, 78])
+        lift = float(profile.get('structure_base_lift_m', 0.40))
+        tower_height = max(0.8, float(profile.get('body_height_m', 1.878)))
+        base_width = max(0.30, float(profile.get('body_length_m', 0.65)))
+        top_diameter = max(0.24, float(profile.get('body_width_m', 0.55)))
+        tower_radius = max(0.20, top_diameter * 0.72)
+
+        def polygon(radius, height, sides=8, yaw=0.0):
+            return [
+                (math.cos(yaw + index * math.tau / sides) * radius, lift + height, math.sin(yaw + index * math.tau / sides) * radius)
+                for index in range(sides)
+            ]
+
+        def tapered(bottom_radius, top_radius, bottom_h, top_h, color, yaw=0.0):
+            _append_preview_prism(vertices, polygon(bottom_radius, bottom_h, yaw=yaw), polygon(top_radius, top_h, yaw=yaw), color)
+
+        _append_preview_box(vertices, (0.0, lift + 0.042, 0.0), (base_width * 0.50, 0.042, base_width * 0.50), body_color, yaw_rad=math.pi * 0.25)
+        tapered(base_width * 0.46, 0.255, 0.085, tower_height * 0.304, body_color)
+        tapered(0.245, 0.245, tower_height * 0.304, tower_height * 0.770, dark_color, yaw=math.pi / 8.0)
+        tapered(0.285, top_diameter * 0.50, tower_height * 0.770, tower_height * 0.840, turret_color)
+        tapered(top_diameter * 0.44, 0.155, tower_height * 0.840, tower_height, [min(255, int(c * 1.06)) for c in turret_color], yaw=math.pi / 8.0)
+        tapered(tower_radius + 0.035, tower_radius + 0.035, tower_height - 0.115, tower_height - 0.085, [min(255, int(c * 1.10)) for c in body_color])
+
+        armor_side = max(0.04, float(profile.get('armor_plate_width_m', 0.13)))
+        armor_half = armor_side * 0.5
+        armor_thickness = max(0.012, float(profile.get('armor_plate_gap_m', 0.025)))
+        radius = tower_radius + 0.055
+        for index, yaw in enumerate([0.0, math.tau / 3.0, math.tau * 2.0 / 3.0]):
+            height = lift + tower_height - 0.10 + [0.05, 0.0, -0.05][index]
+            center = (math.cos(yaw) * radius, height, math.sin(yaw) * radius)
+            _append_preview_box(vertices, center, (armor_thickness * 0.5, armor_half, armor_half), armor_color, yaw_rad=yaw)
+        _append_preview_box(vertices, (radius, lift + tower_height - 0.055, 0.0), (armor_half, armor_half, armor_thickness * 0.5), armor_color, yaw_rad=math.radians(45.0))
+
+    def _append_structure_base_geometry(self, vertices, profile):
+        body_color = profile['body_color_rgb']
+        armor_color = profile['armor_color_rgb']
+        dark_color = profile.get('wheel_color_rgb', [62, 68, 78])
+        length = max(0.8, float(profile.get('body_length_m', 1.881)))
+        width = max(0.7, float(profile.get('body_width_m', 1.609))) * max(0.4, float(profile.get('body_render_width_scale', 1.0)))
+        height = max(0.5, float(profile.get('body_height_m', 1.181)))
+        slab_h = min(0.20, height * 0.22)
+        shoulder_h = min(height * 0.73, 0.86)
+
+        def oct_points(length_m, width_m, y):
+            half_l = length_m * 0.5
+            half_w = width_m * 0.5
+            chamfer = min(half_l, half_w) * 0.26
+            return [
+                (-half_l + chamfer, y, -half_w),
+                (half_l - chamfer, y, -half_w),
+                (half_l, y, -half_w + chamfer),
+                (half_l, y, half_w - chamfer),
+                (half_l - chamfer, y, half_w),
+                (-half_l + chamfer, y, half_w),
+                (-half_l, y, half_w - chamfer),
+                (-half_l, y, -half_w + chamfer),
+            ]
+
+        _append_preview_prism(vertices, oct_points(length, width, 0.0), oct_points(length * 0.96, width * 0.94, slab_h), dark_color)
+        _append_preview_prism(vertices, oct_points(length * 0.90, width * 0.88, slab_h), oct_points(length * 0.62, width * 0.56, shoulder_h), body_color)
+        _append_preview_prism(vertices, oct_points(length * 0.62, width * 0.56, shoulder_h), oct_points(length * 0.40, width * 0.34, height), [min(255, int(c * 1.08)) for c in body_color])
+
+        armor_side = max(0.04, float(profile.get('armor_plate_width_m', 0.13)))
+        armor_half = armor_side * 0.5
+        armor_thickness = max(0.012, float(profile.get('armor_plate_gap_m', 0.025)))
+        _append_preview_box(vertices, (length * 0.06, height + 0.10, 0.0), (armor_half, armor_thickness * 0.5, armor_half), armor_color)
+        _append_preview_box(vertices, (length * 0.15, height * 0.70, 0.0), (armor_thickness * 0.5, armor_half, armor_half), armor_color)
+        for side in (-1.0, 1.0):
+            _append_preview_box(vertices, (-length * 0.07, height * 0.44, side * width * 0.43), (length * 0.18, height * 0.24, 0.035), armor_color)
+
+    def _build_structure_geometry(self, profile):
+        vertices = []
+        role_key = str(profile.get('role_key', '')).lower()
+        if role_key == 'outpost':
+            self._append_structure_outpost_geometry(vertices, profile)
+        else:
+            self._append_structure_base_geometry(vertices, profile)
+
+        vertex_array = np.array(vertices, dtype='f4')
+        self.bounds_radius = max(
+            1.2,
+            float(profile.get('body_length_m', 1.0)) * 1.25,
+            float(profile.get('body_width_m', 1.0)) * 1.25,
+            float(profile.get('body_height_m', 1.0)) + float(profile.get('structure_base_lift_m', 0.0)) + 0.4,
+        )
+        if self.vao is not None:
+            self.vao.release()
+        if self.vbo is not None:
+            self.vbo.release()
+        self.vbo = self.ctx.buffer(vertex_array.tobytes())
+        self.vao = self.ctx.vertex_array(self.program, [(self.vbo, '3f 3f 3f', 'in_position', 'in_color', 'in_normal')])
+
     def _build_geometry(self, profile):
+        if str(profile.get('role_key', '')).lower() in {'outpost', 'base'}:
+            self._build_structure_geometry(profile)
+            return
+
         vertices = []
         render_width_scale = float(profile.get('body_render_width_scale', 0.82))
         has_turret = float(profile.get('gimbal_length_m', 0.0)) > 1e-6 and float(profile.get('gimbal_body_height_m', 0.0)) > 1e-6
@@ -1178,7 +1396,7 @@ class AppearanceEditorApp:
         self.config['_settings_path'] = self.settings_path
         self.preset_path = self._resolve_preset_path()
         self.profiles = self._load_profiles()
-        self.current_role = ROLE_ORDER[0][0]
+        self.current_role = 'hero'
         self.current_infantry_subtype = normalize_infantry_chassis_subtype(self.profiles.get('infantry', {}).get('default_chassis_subtype'))
         self.selected_part = None
         self.selected_field_index = 0
@@ -1334,7 +1552,7 @@ class AppearanceEditorApp:
             {'part': 'body', 'label': '底盘长度', 'kind': 'number', 'key': 'body_length_m', 'min': 0.30, 'max': 2.00, 'step': 0.01},
             {'part': 'body', 'label': '底盘宽度', 'kind': 'number', 'key': 'body_width_m', 'min': 0.20, 'max': 2.00, 'step': 0.01},
             {'part': 'body', 'label': '视觉宽度系数', 'kind': 'number', 'key': 'body_render_width_scale', 'min': 0.45, 'max': 2.00, 'step': 0.01},
-            {'part': 'body', 'label': '底盘高度', 'kind': 'number', 'key': 'body_height_m', 'min': 0.10, 'max': 0.60, 'step': 0.01},
+            {'part': 'body', 'label': '底盘高度', 'kind': 'number', 'key': 'body_height_m', 'min': 0.10, 'max': 2.40, 'step': 0.01},
             {'part': 'body', 'label': '离地间隙', 'kind': 'number', 'key': 'body_clearance_m', 'min': 0.02, 'max': 2.00, 'step': 0.01},
             {'part': 'turret', 'label': '云台长度', 'kind': 'number', 'key': 'gimbal_length_m', 'min': 0.10, 'max': 2.00, 'step': 0.01},
             {'part': 'turret', 'label': '云台宽度', 'kind': 'number', 'key': 'gimbal_width_m', 'min': 0.05, 'max': 2.00, 'step': 0.01},
@@ -1375,6 +1593,7 @@ class AppearanceEditorApp:
             {'part': 'rear_climb', 'label': '上铰点高度', 'kind': 'number', 'key': 'rear_climb_assist_mount_height_m', 'min': 0.02, 'max': 2.00, 'step': 0.005},
             {'part': 'rear_climb', 'label': '铰链内收', 'kind': 'number', 'key': 'rear_climb_assist_inner_offset_m', 'min': 0.00, 'max': 2.00, 'step': 0.005},
         ]
+        fields.append({'part': 'body', 'label': '结构整体离地', 'kind': 'number', 'key': 'structure_base_lift_m', 'min': 0.00, 'max': 1.20, 'step': 0.01})
         for color_key, part, label in (
             ('body_color_rgb', 'body', '底盘'),
             ('turret_color_rgb', 'turret', '云台'),
@@ -1416,6 +1635,8 @@ class AppearanceEditorApp:
         if self.selected_part == 'rear_climb' and not self._profile_has_rear_climb(profile):
             return []
         fields = [spec for spec in self.field_specs if spec.get('part') == self.selected_part]
+        if self.current_role not in {'outpost', 'base'}:
+            fields = [spec for spec in fields if spec.get('key') != 'structure_base_lift_m']
         if self.selected_part == 'wheel':
             if self.selected_component_scope == 'single' and profile.get('custom_wheel_positions_m'):
                 fields.append({'part': 'wheel', 'label': f'轮 {self.selected_component_index + 1} X', 'kind': 'wheel_component', 'component_index': self.selected_component_index, 'axis': 0, 'min': -0.80, 'max': 2.00, 'step': 0.01})

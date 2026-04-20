@@ -187,102 +187,41 @@
       "rear_climb_assist_knee_direction": "front"
     },
     "infantry": {
-      "chassis_subtype": "omni_wheel",
-      "body_shape": "octagon",
-      "body_length_m": 0.48,
-      "body_width_m": 0.48,
-      "body_height_m": 0.18,
-      "body_clearance_m": 0.1,
-      "wheel_radius_m": 0.085,
+      "chassis_subtype": "balance_legged",
+      "body_shape": "box",
+      "body_length_m": 0.54,
+      "body_width_m": 0.35,
+      "body_height_m": 0.16,
+      "body_clearance_m": 0.14,
+      "wheel_radius_m": 0.07,
       "gimbal_length_m": 0.3,
       "gimbal_width_m": 0.15,
       "gimbal_body_height_m": 0.11,
       "gimbal_mount_gap_m": 0.1,
-      "gimbal_mount_length_m": 0.09,
-      "gimbal_mount_width_m": 0.09,
+      "gimbal_mount_length_m": 0.08,
+      "gimbal_mount_width_m": 0.07,
       "gimbal_mount_height_m": 0.04,
       "barrel_length_m": 0.12,
       "barrel_radius_m": 0.015,
-      "gimbal_height_m": 0.475,
-      "gimbal_offset_x_m": 0.0,
+      "gimbal_height_m": 0.495,
+      "gimbal_offset_x_m": -0.01,
       "gimbal_offset_y_m": 0.0,
       "armor_plate_width_m": 0.16,
       "armor_plate_length_m": 0.16,
       "armor_plate_height_m": 0.16,
-      "armor_plate_gap_m": 0.023,
-      "armor_light_length_m": 0.012,
+      "armor_plate_gap_m": 0.017,
+      "armor_light_length_m": 0.02,
       "armor_light_width_m": 0.005,
-      "armor_light_height_m": 0.095,
+      "armor_light_height_m": 0.09,
       "barrel_light_length_m": 0.095,
       "barrel_light_width_m": 0.005,
       "barrel_light_height_m": 0.03,
-      "body_render_width_scale": 1.0,
-      "wheel_style": "omni",
-      "suspension_style": "none",
+      "body_render_width_scale": 0.76,
+      "wheel_style": "legged",
+      "suspension_style": "four_bar",
       "arm_style": "none",
       "front_climb_assist_style": "none",
-      "rear_climb_assist_style": "none",
-      "wheel_count": 4,
-      "custom_wheel_positions_m": [
-        [
-          -0.005,
-          -0.28
-        ],
-        [
-          0.01,
-          0.285
-        ],
-        [
-          -0.265,
-          0.0
-        ],
-        [
-          0.0,
-          -0.285
-        ]
-      ],
-      "armor_orbit_yaws_deg": [
-        45.0,
-        135.0,
-        225.0,
-        315.0
-      ],
-      "armor_self_yaws_deg": [
-        45.0,
-        135.0,
-        225.0,
-        315.0
-      ],
-      "armor_light_orbit_yaws_deg": [
-        45.0,
-        135.0,
-        225.0,
-        315.0
-      ],
-      "armor_light_self_yaws_deg": [
-        45.0,
-        135.0,
-        225.0,
-        315.0
-      ],
-      "wheel_orbit_yaws_deg": [
-        0.0,
-        90.0,
-        180.0,
-        180.0
-      ],
-      "wheel_self_yaws_deg": [
-        93.0,
-        93.0,
-        93.0,
-        93.0
-      ],
-      "chassis_supports_jump": false,
-      "chassis_speed_scale": 1.08,
-      "chassis_drive_power_limit_w": 210.0,
-      "chassis_drive_idle_draw_w": 20.0,
-      "chassis_drive_rpm_coeff": 3.6e-05,
-      "chassis_drive_accel_coeff": 0.01,
+      "rear_climb_assist_style": "balance_leg",
       "body_color_rgb": [
         166,
         174,
@@ -309,21 +248,70 @@
       "front_climb_assist_plate_height_m": 0.18,
       "front_climb_assist_forward_offset_m": 0.04,
       "front_climb_assist_inner_offset_m": 0.06,
-      "rear_climb_assist_upper_length_m": 0.09,
-      "rear_climb_assist_lower_length_m": 0.08,
-      "rear_climb_assist_upper_width_m": 0.016,
-      "rear_climb_assist_upper_height_m": 0.016,
-      "rear_climb_assist_lower_width_m": 0.016,
-      "rear_climb_assist_lower_height_m": 0.016,
-      "rear_climb_assist_mount_offset_x_m": 0.03,
-      "rear_climb_assist_mount_height_m": 0.22,
-      "rear_climb_assist_inner_offset_m": 0.03,
-      "rear_climb_assist_upper_pair_gap_m": 0.06,
+      "rear_climb_assist_upper_length_m": 0.305,
+      "rear_climb_assist_lower_length_m": 0.375,
+      "rear_climb_assist_upper_width_m": 0.024,
+      "rear_climb_assist_upper_height_m": 0.032,
+      "rear_climb_assist_lower_width_m": 0.022,
+      "rear_climb_assist_lower_height_m": 0.028,
+      "rear_climb_assist_mount_offset_x_m": 0.31,
+      "rear_climb_assist_mount_height_m": 0.245,
+      "rear_climb_assist_inner_offset_m": 0.065,
+      "custom_wheel_positions_m": [
+        [
+          0.0,
+          -0.258
+        ],
+        [
+          0.0,
+          0.258
+        ]
+      ],
+      "wheel_count": 2,
+      "armor_orbit_yaws_deg": [
+        180.0,
+        0.0,
+        90.0,
+        -90.0
+      ],
+      "armor_self_yaws_deg": [
+        0.0,
+        180.0,
+        90.0,
+        270.0
+      ],
+      "armor_light_orbit_yaws_deg": [
+        0.0,
+        180.0,
+        90.0,
+        270.0
+      ],
+      "armor_light_self_yaws_deg": [
+        0.0,
+        180.0,
+        90.0,
+        270.0
+      ],
+      "wheel_orbit_yaws_deg": [
+        0.0,
+        0.0
+      ],
+      "wheel_self_yaws_deg": [
+        0.0,
+        0.0
+      ],
+      "chassis_supports_jump": true,
+      "chassis_speed_scale": 1.0,
+      "chassis_drive_power_limit_w": 150.0,
+      "chassis_drive_idle_draw_w": 16.0,
+      "chassis_drive_rpm_coeff": 5e-05,
+      "chassis_drive_accel_coeff": 0.013,
+      "rear_climb_assist_upper_pair_gap_m": 0.078,
       "rear_climb_assist_hinge_radius_m": 0.016,
       "rear_climb_assist_knee_min_deg": 42.0,
       "rear_climb_assist_knee_max_deg": 132.0,
       "rear_climb_assist_knee_direction": "rear",
-      "default_chassis_subtype": "omni_wheel",
+      "default_chassis_subtype": "balance_legged",
       "subtype_profiles": {
         "balance_legged": {
           "chassis_subtype": "balance_legged",
@@ -683,6 +671,126 @@
         ]
       ],
       "rear_climb_assist_knee_direction": "front"
+    },
+    "outpost": {
+      "body_shape": "octagon",
+      "body_length_m": 0.65,
+      "body_width_m": 0.55,
+      "body_height_m": 1.878,
+      "body_clearance_m": 0.0,
+      "structure_base_lift_m": 0.4,
+      "wheel_radius_m": 0.03,
+      "gimbal_length_m": 0.0,
+      "gimbal_width_m": 0.0,
+      "gimbal_body_height_m": 0.0,
+      "gimbal_mount_gap_m": 0.0,
+      "gimbal_mount_length_m": 0.0,
+      "gimbal_mount_width_m": 0.0,
+      "gimbal_mount_height_m": 0.0,
+      "barrel_length_m": 0.0,
+      "barrel_radius_m": 0.0,
+      "gimbal_height_m": 0.0,
+      "gimbal_offset_x_m": 0.0,
+      "gimbal_offset_y_m": 0.0,
+      "armor_plate_width_m": 0.13,
+      "armor_plate_length_m": 0.13,
+      "armor_plate_height_m": 0.13,
+      "armor_plate_gap_m": 0.035,
+      "armor_light_length_m": 0.04,
+      "armor_light_width_m": 0.005,
+      "armor_light_height_m": 0.08,
+      "barrel_light_length_m": 0.0,
+      "barrel_light_width_m": 0.0,
+      "barrel_light_height_m": 0.0,
+      "body_render_width_scale": 1.0,
+      "wheel_style": "structure",
+      "suspension_style": "none",
+      "arm_style": "none",
+      "front_climb_assist_style": "none",
+      "rear_climb_assist_style": "none",
+      "custom_wheel_positions_m": [],
+      "armor_orbit_yaws_deg": [],
+      "armor_self_yaws_deg": [],
+      "body_color_rgb": [
+        156,
+        160,
+        166
+      ],
+      "turret_color_rgb": [
+        196,
+        200,
+        206
+      ],
+      "armor_color_rgb": [
+        206,
+        212,
+        218
+      ],
+      "wheel_color_rgb": [
+        62,
+        68,
+        78
+      ]
+    },
+    "base": {
+      "body_shape": "octagon",
+      "body_length_m": 1.881,
+      "body_width_m": 1.609,
+      "body_height_m": 1.181,
+      "body_clearance_m": 0.0,
+      "structure_base_lift_m": 0.0,
+      "wheel_radius_m": 0.03,
+      "gimbal_length_m": 0.0,
+      "gimbal_width_m": 0.0,
+      "gimbal_body_height_m": 0.0,
+      "gimbal_mount_gap_m": 0.0,
+      "gimbal_mount_length_m": 0.0,
+      "gimbal_mount_width_m": 0.0,
+      "gimbal_mount_height_m": 0.0,
+      "barrel_length_m": 0.0,
+      "barrel_radius_m": 0.0,
+      "gimbal_height_m": 0.0,
+      "gimbal_offset_x_m": 0.0,
+      "gimbal_offset_y_m": 0.0,
+      "armor_plate_width_m": 0.13,
+      "armor_plate_length_m": 0.13,
+      "armor_plate_height_m": 0.13,
+      "armor_plate_gap_m": 0.035,
+      "armor_light_length_m": 0.04,
+      "armor_light_width_m": 0.005,
+      "armor_light_height_m": 0.08,
+      "barrel_light_length_m": 0.0,
+      "barrel_light_width_m": 0.0,
+      "barrel_light_height_m": 0.0,
+      "body_render_width_scale": 1.0,
+      "wheel_style": "structure",
+      "suspension_style": "none",
+      "arm_style": "none",
+      "front_climb_assist_style": "none",
+      "rear_climb_assist_style": "none",
+      "custom_wheel_positions_m": [],
+      "armor_orbit_yaws_deg": [],
+      "armor_self_yaws_deg": [],
+      "body_color_rgb": [
+        142,
+        148,
+        154
+      ],
+      "turret_color_rgb": [
+        196,
+        200,
+        206
+      ],
+      "armor_color_rgb": [
+        206,
+        212,
+        218
+      ],
+      "wheel_color_rgb": [
+        62,
+        68,
+        78
+      ]
     }
   }
 }

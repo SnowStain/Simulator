@@ -6,6 +6,33 @@
 
 ## 快速启动
 
+### C# 3D 预览运行（新增）
+
+如果你要直接运行 C# 版本 3D 程序，不依赖 Python 入口：
+
+```powershell
+dotnet run --project src/Simulator.ThreeD/Simulator.ThreeD.csproj -- --preset basicMap --backend moderngl
+```
+
+可选参数：
+
+- `--preset <地图名>`：指定地图预设（例如 `basicMap`）
+- `--backend opengl|moderngl|native_cpp`：设置 3D 后端模式标签
+- `--dt <秒>`：设置每帧仿真步长（默认 `0.2`）
+- `--team red|blue`：预设大厅默认队伍
+- `--entity <entityId>`：预设大厅默认主控实体（例如 `red_robot_1`）
+- `--ricochet on|off`：预设弹丸反弹开关
+- `--start-match`：跳过菜单与大厅，直接进入对局
+
+窗口内操作：
+
+- 主菜单：选择后端与地图，点击 `Enter Lobby`
+- 大厅：选择队伍与主控实体，点击 `Start Match`
+- 对局：`RMB` 旋转相机、`MMB` 平移、滚轮缩放
+- 对局：`TAB` 切换跟随实体，`F` 开关跟随
+- 对局：`SPACE` 暂停/继续，`N` 单步，`R` 重置
+- 对局：`PgUp/PgDn` 切图，`1/2/3` 切后端标签，`L` 返回大厅
+
 ### Windows
 
 1. 创建虚拟环境

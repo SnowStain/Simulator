@@ -32,9 +32,31 @@
     "player_motion_terrain_render_scale": 0.4,
     "player_terrain_scene_max_cells": 18000,
     "terrain_editor_scene_backend": "editor_opengl",
-    "sim3d_map_preset": "basicMap"
+    "sim3d_map_preset": "blankCanvas",
+    "sim3d_renderer_backend": "native_cpp",
+    "terrain_scene_backend": "native_cpp",
+    "sim3d_selected_team": "blue",
+    "sim3d_selected_entity_id": "blue_robot_7",
+    "player_projectile_ricochet_enabled": true,
+    "match_mode": "full",
+    "single_unit_test_team": "blue",
+    "single_unit_test_entity_key": "robot_1",
+    "sim3d_infantry_mode": "balance",
+    "sim3d_hero_performance_mode": "ranged_priority",
+    "sim3d_infantry_durability_mode": "power_priority",
+    "sim3d_infantry_weapon_mode": "cooling_priority",
+    "sim3d_sentry_control_mode": "full_auto",
+    "sim3d_sentry_stance": "attack"
   },
   "ai": {
+    "decision_deployment": {
+      "roles": {
+        "hero": "aggressive",
+        "engineer": "support",
+        "infantry": "aggressive",
+        "sentry": "hold"
+      }
+    },
     "update_interval_sec": 0.16,
     "path_replan_interval_sec": 0.9,
     "path_stale_recheck_interval_sec": 0.9,
@@ -111,7 +133,7 @@
     "player_control_dispatch_interval_sec": 0.2
   },
   "map": {
-    "preset": "basicMap"
+    "preset": "blankCanvas"
   },
   "physics": {
     "max_speed": 3.5,

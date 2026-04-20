@@ -1,3 +1,5 @@
 {
-    "cmake.sourceDirectory": "E:/Artinx/260111new/Simulator/cpp"
+    "cmake.sourceDirectory": "E:/Artinx/260111new/Simulator/cpp",
+    "python-envs.defaultEnvManager": "ms-python.python:venv",
+    "cmake.ignoreCMakeListsMissing": true
 }

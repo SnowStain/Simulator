@@ -87,4 +87,47 @@ public sealed class ConfigurationService
         root[key] = created;
         return created;
     }
+
+    public JsonNode? GetValueByPath(JsonObject root, IReadOnlyList<string> pathSegments)
+    {
+        if (pathSegments.Count == 0)
+        {
+            return root;
+        }
+
+        JsonNode? current = root;
+        foreach (string segment in pathSegments)
+        {
+            if (current is not JsonObject currentObject)
+            {
+                return null;
+            }
+
+            current = currentObject[segment];
+            if (current is null)
+            {
+                return null;
+            }
+        }
+
+        return current;
+    }
+
+    public void SetValueByPath(JsonObject root, IReadOnlyList<string> pathSegments, JsonNode? value)
+    {
+        if (pathSegments.Count == 0)
+        {
+            throw new ArgumentException("Path cannot be empty.", nameof(pathSegments));
+        }
+
+        JsonObject cursor = root;
+        for (int index = 0; index < pathSegments.Count - 1; index++)
+        {
+            string segment = pathSegments[index];
+            cursor = EnsureObject(cursor, segment);
+        }
+
+        string leaf = pathSegments[^1];
+        cursor[leaf] = value;
+    }
 }

@@ -15,3 +15,4 @@ E:\Artinx\260111new\Simulator\src\Simulator.Editors\obj\Release\net9.0\Simulator
 E:\Artinx\260111new\Simulator\src\Simulator.Editors\obj\Release\net9.0\refint\Simulator.Editors.dll
 E:\Artinx\260111new\Simulator\src\Simulator.Editors\obj\Release\net9.0\Simulator.Editors.pdb
 E:\Artinx\260111new\Simulator\src\Simulator.Editors\obj\Release\net9.0\ref\Simulator.Editors.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Editors\obj\Release\net9.0\Simulator.Editors.sourcelink.json

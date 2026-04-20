@@ -13,3 +13,4 @@ E:\Artinx\260111new\Simulator\src\Simulator.Assets\obj\Release\net9.0\Simulator.
 E:\Artinx\260111new\Simulator\src\Simulator.Assets\obj\Release\net9.0\refint\Simulator.Assets.dll
 E:\Artinx\260111new\Simulator\src\Simulator.Assets\obj\Release\net9.0\Simulator.Assets.pdb
 E:\Artinx\260111new\Simulator\src\Simulator.Assets\obj\Release\net9.0\ref\Simulator.Assets.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Assets\obj\Release\net9.0\Simulator.Assets.sourcelink.json

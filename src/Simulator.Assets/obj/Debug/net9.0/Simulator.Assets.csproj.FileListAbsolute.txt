@@ -13,3 +13,7 @@ E:\Artinx\260111new\Simulator\src\Simulator.Assets\obj\Debug\net9.0\Simulator.As
 E:\Artinx\260111new\Simulator\src\Simulator.Assets\obj\Debug\net9.0\refint\Simulator.Assets.dll
 E:\Artinx\260111new\Simulator\src\Simulator.Assets\obj\Debug\net9.0\Simulator.Assets.pdb
 E:\Artinx\260111new\Simulator\src\Simulator.Assets\obj\Debug\net9.0\ref\Simulator.Assets.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Assets\obj\Debug\net9.0\Simulator.Assets.sourcelink.json
+E:\Artinx\260111new\Simulator\build_verify\sim3d_debug\Simulator.Assets.deps.json
+E:\Artinx\260111new\Simulator\build_verify\sim3d_debug\Simulator.Assets.dll
+E:\Artinx\260111new\Simulator\build_verify\sim3d_debug\Simulator.Assets.pdb
