@@ -18,6 +18,8 @@ internal sealed record PlayerControlState
 
     public bool AutoAimPressed { get; init; }
 
+    public bool AutoAimGuidanceOnly { get; init; }
+
     public bool JumpRequested { get; init; }
 
     public bool StepClimbModeActive { get; init; }
@@ -25,4 +27,10 @@ internal sealed record PlayerControlState
     public bool SmallGyroActive { get; init; }
 
     public bool BuyAmmoRequested { get; init; }
+
+    public bool HeroDeployToggleRequested { get; init; }
+
+    public bool SuperCapToggleRequested { get; init; }
+
+    public bool SentryStanceToggleRequested { get; init; }
 }

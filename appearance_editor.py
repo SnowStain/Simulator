@@ -194,7 +194,14 @@ _BASE_PROFILE_TEMPLATES = {
         'body_shape': 'octagon',
         'body_length_m': 0.65,
         'body_width_m': 0.55,
-        'body_height_m': 1.878,
+        'body_height_m': 1.578,
+        'structure_body_top_height_m': 1.216,
+        'structure_head_base_height_m': 1.318,
+        'structure_lower_shoulder_height_m': 0.571,
+        'structure_upper_shoulder_height_m': 1.446,
+        'structure_tower_radius_m': 0.20,
+        'structure_top_armor_center_height_m': 1.633,
+        'structure_top_armor_tilt_deg': 45.0,
         'body_clearance_m': 0.0,
         'structure_base_lift_m': 0.40,
         'wheel_radius_m': 0.03,
@@ -239,6 +246,15 @@ _BASE_PROFILE_TEMPLATES = {
         'body_length_m': 1.881,
         'body_width_m': 1.609,
         'body_height_m': 1.181,
+        'structure_roof_height_m': 1.03,
+        'structure_shoulder_height_m': 0.860,
+        'structure_detector_width_m': 0.980,
+        'structure_detector_height_m': 0.095,
+        'structure_detector_bridge_center_height_m': 1.093,
+        'structure_detector_sensor_center_height_m': 1.136,
+        'structure_top_armor_center_height_m': 1.150,
+        'structure_top_armor_tilt_deg': 27.5,
+        'structure_core_column_height_m': 0.783,
         'body_clearance_m': 0.0,
         'structure_base_lift_m': 0.0,
         'wheel_radius_m': 0.03,
@@ -1053,10 +1069,14 @@ class ModernGLAppearancePreview:
         armor_color = profile['armor_color_rgb']
         dark_color = profile.get('wheel_color_rgb', [62, 68, 78])
         lift = float(profile.get('structure_base_lift_m', 0.40))
-        tower_height = max(0.8, float(profile.get('body_height_m', 1.878)))
+        tower_height = max(0.8, float(profile.get('body_height_m', 1.578)))
         base_width = max(0.30, float(profile.get('body_length_m', 0.65)))
         top_diameter = max(0.24, float(profile.get('body_width_m', 0.55)))
-        tower_radius = max(0.20, top_diameter * 0.72)
+        tower_radius = max(0.12, float(profile.get('structure_tower_radius_m', max(0.18, top_diameter * 0.36))))
+        lower_height = max(0.05, float(profile.get('structure_lower_shoulder_height_m', tower_height * (0.571 / 1.578))))
+        body_top_height = max(lower_height + 0.04, float(profile.get('structure_body_top_height_m', tower_height * (1.216 / 1.578))))
+        upper_height = max(body_top_height + 0.04, float(profile.get('structure_upper_shoulder_height_m', tower_height * (1.446 / 1.578))))
+        head_base_height = max(upper_height + 0.03, float(profile.get('structure_head_base_height_m', tower_height * (1.318 / 1.578))))
 
         def polygon(radius, height, sides=8, yaw=0.0):
             return [
@@ -1068,21 +1088,29 @@ class ModernGLAppearancePreview:
             _append_preview_prism(vertices, polygon(bottom_radius, bottom_h, yaw=yaw), polygon(top_radius, top_h, yaw=yaw), color)
 
         _append_preview_box(vertices, (0.0, lift + 0.042, 0.0), (base_width * 0.50, 0.042, base_width * 0.50), body_color, yaw_rad=math.pi * 0.25)
-        tapered(base_width * 0.46, 0.255, 0.085, tower_height * 0.304, body_color)
-        tapered(0.245, 0.245, tower_height * 0.304, tower_height * 0.770, dark_color, yaw=math.pi / 8.0)
-        tapered(0.285, top_diameter * 0.50, tower_height * 0.770, tower_height * 0.840, turret_color)
-        tapered(top_diameter * 0.44, 0.155, tower_height * 0.840, tower_height, [min(255, int(c * 1.06)) for c in turret_color], yaw=math.pi / 8.0)
-        tapered(tower_radius + 0.035, tower_radius + 0.035, tower_height - 0.115, tower_height - 0.085, [min(255, int(c * 1.10)) for c in body_color])
+        tapered(base_width * 0.46, 0.255, 0.085, lower_height, body_color)
+        tapered(0.205, 0.175, lower_height, body_top_height, dark_color, yaw=math.pi / 8.0)
+        tapered(0.220, 0.165, body_top_height, upper_height, turret_color)
+        tapered(0.165, 0.120, upper_height, head_base_height, [min(255, int(c * 1.06)) for c in turret_color], yaw=math.pi / 8.0)
+        tapered(tower_radius + 0.055, tower_radius + 0.055, head_base_height - 0.085, head_base_height - 0.055, [min(255, int(c * 1.10)) for c in body_color])
+
+        _append_preview_box(vertices, (0.0, lift + head_base_height + 0.05, 0.0), (0.08, 0.05, 0.07), dark_color)
+        _append_preview_box(vertices, (0.03, lift + tower_height - 0.05, 0.0), (0.105, 0.06, 0.09), [min(255, int(c * 1.04)) for c in turret_color])
+        for side_sign in (-1.0, 1.0):
+            _append_preview_box(vertices, (0.0, lift + head_base_height + 0.03, side_sign * 0.25), (0.05, 0.11, 0.008), dark_color, yaw_rad=0.0)
+        _append_preview_box(vertices, (0.02, lift + tower_height - 0.025, 0.0), (0.028, 0.02, 0.028), [96, 255, 130])
 
         armor_side = max(0.04, float(profile.get('armor_plate_width_m', 0.13)))
         armor_half = armor_side * 0.5
         armor_thickness = max(0.012, float(profile.get('armor_plate_gap_m', 0.025)))
         radius = tower_radius + 0.055
         for index, yaw in enumerate([0.0, math.tau / 3.0, math.tau * 2.0 / 3.0]):
-            height = lift + tower_height - 0.10 + [0.05, 0.0, -0.05][index]
+            height = lift + head_base_height - 0.07 + [0.05, 0.0, -0.05][index]
             center = (math.cos(yaw) * radius, height, math.sin(yaw) * radius)
             _append_preview_box(vertices, center, (armor_thickness * 0.5, armor_half, armor_half), armor_color, yaw_rad=yaw)
-        _append_preview_box(vertices, (radius, lift + tower_height - 0.055, 0.0), (armor_half, armor_half, armor_thickness * 0.5), armor_color, yaw_rad=math.radians(45.0))
+        outpost_top_height = float(profile.get('structure_top_armor_center_height_m', lift + tower_height + 0.055))
+        outpost_top_tilt_deg = float(profile.get('structure_top_armor_tilt_deg', 45.0))
+        _append_preview_box(vertices, (radius, outpost_top_height, 0.0), (armor_half, armor_half, armor_thickness * 0.5), armor_color, yaw_rad=math.radians(outpost_top_tilt_deg))
 
     def _append_structure_base_geometry(self, vertices, profile):
         body_color = profile['body_color_rgb']
@@ -1091,8 +1119,9 @@ class ModernGLAppearancePreview:
         length = max(0.8, float(profile.get('body_length_m', 1.881)))
         width = max(0.7, float(profile.get('body_width_m', 1.609))) * max(0.4, float(profile.get('body_render_width_scale', 1.0)))
         height = max(0.5, float(profile.get('body_height_m', 1.181)))
+        roof_height = max(0.3, float(profile.get('structure_roof_height_m', 1.03)))
         slab_h = min(0.20, height * 0.22)
-        shoulder_h = min(height * 0.73, 0.86)
+        shoulder_h = min(max(slab_h + 0.12, float(profile.get('structure_shoulder_height_m', height * (0.860 / 1.181)))), roof_height - 0.05)
 
         def oct_points(length_m, width_m, y):
             half_l = length_m * 0.5
@@ -1111,15 +1140,20 @@ class ModernGLAppearancePreview:
 
         _append_preview_prism(vertices, oct_points(length, width, 0.0), oct_points(length * 0.96, width * 0.94, slab_h), dark_color)
         _append_preview_prism(vertices, oct_points(length * 0.90, width * 0.88, slab_h), oct_points(length * 0.62, width * 0.56, shoulder_h), body_color)
-        _append_preview_prism(vertices, oct_points(length * 0.62, width * 0.56, shoulder_h), oct_points(length * 0.40, width * 0.34, height), [min(255, int(c * 1.08)) for c in body_color])
+        _append_preview_prism(vertices, oct_points(length * 0.62, width * 0.56, shoulder_h), oct_points(length * 0.40, width * 0.34, roof_height), [min(255, int(c * 1.08)) for c in body_color])
+        _append_preview_box(vertices, (0.0, height * 0.58, 0.0), (0.055, min(height * 0.33, float(profile.get('structure_core_column_height_m', 0.783)) * 0.5), 0.06), [188, 52, 46])
 
         armor_side = max(0.04, float(profile.get('armor_plate_width_m', 0.13)))
         armor_half = armor_side * 0.5
         armor_thickness = max(0.012, float(profile.get('armor_plate_gap_m', 0.025)))
-        _append_preview_box(vertices, (length * 0.06, height + 0.10, 0.0), (armor_half, armor_thickness * 0.5, armor_half), armor_color)
+        base_top_height = float(profile.get('structure_top_armor_center_height_m', height * (1.150 / 1.181)))
+        _append_preview_box(vertices, (length * 0.04, base_top_height, 0.0), (armor_half, armor_thickness * 0.5, armor_half), armor_color)
         _append_preview_box(vertices, (length * 0.15, height * 0.70, 0.0), (armor_thickness * 0.5, armor_half, armor_half), armor_color)
         for side in (-1.0, 1.0):
             _append_preview_box(vertices, (-length * 0.07, height * 0.44, side * width * 0.43), (length * 0.18, height * 0.24, 0.035), armor_color)
+            _append_preview_box(vertices, (-length * 0.06, height * 0.62, side * width * 0.31), (length * 0.13, height * 0.15, 0.010), [255, 40, 40])
+        _append_preview_box(vertices, (0.02, float(profile.get('structure_detector_bridge_center_height_m', height * (1.093 / 1.181))), 0.0), (0.04, 0.022, min(float(profile.get('structure_detector_width_m', 0.98)) * 0.5, width * 0.30)), dark_color)
+        _append_preview_box(vertices, (0.0, float(profile.get('structure_detector_sensor_center_height_m', height * (1.136 / 1.181))), 0.0), (0.03, max(0.030, float(profile.get('structure_detector_height_m', 0.095)) * 0.50), 0.03), [96, 255, 130])
 
     def _build_structure_geometry(self, profile):
         vertices = []
@@ -2081,17 +2115,19 @@ class AppearanceEditorApp:
     def _iter_structure_3d_preview_primitives(self, profile, role_key):
         if role_key == 'outpost':
             lift = float(profile.get('structure_base_lift_m', 0.40))
-            tower_height = max(0.8, float(profile.get('body_height_m', 1.878)))
+            tower_height = max(0.8, float(profile.get('body_height_m', 1.578)))
             top_diameter = max(0.24, float(profile.get('body_width_m', 0.55)))
-            tower_radius = max(0.20, top_diameter * 0.72)
+            tower_radius = max(0.18, top_diameter * 0.36)
             base_width = max(0.30, float(profile.get('body_length_m', 0.65)))
             armor_side = max(0.04, float(profile.get('armor_plate_width_m', 0.13)))
             armor_thickness = max(0.012, float(profile.get('armor_plate_gap_m', 0.025)))
             radius = tower_radius + 0.055
+            head_base_height = tower_height * (1.318 / 1.578)
             yield ('body', (0.0, lift + tower_height * 0.48, 0.0), (base_width * 0.45, tower_height * 0.52, base_width * 0.45))
+            yield ('body', (0.03, lift + tower_height - 0.05, 0.0), (0.105, 0.06, 0.09))
             yield ('armor', (radius, lift + tower_height - 0.055, 0.0), (armor_side * 0.5, armor_side * 0.5, armor_thickness * 0.5))
             for index, yaw in enumerate([0.0, math.tau / 3.0, math.tau * 2.0 / 3.0]):
-                height = lift + tower_height - 0.10 + [0.05, 0.0, -0.05][index]
+                height = lift + head_base_height - 0.07 + [0.05, 0.0, -0.05][index]
                 yield ('armor', (math.cos(yaw) * radius, height, math.sin(yaw) * radius), (armor_thickness * 0.5, armor_side * 0.5, armor_side * 0.5))
             yield ('armor_light', (radius * 0.68, lift + tower_height * 0.48, 0.0), (0.020, tower_height * 0.22, 0.080))
             return
@@ -2102,11 +2138,14 @@ class AppearanceEditorApp:
         armor_side = max(0.04, float(profile.get('armor_plate_width_m', 0.13)))
         armor_thickness = max(0.012, float(profile.get('armor_plate_gap_m', 0.025)))
         yield ('body', (0.0, height * 0.47, 0.0), (length * 0.50, height * 0.50, width * 0.50))
-        yield ('armor', (length * 0.06, height + 0.10, 0.0), (armor_side * 0.5, armor_thickness * 0.5, armor_side * 0.5))
+        yield ('body', (0.0, height * 0.58, 0.0), (0.055, min(height * 0.33, 0.3915), 0.06))
+        yield ('armor', (length * 0.04, height * (1.150 / 1.181), 0.0), (armor_side * 0.5, armor_thickness * 0.5, armor_side * 0.5))
         yield ('armor', (length * 0.15, height * 0.70, 0.0), (armor_thickness * 0.5, armor_side * 0.5, armor_side * 0.5))
         for side in (-1.0, 1.0):
             yield ('armor', (-length * 0.07, height * 0.44, side * width * 0.43), (length * 0.18, height * 0.24, 0.035))
             yield ('armor_light', (-length * 0.07, height * 0.50, side * width * 0.47), (length * 0.12, height * 0.14, 0.012))
+        yield ('body', (0.02, height * (1.093 / 1.181), 0.0), (0.04, 0.022, min(0.49, width * 0.30)))
+        yield ('body', (0.0, height * (1.136 / 1.181), 0.0), (0.03, max(0.030, height * (0.095 / 1.181) * 0.50), 0.03))
 
     def _project_3d_preview_point(self, point, mvp, size):
         clip = mvp @ np.array([float(point[0]), float(point[1]), float(point[2]), 1.0], dtype='f4')

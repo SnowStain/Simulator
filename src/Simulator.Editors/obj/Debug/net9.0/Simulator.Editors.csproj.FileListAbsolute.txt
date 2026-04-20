@@ -19,3 +19,9 @@ E:\Artinx\260111new\Simulator\src\Simulator.Editors\obj\Debug\net9.0\Simulator.E
 E:\Artinx\260111new\Simulator\build_verify\sim3d_debug\Simulator.Editors.deps.json
 E:\Artinx\260111new\Simulator\build_verify\sim3d_debug\Simulator.Editors.dll
 E:\Artinx\260111new\Simulator\build_verify\sim3d_debug\Simulator.Editors.pdb
+C:\Users\kylin\AppData\Local\Temp\simulator-threed-build-verify\Simulator.Editors.deps.json
+C:\Users\kylin\AppData\Local\Temp\simulator-threed-build-verify\Simulator.Editors.dll
+C:\Users\kylin\AppData\Local\Temp\simulator-threed-build-verify\Simulator.Editors.pdb
+E:\Artinx\260111new\Simulator\build_verify\sim_editors_debug\Simulator.Editors.deps.json
+E:\Artinx\260111new\Simulator\build_verify\sim_editors_debug\Simulator.Editors.dll
+E:\Artinx\260111new\Simulator\build_verify\sim_editors_debug\Simulator.Editors.pdb

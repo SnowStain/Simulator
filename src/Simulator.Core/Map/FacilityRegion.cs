@@ -116,7 +116,66 @@ public sealed class MapPresetDefinition
 
     public IReadOnlyList<FacilityRegion> Facilities { get; init; } = Array.Empty<FacilityRegion>();
 
+    public MapCoordinateSystemDefinition CoordinateSystem { get; init; } = new();
+
+    public TerrainSurfaceDefinition? TerrainSurface { get; init; }
+
     public RuntimeGridDefinition? RuntimeGrid { get; init; }
+}
+
+public sealed class MapCoordinateSystemDefinition
+{
+    public string CoordinateSpace { get; init; } = "world";
+
+    public string Unit { get; init; } = "px";
+
+    public double OriginX { get; init; }
+
+    public double OriginY { get; init; }
+
+    public double FieldLengthM { get; init; } = 28.0;
+
+    public double FieldWidthM { get; init; } = 15.0;
+}
+
+public sealed class TerrainSurfaceDefinition
+{
+    public string MapType { get; init; } = "terrain_surface_map";
+
+    public string DescriptorPath { get; init; } = string.Empty;
+
+    public string StorageKind { get; init; } = "runtime_triangle_grid";
+
+    public string Topology { get; init; } = "triangle_grid";
+
+    public string MergeMode { get; init; } = "merged_exposed_faces";
+
+    public string SplitMode { get; init; } = "diag_forward";
+
+    public string BaseColorImagePath { get; init; } = string.Empty;
+
+    public string RenderProfile { get; init; } = "top_png_orthographic_side_solid";
+
+    public string TopFaceMode { get; init; } = "orthographic_png";
+
+    public string SideFaceMode { get; init; } = "solid_color";
+
+    public string SideColorHex { get; init; } = "#4B4F55";
+
+    public double TopNormalThreshold { get; init; } = 0.9;
+
+    public double SideNormalThreshold { get; init; } = 0.1;
+
+    public double ResolutionM { get; init; } = 0.01;
+
+    public int HeightCells { get; init; }
+
+    public int WidthCells { get; init; }
+
+    public double HeightScaleBakedIn { get; init; } = 1.0;
+
+    public IReadOnlyDictionary<string, string> Channels { get; init; } =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class RuntimeGridDefinition
@@ -128,6 +187,24 @@ public sealed class RuntimeGridDefinition
     public int WidthCells { get; init; }
 
     public double HeightScaleBakedIn { get; init; } = 1.0;
+
+    public string DescriptorPath { get; init; } = string.Empty;
+
+    public string StorageKind { get; init; } = "runtime_triangle_grid";
+
+    public string SurfaceTopology { get; init; } = "triangle_grid";
+
+    public string SurfaceMergeMode { get; init; } = "merged_exposed_faces";
+
+    public string SurfaceSplitMode { get; init; } = "diag_forward";
+
+    public string RenderProfile { get; init; } = "top_png_orthographic_side_solid";
+
+    public string TopFaceMode { get; init; } = "orthographic_png";
+
+    public string SideFaceMode { get; init; } = "solid_color";
+
+    public string SideColorHex { get; init; } = "#4B4F55";
 
     public IReadOnlyDictionary<string, string> Channels { get; init; } =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

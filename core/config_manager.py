@@ -242,6 +242,7 @@ class ConfigManager:
             'name': preset_name or map_config.get('preset') or 'unnamed',
             'saved_at': datetime.now().isoformat(timespec='seconds'),
             'map': {
+                'map_type': map_config.get('map_type', 'terrain_surface_map'),
                 'image_path': map_config.get('image_path'),
                 'origin_x': map_config.get('origin_x', 0),
                 'origin_y': map_config.get('origin_y', 0),
@@ -252,11 +253,20 @@ class ConfigManager:
                 'source_height': map_config.get('source_height', map_config.get('height')),
                 'strict_scale': bool(map_config.get('strict_scale', False)),
                 'coordinate_space': map_config.get('coordinate_space', 'world'),
+                'coordinate_system': {
+                    'coordinate_space': map_config.get('coordinate_space', 'world'),
+                    'unit': map_config.get('unit', 'px'),
+                    'origin_x': map_config.get('origin_x', 0),
+                    'origin_y': map_config.get('origin_y', 0),
+                    'field_length_m': map_config.get('field_length_m'),
+                    'field_width_m': map_config.get('field_width_m'),
+                },
                 'field_length_m': map_config.get('field_length_m'),
                 'field_width_m': map_config.get('field_width_m'),
                 'facilities': deepcopy(map_config.get('facilities', [])),
                 'terrain_grid': deepcopy(map_config.get('terrain_grid', {})),
                 'function_grid': deepcopy(map_config.get('function_grid', {})),
+                'terrain_surface': deepcopy(map_config.get('terrain_surface', {})),
                 'runtime_grid': deepcopy(map_config.get('runtime_grid', {})),
             },
         }
@@ -274,6 +284,7 @@ class ConfigManager:
         if map_manager is not None:
             runtime_grid = map_manager.persist_runtime_grid_bundle(name, preset_path=preset_path)
             payload.setdefault('map', {})['runtime_grid'] = runtime_grid
+            payload.setdefault('map', {})['terrain_surface'] = map_manager.export_terrain_surface_config(name)
         with open(preset_path, 'w', encoding='utf-8') as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
         return preset_path

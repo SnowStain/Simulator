@@ -1,3 +1,5 @@
+using System.Numerics;
+
 namespace Simulator.Core.Gameplay;
 
 public sealed record SimulationCombatEvent(
@@ -9,6 +11,13 @@ public sealed record SimulationCombatEvent(
     double HitProbability,
     bool Hit,
     double Damage,
+    string Message);
+
+public sealed record SimulationLifecycleEvent(
+    double TimeSec,
+    string EntityId,
+    string Team,
+    string EventType,
     string Message);
 
 public sealed class SimulationRunReport
@@ -27,6 +36,8 @@ public sealed class SimulationRunReport
 
     public IList<FacilityInteractionEvent> InteractionEvents { get; } = new List<FacilityInteractionEvent>();
 
+    public IList<SimulationLifecycleEvent> LifecycleEvents { get; } = new List<SimulationLifecycleEvent>();
+
     public IList<SimulationEntity> FinalEntities { get; } = new List<SimulationEntity>();
 }
 
@@ -36,18 +47,24 @@ public sealed class RuleSimulationService
     private readonly ArenaInteractionService _interactionService;
     private readonly bool _enableAutoMovement;
     private readonly Func<SimulationWorldState, SimulationEntity, SimulationEntity, ArmorPlateTarget, bool>? _canSeeAutoAimPlate;
+    private readonly Func<SimulationWorldState, SimulationEntity, SimulationProjectile, double, double, double, double, double, double, ProjectileObstacleHit?>? _resolveProjectileObstacle;
+    private readonly bool _projectileRicochetEnabled;
 
     public RuleSimulationService(
         RuleSet rules,
         ArenaInteractionService interactionService,
         int? seed = null,
         bool enableAutoMovement = true,
-        Func<SimulationWorldState, SimulationEntity, SimulationEntity, ArmorPlateTarget, bool>? canSeeAutoAimPlate = null)
+        Func<SimulationWorldState, SimulationEntity, SimulationEntity, ArmorPlateTarget, bool>? canSeeAutoAimPlate = null,
+        Func<SimulationWorldState, SimulationEntity, SimulationProjectile, double, double, double, double, double, double, ProjectileObstacleHit?>? resolveProjectileObstacle = null,
+        bool projectileRicochetEnabled = false)
     {
         _rules = rules;
         _interactionService = interactionService;
         _enableAutoMovement = enableAutoMovement;
         _canSeeAutoAimPlate = canSeeAutoAimPlate;
+        _resolveProjectileObstacle = resolveProjectileObstacle;
+        _projectileRicochetEnabled = projectileRicochetEnabled;
     }
 
     public SimulationRunReport Run(
@@ -70,7 +87,7 @@ public sealed class RuleSimulationService
         {
             world.GameTimeSec += dt;
 
-            TickRespawnAndRecovery(world, dt);
+            TickRespawnAndRecovery(world, facilities, dt, report);
             if (_enableAutoMovement)
             {
                 TickAutoMovement(world, dt);
@@ -148,7 +165,11 @@ public sealed class RuleSimulationService
         }
     }
 
-    private void TickRespawnAndRecovery(SimulationWorldState world, double dt)
+    private void TickRespawnAndRecovery(
+        SimulationWorldState world,
+        IReadOnlyList<Simulator.Core.Map.FacilityRegion> facilities,
+        double dt,
+        SimulationRunReport report)
     {
         foreach (SimulationEntity entity in world.Entities)
         {
@@ -166,10 +187,17 @@ public sealed class RuleSimulationService
 
                 if (entity.RespawnTimerSec > 0)
                 {
-                    entity.RespawnTimerSec = Math.Max(0.0, entity.RespawnTimerSec - dt);
+                    double respawnRate = ResolveRespawnProgressRate(world, facilities, entity);
+                    entity.RespawnTimerSec = Math.Max(0.0, entity.RespawnTimerSec - dt * respawnRate);
                     if (entity.RespawnTimerSec <= 0)
                     {
                         RespawnEntity(entity);
+                        report.LifecycleEvents.Add(new SimulationLifecycleEvent(
+                            world.GameTimeSec,
+                            entity.Id,
+                            entity.Team,
+                            "respawn",
+                            $"{entity.Id} respawned"));
                     }
                 }
 
@@ -184,10 +212,28 @@ public sealed class RuleSimulationService
             ResolvedRoleProfile profile = _rules.ResolveRuntimeProfile(entity);
             ApplyResolvedRoleProfile(entity, profile, clampHealthToCurrent: true);
             entity.FireCooldownSec = Math.Max(0.0, entity.FireCooldownSec - dt);
-            entity.WeakTimerSec = Math.Max(0.0, entity.WeakTimerSec - dt);
-            entity.RespawnAmmoLockTimerSec = Math.Max(0.0, entity.RespawnAmmoLockTimerSec - dt);
             entity.RespawnInvincibleTimerSec = Math.Max(0.0, entity.RespawnInvincibleTimerSec - dt);
             entity.HeatLockTimerSec = Math.Max(0.0, entity.HeatLockTimerSec - dt);
+            if (ShouldRequireRespawnRecoveryZone(entity))
+            {
+                bool inFriendlySupply = IsInFriendlyRespawnRecoveryZone(facilities, entity);
+                if (inFriendlySupply)
+                {
+                    entity.WeakTimerSec = Math.Max(0.0, entity.WeakTimerSec - dt);
+                    entity.RespawnAmmoLockTimerSec = Math.Max(0.0, entity.RespawnAmmoLockTimerSec - dt);
+                }
+                else
+                {
+                    entity.WeakTimerSec = Math.Max(entity.WeakTimerSec, 10.0);
+                    entity.RespawnAmmoLockTimerSec = Math.Max(entity.RespawnAmmoLockTimerSec, 10.0);
+                }
+            }
+            else
+            {
+                entity.WeakTimerSec = Math.Max(0.0, entity.WeakTimerSec - dt);
+                entity.RespawnAmmoLockTimerSec = Math.Max(0.0, entity.RespawnAmmoLockTimerSec - dt);
+            }
+
             if (string.Equals(entity.State, "heat_locked", StringComparison.OrdinalIgnoreCase)
                 && entity.Heat > 0.01)
             {
@@ -213,6 +259,16 @@ public sealed class RuleSimulationService
             {
                 entity.State = "idle";
             }
+
+            if (!entity.IsPlayerControlled
+                && world.GameTimeSec <= 18.0
+                && (string.Equals(entity.RoleKey, "hero", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(entity.RoleKey, "infantry", StringComparison.OrdinalIgnoreCase))
+                && !string.Equals(entity.AmmoType, "none", StringComparison.OrdinalIgnoreCase)
+                && entity.Ammo17Mm <= 0)
+            {
+                entity.BuyAmmoRequested = true;
+            }
         }
     }
 
@@ -227,18 +283,29 @@ public sealed class RuleSimulationService
 
             SimulationEntity? preferredTarget = null;
             ArmorPlateTarget preferredPlate = default;
-            bool shouldAutoAim = !shooter.IsPlayerControlled || shooter.AutoAimRequested;
+            bool heroDeploymentAutoFire = shooter.HeroDeploymentActive
+                && string.Equals(shooter.RoleKey, "hero", StringComparison.OrdinalIgnoreCase);
+            bool shouldAutoAim = heroDeploymentAutoFire || !shooter.IsPlayerControlled || shooter.AutoAimRequested;
+            double autoAimMaxDistanceM = heroDeploymentAutoFire
+                ? 1000.0
+                : _rules.Combat.AutoAimMaxDistanceM;
             bool hasPreferredTarget = shouldAutoAim
                 && SimulationCombatMath.TryAcquireAutoAimTarget(
                     world,
                     shooter,
-                    _rules.Combat.AutoAimMaxDistanceM,
+                    autoAimMaxDistanceM,
                     out preferredTarget,
                     out preferredPlate,
                     (candidate, candidatePlate) => _canSeeAutoAimPlate?.Invoke(world, shooter, candidate, candidatePlate) ?? true);
 
             if (!shooter.IsPlayerControlled && !hasPreferredTarget)
             {
+                continue;
+            }
+
+            if (heroDeploymentAutoFire && !hasPreferredTarget)
+            {
+                ClearAutoAimState(shooter);
                 continue;
             }
 
@@ -264,7 +331,7 @@ public sealed class RuleSimulationService
             shooter.FireCooldownSec = 1.0 / Math.Max(ResolveFireRateHz(shooter), 0.5);
             report.TotalShots++;
             ApplyShotHeat(shooter);
-            world.Projectiles.Add(BuildProjectile(world, shooter, preferredTarget, hasPreferredTarget ? preferredPlate : null));
+            world.Projectiles.Add(BuildProjectile(world, shooter, preferredTarget, hasPreferredTarget ? preferredPlate : null, autoAimMaxDistanceM));
         }
 
         TickProjectiles(world, dt, report);
@@ -274,10 +341,12 @@ public sealed class RuleSimulationService
         SimulationWorldState world,
         SimulationEntity shooter,
         SimulationEntity? preferredTarget,
-        ArmorPlateTarget? preferredPlate)
+        ArmorPlateTarget? preferredPlate,
+        double autoAimMaxDistanceM)
     {
         double pitchDeg = shooter.GimbalPitchDeg;
         double yawDeg = shooter.TurretYawDeg;
+        double aimHitProbability = 1.0;
         if (preferredPlate.HasValue && preferredTarget is not null)
         {
             AutoAimSolution solution = SimulationCombatMath.ComputeAutoAimSolution(
@@ -285,18 +354,24 @@ public sealed class RuleSimulationService
                 shooter,
                 preferredTarget,
                 preferredPlate.Value,
-                _rules.Combat.AutoAimMaxDistanceM);
-            yawDeg = solution.YawDeg;
-            pitchDeg = solution.PitchDeg;
-            shooter.TurretYawDeg = yawDeg;
-            shooter.GimbalPitchDeg = pitchDeg;
+                autoAimMaxDistanceM);
+            if (!shooter.AutoAimGuidanceOnly)
+            {
+                yawDeg = solution.YawDeg;
+                pitchDeg = solution.PitchDeg;
+                shooter.TurretYawDeg = yawDeg;
+                shooter.GimbalPitchDeg = pitchDeg;
+            }
+
+            aimHitProbability = ResolveHeroDeploymentHitProbability(shooter, preferredTarget, preferredPlate.Value, solution.Accuracy);
             StoreAutoAimDiagnostics(shooter, preferredTarget, preferredPlate.Value, solution);
         }
 
         (double muzzleX, double muzzleY, double muzzleHeightM) = SimulationCombatMath.ComputeMuzzlePoint(world, shooter, pitchDeg);
-        double speedMps = SimulationCombatMath.ProjectileSpeedMps(shooter.AmmoType);
+        double speedMps = SimulationCombatMath.ProjectileSpeedMps(shooter);
         double yawRad = yawDeg * Math.PI / 180.0;
         double pitchRad = pitchDeg * Math.PI / 180.0;
+        ApplySmallProjectileDispersion(world, shooter, ref yawRad, ref pitchRad);
         double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
 
         return new SimulationProjectile
@@ -305,14 +380,226 @@ public sealed class RuleSimulationService
             Team = shooter.Team,
             AmmoType = shooter.AmmoType,
             PreferredTargetId = preferredTarget?.Id,
+            PreferredPlateId = preferredPlate?.Id,
+            AimHitProbability = aimHitProbability,
             X = muzzleX,
             Y = muzzleY,
             HeightM = muzzleHeightM,
-            VelocityXWorldPerSec = Math.Cos(pitchRad) * Math.Cos(yawRad) * speedMps / metersPerWorldUnit,
-            VelocityYWorldPerSec = Math.Cos(pitchRad) * Math.Sin(yawRad) * speedMps / metersPerWorldUnit,
-            VelocityZMps = Math.Sin(pitchRad) * speedMps,
+            VelocityXWorldPerSec = Math.Cos(ApplyAutoAimCorrectionPitch(shooter, preferredTarget, preferredPlate, ApplyHeroDeploymentCorrectionPitch(shooter, preferredPlate, pitchRad)))
+                * Math.Cos(ApplyAutoAimCorrectionYaw(shooter, preferredTarget, preferredPlate, ApplyHeroDeploymentCorrectionYaw(shooter, preferredPlate, yawRad)))
+                * speedMps / metersPerWorldUnit,
+            VelocityYWorldPerSec = Math.Cos(ApplyAutoAimCorrectionPitch(shooter, preferredTarget, preferredPlate, ApplyHeroDeploymentCorrectionPitch(shooter, preferredPlate, pitchRad)))
+                * Math.Sin(ApplyAutoAimCorrectionYaw(shooter, preferredTarget, preferredPlate, ApplyHeroDeploymentCorrectionYaw(shooter, preferredPlate, yawRad)))
+                * speedMps / metersPerWorldUnit,
+            VelocityZMps = Math.Sin(ApplyAutoAimCorrectionPitch(shooter, preferredTarget, preferredPlate, ApplyHeroDeploymentCorrectionPitch(shooter, preferredPlate, pitchRad))) * speedMps,
             RemainingLifeSec = string.Equals(shooter.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase) ? 2.6 : 2.2,
         };
+    }
+
+    private static double ApplyAutoAimCorrectionYaw(
+        SimulationEntity shooter,
+        SimulationEntity? preferredTarget,
+        ArmorPlateTarget? preferredPlate,
+        double yawRad)
+    {
+        if (!ShouldApplyAutoAimCorrection(shooter, preferredTarget, preferredPlate, out string lockKey)
+            || !string.Equals(shooter.AutoAimCorrectionLockKey, lockKey, StringComparison.OrdinalIgnoreCase))
+        {
+            return yawRad;
+        }
+
+        return yawRad + shooter.AutoAimYawCorrectionDeg * Math.PI / 180.0;
+    }
+
+    private static double ApplyAutoAimCorrectionPitch(
+        SimulationEntity shooter,
+        SimulationEntity? preferredTarget,
+        ArmorPlateTarget? preferredPlate,
+        double pitchRad)
+    {
+        if (!ShouldApplyAutoAimCorrection(shooter, preferredTarget, preferredPlate, out string lockKey)
+            || !string.Equals(shooter.AutoAimCorrectionLockKey, lockKey, StringComparison.OrdinalIgnoreCase))
+        {
+            return pitchRad;
+        }
+
+        return pitchRad + shooter.AutoAimPitchCorrectionDeg * Math.PI / 180.0;
+    }
+
+    private static bool ShouldApplyAutoAimCorrection(
+        SimulationEntity shooter,
+        SimulationEntity? preferredTarget,
+        ArmorPlateTarget? preferredPlate,
+        out string lockKey)
+    {
+        lockKey = string.Empty;
+        if (preferredTarget is null
+            || !preferredPlate.HasValue
+            || !string.Equals(shooter.AmmoType, "17mm", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        lockKey = $"{preferredTarget.Id}:{preferredPlate.Value.Id}";
+        return true;
+    }
+
+    private void ApplySmallProjectileDispersion(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        ref double yawRad,
+        ref double pitchRad)
+    {
+        if (!string.Equals(shooter.AmmoType, "17mm", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        double fireRateHz = Math.Max(0.5, ResolveFireRateHz(shooter));
+        double dispersionCoeff = fireRateHz <= 15.0
+            ? 1.0
+            : 1.0 + Math.Clamp((fireRateHz - 15.0) / 10.0, 0.0, 1.0) * 0.30;
+        double angularRadiusRad = (0.13 / 8.0) * dispersionCoeff;
+        int seed = HashCode.Combine(shooter.Id, world.GameTimeSec, shooter.FireCooldownSec, shooter.Ammo17Mm, shooter.Ammo42Mm);
+        Random random = new(seed);
+        double theta = random.NextDouble() * Math.PI * 2.0;
+        double radius = Math.Sqrt(random.NextDouble()) * angularRadiusRad;
+        yawRad += Math.Cos(theta) * radius;
+        pitchRad += Math.Sin(theta) * radius;
+    }
+
+    private static double ApplyHeroDeploymentCorrectionYaw(
+        SimulationEntity shooter,
+        ArmorPlateTarget? preferredPlate,
+        double yawRad)
+    {
+        if (!shooter.HeroDeploymentActive || !preferredPlate.HasValue)
+        {
+            return yawRad;
+        }
+
+        if (!string.Equals(shooter.HeroDeploymentCorrectionPlateId, preferredPlate.Value.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            return yawRad;
+        }
+
+        return yawRad + shooter.HeroDeploymentYawCorrectionDeg * Math.PI / 180.0;
+    }
+
+    private static double ApplyHeroDeploymentCorrectionPitch(
+        SimulationEntity shooter,
+        ArmorPlateTarget? preferredPlate,
+        double pitchRad)
+    {
+        if (!shooter.HeroDeploymentActive || !preferredPlate.HasValue)
+        {
+            return pitchRad;
+        }
+
+        if (!string.Equals(shooter.HeroDeploymentCorrectionPlateId, preferredPlate.Value.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            return pitchRad;
+        }
+
+        return pitchRad + shooter.HeroDeploymentPitchCorrectionDeg * Math.PI / 180.0;
+    }
+
+    private static double ResolveHeroDeploymentHitProbability(
+        SimulationEntity shooter,
+        SimulationEntity target,
+        ArmorPlateTarget plate,
+        double fallbackAccuracy)
+    {
+        if (!shooter.HeroDeploymentActive
+            || !string.Equals(shooter.RoleKey, "hero", StringComparison.OrdinalIgnoreCase))
+        {
+            return fallbackAccuracy;
+        }
+
+        if (plate.Id.Equals("outpost_top", StringComparison.OrdinalIgnoreCase))
+        {
+            return 0.80;
+        }
+
+        if (plate.Id.Equals("base_top_slide", StringComparison.OrdinalIgnoreCase))
+        {
+            return 0.50;
+        }
+
+        return fallbackAccuracy;
+    }
+
+    private static void UpdateHeroDeploymentCorrection(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        ArmorPlateTarget plate,
+        Vector3 hitPointM)
+    {
+        if (!shooter.HeroDeploymentActive
+            || !string.Equals(shooter.RoleKey, "hero", StringComparison.OrdinalIgnoreCase)
+            || (!plate.Id.Equals("outpost_top", StringComparison.OrdinalIgnoreCase)
+                && !plate.Id.Equals("base_top_slide", StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
+        Vector3 plateCenter = new(
+            (float)(plate.X * metersPerWorldUnit),
+            (float)plate.HeightM,
+            (float)(plate.Y * metersPerWorldUnit));
+        (double centerYawDeg, double centerPitchDeg) = SimulationCombatMath.ComputeAimAnglesToPoint(world, shooter, plate.X, plate.Y, plate.HeightM);
+        (double actualYawDeg, double actualPitchDeg) = SimulationCombatMath.ComputeAimAnglesToPoint(
+            world,
+            shooter,
+            hitPointM.X / metersPerWorldUnit,
+            hitPointM.Z / metersPerWorldUnit,
+            hitPointM.Y);
+        double yawErrorDeg = SimulationCombatMath.NormalizeSignedDeg(centerYawDeg - actualYawDeg);
+        double pitchErrorDeg = centerPitchDeg - actualPitchDeg;
+        shooter.HeroDeploymentCorrectionPlateId = plate.Id;
+        shooter.HeroDeploymentYawCorrectionDeg = Math.Clamp(
+            shooter.HeroDeploymentYawCorrectionDeg * 0.55 + yawErrorDeg * 0.70,
+            -5.0,
+            5.0);
+        shooter.HeroDeploymentPitchCorrectionDeg = Math.Clamp(
+            shooter.HeroDeploymentPitchCorrectionDeg * 0.55 + pitchErrorDeg * 0.70,
+            -7.5,
+            7.5);
+    }
+
+    private static void UpdateAutoAimCorrection(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        SimulationEntity target,
+        ArmorPlateTarget plate,
+        Vector3 hitPointM)
+    {
+        if (!string.Equals(shooter.AmmoType, "17mm", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        string lockKey = $"{target.Id}:{plate.Id}";
+        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
+        (double centerYawDeg, double centerPitchDeg) = SimulationCombatMath.ComputeAimAnglesToPoint(world, shooter, plate.X, plate.Y, plate.HeightM);
+        (double actualYawDeg, double actualPitchDeg) = SimulationCombatMath.ComputeAimAnglesToPoint(
+            world,
+            shooter,
+            hitPointM.X / metersPerWorldUnit,
+            hitPointM.Z / metersPerWorldUnit,
+            hitPointM.Y);
+        double yawErrorDeg = SimulationCombatMath.NormalizeSignedDeg(centerYawDeg - actualYawDeg);
+        double pitchErrorDeg = centerPitchDeg - actualPitchDeg;
+        shooter.AutoAimCorrectionLockKey = lockKey;
+        shooter.AutoAimYawCorrectionDeg = Math.Clamp(
+            shooter.AutoAimYawCorrectionDeg * 0.72 + yawErrorDeg * 0.42,
+            -2.5,
+            2.5);
+        shooter.AutoAimPitchCorrectionDeg = Math.Clamp(
+            shooter.AutoAimPitchCorrectionDeg * 0.72 + pitchErrorDeg * 0.42,
+            -3.5,
+            3.5);
     }
 
     private void TickProjectiles(SimulationWorldState world, double dt, SimulationRunReport report)
@@ -351,15 +638,44 @@ public sealed class RuleSimulationService
                 projectile.HeightM,
                 out SimulationEntity? hitTarget,
                 out ArmorPlateTarget hitPlate,
-                out _,
-                out _,
-                out _))
+                out double hitX,
+                out double hitY,
+                out double hitHeightM,
+                out double hitSegmentT))
             {
+                ProjectileObstacleHit? obstacleHit = TryResolveProjectileObstacle(
+                    world,
+                    shooter,
+                    projectile,
+                    startX,
+                    startY,
+                    startHeightM,
+                    projectile.X,
+                    projectile.Y,
+                    projectile.HeightM);
+                if (ShouldResolveObstacleBeforePlate(obstacleHit, hitSegmentT)
+                    && obstacleHit is ProjectileObstacleHit blockingHit)
+                {
+                    if (TryApplyRicochet(projectile, blockingHit, world.MetersPerWorldUnit))
+                    {
+                        continue;
+                    }
+
+                    world.Projectiles.RemoveAt(index);
+                    continue;
+                }
+
                 double dx = hitTarget!.X - shooter.X;
                 double dy = hitTarget.Y - shooter.Y;
-                double distanceM = Math.Sqrt(dx * dx + dy * dy) * Math.Max(world.MetersPerWorldUnit, 1e-6);
-                double damage = ComputeDamage(shooter, hitTarget);
-                ApplyDamage(world, hitTarget, damage);
+                double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
+                double distanceM = Math.Sqrt(dx * dx + dy * dy) * metersPerWorldUnit;
+                Vector3 hitPointM = new((float)(hitX * metersPerWorldUnit), (float)hitHeightM, (float)(hitY * metersPerWorldUnit));
+                bool criticalHit = SimulationCombatMath.IsCriticalStructureArmorHit(hitPlate, metersPerWorldUnit, hitPointM);
+                double damageScale = criticalHit ? projectile.DamageScale * 1.5 : projectile.DamageScale;
+                double damage = Math.Round(ComputeDamage(shooter, hitTarget) * damageScale, 2);
+                UpdateHeroDeploymentCorrection(world, shooter, hitPlate, hitPointM);
+                UpdateAutoAimCorrection(world, shooter, hitTarget, hitPlate, hitPointM);
+                ApplyDamage(world, shooter, hitTarget, damage, report);
                 report.HitShots++;
                 report.CombatEvents.Add(new SimulationCombatEvent(
                     world.GameTimeSec,
@@ -367,10 +683,36 @@ public sealed class RuleSimulationService
                     hitTarget.Id,
                     shooter.AmmoType,
                     distanceM,
-                    1.0,
+                    projectile.AimHitProbability,
                     true,
                     damage,
                     $"命中 {hitPlate.Id} 造成 {damage:0.##}"));
+                if (TryApplyArmorRicochet(projectile, hitPlate, hitX, hitY, hitHeightM, hitSegmentT, world.MetersPerWorldUnit))
+                {
+                    continue;
+                }
+
+                world.Projectiles.RemoveAt(index);
+                continue;
+            }
+
+            ProjectileObstacleHit? obstacleOnlyHit = TryResolveProjectileObstacle(
+                world,
+                shooter,
+                projectile,
+                startX,
+                startY,
+                startHeightM,
+                projectile.X,
+                projectile.Y,
+                projectile.HeightM);
+            if (obstacleOnlyHit is ProjectileObstacleHit obstacleImpact)
+            {
+                if (TryApplyRicochet(projectile, obstacleImpact, world.MetersPerWorldUnit))
+                {
+                    continue;
+                }
+
                 world.Projectiles.RemoveAt(index);
                 continue;
             }
@@ -419,15 +761,43 @@ public sealed class RuleSimulationService
                     projectile.HeightM,
                     out SimulationEntity? hitTarget,
                     out ArmorPlateTarget hitPlate,
-                    out _,
-                    out _,
-                    out _))
+                    out double hitX,
+                    out double hitY,
+                    out double hitHeightM,
+                    out double hitSegmentT))
                 {
+                    ProjectileObstacleHit? obstacleHit = TryResolveProjectileObstacle(
+                        world,
+                        shooter,
+                        projectile,
+                        startX,
+                        startY,
+                        startHeightM,
+                        projectile.X,
+                        projectile.Y,
+                        projectile.HeightM);
+                    if (ShouldResolveObstacleBeforePlate(obstacleHit, hitSegmentT)
+                        && obstacleHit is ProjectileObstacleHit blockingHit)
+                    {
+                        if (TryApplyRicochet(projectile, blockingHit, metersPerWorldUnit))
+                        {
+                            break;
+                        }
+
+                        removeProjectile = true;
+                        break;
+                    }
+
                     double dx = hitTarget!.X - shooter.X;
                     double dy = hitTarget.Y - shooter.Y;
                     double distanceM = Math.Sqrt(dx * dx + dy * dy) * metersPerWorldUnit;
-                    double damage = ComputeDamage(shooter, hitTarget);
-                    ApplyDamage(world, hitTarget, damage);
+                    Vector3 hitPointM = new((float)(hitX * metersPerWorldUnit), (float)hitHeightM, (float)(hitY * metersPerWorldUnit));
+                    bool criticalHit = SimulationCombatMath.IsCriticalStructureArmorHit(hitPlate, metersPerWorldUnit, hitPointM);
+                    double damageScale = criticalHit ? projectile.DamageScale * 1.5 : projectile.DamageScale;
+                    double damage = Math.Round(ComputeDamage(shooter, hitTarget) * damageScale, 2);
+                    UpdateHeroDeploymentCorrection(world, shooter, hitPlate, hitPointM);
+                    UpdateAutoAimCorrection(world, shooter, hitTarget, hitPlate, hitPointM);
+                    ApplyDamage(world, shooter, hitTarget, damage, report);
                     report.HitShots++;
                     report.CombatEvents.Add(new SimulationCombatEvent(
                         world.GameTimeSec,
@@ -435,10 +805,36 @@ public sealed class RuleSimulationService
                         hitTarget.Id,
                         shooter.AmmoType,
                         distanceM,
-                        1.0,
+                        projectile.AimHitProbability,
                         true,
                         damage,
                         $"鍛戒腑 {hitPlate.Id} 閫犳垚 {damage:0.##}"));
+                    if (TryApplyArmorRicochet(projectile, hitPlate, hitX, hitY, hitHeightM, hitSegmentT, metersPerWorldUnit))
+                    {
+                        break;
+                    }
+
+                    removeProjectile = true;
+                    break;
+                }
+
+                ProjectileObstacleHit? obstacleOnlyHit = TryResolveProjectileObstacle(
+                    world,
+                    shooter,
+                    projectile,
+                    startX,
+                    startY,
+                    startHeightM,
+                    projectile.X,
+                    projectile.Y,
+                    projectile.HeightM);
+                if (obstacleOnlyHit is ProjectileObstacleHit obstacleImpact)
+                {
+                    if (TryApplyRicochet(projectile, obstacleImpact, metersPerWorldUnit))
+                    {
+                        break;
+                    }
+
                     removeProjectile = true;
                     break;
                 }
@@ -494,6 +890,121 @@ public sealed class RuleSimulationService
         projectile.Y += projectile.VelocityYWorldPerSec * dt;
         projectile.HeightM += projectile.VelocityZMps * dt;
         projectile.RemainingLifeSec -= dt;
+    }
+
+    private ProjectileObstacleHit? TryResolveProjectileObstacle(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        SimulationProjectile projectile,
+        double startX,
+        double startY,
+        double startHeightM,
+        double endX,
+        double endY,
+        double endHeightM)
+    {
+        if (_resolveProjectileObstacle is null)
+        {
+            return null;
+        }
+
+        return _resolveProjectileObstacle(
+            world,
+            shooter,
+            projectile,
+            startX,
+            startY,
+            startHeightM,
+            endX,
+            endY,
+            endHeightM);
+    }
+
+    private static bool ShouldResolveObstacleBeforePlate(ProjectileObstacleHit? obstacleHit, double hitSegmentT)
+    {
+        return obstacleHit is ProjectileObstacleHit obstacle
+            && obstacle.SegmentT + 0.015 < hitSegmentT;
+    }
+
+    private bool TryApplyArmorRicochet(
+        SimulationProjectile projectile,
+        ArmorPlateTarget plate,
+        double hitX,
+        double hitY,
+        double hitHeightM,
+        double hitSegmentT,
+        double metersPerWorldUnit)
+    {
+        Vector3 normal = SimulationCombatMath.ResolveArmorPlateNormal(plate);
+        ProjectileObstacleHit armorHit = new(
+            hitX,
+            hitY,
+            hitHeightM,
+            normal.X,
+            normal.Y,
+            normal.Z,
+            hitSegmentT,
+            SupportsRicochet: true,
+            Kind: "armor_plate");
+        return TryApplyRicochet(projectile, armorHit, metersPerWorldUnit);
+    }
+
+    private bool TryApplyRicochet(
+        SimulationProjectile projectile,
+        ProjectileObstacleHit obstacleHit,
+        double metersPerWorldUnit)
+    {
+        if (!_projectileRicochetEnabled
+            || projectile.RicochetCount >= 1
+            || !obstacleHit.SupportsRicochet)
+        {
+            return false;
+        }
+
+        Vector3 velocityMps = new(
+            (float)(projectile.VelocityXWorldPerSec * metersPerWorldUnit),
+            (float)projectile.VelocityZMps,
+            (float)(projectile.VelocityYWorldPerSec * metersPerWorldUnit));
+        if (velocityMps.LengthSquared() <= 1e-6f)
+        {
+            return false;
+        }
+
+        Vector3 normal = new((float)obstacleHit.NormalX, (float)obstacleHit.NormalY, (float)obstacleHit.NormalZ);
+        if (normal.LengthSquared() <= 1e-6f)
+        {
+            normal = Vector3.UnitY;
+        }
+
+        normal = Vector3.Normalize(normal);
+        if (Vector3.Dot(velocityMps, normal) > 0f)
+        {
+            normal = -normal;
+        }
+
+        Vector3 reflected = Vector3.Reflect(velocityMps, normal);
+        if (reflected.LengthSquared() <= 1e-6f)
+        {
+            reflected = velocityMps - normal * 2f * Vector3.Dot(velocityMps, normal);
+        }
+
+        if (reflected.LengthSquared() <= 1e-6f)
+        {
+            return false;
+        }
+
+        reflected *= 0.70710677f;
+        Vector3 offset = Vector3.Normalize(reflected) * 0.012f;
+        projectile.X = obstacleHit.X + offset.X / Math.Max(metersPerWorldUnit, 1e-6);
+        projectile.Y = obstacleHit.Y + offset.Z / Math.Max(metersPerWorldUnit, 1e-6);
+        projectile.HeightM = obstacleHit.HeightM + offset.Y;
+        projectile.VelocityXWorldPerSec = reflected.X / Math.Max(metersPerWorldUnit, 1e-6);
+        projectile.VelocityYWorldPerSec = reflected.Z / Math.Max(metersPerWorldUnit, 1e-6);
+        projectile.VelocityZMps = reflected.Y;
+        projectile.DamageScale *= 0.5;
+        projectile.RicochetCount++;
+        projectile.RemainingLifeSec = Math.Max(0.08, projectile.RemainingLifeSec - 0.01);
+        return true;
     }
 
     private static Dictionary<string, SimulationEntity> BuildEntityLookup(SimulationWorldState world)
@@ -675,7 +1186,12 @@ public sealed class RuleSimulationService
         return Math.Max(0.0, Math.Round(baseDamage * dealtMultiplier * takenMultiplier, 2));
     }
 
-    private void ApplyDamage(SimulationWorldState world, SimulationEntity target, double damage)
+    private void ApplyDamage(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        SimulationEntity target,
+        double damage,
+        SimulationRunReport report)
     {
         if (target.RespawnInvincibleTimerSec > 1e-6)
         {
@@ -706,6 +1222,9 @@ public sealed class RuleSimulationService
         target.TerrainSlopeDefenseTimerSec = 0.0;
         target.TerrainSlopeCoolingTimerSec = 0.0;
         target.HeroDeploymentHoldTimerSec = 0.0;
+        target.HeroDeploymentRequested = false;
+        target.HeroDeploymentActive = false;
+        target.SuperCapEnabled = false;
         target.Power = target.MaxPower;
         if (target.MaxChassisEnergy > 1e-6)
         {
@@ -717,11 +1236,23 @@ public sealed class RuleSimulationService
         {
             target.State = "respawning";
             target.RespawnTimerSec = ComputeRespawnDelaySec(world, target);
+            report.LifecycleEvents.Add(new SimulationLifecycleEvent(
+                world.GameTimeSec,
+                target.Id,
+                target.Team,
+                "death",
+                $"{shooter.Id} eliminated {target.Id}"));
             return;
         }
 
         target.State = "destroyed";
         target.PermanentEliminated = true;
+        report.LifecycleEvents.Add(new SimulationLifecycleEvent(
+            world.GameTimeSec,
+            target.Id,
+            target.Team,
+            "destroyed",
+            $"{shooter.Id} destroyed {target.Id}"));
 
         if (string.Equals(target.EntityType, "base", StringComparison.OrdinalIgnoreCase))
         {
@@ -734,10 +1265,10 @@ public sealed class RuleSimulationService
     {
         entity.IsAlive = true;
         entity.State = "weak";
-        entity.Health = Math.Max(1.0, entity.MaxHealth);
-        entity.WeakTimerSec = _rules.Respawn.InvalidDurationSec;
-        entity.RespawnAmmoLockTimerSec = _rules.Respawn.InvalidDurationSec;
-        entity.RespawnInvincibleTimerSec = Math.Max(0.0, _rules.Respawn.InvincibleDurationSec);
+        entity.Health = Math.Max(1.0, entity.MaxHealth * 0.10);
+        entity.WeakTimerSec = 10.0;
+        entity.RespawnAmmoLockTimerSec = 10.0;
+        entity.RespawnInvincibleTimerSec = 30.0;
         entity.Heat = 0;
         entity.HeatLockTimerSec = 0;
         entity.FireCooldownSec = 0;
@@ -785,6 +1316,57 @@ public sealed class RuleSimulationService
         return Math.Max(_rules.Respawn.RobotDelaySec, ruleDelaySec);
     }
 
+    private static double ResolveRespawnProgressRate(
+        SimulationWorldState world,
+        IReadOnlyList<Simulator.Core.Map.FacilityRegion> facilities,
+        SimulationEntity entity)
+    {
+        if (IsInFriendlySupplyZone(facilities, entity))
+        {
+            return 4.0;
+        }
+
+        SimulationEntity? baseEntity = world.Entities.FirstOrDefault(candidate =>
+            string.Equals(candidate.Team, entity.Team, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(candidate.EntityType, "base", StringComparison.OrdinalIgnoreCase));
+        if (baseEntity is not null && baseEntity.Health < 2000.0)
+        {
+            return 4.0;
+        }
+
+        return 1.0;
+    }
+
+    private static bool IsInFriendlySupplyZone(
+        IReadOnlyList<Simulator.Core.Map.FacilityRegion> facilities,
+        SimulationEntity entity)
+    {
+        return facilities.Any(region =>
+            (string.Equals(region.Type, "supply", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(region.Type, "buff_supply", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(region.Type, "buff_base", StringComparison.OrdinalIgnoreCase))
+            && string.Equals(region.Team, entity.Team, StringComparison.OrdinalIgnoreCase)
+            && region.Contains(entity.X, entity.Y));
+    }
+
+    private static bool IsInFriendlyRespawnRecoveryZone(
+        IReadOnlyList<Simulator.Core.Map.FacilityRegion> facilities,
+        SimulationEntity entity)
+    {
+        return facilities.Any(region =>
+            (string.Equals(region.Type, "supply", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(region.Type, "buff_supply", StringComparison.OrdinalIgnoreCase))
+            && string.Equals(region.Team, entity.Team, StringComparison.OrdinalIgnoreCase)
+            && region.Contains(entity.X, entity.Y));
+    }
+
+    private static bool ShouldRequireRespawnRecoveryZone(SimulationEntity entity)
+    {
+        return entity.IsAlive
+            && string.Equals(entity.State, "weak", StringComparison.OrdinalIgnoreCase)
+            && (entity.WeakTimerSec > 1e-6 || entity.RespawnAmmoLockTimerSec > 1e-6);
+    }
+
     private static bool HasAmmoForShot(SimulationEntity entity)
     {
         if (string.Equals(entity.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase))
@@ -799,6 +1381,12 @@ public sealed class RuleSimulationService
     private double ResolveFireRateHz(SimulationEntity entity)
     {
         double fireRate = _rules.Combat.FireRateHz;
+        if (string.Equals(entity.AmmoType, "17mm", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(entity.RoleKey, "engineer", StringComparison.OrdinalIgnoreCase))
+        {
+            fireRate = Math.Max(fireRate, 20.0);
+        }
+
         if (string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase)
             && string.Equals(RuleSet.NormalizeSentryControlMode(entity.SentryControlMode), "semi_auto", StringComparison.OrdinalIgnoreCase))
         {
@@ -828,6 +1416,9 @@ public sealed class RuleSimulationService
         entity.ChassisBoostThresholdEnergy = profile.BoostThresholdEnergy;
         entity.ChassisBoostMultiplier = profile.BoostPowerMultiplier;
         entity.ChassisBoostPowerCapW = profile.BoostPowerCapW;
+        entity.MaxBufferEnergyJ = Math.Max(0.0, entity.MaxBufferEnergyJ <= 1e-6 ? 60.0 : entity.MaxBufferEnergyJ);
+        entity.BufferReserveEnergyJ = Math.Clamp(entity.BufferReserveEnergyJ <= 1e-6 ? 30.0 : entity.BufferReserveEnergyJ, 0.0, entity.MaxBufferEnergyJ);
+        entity.MaxSuperCapEnergyJ = Math.Max(0.0, entity.MaxSuperCapEnergyJ <= 1e-6 ? 2000.0 : entity.MaxSuperCapEnergyJ);
 
         if (clampHealthToCurrent)
         {
@@ -835,6 +1426,8 @@ public sealed class RuleSimulationService
             entity.Power = Math.Min(entity.Power, entity.MaxPower);
             entity.Heat = Math.Min(entity.Heat, entity.MaxHeat);
             entity.ChassisEnergy = Math.Min(entity.ChassisEnergy, entity.MaxChassisEnergy);
+            entity.BufferEnergyJ = Math.Min(entity.BufferEnergyJ, entity.MaxBufferEnergyJ);
+            entity.SuperCapEnergyJ = Math.Min(entity.SuperCapEnergyJ, entity.MaxSuperCapEnergyJ);
             return;
         }
 
@@ -842,6 +1435,8 @@ public sealed class RuleSimulationService
         entity.Power = entity.MaxPower;
         entity.Heat = Math.Min(entity.Heat, entity.MaxHeat);
         entity.ChassisEnergy = profile.UsesChassisEnergy ? profile.InitialChassisEnergy : 0.0;
+        entity.BufferEnergyJ = entity.MaxBufferEnergyJ;
+        entity.SuperCapEnergyJ = entity.MaxSuperCapEnergyJ;
     }
 
     private static SimulationEntity CloneEntity(SimulationEntity source)
@@ -869,11 +1464,13 @@ public sealed class RuleSimulationService
             TurretYawDeg = source.TurretYawDeg,
             GimbalPitchDeg = source.GimbalPitchDeg,
             AutoAimRequested = source.AutoAimRequested,
+            AutoAimGuidanceOnly = source.AutoAimGuidanceOnly,
             AutoAimLocked = source.AutoAimLocked,
             AutoAimTargetId = source.AutoAimTargetId,
             AutoAimPlateId = source.AutoAimPlateId,
             AutoAimPlateDirection = source.AutoAimPlateDirection,
             AutoAimAccuracy = source.AutoAimAccuracy,
+            AutoAimAccuracyScale = source.AutoAimAccuracyScale,
             AutoAimDistanceCoefficient = source.AutoAimDistanceCoefficient,
             AutoAimMotionCoefficient = source.AutoAimMotionCoefficient,
             AutoAimLeadTimeSec = source.AutoAimLeadTimeSec,
@@ -882,6 +1479,12 @@ public sealed class RuleSimulationService
             AutoAimLockKey = source.AutoAimLockKey,
             AutoAimSmoothedYawDeg = source.AutoAimSmoothedYawDeg,
             AutoAimSmoothedPitchDeg = source.AutoAimSmoothedPitchDeg,
+            HeroDeploymentYawCorrectionDeg = source.HeroDeploymentYawCorrectionDeg,
+            HeroDeploymentPitchCorrectionDeg = source.HeroDeploymentPitchCorrectionDeg,
+            HeroDeploymentCorrectionPlateId = source.HeroDeploymentCorrectionPlateId,
+            AutoAimYawCorrectionDeg = source.AutoAimYawCorrectionDeg,
+            AutoAimPitchCorrectionDeg = source.AutoAimPitchCorrectionDeg,
+            AutoAimCorrectionLockKey = source.AutoAimCorrectionLockKey,
             VelocityXWorldPerSec = source.VelocityXWorldPerSec,
             VelocityYWorldPerSec = source.VelocityYWorldPerSec,
             AngularVelocityDegPerSec = source.AngularVelocityDegPerSec,
@@ -897,6 +1500,9 @@ public sealed class RuleSimulationService
             StepClimbModeActive = source.StepClimbModeActive,
             SmallGyroActive = source.SmallGyroActive,
             BuyAmmoRequested = source.BuyAmmoRequested,
+            HeroDeploymentRequested = source.HeroDeploymentRequested,
+            HeroDeploymentActive = source.HeroDeploymentActive,
+            SuperCapEnabled = source.SuperCapEnabled,
             IsSimulationSuppressed = source.IsSimulationSuppressed,
             DirectStepHeightM = source.DirectStepHeightM,
             MaxStepClimbHeightM = source.MaxStepClimbHeightM,
@@ -911,6 +1517,12 @@ public sealed class RuleSimulationService
             TraversalStartGroundHeightM = source.TraversalStartGroundHeightM,
             TraversalTargetGroundHeightM = source.TraversalTargetGroundHeightM,
             CollisionRadiusWorld = source.CollisionRadiusWorld,
+            MotionBlockReason = source.MotionBlockReason,
+            TacticalCommand = source.TacticalCommand,
+            TacticalTargetId = source.TacticalTargetId,
+            TacticalTargetX = source.TacticalTargetX,
+            TacticalTargetY = source.TacticalTargetY,
+            TacticalPatrolRadiusWorld = source.TacticalPatrolRadiusWorld,
             MassKg = source.MassKg,
             ChassisSpeedScale = source.ChassisSpeedScale,
             ChassisSupportsJump = source.ChassisSupportsJump,
@@ -929,6 +1541,9 @@ public sealed class RuleSimulationService
             ChassisBoostThresholdEnergy = source.ChassisBoostThresholdEnergy,
             ChassisBoostMultiplier = source.ChassisBoostMultiplier,
             ChassisBoostPowerCapW = source.ChassisBoostPowerCapW,
+            BufferEnergyJ = source.BufferEnergyJ,
+            MaxBufferEnergyJ = source.MaxBufferEnergyJ,
+            BufferReserveEnergyJ = source.BufferReserveEnergyJ,
             ChassisSubtype = source.ChassisSubtype,
             BodyShape = source.BodyShape,
             WheelStyle = source.WheelStyle,
@@ -1023,6 +1638,8 @@ public sealed class RuleSimulationService
             TerrainSlopeDefenseTimerSec = source.TerrainSlopeDefenseTimerSec,
             TerrainSlopeCoolingTimerSec = source.TerrainSlopeCoolingTimerSec,
             HeroDeploymentHoldTimerSec = source.HeroDeploymentHoldTimerSec,
+            SuperCapEnergyJ = source.SuperCapEnergyJ,
+            MaxSuperCapEnergyJ = source.MaxSuperCapEnergyJ,
             DynamicDamageTakenMult = source.DynamicDamageTakenMult,
             DynamicDamageDealtMult = source.DynamicDamageDealtMult,
             DynamicCoolingMult = source.DynamicCoolingMult,

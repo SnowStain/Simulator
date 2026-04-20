@@ -374,20 +374,21 @@ public sealed class RuleSet
         };
         profile.Variants["attack"] = new RoleVariantProfile
         {
-            DamageDealtMultiplier = 1.10,
-            DamageTakenMultiplier = 1.05,
+            DamageTakenMultiplier = 1.25,
+            CoolingMultiplier = 3.0,
+            PowerLimitMultiplier = 0.50,
         };
         profile.Variants["move"] = new RoleVariantProfile
         {
-            DamageDealtMultiplier = 0.92,
-            PowerLimitMultiplier = 1.15,
-            CoolingMultiplier = 0.95,
+            DamageTakenMultiplier = 1.25,
+            CoolingMultiplier = 1.0 / 3.0,
+            PowerLimitMultiplier = 1.50,
         };
         profile.Variants["defense"] = new RoleVariantProfile
         {
-            DamageTakenMultiplier = 0.82,
-            CoolingMultiplier = 1.18,
-            PowerLimitMultiplier = 0.90,
+            DamageTakenMultiplier = 0.50,
+            CoolingMultiplier = 1.0 / 3.0,
+            PowerLimitMultiplier = 0.50,
         };
         return profile;
     }

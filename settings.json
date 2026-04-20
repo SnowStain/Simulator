@@ -36,7 +36,7 @@
     "sim3d_renderer_backend": "native_cpp",
     "terrain_scene_backend": "native_cpp",
     "sim3d_selected_team": "blue",
-    "sim3d_selected_entity_id": "blue_robot_3",
+    "sim3d_selected_entity_id": "blue_robot_7",
     "player_projectile_ricochet_enabled": true,
     "match_mode": "full",
     "single_unit_test_team": "blue",
@@ -44,9 +44,10 @@
     "sim3d_infantry_mode": "balance",
     "sim3d_hero_performance_mode": "ranged_priority",
     "sim3d_infantry_durability_mode": "power_priority",
-    "sim3d_infantry_weapon_mode": "cooling_priority",
+    "sim3d_infantry_weapon_mode": "burst_priority",
     "sim3d_sentry_control_mode": "full_auto",
-    "sim3d_sentry_stance": "attack"
+    "sim3d_sentry_stance": "attack",
+    "sim3d_autoaim_accuracy_scale": 0.821875
   },
   "ai": {
     "decision_deployment": {

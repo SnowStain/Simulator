@@ -11,7 +11,7 @@ internal sealed class RuntimeGridLoader
         RuntimeGridDefinition? runtime = preset.RuntimeGrid;
         if (runtime is null)
         {
-            warning = "runtime_grid metadata not found in map preset.";
+            warning = "runtime_grid / terrain_surface metadata not found in map preset.";
             return null;
         }
 

@@ -82,6 +82,9 @@ public sealed class SimulationBootstrapService
                 entity.ChassisBoostThresholdEnergy = profile.BoostThresholdEnergy;
                 entity.ChassisBoostMultiplier = profile.BoostPowerMultiplier;
                 entity.ChassisBoostPowerCapW = profile.BoostPowerCapW;
+                entity.MaxBufferEnergyJ = 60.0;
+                entity.BufferReserveEnergyJ = 30.0;
+                entity.BufferEnergyJ = entity.MaxBufferEnergyJ;
                 world.Entities.Add(entity);
             }
         }
@@ -115,6 +118,7 @@ public sealed class SimulationBootstrapService
                 continue;
             }
 
+            double structureCollisionRadiusM = ResolveStructureCollisionRadiusM(region, world.MetersPerWorldUnit, type);
             world.Entities.Add(new SimulationEntity
             {
                 Id = $"{region.Team}_{type}",
@@ -134,11 +138,11 @@ public sealed class SimulationBootstrapService
                 AmmoType = "none",
                 Ammo17Mm = 0,
                 Ammo42Mm = 0,
-                BodyHeightM = type == "outpost" ? 1.878 : 1.181,
+                BodyHeightM = type == "outpost" ? 1.578 : 1.181,
                 BodyWidthM = type == "outpost" ? 0.65 : 1.609,
                 BodyLengthM = type == "outpost" ? 0.65 : 1.881,
                 BodyRenderWidthScale = 1.0,
-                CollisionRadiusWorld = (type == "outpost" ? 0.45 : 1.05) / Math.Max(world.MetersPerWorldUnit, 1e-6),
+                CollisionRadiusWorld = structureCollisionRadiusM / Math.Max(world.MetersPerWorldUnit, 1e-6),
             });
         }
     }
@@ -152,6 +156,17 @@ public sealed class SimulationBootstrapService
         }
 
         return string.Equals(team, "blue", StringComparison.OrdinalIgnoreCase) ? 180.0 : 0.0;
+    }
+
+    private static double ResolveStructureCollisionRadiusM(FacilityRegion region, double metersPerWorldUnit, string type)
+    {
+        (double minX, double maxX, double minY, double maxY) = ResolveRegionBounds(region);
+        double spanXM = Math.Max(0.04, (maxX - minX) * Math.Max(metersPerWorldUnit, 1e-6));
+        double spanYM = Math.Max(0.04, (maxY - minY) * Math.Max(metersPerWorldUnit, 1e-6));
+        double radiusM = Math.Max(spanXM, spanYM) * 0.5 + 0.03;
+        return string.Equals(type, "base", StringComparison.OrdinalIgnoreCase)
+            ? Math.Clamp(radiusM, 0.30, 0.72)
+            : Math.Clamp(radiusM, 0.18, 0.42);
     }
 
     private static bool IsSentryRole(string roleKey)
@@ -173,6 +188,31 @@ public sealed class SimulationBootstrapService
         }
 
         return ((region.X1 + region.X2) * 0.5, (region.Y1 + region.Y2) * 0.5);
+    }
+
+    private static (double MinX, double MaxX, double MinY, double MaxY) ResolveRegionBounds(FacilityRegion region)
+    {
+        if (region.Points.Count > 0)
+        {
+            double minX = double.PositiveInfinity;
+            double maxX = double.NegativeInfinity;
+            double minY = double.PositiveInfinity;
+            double maxY = double.NegativeInfinity;
+            foreach (Point2D point in region.Points)
+            {
+                minX = Math.Min(minX, point.X);
+                maxX = Math.Max(maxX, point.X);
+                minY = Math.Min(minY, point.Y);
+                maxY = Math.Max(maxY, point.Y);
+            }
+
+            if (!double.IsInfinity(minX) && !double.IsInfinity(minY))
+            {
+                return (minX, maxX, minY, maxY);
+            }
+        }
+
+        return (Math.Min(region.X1, region.X2), Math.Max(region.X1, region.X2), Math.Min(region.Y1, region.Y2), Math.Max(region.Y1, region.Y2));
     }
 
     private static string ResolveRoleKey(string robotKey, JsonObject? robotTypes)

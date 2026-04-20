@@ -1,6 +1,7 @@
 using System.Drawing;
 using System.Numerics;
 using System.Text.Json.Nodes;
+using Simulator.Assets;
 using Simulator.Core.Gameplay;
 
 namespace Simulator.ThreeD;
@@ -22,7 +23,7 @@ internal sealed class AppearanceProfileCatalog
             ["engineer"] = RobotAppearanceProfile.CreateDefault(0.55f, 0.50f, 0.17f, 0.11f, "engineer"),
             ["infantry"] = RobotAppearanceProfile.CreateDefault(0.48f, 0.48f, 0.18f, 0.10f, "infantry"),
             ["sentry"] = RobotAppearanceProfile.CreateDefault(0.55f, 0.50f, 0.17f, 0.10f, "sentry"),
-            ["outpost"] = RobotAppearanceProfile.CreateDefault(0.65f, 0.55f, 1.878f, 0.0f, "outpost"),
+            ["outpost"] = RobotAppearanceProfile.CreateDefault(0.65f, 0.55f, 1.578f, 0.0f, "outpost"),
             ["base"] = RobotAppearanceProfile.CreateDefault(1.881f, 1.609f, 1.181f, 0.0f, "base"),
         };
 
@@ -33,36 +34,27 @@ internal sealed class AppearanceProfileCatalog
 
         try
         {
-            JsonObject? rootObject = JsonNode.Parse(File.ReadAllText(appearancePath)) as JsonObject;
-            JsonObject? profileContainer = rootObject?["profiles"] as JsonObject;
-            if (profileContainer is null)
+            RobotAppearanceRoot root = RobotAppearanceJsonSerializer.LoadFromFile(appearancePath);
+            if (root.Profiles.Count == 0)
             {
                 return new AppearanceProfileCatalog(profiles);
             }
 
             foreach (string roleKey in new[] { "hero", "engineer", "infantry", "sentry", "outpost", "base" })
             {
-                if (profileContainer[roleKey] is not JsonObject roleNode)
+                if (!root.Profiles.TryGetValue(roleKey, out RobotAppearanceProfileDefinition? roleProfile))
                 {
                     continue;
                 }
 
-                if (string.Equals(roleKey, "infantry", StringComparison.OrdinalIgnoreCase)
-                    && roleNode["subtype_profiles"] is JsonObject subtypeProfiles)
+                RobotAppearanceProfileDefinition effective = RobotAppearanceProjectAdapter.ResolveProfile(roleProfile);
+                profiles[roleKey] = ParseProfile(effective, profiles[roleKey]);
+
+                foreach ((string subtypeKey, RobotAppearanceProfileDefinition subtypeProfile) in roleProfile.SubtypeProfiles)
                 {
-                    foreach ((string subtypeKey, JsonNode? subtypeNodeValue) in subtypeProfiles)
-                    {
-                        if (subtypeNodeValue is not JsonObject subtypeNode)
-                        {
-                            continue;
-                        }
-
-                        profiles[CompositeKey(roleKey, subtypeKey)] = ParseProfile(subtypeNode, roleNode, profiles[roleKey]);
-                    }
+                    RobotAppearanceProfileDefinition effectiveSubtype = RobotAppearanceProjectAdapter.ResolveProfile(roleProfile, subtypeKey);
+                    profiles[CompositeKey(roleKey, subtypeKey)] = ParseProfile(effectiveSubtype, profiles[roleKey]);
                 }
-
-                JsonObject effective = ResolveEffectiveRoleNode(roleKey, roleNode);
-                profiles[roleKey] = ParseProfile(effective, roleNode, profiles[roleKey]);
             }
         }
         catch
@@ -71,6 +63,107 @@ internal sealed class AppearanceProfileCatalog
         }
 
         return new AppearanceProfileCatalog(profiles);
+    }
+
+    private static RobotAppearanceProfile ParseProfile(RobotAppearanceProfileDefinition source, RobotAppearanceProfile defaults)
+    {
+        source.EnsureInitialized();
+        float bodyLength = Math.Max(0.12f, (float)source.BodyLengthM);
+        float bodyWidth = Math.Max(0.10f, (float)source.BodyWidthM);
+        float bodyHeight = Math.Max(0.08f, (float)source.BodyHeightM);
+        float bodyClearance = Math.Max(0f, (float)source.BodyClearanceM);
+        IReadOnlyList<Vector2> wheelOffsets = source.GetWheelOffsetsOrDefaults()
+            .Select(offset => new Vector2((float)offset.X, (float)offset.Y))
+            .ToArray();
+
+        return defaults with
+        {
+            RoleKey = string.IsNullOrWhiteSpace(source.RoleKey) ? defaults.RoleKey : source.RoleKey,
+            ChassisSubtype = source.ChassisSubtype ?? string.Empty,
+            BodyShape = string.IsNullOrWhiteSpace(source.BodyShape) ? defaults.BodyShape : source.BodyShape,
+            WheelStyle = string.IsNullOrWhiteSpace(source.WheelStyle) ? defaults.WheelStyle : source.WheelStyle,
+            SuspensionStyle = string.IsNullOrWhiteSpace(source.SuspensionStyle) ? defaults.SuspensionStyle : source.SuspensionStyle,
+            ArmStyle = string.IsNullOrWhiteSpace(source.ArmStyle) ? defaults.ArmStyle : source.ArmStyle,
+            FrontClimbAssistStyle = string.IsNullOrWhiteSpace(source.FrontClimbAssistStyle) ? defaults.FrontClimbAssistStyle : source.FrontClimbAssistStyle,
+            RearClimbAssistStyle = string.IsNullOrWhiteSpace(source.RearClimbAssistStyle) ? defaults.RearClimbAssistStyle : source.RearClimbAssistStyle,
+            RearClimbAssistKneeDirection = string.IsNullOrWhiteSpace(source.RearClimbAssistKneeDirection) ? defaults.RearClimbAssistKneeDirection : source.RearClimbAssistKneeDirection,
+            ChassisSupportsJump = source.ChassisSupportsJump,
+            BodyLengthM = bodyLength,
+            BodyWidthM = bodyWidth,
+            BodyHeightM = bodyHeight,
+            BodyClearanceM = bodyClearance,
+            BodyRenderWidthScale = Math.Clamp((float)(source.BodyRenderWidthScale <= 0 ? defaults.BodyRenderWidthScale : source.BodyRenderWidthScale), 0.4f, 1.35f),
+            StructureBaseLiftM = (float)Math.Clamp(source.StructureBaseLiftM, 0.0, 1.20),
+            WheelRadiusM = Math.Clamp((float)(source.WheelRadiusM <= 0 ? defaults.WheelRadiusM : source.WheelRadiusM), 0.03f, 0.28f),
+            RearLegWheelRadiusM = Math.Clamp((float)(source.RearLegWheelRadiusM <= 0 ? defaults.RearLegWheelRadiusM : source.RearLegWheelRadiusM), 0.03f, 0.32f),
+            WheelOffsetsM = wheelOffsets.Count > 0 ? wheelOffsets : defaults.WheelOffsetsM,
+            ArmorOrbitYawsDeg = source.ArmorOrbitYawsDeg.Count > 0 ? source.ArmorOrbitYawsDeg.Select(value => (float)value).ToArray() : defaults.ArmorOrbitYawsDeg,
+            ArmorSelfYawsDeg = source.ArmorSelfYawsDeg.Count > 0 ? source.ArmorSelfYawsDeg.Select(value => (float)value).ToArray() : defaults.ArmorSelfYawsDeg,
+            GimbalLengthM = Math.Max(0f, (float)source.GimbalLengthM),
+            GimbalWidthM = Math.Max(0f, (float)source.GimbalWidthM),
+            GimbalBodyHeightM = Math.Max(0f, (float)source.GimbalBodyHeightM),
+            GimbalHeightM = Math.Max(0f, (float)source.GimbalHeightM),
+            GimbalOffsetXM = (float)source.GimbalOffsetXM,
+            GimbalOffsetYM = (float)source.GimbalOffsetYM,
+            GimbalMountGapM = Math.Max(0f, (float)source.GimbalMountGapM),
+            GimbalMountLengthM = Math.Max(0f, (float)source.GimbalMountLengthM),
+            GimbalMountWidthM = Math.Max(0f, (float)source.GimbalMountWidthM),
+            GimbalMountHeightM = Math.Max(0f, (float)source.GimbalMountHeightM),
+            BarrelLengthM = Math.Max(0f, (float)source.BarrelLengthM),
+            BarrelRadiusM = Math.Max(0f, (float)source.BarrelRadiusM),
+            ArmorPlateWidthM = Math.Max(0.03f, (float)(source.ArmorPlateWidthM <= 0 ? defaults.ArmorPlateWidthM : source.ArmorPlateWidthM)),
+            ArmorPlateLengthM = Math.Max(0.03f, (float)(source.ArmorPlateLengthM <= 0 ? defaults.ArmorPlateLengthM : source.ArmorPlateLengthM)),
+            ArmorPlateHeightM = Math.Max(0.03f, (float)(source.ArmorPlateHeightM <= 0 ? defaults.ArmorPlateHeightM : source.ArmorPlateHeightM)),
+            ArmorPlateGapM = Math.Max(0.003f, (float)(source.ArmorPlateGapM <= 0 ? defaults.ArmorPlateGapM : source.ArmorPlateGapM)),
+            ArmorLightLengthM = Math.Max(0.004f, (float)(source.ArmorLightLengthM <= 0 ? defaults.ArmorLightLengthM : source.ArmorLightLengthM)),
+            ArmorLightWidthM = Math.Max(0.003f, (float)(source.ArmorLightWidthM <= 0 ? defaults.ArmorLightWidthM : source.ArmorLightWidthM)),
+            ArmorLightHeightM = Math.Max(0.004f, (float)(source.ArmorLightHeightM <= 0 ? defaults.ArmorLightHeightM : source.ArmorLightHeightM)),
+            BarrelLightLengthM = Math.Max(0.004f, (float)(source.BarrelLightLengthM <= 0 ? defaults.BarrelLightLengthM : source.BarrelLightLengthM)),
+            BarrelLightWidthM = Math.Max(0.003f, (float)(source.BarrelLightWidthM <= 0 ? defaults.BarrelLightWidthM : source.BarrelLightWidthM)),
+            BarrelLightHeightM = Math.Max(0.003f, (float)(source.BarrelLightHeightM <= 0 ? defaults.BarrelLightHeightM : source.BarrelLightHeightM)),
+            FrontClimbAssistTopLengthM = Math.Max(0.01f, (float)(source.FrontClimbAssistTopLengthM <= 0 ? defaults.FrontClimbAssistTopLengthM : source.FrontClimbAssistTopLengthM)),
+            FrontClimbAssistBottomLengthM = Math.Max(0.01f, (float)(source.FrontClimbAssistBottomLengthM <= 0 ? defaults.FrontClimbAssistBottomLengthM : source.FrontClimbAssistBottomLengthM)),
+            FrontClimbAssistPlateWidthM = Math.Max(0.008f, (float)(source.FrontClimbAssistPlateWidthM <= 0 ? defaults.FrontClimbAssistPlateWidthM : source.FrontClimbAssistPlateWidthM)),
+            FrontClimbAssistPlateHeightM = Math.Max(0.03f, (float)(source.FrontClimbAssistPlateHeightM <= 0 ? defaults.FrontClimbAssistPlateHeightM : source.FrontClimbAssistPlateHeightM)),
+            FrontClimbAssistForwardOffsetM = (float)source.FrontClimbAssistForwardOffsetM,
+            FrontClimbAssistInnerOffsetM = (float)source.FrontClimbAssistInnerOffsetM,
+            RearClimbAssistUpperLengthM = Math.Max(0.03f, (float)(source.RearClimbAssistUpperLengthM <= 0 ? defaults.RearClimbAssistUpperLengthM : source.RearClimbAssistUpperLengthM)),
+            RearClimbAssistLowerLengthM = Math.Max(0.03f, (float)(source.RearClimbAssistLowerLengthM <= 0 ? defaults.RearClimbAssistLowerLengthM : source.RearClimbAssistLowerLengthM)),
+            RearClimbAssistUpperWidthM = Math.Max(0.008f, (float)(source.RearClimbAssistUpperWidthM <= 0 ? defaults.RearClimbAssistUpperWidthM : source.RearClimbAssistUpperWidthM)),
+            RearClimbAssistUpperHeightM = Math.Max(0.008f, (float)(source.RearClimbAssistUpperHeightM <= 0 ? defaults.RearClimbAssistUpperHeightM : source.RearClimbAssistUpperHeightM)),
+            RearClimbAssistLowerWidthM = Math.Max(0.008f, (float)(source.RearClimbAssistLowerWidthM <= 0 ? defaults.RearClimbAssistLowerWidthM : source.RearClimbAssistLowerWidthM)),
+            RearClimbAssistLowerHeightM = Math.Max(0.008f, (float)(source.RearClimbAssistLowerHeightM <= 0 ? defaults.RearClimbAssistLowerHeightM : source.RearClimbAssistLowerHeightM)),
+            RearClimbAssistMountOffsetXM = (float)source.RearClimbAssistMountOffsetXM,
+            RearClimbAssistMountHeightM = Math.Max(0.01f, (float)(source.RearClimbAssistMountHeightM <= 0 ? defaults.RearClimbAssistMountHeightM : source.RearClimbAssistMountHeightM)),
+            RearClimbAssistInnerOffsetM = (float)source.RearClimbAssistInnerOffsetM,
+            RearClimbAssistUpperPairGapM = Math.Max(0.01f, (float)(source.RearClimbAssistUpperPairGapM <= 0 ? defaults.RearClimbAssistUpperPairGapM : source.RearClimbAssistUpperPairGapM)),
+            RearClimbAssistHingeRadiusM = Math.Max(0.004f, (float)(source.RearClimbAssistHingeRadiusM <= 0 ? defaults.RearClimbAssistHingeRadiusM : source.RearClimbAssistHingeRadiusM)),
+            RearClimbAssistKneeMinDeg = (float)(Math.Abs(source.RearClimbAssistKneeMinDeg) <= double.Epsilon ? defaults.RearClimbAssistKneeMinDeg : source.RearClimbAssistKneeMinDeg),
+            RearClimbAssistKneeMaxDeg = (float)(Math.Abs(source.RearClimbAssistKneeMaxDeg) <= double.Epsilon ? defaults.RearClimbAssistKneeMaxDeg : source.RearClimbAssistKneeMaxDeg),
+            StructureBodyTopHeightM = Math.Max(0.05f, (float)(source.StructureBodyTopHeightM <= 0 ? defaults.StructureBodyTopHeightM : source.StructureBodyTopHeightM)),
+            StructureHeadBaseHeightM = Math.Max(0.05f, (float)(source.StructureHeadBaseHeightM <= 0 ? defaults.StructureHeadBaseHeightM : source.StructureHeadBaseHeightM)),
+            StructureLowerShoulderHeightM = Math.Max(0.05f, (float)(source.StructureLowerShoulderHeightM <= 0 ? defaults.StructureLowerShoulderHeightM : source.StructureLowerShoulderHeightM)),
+            StructureUpperShoulderHeightM = Math.Max(0.05f, (float)(source.StructureUpperShoulderHeightM <= 0 ? defaults.StructureUpperShoulderHeightM : source.StructureUpperShoulderHeightM)),
+            StructureTowerRadiusM = Math.Max(0.05f, (float)(source.StructureTowerRadiusM <= 0 ? defaults.StructureTowerRadiusM : source.StructureTowerRadiusM)),
+            StructureRoofHeightM = Math.Max(0.05f, (float)(source.StructureRoofHeightM <= 0 ? defaults.StructureRoofHeightM : source.StructureRoofHeightM)),
+            StructureTopArmorCenterHeightM = Math.Max(0.05f, (float)(source.StructureTopArmorCenterHeightM <= 0 ? defaults.StructureTopArmorCenterHeightM : source.StructureTopArmorCenterHeightM)),
+            StructureTopArmorTiltDeg = (float)(Math.Abs(source.StructureTopArmorTiltDeg) <= double.Epsilon ? defaults.StructureTopArmorTiltDeg : source.StructureTopArmorTiltDeg),
+            StructureDetectorWidthM = Math.Max(0.02f, (float)(source.StructureDetectorWidthM <= 0 ? defaults.StructureDetectorWidthM : source.StructureDetectorWidthM)),
+            StructureDetectorHeightM = Math.Max(0.02f, (float)(source.StructureDetectorHeightM <= 0 ? defaults.StructureDetectorHeightM : source.StructureDetectorHeightM)),
+            StructureDetectorBridgeCenterHeightM = Math.Max(0.02f, (float)(source.StructureDetectorBridgeCenterHeightM <= 0 ? defaults.StructureDetectorBridgeCenterHeightM : source.StructureDetectorBridgeCenterHeightM)),
+            StructureDetectorSensorCenterHeightM = Math.Max(0.02f, (float)(source.StructureDetectorSensorCenterHeightM <= 0 ? defaults.StructureDetectorSensorCenterHeightM : source.StructureDetectorSensorCenterHeightM)),
+            StructureCoreColumnHeightM = Math.Max(0.02f, (float)(source.StructureCoreColumnHeightM <= 0 ? defaults.StructureCoreColumnHeightM : source.StructureCoreColumnHeightM)),
+            StructureShoulderHeightM = Math.Max(0.05f, (float)(source.StructureShoulderHeightM <= 0 ? defaults.StructureShoulderHeightM : source.StructureShoulderHeightM)),
+            ChassisSpeedScale = Math.Max(0.2f, (float)(source.ChassisSpeedScale <= 0 ? defaults.ChassisSpeedScale : source.ChassisSpeedScale)),
+            ChassisDrivePowerLimitW = Math.Max(10f, (float)(source.ChassisDrivePowerLimitW <= 0 ? defaults.ChassisDrivePowerLimitW : source.ChassisDrivePowerLimitW)),
+            ChassisDriveIdleDrawW = Math.Max(0f, (float)(source.ChassisDriveIdleDrawW <= 0 ? defaults.ChassisDriveIdleDrawW : source.ChassisDriveIdleDrawW)),
+            ChassisDriveRpmCoeff = Math.Max(0f, (float)(source.ChassisDriveRpmCoeff <= 0 ? defaults.ChassisDriveRpmCoeff : source.ChassisDriveRpmCoeff)),
+            ChassisDriveAccelCoeff = Math.Max(0f, (float)(source.ChassisDriveAccelCoeff <= 0 ? defaults.ChassisDriveAccelCoeff : source.ChassisDriveAccelCoeff)),
+            BodyColor = source.BodyColor,
+            TurretColor = source.TurretColor,
+            ArmorColor = source.ArmorColor,
+            WheelColor = source.WheelColor,
+        };
     }
 
     public RobotAppearanceProfile Resolve(string roleKey, string? subtypeOverride = null)
@@ -146,6 +239,7 @@ internal sealed class AppearanceProfileCatalog
             BodyRenderWidthScale = Math.Clamp(ReadFloat(primary, fallback, defaults.BodyRenderWidthScale, "body_render_width_scale"), 0.4f, 1.35f),
             StructureBaseLiftM = Math.Clamp(ReadFloat(primary, fallback, defaults.StructureBaseLiftM, "structure_base_lift_m"), 0.0f, 1.20f),
             WheelRadiusM = Math.Clamp(ReadFloat(primary, fallback, defaults.WheelRadiusM, "wheel_radius_m"), 0.03f, 0.28f),
+            RearLegWheelRadiusM = Math.Clamp(ReadFloat(primary, fallback, defaults.RearLegWheelRadiusM, "rear_leg_wheel_radius_m"), 0.03f, 0.32f),
             WheelOffsetsM = ReadWheelOffsets(primary, fallback, bodyLength, bodyWidth, defaults.WheelOffsetsM),
             ArmorOrbitYawsDeg = ReadFloatArray(primary, fallback, defaults.ArmorOrbitYawsDeg, "armor_orbit_yaws_deg"),
             ArmorSelfYawsDeg = ReadFloatArray(primary, fallback, defaults.ArmorSelfYawsDeg, "armor_self_yaws_deg"),
@@ -190,6 +284,20 @@ internal sealed class AppearanceProfileCatalog
             RearClimbAssistHingeRadiusM = Math.Max(0.004f, ReadFloat(primary, fallback, defaults.RearClimbAssistHingeRadiusM, "rear_climb_assist_hinge_radius_m")),
             RearClimbAssistKneeMinDeg = ReadFloat(primary, fallback, defaults.RearClimbAssistKneeMinDeg, "rear_climb_assist_knee_min_deg"),
             RearClimbAssistKneeMaxDeg = ReadFloat(primary, fallback, defaults.RearClimbAssistKneeMaxDeg, "rear_climb_assist_knee_max_deg"),
+            StructureBodyTopHeightM = Math.Max(0.05f, ReadFloat(primary, fallback, defaults.StructureBodyTopHeightM, "structure_body_top_height_m")),
+            StructureHeadBaseHeightM = Math.Max(0.05f, ReadFloat(primary, fallback, defaults.StructureHeadBaseHeightM, "structure_head_base_height_m")),
+            StructureLowerShoulderHeightM = Math.Max(0.05f, ReadFloat(primary, fallback, defaults.StructureLowerShoulderHeightM, "structure_lower_shoulder_height_m")),
+            StructureUpperShoulderHeightM = Math.Max(0.05f, ReadFloat(primary, fallback, defaults.StructureUpperShoulderHeightM, "structure_upper_shoulder_height_m")),
+            StructureTowerRadiusM = Math.Max(0.05f, ReadFloat(primary, fallback, defaults.StructureTowerRadiusM, "structure_tower_radius_m")),
+            StructureRoofHeightM = Math.Max(0.05f, ReadFloat(primary, fallback, defaults.StructureRoofHeightM, "structure_roof_height_m")),
+            StructureTopArmorCenterHeightM = Math.Max(0.05f, ReadFloat(primary, fallback, defaults.StructureTopArmorCenterHeightM, "structure_top_armor_center_height_m")),
+            StructureTopArmorTiltDeg = ReadFloat(primary, fallback, defaults.StructureTopArmorTiltDeg, "structure_top_armor_tilt_deg"),
+            StructureDetectorWidthM = Math.Max(0.02f, ReadFloat(primary, fallback, defaults.StructureDetectorWidthM, "structure_detector_width_m")),
+            StructureDetectorHeightM = Math.Max(0.02f, ReadFloat(primary, fallback, defaults.StructureDetectorHeightM, "structure_detector_height_m")),
+            StructureDetectorBridgeCenterHeightM = Math.Max(0.02f, ReadFloat(primary, fallback, defaults.StructureDetectorBridgeCenterHeightM, "structure_detector_bridge_center_height_m")),
+            StructureDetectorSensorCenterHeightM = Math.Max(0.02f, ReadFloat(primary, fallback, defaults.StructureDetectorSensorCenterHeightM, "structure_detector_sensor_center_height_m")),
+            StructureCoreColumnHeightM = Math.Max(0.02f, ReadFloat(primary, fallback, defaults.StructureCoreColumnHeightM, "structure_core_column_height_m")),
+            StructureShoulderHeightM = Math.Max(0.05f, ReadFloat(primary, fallback, defaults.StructureShoulderHeightM, "structure_shoulder_height_m")),
             ChassisSpeedScale = Math.Max(0.2f, ReadFloat(primary, fallback, defaults.ChassisSpeedScale, "chassis_speed_scale")),
             ChassisDrivePowerLimitW = Math.Max(10f, ReadFloat(primary, fallback, defaults.ChassisDrivePowerLimitW, "chassis_drive_power_limit_w")),
             ChassisDriveIdleDrawW = Math.Max(0f, ReadFloat(primary, fallback, defaults.ChassisDriveIdleDrawW, "chassis_drive_idle_draw_w")),
@@ -487,6 +595,8 @@ internal sealed record RobotAppearanceProfile
 
     public float WheelRadiusM { get; init; } = 0.08f;
 
+    public float RearLegWheelRadiusM { get; init; } = 0.08f;
+
     public IReadOnlyList<Vector2> WheelOffsetsM { get; init; } = Array.Empty<Vector2>();
 
     public IReadOnlyList<float> ArmorOrbitYawsDeg { get; init; } = Array.Empty<float>();
@@ -574,6 +684,34 @@ internal sealed record RobotAppearanceProfile
     public float RearClimbAssistKneeMinDeg { get; init; } = 42f;
 
     public float RearClimbAssistKneeMaxDeg { get; init; } = 132f;
+
+    public float StructureBodyTopHeightM { get; init; } = 1.216f;
+
+    public float StructureHeadBaseHeightM { get; init; } = 1.318f;
+
+    public float StructureLowerShoulderHeightM { get; init; } = 0.571f;
+
+    public float StructureUpperShoulderHeightM { get; init; } = 1.446f;
+
+    public float StructureTowerRadiusM { get; init; } = 0.20f;
+
+    public float StructureRoofHeightM { get; init; } = 1.03f;
+
+    public float StructureTopArmorCenterHeightM { get; init; } = 1.15f;
+
+    public float StructureTopArmorTiltDeg { get; init; } = 27.5f;
+
+    public float StructureDetectorWidthM { get; init; } = 0.98f;
+
+    public float StructureDetectorHeightM { get; init; } = 0.095f;
+
+    public float StructureDetectorBridgeCenterHeightM { get; init; } = 1.093f;
+
+    public float StructureDetectorSensorCenterHeightM { get; init; } = 1.136f;
+
+    public float StructureCoreColumnHeightM { get; init; } = 0.783f;
+
+    public float StructureShoulderHeightM { get; init; } = 0.860f;
 
     public float ChassisSpeedScale { get; init; } = 1.0f;
 
@@ -696,30 +834,9 @@ internal sealed record RobotAppearanceProfile
             entity.MaxStepClimbHeightM = 0.35;
         }
 
-        double halfLengthM = Math.Max(BodyLengthM * 0.5, GimbalOffsetXM + GimbalLengthM * 0.5 + BarrelLengthM);
-        double halfWidthM = Math.Max(BodyWidthM * BodyRenderWidthScale * 0.5, Math.Abs(GimbalOffsetYM) + GimbalWidthM * BodyRenderWidthScale * 0.5);
-        halfLengthM = Math.Max(halfLengthM, BodyLengthM * 0.5 + ArmorPlateGapM + ArmorPlateWidthM * 0.5);
-        halfWidthM = Math.Max(halfWidthM, BodyWidthM * BodyRenderWidthScale * 0.5 + ArmorPlateGapM + ArmorPlateWidthM * 0.5);
-        foreach (Vector2 wheelOffset in WheelOffsetsM)
-        {
-            halfLengthM = Math.Max(halfLengthM, Math.Abs(wheelOffset.X) + WheelRadiusM);
-            halfWidthM = Math.Max(halfWidthM, Math.Abs(wheelOffset.Y) * BodyRenderWidthScale + WheelRadiusM);
-        }
-
-        if (!string.Equals(FrontClimbAssistStyle, "none", StringComparison.OrdinalIgnoreCase))
-        {
-            halfLengthM = Math.Max(
-                halfLengthM,
-                BodyLengthM * 0.5 + FrontClimbAssistForwardOffsetM + Math.Max(FrontClimbAssistTopLengthM, FrontClimbAssistBottomLengthM));
-        }
-
-        if (!string.Equals(RearClimbAssistStyle, "none", StringComparison.OrdinalIgnoreCase))
-        {
-            halfLengthM = Math.Max(halfLengthM, BodyLengthM * 0.5 + RearClimbAssistUpperLengthM + RearClimbAssistLowerLengthM);
-            halfWidthM = Math.Max(halfWidthM, BodyWidthM * BodyRenderWidthScale * 0.5 + RearClimbAssistHingeRadiusM);
-        }
-
-        double collisionRadiusM = Math.Max(0.14, Math.Sqrt(halfLengthM * halfLengthM + halfWidthM * halfWidthM) + 0.01);
+        double halfLengthM = Math.Max(0.08, BodyLengthM * 0.5);
+        double halfWidthM = Math.Max(0.08, BodyWidthM * BodyRenderWidthScale * 0.5);
+        double collisionRadiusM = Math.Max(0.14, Math.Sqrt(halfLengthM * halfLengthM + halfWidthM * halfWidthM) + 0.015);
         entity.CollisionRadiusWorld = collisionRadiusM / Math.Max(metersPerWorldUnit, 1e-6);
     }
 
@@ -767,6 +884,7 @@ internal sealed record RobotAppearanceProfile
                 BodyRenderWidthScale = 1.0f,
                 StructureBaseLiftM = roleKey.Equals("outpost", StringComparison.OrdinalIgnoreCase) ? 0.40f : 0.0f,
                 WheelRadiusM = 0.03f,
+                RearLegWheelRadiusM = 0.03f,
                 WheelOffsetsM = Array.Empty<Vector2>(),
                 ArmorOrbitYawsDeg = Array.Empty<float>(),
                 ArmorSelfYawsDeg = Array.Empty<float>(),
@@ -784,6 +902,20 @@ internal sealed record RobotAppearanceProfile
                 ArmorPlateLengthM = 0.13f,
                 ArmorPlateHeightM = 0.13f,
                 ArmorPlateGapM = 0.035f,
+                StructureBodyTopHeightM = roleKey.Equals("outpost", StringComparison.OrdinalIgnoreCase) ? 1.216f : bodyHeight,
+                StructureHeadBaseHeightM = roleKey.Equals("outpost", StringComparison.OrdinalIgnoreCase) ? 1.318f : 0f,
+                StructureLowerShoulderHeightM = roleKey.Equals("outpost", StringComparison.OrdinalIgnoreCase) ? 0.571f : 0f,
+                StructureUpperShoulderHeightM = roleKey.Equals("outpost", StringComparison.OrdinalIgnoreCase) ? 1.446f : 0f,
+                StructureTowerRadiusM = roleKey.Equals("outpost", StringComparison.OrdinalIgnoreCase) ? 0.20f : 0f,
+                StructureRoofHeightM = roleKey.Equals("base", StringComparison.OrdinalIgnoreCase) ? 1.03f : bodyHeight,
+                StructureTopArmorCenterHeightM = roleKey.Equals("outpost", StringComparison.OrdinalIgnoreCase) ? 1.633f : 1.15f,
+                StructureTopArmorTiltDeg = roleKey.Equals("base", StringComparison.OrdinalIgnoreCase) ? 27.5f : 45f,
+                StructureDetectorWidthM = roleKey.Equals("base", StringComparison.OrdinalIgnoreCase) ? 0.98f : 0f,
+                StructureDetectorHeightM = roleKey.Equals("base", StringComparison.OrdinalIgnoreCase) ? 0.095f : 0f,
+                StructureDetectorBridgeCenterHeightM = roleKey.Equals("base", StringComparison.OrdinalIgnoreCase) ? 1.093f : 0f,
+                StructureDetectorSensorCenterHeightM = roleKey.Equals("base", StringComparison.OrdinalIgnoreCase) ? 1.136f : 0f,
+                StructureCoreColumnHeightM = roleKey.Equals("base", StringComparison.OrdinalIgnoreCase) ? 0.783f : 0f,
+                StructureShoulderHeightM = roleKey.Equals("base", StringComparison.OrdinalIgnoreCase) ? 0.860f : 0f,
                 BodyColor = roleKey.Equals("base", StringComparison.OrdinalIgnoreCase)
                     ? Color.FromArgb(142, 148, 154)
                     : Color.FromArgb(156, 160, 166),
@@ -803,6 +935,12 @@ internal sealed record RobotAppearanceProfile
             BodyWidthM = bodyWidth,
             BodyHeightM = bodyHeight,
             BodyClearanceM = bodyClearance,
+            RearLegWheelRadiusM = roleKey switch
+            {
+                "hero" => 0.10f,
+                "infantry" => 0.07f,
+                _ => 0.08f,
+            },
             WheelOffsetsM = new[]
             {
                 new Vector2(-halfLength, -halfWidth),

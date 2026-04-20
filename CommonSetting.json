@@ -13,7 +13,7 @@
     "sim3d_renderer_backend": "native_cpp",
     "terrain_scene_backend": "native_cpp",
     "sim3d_selected_team": "blue",
-    "sim3d_selected_entity_id": "blue_robot_3",
+    "sim3d_selected_entity_id": "blue_robot_7",
     "player_projectile_ricochet_enabled": true,
     "match_mode": "full",
     "single_unit_test_team": "blue",
@@ -21,7 +21,7 @@
     "sim3d_infantry_mode": "balance",
     "sim3d_hero_performance_mode": "ranged_priority",
     "sim3d_infantry_durability_mode": "power_priority",
-    "sim3d_infantry_weapon_mode": "cooling_priority",
+    "sim3d_infantry_weapon_mode": "burst_priority",
     "sim3d_sentry_control_mode": "full_auto",
     "sim3d_sentry_stance": "attack",
     "show_entities": true,
@@ -75,7 +75,8 @@
     "manual_control_ai_scope": "combat_units",
     "manual_control_dispatch_profile": "exclusive_combat",
     "require_pre_match_setup": true,
-    "runtime_entrypoint": "simulator3d"
+    "runtime_entrypoint": "simulator3d",
+    "sim3d_autoaim_accuracy_scale": 0.821875
   },
   "ai": {
     "decision_deployment": {
@@ -419,8 +420,8 @@
       "ammo_per_shot": 1,
       "power_per_shot": 6.0,
       "heat_per_shot": 12.0,
-      "projectile_speed_17mm_mps": 23.0,
-      "projectile_speed_42mm_mps": 17.0,
+      "projectile_speed_17mm_mps": 25.0,
+      "projectile_speed_42mm_mps": 12.0,
       "projectile_gravity_mps2": 9.81,
       "projectile_drag_17mm": 0.018,
       "projectile_drag_42mm": 0.026,

@@ -75,6 +75,7 @@ internal sealed class Simulator3dHost
     private string _infantryWeaponMode = "cooling_priority";
     private string _sentryControlMode = "full_auto";
     private string _sentryStance = "attack";
+    private double _autoAimAccuracyScale = 1.0;
     private string _singleUnitTestTeam = "red";
     private string _singleUnitTestEntityKey = "robot_1";
 
@@ -104,6 +105,7 @@ internal sealed class Simulator3dHost
         _infantryWeaponMode = RuleSet.NormalizeInfantryWeaponMode(simulatorConfig["sim3d_infantry_weapon_mode"]?.ToString());
         _sentryControlMode = RuleSet.NormalizeSentryControlMode(simulatorConfig["sim3d_sentry_control_mode"]?.ToString());
         _sentryStance = RuleSet.NormalizeSentryStance(simulatorConfig["sim3d_sentry_stance"]?.ToString());
+        _autoAimAccuracyScale = Math.Clamp(ReadDouble(simulatorConfig["sim3d_autoaim_accuracy_scale"], 1.0), 0.05, 1.0);
         _singleUnitTestTeam = Simulator3dOptions.NormalizeTeam(options.SingleUnitTestTeam ?? simulatorConfig["single_unit_test_team"]?.ToString());
         _singleUnitTestEntityKey = Simulator3dOptions.NormalizeSingleUnitEntityKey(options.SingleUnitTestEntityKey ?? simulatorConfig["single_unit_test_entity_key"]?.ToString());
         ActiveMapPreset = ResolvePreset(options.MapPreset);
@@ -160,6 +162,8 @@ internal sealed class Simulator3dHost
 
     public string SentryStance => _sentryStance;
 
+    public double AutoAimAccuracyScale => _autoAimAccuracyScale;
+
     public bool IsSingleUnitTestMode => string.Equals(_matchMode, "single_unit_test", StringComparison.OrdinalIgnoreCase);
 
     public string SingleUnitTestTeam => _singleUnitTestTeam;
@@ -191,25 +195,7 @@ internal sealed class Simulator3dHost
 
     public string? ResolveMapImagePath()
     {
-        string mapDirectory = Path.GetDirectoryName(MapPreset.SourcePath) ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(mapDirectory) || !Directory.Exists(mapDirectory))
-        {
-            return null;
-        }
-
-        if (!string.IsNullOrWhiteSpace(MapPreset.ImagePath))
-        {
-            string explicitPath = Path.IsPathRooted(MapPreset.ImagePath)
-                ? MapPreset.ImagePath
-                : Path.GetFullPath(Path.Combine(mapDirectory, MapPreset.ImagePath));
-            if (File.Exists(explicitPath))
-            {
-                return explicitPath;
-            }
-        }
-
-        string fallback = Path.Combine(mapDirectory, "场地-俯视图.png");
-        return File.Exists(fallback) ? fallback : null;
+        return TerrainSurfaceMapSupport.ResolveBaseColorBitmapPath(MapPreset);
     }
 
     public RobotAppearanceProfile ResolveAppearanceProfile(SimulationEntity entity)
@@ -219,6 +205,9 @@ internal sealed class Simulator3dHost
             : null;
         return _appearanceCatalog.Resolve(entity.RoleKey, subtype);
     }
+
+    public ResolvedRoleProfile ResolveRuntimeProfile(SimulationEntity entity)
+        => _rules.ResolveRuntimeProfile(entity);
 
     public IReadOnlyDictionary<string, string> RoleDeploymentModes =>
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -470,6 +459,20 @@ internal sealed class Simulator3dHost
         return true;
     }
 
+    public bool SetAutoAimAccuracyScale(double scale)
+    {
+        double normalized = Math.Clamp(scale, 0.05, 1.0);
+        if (Math.Abs(_autoAimAccuracyScale - normalized) <= 1e-6)
+        {
+            return false;
+        }
+
+        _autoAimAccuracyScale = normalized;
+        ApplyConfiguredRoleProfilesToWorld(resetHealth: false);
+        PersistSimulatorSettings();
+        return true;
+    }
+
     public bool SetSingleUnitTestFocus(string? team = null, string? entityKey = null)
     {
         bool changed = false;
@@ -600,6 +603,53 @@ internal sealed class Simulator3dHost
             .ToArray();
     }
 
+    public IReadOnlyList<SimulationEntity> GetTacticalTargets(string friendlyTeam)
+    {
+        string normalizedTeam = Simulator3dOptions.NormalizeTeam(friendlyTeam);
+        return World.Entities
+            .Where(entity => entity.IsAlive && !entity.IsSimulationSuppressed)
+            .Where(entity => !string.Equals(entity.Team, normalizedTeam, StringComparison.OrdinalIgnoreCase))
+            .Where(entity =>
+                IsControlEntity(entity)
+                || string.Equals(entity.EntityType, "base", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(entity.EntityType, "outpost", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(entity => entity.Team, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(entity => entity.EntityType, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(entity => entity.Id, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    public void SetTeamTacticalCommand(
+        string team,
+        string command,
+        string? targetId,
+        double targetX,
+        double targetY,
+        double patrolRadiusWorld)
+    {
+        string normalizedTeam = Simulator3dOptions.NormalizeTeam(team);
+        string normalizedCommand = (command ?? string.Empty).Trim().ToLowerInvariant();
+        if (normalizedCommand is not ("attack" or "defend" or "patrol"))
+        {
+            normalizedCommand = string.Empty;
+        }
+
+        foreach (SimulationEntity entity in World.Entities)
+        {
+            if (!IsControlEntity(entity)
+                || !string.Equals(entity.Team, normalizedTeam, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            entity.TacticalCommand = normalizedCommand;
+            entity.TacticalTargetId = normalizedCommand == "attack" ? targetId : null;
+            entity.TacticalTargetX = targetX;
+            entity.TacticalTargetY = targetY;
+            entity.TacticalPatrolRadiusWorld = Math.Max(4.0, patrolRadiusWorld);
+        }
+    }
+
     public void SetSelectedTeam(string team)
     {
         string normalized = Simulator3dOptions.NormalizeTeam(team);
@@ -671,6 +721,7 @@ internal sealed class Simulator3dHost
         }
 
         RicochetEnabled = enabled;
+        _simulationService = BuildSimulationService(_rules);
         PersistSimulatorSettings();
     }
 
@@ -748,7 +799,20 @@ internal sealed class Simulator3dHost
             seed: 20260419,
             enableAutoMovement: false,
             canSeeAutoAimPlate: (world, shooter, target, plate) =>
-                AutoAimVisibility.CanSeePlate(world, _runtimeGrid, shooter, target, plate));
+                AutoAimVisibility.CanSeePlate(world, _runtimeGrid, shooter, target, plate),
+            resolveProjectileObstacle: (world, shooter, projectile, startX, startY, startHeightM, endX, endY, endHeightM) =>
+                ProjectileObstacleResolver.ResolveHit(
+                    world,
+                    _runtimeGrid,
+                    shooter,
+                    projectile,
+                    startX,
+                    startY,
+                    startHeightM,
+                    endX,
+                    endY,
+                    endHeightM),
+            projectileRicochetEnabled: RicochetEnabled);
     }
 
     private void ApplyPlayerControlState(PlayerControlState? state)
@@ -767,6 +831,7 @@ internal sealed class Simulator3dHost
             entity.StepClimbModeActive = false;
             entity.JumpRequested = false;
             entity.AutoAimRequested = false;
+            entity.AutoAimGuidanceOnly = false;
             entity.SmallGyroActive = false;
             entity.BuyAmmoRequested = false;
         }
@@ -801,8 +866,41 @@ internal sealed class Simulator3dHost
         entityToControl.StepClimbModeActive = state.StepClimbModeActive;
         entityToControl.JumpRequested = state.JumpRequested;
         entityToControl.AutoAimRequested = state.AutoAimPressed;
+        entityToControl.AutoAimGuidanceOnly = state.AutoAimGuidanceOnly;
         entityToControl.SmallGyroActive = state.SmallGyroActive;
         entityToControl.BuyAmmoRequested = state.BuyAmmoRequested;
+        if (state.HeroDeployToggleRequested && string.Equals(entityToControl.RoleKey, "hero", StringComparison.OrdinalIgnoreCase))
+        {
+            bool rangedHero = string.Equals(
+                RuleSet.NormalizeHeroMode(entityToControl.HeroPerformanceMode),
+                "ranged_priority",
+                StringComparison.OrdinalIgnoreCase);
+            entityToControl.HeroDeploymentRequested = rangedHero && !entityToControl.HeroDeploymentRequested;
+            if (!entityToControl.HeroDeploymentRequested)
+            {
+                entityToControl.HeroDeploymentActive = false;
+                entityToControl.HeroDeploymentHoldTimerSec = 0.0;
+            }
+        }
+
+        if (state.SuperCapToggleRequested)
+        {
+            entityToControl.SuperCapEnabled = !entityToControl.SuperCapEnabled;
+        }
+
+        if (state.SentryStanceToggleRequested
+            && string.Equals(entityToControl.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase))
+        {
+            string nextStance = RuleSet.NormalizeSentryStance(entityToControl.SentryStance) switch
+            {
+                "attack" => "move",
+                "move" => "defense",
+                _ => "attack",
+            };
+            entityToControl.SentryStance = nextStance;
+            _sentryStance = nextStance;
+        }
+
         entityToControl.TurretYawDeg = NormalizeDegrees(entityToControl.TurretYawDeg + state.TurretYawDeltaDeg);
         entityToControl.GimbalPitchDeg = Math.Clamp(entityToControl.GimbalPitchDeg + state.GimbalPitchDeltaDeg, -35.0, 35.0);
     }
@@ -1072,6 +1170,7 @@ internal sealed class Simulator3dHost
         simulator["sim3d_infantry_weapon_mode"] = _infantryWeaponMode;
         simulator["sim3d_sentry_control_mode"] = _sentryControlMode;
         simulator["sim3d_sentry_stance"] = _sentryStance;
+        simulator["sim3d_autoaim_accuracy_scale"] = _autoAimAccuracyScale;
         simulator["single_unit_test_team"] = _singleUnitTestTeam;
         simulator["single_unit_test_entity_key"] = _singleUnitTestEntityKey;
         simulator["sim3d_selected_team"] = SelectedTeam;
@@ -1100,6 +1199,7 @@ internal sealed class Simulator3dHost
             currentSimulator["sim3d_infantry_weapon_mode"] = _infantryWeaponMode;
             currentSimulator["sim3d_sentry_control_mode"] = _sentryControlMode;
             currentSimulator["sim3d_sentry_stance"] = _sentryStance;
+            currentSimulator["sim3d_autoaim_accuracy_scale"] = _autoAimAccuracyScale;
             currentSimulator["single_unit_test_team"] = _singleUnitTestTeam;
             currentSimulator["single_unit_test_entity_key"] = _singleUnitTestEntityKey;
             currentSimulator["sim3d_selected_team"] = SelectedTeam;
@@ -1179,6 +1279,30 @@ internal sealed class Simulator3dHost
                 {
                     return false;
                 }
+            }
+        }
+
+        return fallback;
+    }
+
+    private static double ReadDouble(JsonNode? node, double fallback)
+    {
+        if (node is JsonValue value)
+        {
+            if (value.TryGetValue(out double doubleValue))
+            {
+                return doubleValue;
+            }
+
+            if (value.TryGetValue(out int intValue))
+            {
+                return intValue;
+            }
+
+            if (value.TryGetValue(out string? text)
+                && double.TryParse(text, out doubleValue))
+            {
+                return doubleValue;
             }
         }
 
@@ -1291,6 +1415,7 @@ internal sealed class Simulator3dHost
             entity.MaxHealth = profile.MaxHealth;
             entity.MaxPower = profile.MaxPower;
             entity.MaxHeat = profile.MaxHeat;
+            entity.AutoAimAccuracyScale = _autoAimAccuracyScale;
             entity.AmmoType = profile.AmmoType;
             entity.RuleDrivePowerLimitW = profile.MaxPower;
             entity.MaxChassisEnergy = profile.MaxChassisEnergy;
@@ -1301,12 +1426,17 @@ internal sealed class Simulator3dHost
             entity.ChassisBoostThresholdEnergy = profile.BoostThresholdEnergy;
             entity.ChassisBoostMultiplier = profile.BoostPowerMultiplier;
             entity.ChassisBoostPowerCapW = profile.BoostPowerCapW;
+            entity.MaxBufferEnergyJ = Math.Max(0.0, entity.MaxBufferEnergyJ <= 1e-6 ? 60.0 : entity.MaxBufferEnergyJ);
+            entity.BufferReserveEnergyJ = Math.Clamp(entity.BufferReserveEnergyJ <= 1e-6 ? 30.0 : entity.BufferReserveEnergyJ, 0.0, entity.MaxBufferEnergyJ);
+            entity.MaxSuperCapEnergyJ = Math.Max(0.0, entity.MaxSuperCapEnergyJ <= 1e-6 ? 2000.0 : entity.MaxSuperCapEnergyJ);
 
             if (resetHealth)
             {
                 entity.Health = profile.MaxHealth;
                 entity.Power = profile.MaxPower;
                 entity.Heat = 0.0;
+                entity.BufferEnergyJ = entity.MaxBufferEnergyJ;
+                entity.SuperCapEnergyJ = entity.MaxSuperCapEnergyJ;
                 bool sentry = string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase);
                 entity.Ammo17Mm = sentry ? profile.InitialAllowedAmmo17Mm : 0;
                 entity.Ammo42Mm = sentry ? profile.InitialAllowedAmmo42Mm : 0;
@@ -1316,6 +1446,8 @@ internal sealed class Simulator3dHost
                 entity.Health = Math.Min(entity.Health, entity.MaxHealth);
                 entity.Power = Math.Min(entity.Power, entity.MaxPower);
                 entity.Heat = Math.Min(entity.Heat, entity.MaxHeat);
+                entity.BufferEnergyJ = Math.Min(entity.BufferEnergyJ, entity.MaxBufferEnergyJ);
+                entity.SuperCapEnergyJ = Math.Min(entity.SuperCapEnergyJ, entity.MaxSuperCapEnergyJ);
             }
         }
     }

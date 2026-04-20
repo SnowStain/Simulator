@@ -26,3 +26,8 @@ E:\Artinx\260111new\Simulator\build_verify\sim3d_debug\Simulator.ThreeD.deps.jso
 E:\Artinx\260111new\Simulator\build_verify\sim3d_debug\Simulator.ThreeD.runtimeconfig.json
 E:\Artinx\260111new\Simulator\build_verify\sim3d_debug\Simulator.ThreeD.dll
 E:\Artinx\260111new\Simulator\build_verify\sim3d_debug\Simulator.ThreeD.pdb
+C:\Users\kylin\AppData\Local\Temp\simulator-threed-build-verify\Simulator.ThreeD.exe
+C:\Users\kylin\AppData\Local\Temp\simulator-threed-build-verify\Simulator.ThreeD.deps.json
+C:\Users\kylin\AppData\Local\Temp\simulator-threed-build-verify\Simulator.ThreeD.runtimeconfig.json
+C:\Users\kylin\AppData\Local\Temp\simulator-threed-build-verify\Simulator.ThreeD.dll
+C:\Users\kylin\AppData\Local\Temp\simulator-threed-build-verify\Simulator.ThreeD.pdb

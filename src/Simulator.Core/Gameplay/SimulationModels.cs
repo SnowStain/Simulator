@@ -1,5 +1,16 @@
 namespace Simulator.Core.Gameplay;
 
+public readonly record struct ProjectileObstacleHit(
+    double X,
+    double Y,
+    double HeightM,
+    double NormalX,
+    double NormalY,
+    double NormalZ,
+    double SegmentT,
+    bool SupportsRicochet,
+    string Kind);
+
 public sealed class SimulationProjectile
 {
     public string Id { get; init; } = Guid.NewGuid().ToString("N");
@@ -12,6 +23,10 @@ public sealed class SimulationProjectile
 
     public string? PreferredTargetId { get; set; }
 
+    public string? PreferredPlateId { get; set; }
+
+    public double AimHitProbability { get; init; } = 1.0;
+
     public double X { get; set; }
 
     public double Y { get; set; }
@@ -23,6 +38,10 @@ public sealed class SimulationProjectile
     public double VelocityYWorldPerSec { get; set; }
 
     public double VelocityZMps { get; set; }
+
+    public double DamageScale { get; set; } = 1.0;
+
+    public int RicochetCount { get; set; }
 
     public double RemainingLifeSec { get; set; } = 3.0;
 }
@@ -71,6 +90,8 @@ public sealed class SimulationEntity
 
     public bool AutoAimRequested { get; set; }
 
+    public bool AutoAimGuidanceOnly { get; set; }
+
     public bool AutoAimLocked { get; set; }
 
     public string? AutoAimTargetId { get; set; }
@@ -80,6 +101,8 @@ public sealed class SimulationEntity
     public string AutoAimPlateDirection { get; set; } = string.Empty;
 
     public double AutoAimAccuracy { get; set; }
+
+    public double AutoAimAccuracyScale { get; set; } = 1.0;
 
     public double AutoAimDistanceCoefficient { get; set; }
 
@@ -96,6 +119,18 @@ public sealed class SimulationEntity
     public double AutoAimSmoothedYawDeg { get; set; }
 
     public double AutoAimSmoothedPitchDeg { get; set; }
+
+    public double HeroDeploymentYawCorrectionDeg { get; set; }
+
+    public double HeroDeploymentPitchCorrectionDeg { get; set; }
+
+    public string? HeroDeploymentCorrectionPlateId { get; set; }
+
+    public double AutoAimYawCorrectionDeg { get; set; }
+
+    public double AutoAimPitchCorrectionDeg { get; set; }
+
+    public string? AutoAimCorrectionLockKey { get; set; }
 
     public double VelocityXWorldPerSec { get; set; }
 
@@ -127,6 +162,12 @@ public sealed class SimulationEntity
 
     public bool BuyAmmoRequested { get; set; }
 
+    public bool HeroDeploymentRequested { get; set; }
+
+    public bool HeroDeploymentActive { get; set; }
+
+    public bool SuperCapEnabled { get; set; }
+
     public bool IsSimulationSuppressed { get; set; }
 
     public double DirectStepHeightM { get; set; } = 0.06;
@@ -155,6 +196,18 @@ public sealed class SimulationEntity
 
     public double CollisionRadiusWorld { get; set; }
 
+    public string MotionBlockReason { get; set; } = string.Empty;
+
+    public string TacticalCommand { get; set; } = string.Empty;
+
+    public string? TacticalTargetId { get; set; }
+
+    public double TacticalTargetX { get; set; }
+
+    public double TacticalTargetY { get; set; }
+
+    public double TacticalPatrolRadiusWorld { get; set; }
+
     public double MassKg { get; set; } = 20.0;
 
     public double ChassisSpeedScale { get; set; } = 1.0;
@@ -173,6 +226,8 @@ public sealed class SimulationEntity
 
     public double ChassisPowerDrawW { get; set; }
 
+    public double EffectiveDrivePowerLimitW { get; set; }
+
     public double ChassisRpm { get; set; }
 
     public double ChassisSpeedLimitMps { get; set; }
@@ -190,6 +245,12 @@ public sealed class SimulationEntity
     public double ChassisBoostMultiplier { get; set; } = 1.25;
 
     public double ChassisBoostPowerCapW { get; set; } = 200.0;
+
+    public double BufferEnergyJ { get; set; } = 60.0;
+
+    public double MaxBufferEnergyJ { get; set; } = 60.0;
+
+    public double BufferReserveEnergyJ { get; set; } = 30.0;
 
     public string ChassisSubtype { get; set; } = string.Empty;
 
@@ -381,6 +442,10 @@ public sealed class SimulationEntity
     public double TerrainSlopeCoolingTimerSec { get; set; }
 
     public double HeroDeploymentHoldTimerSec { get; set; }
+
+    public double SuperCapEnergyJ { get; set; }
+
+    public double MaxSuperCapEnergyJ { get; set; } = 2000.0;
 
     public double DynamicDamageTakenMult { get; set; } = 1.0;
 

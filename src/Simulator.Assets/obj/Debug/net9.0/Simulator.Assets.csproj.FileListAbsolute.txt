@@ -17,3 +17,9 @@ E:\Artinx\260111new\Simulator\src\Simulator.Assets\obj\Debug\net9.0\Simulator.As
 E:\Artinx\260111new\Simulator\build_verify\sim3d_debug\Simulator.Assets.deps.json
 E:\Artinx\260111new\Simulator\build_verify\sim3d_debug\Simulator.Assets.dll
 E:\Artinx\260111new\Simulator\build_verify\sim3d_debug\Simulator.Assets.pdb
+C:\Users\kylin\AppData\Local\Temp\simulator-threed-build-verify\Simulator.Assets.deps.json
+C:\Users\kylin\AppData\Local\Temp\simulator-threed-build-verify\Simulator.Assets.dll
+C:\Users\kylin\AppData\Local\Temp\simulator-threed-build-verify\Simulator.Assets.pdb
+E:\Artinx\260111new\Simulator\build_verify\sim_editors_debug\Simulator.Assets.deps.json
+E:\Artinx\260111new\Simulator\build_verify\sim_editors_debug\Simulator.Assets.dll
+E:\Artinx\260111new\Simulator\build_verify\sim_editors_debug\Simulator.Assets.pdb

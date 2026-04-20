@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Simulator.Assets;
 using Simulator.Core;
 
 namespace Simulator.Editors;
@@ -24,6 +25,16 @@ public sealed class AppearanceEditorService
 
         JsonNode? node = JsonNode.Parse(File.ReadAllText(path));
         return node as JsonObject ?? new JsonObject();
+    }
+
+    public RobotAppearanceRoot LoadLatestAppearanceDocument(ProjectLayout layout)
+    {
+        return RobotAppearanceJsonSerializer.LoadFromFile(layout.AppearancePresetPath);
+    }
+
+    public void SaveLatestAppearanceDocument(ProjectLayout layout, RobotAppearanceRoot root)
+    {
+        RobotAppearanceJsonSerializer.SaveToFile(layout.AppearancePresetPath, root);
     }
 
     public void SaveLatestAppearance(ProjectLayout layout, JsonObject json)

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import json
 import math
 import numpy as np
 import os
@@ -190,6 +191,10 @@ class MapManager:
             'resolution_m': float(self.runtime_grid_resolution_m),
             'shape': list(self._runtime_grid_shape()),
             'height_scale_baked_in': 1.0,
+            'storage_kind': 'runtime_triangle_grid',
+            'surface_topology': 'triangle_grid',
+            'surface_merge_mode': 'merged_exposed_faces',
+            'surface_split_mode': 'diag_forward',
             'channels': {},
         }
         self.config.setdefault('map', {})['runtime_grid'] = dict(self.runtime_grid_bundle)
@@ -295,6 +300,10 @@ class MapManager:
             'resolution_m': float(worker_state.runtime_grid_resolution_m),
             'shape': [int(worker_state.runtime_grid_height), int(worker_state.runtime_grid_width)],
             'height_scale_baked_in': 1.0,
+            'storage_kind': 'runtime_triangle_grid',
+            'surface_topology': 'triangle_grid',
+            'surface_merge_mode': 'merged_exposed_faces',
+            'surface_split_mode': 'diag_forward',
             'channels': {},
         }
         worker_state.runtime_grid_loaded = False
@@ -1073,8 +1082,95 @@ class MapManager:
             runtime_grid['resolution_m'] = float(self.runtime_grid_resolution_m)
             runtime_grid['shape'] = list(self._runtime_grid_shape())
             runtime_grid['height_scale_baked_in'] = 1.0
+            runtime_grid['storage_kind'] = str(runtime_grid.get('storage_kind') or 'runtime_triangle_grid')
+            runtime_grid['surface_topology'] = 'triangle_mesh'
+            runtime_grid['surface_merge_mode'] = 'merged_exposed_faces'
+            runtime_grid['surface_split_mode'] = str(runtime_grid.get('surface_split_mode') or 'diag_forward')
+            descriptor_path = str(runtime_grid.get('descriptor_path') or '').strip()
+            if descriptor_path:
+                runtime_grid['descriptor_path'] = descriptor_path
             runtime_grid.setdefault('channels', {})
             return runtime_grid
+
+    def export_terrain_surface_config(self, preset_name=None):
+        with self._edit_state_lock:
+            name = str(preset_name or self.config.get('map', {}).get('preset') or 'map').strip() or 'map'
+            existing = dict(self.config.get('map', {}).get('terrain_surface', {}) or {})
+            current_preset_name = str(self.config.get('map', {}).get('preset') or '').strip()
+            descriptor_path = str(existing.get('descriptor_path') or '').strip() if current_preset_name == name else ''
+            descriptor_path = descriptor_path or f'{name}.terrain_surface.json'
+            base_color_image_path = self._normalize_map_image_reference(existing.get('base_color_image_path'))
+            return {
+                'map_type': str(existing.get('map_type') or 'terrain_surface_map'),
+                'descriptor_path': descriptor_path,
+                'storage_kind': str(existing.get('storage_kind') or 'runtime_triangle_grid'),
+                'topology': str(existing.get('topology') or 'triangle_grid'),
+                'merge_mode': str(existing.get('merge_mode') or 'merged_exposed_faces'),
+                'split_mode': str(existing.get('split_mode') or 'diag_forward'),
+                'render_profile': str(existing.get('render_profile') or 'top_png_orthographic_side_solid'),
+                'top_face_mode': str(existing.get('top_face_mode') or 'orthographic_png'),
+                'side_face_mode': str(existing.get('side_face_mode') or 'solid_color'),
+                'side_color': str(existing.get('side_color') or '#4B4F55'),
+                'top_normal_threshold': float(existing.get('top_normal_threshold', 0.9)),
+                'side_normal_threshold': float(existing.get('side_normal_threshold', 0.1)),
+                'base_color_image_path': base_color_image_path,
+            }
+
+    def _build_terrain_surface_descriptor(self, preset_name, descriptor_path, channel_files):
+        surface_config = self.export_terrain_surface_config(preset_name)
+        return {
+            'version': 1,
+            'name': f'{preset_name}.terrain_surface',
+            'descriptor_path': descriptor_path,
+            'map_type': surface_config.get('map_type', 'terrain_surface_map'),
+            'storage_kind': surface_config.get('storage_kind', 'runtime_triangle_grid'),
+            'topology': surface_config.get('topology', 'triangle_grid'),
+            'merge_mode': surface_config.get('merge_mode', 'merged_exposed_faces'),
+            'split_mode': surface_config.get('split_mode', 'diag_forward'),
+            'render_profile': surface_config.get('render_profile', 'top_png_orthographic_side_solid'),
+            'top_face_mode': surface_config.get('top_face_mode', 'orthographic_png'),
+            'side_face_mode': surface_config.get('side_face_mode', 'solid_color'),
+            'side_color': surface_config.get('side_color', '#4B4F55'),
+            'top_normal_threshold': float(surface_config.get('top_normal_threshold', 0.9)),
+            'side_normal_threshold': float(surface_config.get('side_normal_threshold', 0.1)),
+            'coordinate_space': self.config.get('map', {}).get('coordinate_space', 'world'),
+            'base_color_image_path': surface_config.get('base_color_image_path') or self._normalize_map_image_reference(),
+            'resolution_m': float(self.runtime_grid_resolution_m),
+            'shape': list(self._runtime_grid_shape()),
+            'height_scale_baked_in': 1.0,
+            'channels': dict(channel_files or {}),
+        }
+
+    def _normalize_map_image_reference(self, image_path=None):
+        map_config = self.config.setdefault('map', {})
+        raw_value = image_path if image_path is not None else map_config.get('image_path')
+        raw_text = str(raw_value or '').strip()
+        base_name = os.path.basename(raw_text) if raw_text else ''
+        preset_dir = self._map_preset_directory()
+        candidate_names = []
+        if base_name:
+            candidate_names.append(base_name)
+        candidate_names.extend([
+            '场地-俯视图.png',
+            '俯视图.png',
+            '鍦哄湴-淇鍥?png',
+            '淇鍥?png',
+        ])
+
+        seen = set()
+        for candidate_name in candidate_names:
+            if not candidate_name or candidate_name in seen:
+                continue
+            seen.add(candidate_name)
+            candidate_path = candidate_name if os.path.isabs(candidate_name) else os.path.join(preset_dir, candidate_name)
+            if os.path.exists(candidate_path):
+                normalized = candidate_name if not os.path.isabs(candidate_name) else candidate_path
+                map_config['image_path'] = normalized
+                return normalized
+
+        normalized = base_name or raw_text or '场地-俯视图.png'
+        map_config['image_path'] = normalized
+        return normalized
 
     def persist_runtime_grid_bundle(self, preset_name, preset_path=None):
         self._ensure_raster_layers(wait=True)
@@ -1087,13 +1183,25 @@ class MapManager:
             file_path = os.path.join(directory, file_name)
             np.save(file_path, getattr(self, attribute_name), allow_pickle=False)
             channel_files[channel_name] = file_name
+        surface_config = self.export_terrain_surface_config(safe_name)
+        descriptor_file_name = str(surface_config.get('descriptor_path') or f'{safe_name}.terrain_surface.json').strip() or f'{safe_name}.terrain_surface.json'
+        descriptor_path = os.path.join(directory, descriptor_file_name)
+        descriptor_payload = self._build_terrain_surface_descriptor(safe_name, descriptor_file_name, channel_files)
+        with open(descriptor_path, 'w', encoding='utf-8') as descriptor_file:
+            json.dump(descriptor_payload, descriptor_file, ensure_ascii=False, indent=2)
         self.runtime_grid_bundle = {
             'resolution_m': float(self.runtime_grid_resolution_m),
             'shape': list(self._runtime_grid_shape()),
             'height_scale_baked_in': 1.0,
+            'descriptor_path': descriptor_file_name,
+            'storage_kind': 'runtime_triangle_grid',
+            'surface_topology': 'triangle_mesh',
+            'surface_merge_mode': 'merged_exposed_faces',
+            'surface_split_mode': 'diag_forward',
             'channels': channel_files,
         }
         self.config.setdefault('map', {})['runtime_grid'] = dict(self.runtime_grid_bundle)
+        self.config.setdefault('map', {})['terrain_surface'] = dict(surface_config)
         return dict(self.runtime_grid_bundle)
 
     def paint_terrain_grid(self, world_x, world_y, terrain_type, height_m=0.0, brush_radius=0, team='neutral', blocks_movement=None, blocks_vision=None):
@@ -2106,7 +2214,7 @@ class MapManager:
     
     def load_map(self):
         """加载地图图像"""
-        map_path = self.config.get('map', {}).get('image_path', '') or ''
+        map_path = self._normalize_map_image_reference()
         self._config_coordinate_space_hint = None
         preserved_runtime_grid_bundle = dict(self.config.get('map', {}).get('runtime_grid', {}) or {})
         self._refresh_runtime_grid_metrics()
@@ -2132,7 +2240,10 @@ class MapManager:
                 for base_dir in base_dirs:
                     fallback_candidates.append(os.path.join(base_dir, '场地-俯视图.png'))
                     fallback_candidates.append(os.path.join(base_dir, '俯视图.png'))
+                    fallback_candidates.append(os.path.join(base_dir, '鍦哄湴-淇鍥?png'))
+                    fallback_candidates.append(os.path.join(base_dir, '淇鍥?png'))
                     fallback_candidates.append(os.path.join(base_dir, 'maps', 'basicMap', '场地-俯视图.png'))
+                    fallback_candidates.append(os.path.join(base_dir, 'maps', 'basicMap', '鍦哄湴-淇鍥?png'))
                 for candidate in fallback_candidates:
                     if os.path.exists(candidate):
                         resolved_path = candidate
@@ -2150,6 +2261,7 @@ class MapManager:
                 self.map_surface = pygame.transform.scale(self.map_image, (int(target_width * self.scale), int(target_height * self.scale)))
                 self._refresh_runtime_grid_metrics()
                 map_config = self.config.setdefault('map', {})
+                map_config['image_path'] = self._normalize_map_image_reference(os.path.basename(resolved_path))
                 map_config['width'] = int(self.map_width)
                 map_config['height'] = int(self.map_height)
                 map_config['source_width'] = int(self.source_map_width)

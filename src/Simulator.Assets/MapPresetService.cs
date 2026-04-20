@@ -61,7 +61,12 @@ public sealed class MapPresetService
             }
         }
 
-        RuntimeGridDefinition? runtimeGrid = ParseRuntimeGrid(map["runtime_grid"] as JsonObject);
+        MapCoordinateSystemDefinition coordinateSystem = ParseCoordinateSystem(map);
+        TerrainSurfaceDefinition? terrainSurface = ParseTerrainSurface(
+            map["terrain_surface"] as JsonObject,
+            path,
+            ReadString(map, string.Empty, "image_path"));
+        RuntimeGridDefinition? runtimeGrid = ParseRuntimeGrid(map["runtime_grid"] as JsonObject, terrainSurface);
 
         return new MapPresetDefinition
         {
@@ -73,6 +78,8 @@ public sealed class MapPresetService
             ImagePath = ReadString(map, string.Empty, "image_path"),
             SourcePath = path,
             Facilities = facilities,
+            CoordinateSystem = coordinateSystem,
+            TerrainSurface = terrainSurface,
             RuntimeGrid = runtimeGrid,
         };
     }
@@ -124,38 +131,158 @@ public sealed class MapPresetService
         };
     }
 
-    private static RuntimeGridDefinition? ParseRuntimeGrid(JsonObject? node)
+    private static MapCoordinateSystemDefinition ParseCoordinateSystem(JsonObject map)
+    {
+        JsonObject? node = map["coordinate_system"] as JsonObject;
+        return new MapCoordinateSystemDefinition
+        {
+            CoordinateSpace = ReadString(node ?? map, ReadString(map, "world", "coordinate_space"), "coordinate_space"),
+            Unit = ReadString(node ?? map, ReadString(map, "px", "unit"), "unit"),
+            OriginX = ReadDouble(node ?? map, ReadDouble(map, 0.0, "origin_x"), "origin_x"),
+            OriginY = ReadDouble(node ?? map, ReadDouble(map, 0.0, "origin_y"), "origin_y"),
+            FieldLengthM = ReadDouble(node ?? map, ReadDouble(map, 28.0, "field_length_m"), "field_length_m"),
+            FieldWidthM = ReadDouble(node ?? map, ReadDouble(map, 15.0, "field_width_m"), "field_width_m"),
+        };
+    }
+
+    private static TerrainSurfaceDefinition? ParseTerrainSurface(JsonObject? node, string presetPath, string fallbackImagePath)
     {
         if (node is null)
         {
             return null;
         }
 
-        int heightCells = 0;
-        int widthCells = 0;
-        if (node["shape"] is JsonArray shape && shape.Count >= 2)
+        string presetDirectory = Path.GetDirectoryName(presetPath) ?? string.Empty;
+        string descriptorPath = ReadString(node, string.Empty, "descriptor_path");
+        JsonObject? descriptorNode = LoadDescriptorNode(presetDirectory, descriptorPath);
+
+        (int heightCells, int widthCells) = ReadShape(node, descriptorNode);
+        IReadOnlyDictionary<string, string> channels = ReadStringDictionary(node["channels"] as JsonObject);
+        if (channels.Count == 0 && descriptorNode is not null)
         {
-            heightCells = TryReadDouble(shape[0], out double parsedHeight)
-                ? Math.Max(0, Convert.ToInt32(parsedHeight))
-                : 0;
-            widthCells = TryReadDouble(shape[1], out double parsedWidth)
-                ? Math.Max(0, Convert.ToInt32(parsedWidth))
-                : 0;
+            channels = ReadStringDictionary(descriptorNode["channels"] as JsonObject);
         }
 
+        return new TerrainSurfaceDefinition
+        {
+            MapType = ReadString(node, ReadString(descriptorNode, "terrain_surface_map", "map_type"), "map_type"),
+            DescriptorPath = descriptorPath,
+            StorageKind = ReadString(node, ReadString(descriptorNode, "runtime_triangle_grid", "storage_kind"), "storage_kind"),
+            Topology = ReadString(node, ReadString(descriptorNode, "triangle_grid", "topology"), "topology"),
+            MergeMode = ReadString(node, ReadString(descriptorNode, "merged_exposed_faces", "merge_mode"), "merge_mode"),
+            SplitMode = ReadString(node, ReadString(descriptorNode, "diag_forward", "split_mode"), "split_mode"),
+            BaseColorImagePath = ReadString(node, ReadString(descriptorNode, fallbackImagePath, "base_color_image_path"), "base_color_image_path"),
+            RenderProfile = ReadString(node, ReadString(descriptorNode, "top_png_orthographic_side_solid", "render_profile"), "render_profile"),
+            TopFaceMode = ReadString(node, ReadString(descriptorNode, "orthographic_png", "top_face_mode"), "top_face_mode"),
+            SideFaceMode = ReadString(node, ReadString(descriptorNode, "solid_color", "side_face_mode"), "side_face_mode"),
+            SideColorHex = ReadString(node, ReadString(descriptorNode, "#4B4F55", "side_color"), "side_color"),
+            TopNormalThreshold = Math.Clamp(
+                ReadDouble(node, ReadDouble(descriptorNode, 0.9, "top_normal_threshold"), "top_normal_threshold"),
+                0.0,
+                1.0),
+            SideNormalThreshold = Math.Clamp(
+                ReadDouble(node, ReadDouble(descriptorNode, 0.1, "side_normal_threshold"), "side_normal_threshold"),
+                0.0,
+                1.0),
+            ResolutionM = Math.Max(
+                0.001,
+                ReadDouble(node, ReadDouble(descriptorNode, 0.01, "resolution_m"), "resolution_m")),
+            HeightCells = heightCells,
+            WidthCells = widthCells,
+            HeightScaleBakedIn = Math.Max(
+                1.0,
+                ReadDouble(node, ReadDouble(descriptorNode, 1.0, "height_scale_baked_in"), "height_scale_baked_in")),
+            Channels = channels,
+        };
+    }
+
+    private static RuntimeGridDefinition? ParseRuntimeGrid(JsonObject? node, TerrainSurfaceDefinition? terrainSurface)
+    {
+        if (node is null && terrainSurface is null)
+        {
+            return null;
+        }
+
+        (int heightCells, int widthCells) = ReadShape(node, null);
+        if ((heightCells <= 0 || widthCells <= 0) && terrainSurface is not null)
+        {
+            heightCells = terrainSurface.HeightCells;
+            widthCells = terrainSurface.WidthCells;
+        }
         if (heightCells <= 0 || widthCells <= 0)
         {
             return null;
         }
 
+        IReadOnlyDictionary<string, string> channels = ReadStringDictionary(node?["channels"] as JsonObject);
+        if (channels.Count == 0 && terrainSurface is not null)
+        {
+            channels = terrainSurface.Channels;
+        }
+
         return new RuntimeGridDefinition
         {
-            ResolutionM = Math.Max(0.001, ReadDouble(node, 0.01, "resolution_m")),
+            ResolutionM = Math.Max(0.001, ReadDouble(node, terrainSurface?.ResolutionM ?? 0.01, "resolution_m")),
             HeightCells = heightCells,
             WidthCells = widthCells,
-            HeightScaleBakedIn = Math.Max(1.0, ReadDouble(node, 1.0, "height_scale_baked_in")),
-            Channels = ReadStringDictionary(node["channels"] as JsonObject),
+            HeightScaleBakedIn = Math.Max(1.0, ReadDouble(node, terrainSurface?.HeightScaleBakedIn ?? 1.0, "height_scale_baked_in")),
+            DescriptorPath = ReadString(node, terrainSurface?.DescriptorPath ?? string.Empty, "descriptor_path"),
+            StorageKind = ReadString(node, terrainSurface?.StorageKind ?? "runtime_triangle_grid", "storage_kind"),
+            SurfaceTopology = ReadString(node, terrainSurface?.Topology ?? "triangle_grid", "surface_topology"),
+            SurfaceMergeMode = ReadString(node, terrainSurface?.MergeMode ?? "merged_exposed_faces", "surface_merge_mode"),
+            SurfaceSplitMode = ReadString(node, terrainSurface?.SplitMode ?? "diag_forward", "surface_split_mode"),
+            RenderProfile = ReadString(node, terrainSurface?.RenderProfile ?? "top_png_orthographic_side_solid", "render_profile"),
+            TopFaceMode = ReadString(node, terrainSurface?.TopFaceMode ?? "orthographic_png", "top_face_mode"),
+            SideFaceMode = ReadString(node, terrainSurface?.SideFaceMode ?? "solid_color", "side_face_mode"),
+            SideColorHex = ReadString(node, terrainSurface?.SideColorHex ?? "#4B4F55", "side_color"),
+            Channels = channels,
         };
+    }
+
+    private static (int HeightCells, int WidthCells) ReadShape(JsonObject? primary, JsonObject? secondary)
+    {
+        static (int Height, int Width) Read(JsonObject? node)
+        {
+            if (node?["shape"] is JsonArray shape && shape.Count >= 2)
+            {
+                int heightCells = TryReadDouble(shape[0], out double parsedHeight)
+                    ? Math.Max(0, Convert.ToInt32(parsedHeight))
+                    : 0;
+                int widthCells = TryReadDouble(shape[1], out double parsedWidth)
+                    ? Math.Max(0, Convert.ToInt32(parsedWidth))
+                    : 0;
+                return (heightCells, widthCells);
+            }
+
+            return (0, 0);
+        }
+
+        (int height, int width) = Read(primary);
+        if (height > 0 && width > 0)
+        {
+            return (height, width);
+        }
+
+        return Read(secondary);
+    }
+
+    private static JsonObject? LoadDescriptorNode(string presetDirectory, string descriptorPath)
+    {
+        if (string.IsNullOrWhiteSpace(descriptorPath))
+        {
+            return null;
+        }
+
+        string fullPath = Path.IsPathRooted(descriptorPath)
+            ? descriptorPath
+            : Path.GetFullPath(Path.Combine(presetDirectory, descriptorPath));
+        if (!File.Exists(fullPath))
+        {
+            return null;
+        }
+
+        JsonNode? parsed = JsonNode.Parse(File.ReadAllText(fullPath));
+        return parsed as JsonObject;
     }
 
     private static IReadOnlyDictionary<string, string> ReadStringDictionary(JsonObject? objectNode)
@@ -218,14 +345,24 @@ public sealed class MapPresetService
         return false;
     }
 
-    private static string ReadString(JsonObject node, string fallback, params string[] path)
+    private static string ReadString(JsonObject? node, string fallback, params string[] path)
     {
+        if (node is null)
+        {
+            return fallback;
+        }
+
         JsonNode? target = Walk(node, path);
         return target?.ToString() ?? fallback;
     }
 
-    private static int ReadInt(JsonObject node, int fallback, params string[] path)
+    private static int ReadInt(JsonObject? node, int fallback, params string[] path)
     {
+        if (node is null)
+        {
+            return fallback;
+        }
+
         JsonNode? target = Walk(node, path);
         if (target is JsonValue value)
         {
@@ -248,8 +385,13 @@ public sealed class MapPresetService
         return fallback;
     }
 
-    private static double ReadDouble(JsonObject node, double fallback, params string[] path)
+    private static double ReadDouble(JsonObject? node, double fallback, params string[] path)
     {
+        if (node is null)
+        {
+            return fallback;
+        }
+
         JsonNode? target = Walk(node, path);
         return TryReadDouble(target, out double value) ? value : fallback;
     }

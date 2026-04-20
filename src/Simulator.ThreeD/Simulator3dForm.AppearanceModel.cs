@@ -5,6 +5,8 @@ namespace Simulator.ThreeD;
 
 internal sealed partial class Simulator3dForm
 {
+    private const float RenderWheelHalfWidthM = 0.02f;
+
     private readonly record struct SolidFace(Vector3[] Vertices, float Ambient);
 
     private readonly record struct RenderWheelComponent(
@@ -127,15 +129,22 @@ internal sealed partial class Simulator3dForm
 
         string? lockedPlateId = ResolveLockedPlateIdFor(entity);
         IReadOnlyList<ArmorRenderComponent> armorComponents = ResolveArmorComponents(profile);
+        var visibleArmor = new List<(int Index, ArmorRenderComponent Component, Vector3 Center, float DistanceSq)>(armorComponents.Count);
         for (int armorIndex = 0; armorIndex < armorComponents.Count; armorIndex++)
         {
             ArmorRenderComponent component = armorComponents[armorIndex];
             Vector3 armorCenter = OffsetScenePosition(center, component.LocalCenter.X, component.LocalCenter.Z, yaw, component.LocalCenter.Y - profile.ArmorPlateHeightM * 0.5f);
-            if (!IsArmorPlateVisibleFromCamera(armorCenter, yaw + component.YawRad))
+            if (!IsArmorPlateVisibleFromCamera(entity, armorCenter, yaw + component.YawRad))
             {
                 continue;
             }
 
+            visibleArmor.Add((armorIndex, component, armorCenter, Vector3.DistanceSquared(armorCenter, _cameraPositionM)));
+        }
+
+        visibleArmor.Sort((left, right) => right.DistanceSq.CompareTo(left.DistanceSq));
+        foreach ((int armorIndex, ArmorRenderComponent component, Vector3 armorCenter, _) in visibleArmor)
+        {
             bool locked = string.Equals(lockedPlateId, $"armor_{armorIndex + 1}", StringComparison.OrdinalIgnoreCase);
             Color plateFill = locked
                 ? Color.FromArgb(255, 255, 211, 84)
@@ -342,11 +351,134 @@ internal sealed partial class Simulator3dForm
             }
         }
 
-        if (TryProject(center + new Vector3(0f, maxHeight + 0.03f, 0f), out PointF screenLabel, out _))
+        if (!_suppressEntityLabels
+            && TryProject(center + new Vector3(0f, maxHeight + 0.03f, 0f), out PointF screenLabel, out _))
         {
             using var textBrush = new SolidBrush(Color.FromArgb(entity.IsAlive ? 232 : 142, 228, 232, 238));
             SizeF size = graphics.MeasureString(entity.Id, _smallHudFont);
             graphics.DrawString(entity.Id, _smallHudFont, textBrush, screenLabel.X - size.Width * 0.5f, screenLabel.Y - 11f);
+        }
+
+        return maxHeight;
+    }
+
+    private float DrawEntityAppearanceModelProxy(
+        Graphics graphics,
+        SimulationEntity entity,
+        Vector3 center,
+        RobotAppearanceProfile profile,
+        float distanceM)
+    {
+        float yaw = ResolveEntityYaw(entity);
+        float turretYaw = (float)(entity.TurretYawDeg * Math.PI / 180.0);
+        float gimbalPitch = (float)(entity.GimbalPitchDeg * Math.PI / 180.0);
+        Color teamColor = ResolveTeamColor(entity.Team);
+        Color bodyColor = TintProfileColor(profile.BodyColor, teamColor, entity.IsAlive ? 0.16f : 0.04f, entity.IsAlive);
+        Color turretColor = TintProfileColor(profile.TurretColor, teamColor, entity.IsAlive ? 0.22f : 0.05f, entity.IsAlive);
+        Color armorColor = TintProfileColor(profile.ArmorColor, teamColor, entity.IsAlive ? 0.18f : 0.04f, entity.IsAlive);
+
+        float bodyLength = Math.Max(0.12f, profile.BodyLengthM);
+        float bodyWidth = Math.Max(0.10f, profile.BodyWidthM * profile.BodyRenderWidthScale);
+        float bodyHeight = Math.Max(0.08f, profile.BodyHeightM);
+        float bodyBase = Math.Max(0f, profile.BodyClearanceM + (float)Math.Max(0.0, entity.AirborneHeightM));
+        bool ultraSimple = distanceM >= 18f;
+
+        IReadOnlyList<Vector3> bodyFootprint = BuildOrientedRectFootprint(center, bodyLength, bodyWidth, bodyBase, yaw);
+        DrawPrismWireframe(
+            graphics,
+            bodyFootprint,
+            bodyHeight,
+            Color.FromArgb(entity.IsAlive ? 244 : 228, bodyColor),
+            Color.FromArgb(entity.IsAlive ? 250 : 212, BlendColor(bodyColor, Color.Black, 0.10f)),
+            null);
+
+        float maxHeight = bodyBase + bodyHeight;
+        Vector3 turretForward = new(MathF.Cos(turretYaw), 0f, MathF.Sin(turretYaw));
+        Vector3 turretRight = new(-turretForward.Z, 0f, turretForward.X);
+        Vector3 pitchedForward = Vector3.Normalize(turretForward * MathF.Cos(gimbalPitch) + Vector3.UnitY * MathF.Sin(gimbalPitch));
+        Vector3 pitchedUp = Vector3.Normalize(Vector3.Cross(turretRight, pitchedForward));
+        float turretBase = Math.Max(bodyBase + bodyHeight + profile.GimbalMountGapM, profile.GimbalHeightM - profile.GimbalBodyHeightM * 0.5f);
+        Vector3 turretCenter = OffsetScenePosition(center, profile.GimbalOffsetXM, profile.GimbalOffsetYM, yaw, turretBase + profile.GimbalBodyHeightM * 0.56f);
+        DrawOrientedBoxSolid(
+            graphics,
+            turretCenter,
+            pitchedForward,
+            turretRight,
+            pitchedUp,
+            Math.Max(0.12f, profile.GimbalLengthM * (ultraSimple ? 0.75f : 0.92f)),
+            Math.Max(0.08f, profile.GimbalWidthM * profile.BodyRenderWidthScale),
+            Math.Max(0.05f, profile.GimbalBodyHeightM),
+            Color.FromArgb(entity.IsAlive ? 244 : 226, turretColor),
+            Color.FromArgb(entity.IsAlive ? 250 : 212, BlendColor(turretColor, Color.Black, 0.12f)),
+            null);
+        maxHeight = Math.Max(maxHeight, turretCenter.Y + profile.GimbalBodyHeightM * 0.6f);
+
+        if (profile.BarrelLengthM > 0.03f)
+        {
+            Vector3 barrelCenter = turretCenter
+                + pitchedForward * (Math.Max(0.16f, profile.BarrelLengthM * (ultraSimple ? 0.42f : 0.50f)));
+            DrawCylinderSolid(
+                graphics,
+                barrelCenter,
+                pitchedForward,
+                turretRight,
+                Math.Max(0.006f, profile.BarrelRadiusM * (ultraSimple ? 0.9f : 1.0f)),
+                Math.Max(0.07f, profile.BarrelLengthM * (ultraSimple ? 0.26f : 0.34f)),
+                0f,
+                Color.FromArgb(entity.IsAlive ? 244 : 226, turretColor),
+                Color.FromArgb(entity.IsAlive ? 250 : 212, BlendColor(turretColor, Color.Black, 0.14f)),
+                ultraSimple ? 8 : 10);
+            maxHeight = Math.Max(maxHeight, barrelCenter.Y + profile.BarrelRadiusM * 1.6f);
+        }
+
+        if (!ultraSimple)
+        {
+            foreach (RenderWheelComponent wheel in ResolveWheelComponents(entity, profile, ResolveRuntimeChassisMotion(entity)))
+            {
+                if (!IsLocalSideVisibleFromCamera(center, yaw, wheel.LocalY, bodyBase + bodyHeight))
+                {
+                    continue;
+                }
+
+                Vector3 wheelCenter = OffsetScenePosition(
+                    center,
+                    wheel.LocalX,
+                    wheel.LocalY,
+                    yaw,
+                    Math.Max(wheel.RadiusM, wheel.CenterHeightM));
+                DrawCylinderSolid(
+                    graphics,
+                    wheelCenter,
+                    new Vector3(-MathF.Sin(yaw), 0f, MathF.Cos(yaw)),
+                    Vector3.UnitY,
+                    Math.Max(0.016f, wheel.RadiusM),
+                    Math.Max(0.010f, wheel.HalfThicknessM),
+                    wheel.SpinRad,
+                    Color.FromArgb(entity.IsAlive ? 240 : 220, TintProfileColor(profile.WheelColor, teamColor, 0.06f, entity.IsAlive)),
+                    Color.FromArgb(entity.IsAlive ? 246 : 210, BlendColor(profile.WheelColor, Color.Black, 0.10f)),
+                    10);
+            }
+
+            string? lockedPlateId = ResolveLockedPlateIdFor(entity);
+            IReadOnlyList<ArmorRenderComponent> armorComponents = ResolveArmorComponents(profile);
+            if (armorComponents.Count > 0)
+            {
+                ArmorRenderComponent frontPlate = armorComponents[0];
+                Vector3 armorCenter = OffsetScenePosition(center, frontPlate.LocalCenter.X, frontPlate.LocalCenter.Z, yaw, frontPlate.LocalCenter.Y - profile.ArmorPlateHeightM * 0.5f);
+                bool locked = string.Equals(lockedPlateId, "armor_1", StringComparison.OrdinalIgnoreCase);
+                DrawOrientedBoxSolid(
+                    graphics,
+                    armorCenter + Vector3.UnitY * (profile.ArmorPlateHeightM * 0.5f),
+                    new Vector3(MathF.Cos(yaw + frontPlate.YawRad), 0f, MathF.Sin(yaw + frontPlate.YawRad)),
+                    new Vector3(-MathF.Sin(yaw + frontPlate.YawRad), 0f, MathF.Cos(yaw + frontPlate.YawRad)),
+                    Vector3.UnitY,
+                    Math.Max(0.014f, profile.ArmorPlateGapM * 0.8f),
+                    Math.Max(0.08f, profile.ArmorPlateWidthM),
+                    Math.Max(0.05f, profile.ArmorPlateHeightM),
+                    locked ? Color.FromArgb(250, 255, 211, 84) : Color.FromArgb(236, armorColor),
+                    locked ? Color.FromArgb(252, 255, 244, 150) : Color.FromArgb(246, armorColor),
+                    null);
+            }
         }
 
         return maxHeight;
@@ -414,7 +546,8 @@ internal sealed partial class Simulator3dForm
         HashSet<int> dynamicIndices = new();
         if (leg is not null)
         {
-            if (string.Equals(profile.WheelStyle, "legged", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(profile.WheelStyle, "legged", StringComparison.OrdinalIgnoreCase)
+                && profile.WheelOffsetsM.Count <= 2)
             {
                 for (int index = 0; index < profile.WheelOffsetsM.Count; index++)
                 {
@@ -462,9 +595,11 @@ internal sealed partial class Simulator3dForm
             Vector2 rawOffset = profile.WheelOffsetsM[index];
             float localX = rawOffset.X;
             float localY = rawOffset.Y * profile.BodyRenderWidthScale;
-            float centerHeight = Math.Clamp(profile.WheelRadiusM, 0.03f, 0.24f);
+            float wheelRadius = Math.Clamp(profile.WheelRadiusM, 0.03f, 0.24f);
+            float centerHeight = wheelRadius;
             if (leg is not null && dynamicIndices.Contains(index))
             {
+                wheelRadius = Math.Clamp(profile.RearLegWheelRadiusM, 0.03f, 0.32f);
                 float sideSign = rawOffset.Y < 0f ? -1f : 1f;
                 if (Math.Abs(rawOffset.Y) <= 1e-4f)
                 {
@@ -472,18 +607,16 @@ internal sealed partial class Simulator3dForm
                 }
 
                 localX = leg.Value.Foot.X;
-                localY = leg.Value.SideOffset * sideSign;
+                localY = (leg.Value.SideOffset + RenderWheelHalfWidthM) * sideSign;
                 centerHeight = leg.Value.Foot.Y;
             }
 
-            float halfThickness = string.Equals(profile.WheelStyle, "omni", StringComparison.OrdinalIgnoreCase)
-                ? Math.Max(0.02f, centerHeight * 0.22f)
-                : Math.Max(0.03f, centerHeight * 0.32f);
+            float halfThickness = RenderWheelHalfWidthM;
             result.Add(new RenderWheelComponent(
                 localX,
                 localY,
                 centerHeight,
-                centerHeight,
+                wheelRadius,
                 halfThickness,
                 spinBase + index * 0.85f));
         }
@@ -552,7 +685,7 @@ internal sealed partial class Simulator3dForm
             : Color.FromArgb(140, 110, 120, 138);
         float baseHeight = localCenter.Y - profile.ArmorLightHeightM * 0.5f;
         Vector3 worldCenter = OffsetScenePosition(center, localCenter.X, localCenter.Z, chassisYaw, baseHeight);
-        if (!IsArmorPlateVisibleFromCamera(worldCenter, chassisYaw + localYaw))
+        if (!IsArmorPlateVisibleFromCamera(entity, worldCenter, chassisYaw + localYaw))
         {
             return localCenter.Y + profile.ArmorLightHeightM * 0.5f;
         }
@@ -603,23 +736,130 @@ internal sealed partial class Simulator3dForm
         return lightCenter.Y + profile.BarrelLightHeightM * 0.5f;
     }
 
-    private bool IsArmorPlateVisibleFromCamera(Vector3 plateCenter, float plateYaw)
+    private bool IsArmorPlateVisibleFromCamera(SimulationEntity entity, Vector3 plateCenter, float plateYaw)
     {
+        bool targetHasCoreOccluder = string.Equals(entity.EntityType, "robot", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(entity.EntityType, "sentry", StringComparison.OrdinalIgnoreCase);
         Vector3 normal = new(MathF.Cos(plateYaw), 0f, MathF.Sin(plateYaw));
-        Vector3 toCamera = _cameraPositionM - plateCenter;
-        toCamera.Y = 0f;
-        if (toCamera.LengthSquared() <= 1e-6f)
+        Vector3 side = new(-normal.Z, 0f, normal.X);
+        const float sampleHalfSideM = 0.052f;
+
+        Span<Vector3> samples = stackalloc Vector3[5];
+        samples[0] = plateCenter;
+        samples[1] = plateCenter + side * sampleHalfSideM;
+        samples[2] = plateCenter - side * sampleHalfSideM;
+        samples[3] = plateCenter + Vector3.UnitY * sampleHalfSideM;
+        samples[4] = plateCenter - Vector3.UnitY * sampleHalfSideM;
+
+        for (int index = 0; index < samples.Length; index++)
         {
-            return true;
+            Vector3 sample = samples[index];
+            if (IsTerrainOccludingPoint(sample))
+            {
+                continue;
+            }
+
+            if (targetHasCoreOccluder && IsEntityCoreOccludingPoint(entity, sample))
+            {
+                continue;
+            }
+
+            Vector3 toCamera = _cameraPositionM - sample;
+            toCamera.Y = 0f;
+            if (toCamera.LengthSquared() <= 1e-6f)
+            {
+                return true;
+            }
+
+            // Back-face rejection is intentionally soft. The chassis occlusion test is the
+            // authoritative guard for far-side armor, while this avoids drawing inverted plates.
+            if (Vector3.Dot(normal, Vector3.Normalize(toCamera)) >= -0.32f)
+            {
+                return true;
+            }
         }
 
-        toCamera = Vector3.Normalize(toCamera);
-        return Vector3.Dot(normal, toCamera) >= -0.08f;
+        return false;
+    }
+
+    private bool IsEntityCoreOccludingPoint(SimulationEntity entity, Vector3 targetPoint)
+    {
+        Vector3 start = _cameraPositionM;
+        Vector2 center = new((float)(entity.X * _host.World.MetersPerWorldUnit), (float)(entity.Y * _host.World.MetersPerWorldUnit));
+        Vector2 start2 = new(start.X, start.Z);
+        Vector2 end2 = new(targetPoint.X, targetPoint.Z);
+        Vector2 segment = end2 - start2;
+        if (segment.LengthSquared() <= 1e-8f)
+        {
+            return false;
+        }
+
+        float yawRad = (float)(entity.AngleDeg * Math.PI / 180.0);
+        Vector2 forward = new(MathF.Cos(yawRad), MathF.Sin(yawRad));
+        Vector2 right = new(-forward.Y, forward.X);
+        float halfLength = (float)Math.Max(0.06, entity.BodyLengthM * 0.5 + 0.010);
+        float halfWidth = (float)Math.Max(0.06, entity.BodyWidthM * entity.BodyRenderWidthScale * 0.5 + 0.010);
+        Vector2 localStart = new(Vector2.Dot(start2 - center, forward), Vector2.Dot(start2 - center, right));
+        Vector2 localEnd = new(Vector2.Dot(end2 - center, forward), Vector2.Dot(end2 - center, right));
+        Vector2 localDelta = localEnd - localStart;
+        float maxT = 0.96f;
+        if (!TryClipOcclusionSlab(localStart.X, localDelta.X, -halfLength, halfLength, ref maxT, out float enterX, out float exitX)
+            || !TryClipOcclusionSlab(localStart.Y, localDelta.Y, -halfWidth, halfWidth, ref maxT, out float enterY, out float exitY))
+        {
+            return false;
+        }
+
+        float enter = MathF.Max(0.04f, MathF.Max(enterX, enterY));
+        float exit = MathF.Min(maxT, MathF.Min(exitX, exitY));
+        if (enter > exit)
+        {
+            return false;
+        }
+
+        float sampleHeight = start.Y + (targetPoint.Y - start.Y) * enter;
+        float bottom = (float)Math.Max(0.0, entity.GroundHeightM + entity.AirborneHeightM - 0.02);
+        float top = bottom + (float)Math.Max(0.24, entity.BodyClearanceM + entity.BodyHeightM + entity.GimbalBodyHeightM * 0.55);
+        return sampleHeight >= bottom && sampleHeight <= top;
+    }
+
+    private static bool TryClipOcclusionSlab(
+        float origin,
+        float delta,
+        float min,
+        float max,
+        ref float maxT,
+        out float enter,
+        out float exit)
+    {
+        enter = 0f;
+        exit = maxT;
+        if (MathF.Abs(delta) <= 1e-7f)
+        {
+            return origin >= min && origin <= max;
+        }
+
+        float t0 = (min - origin) / delta;
+        float t1 = (max - origin) / delta;
+        if (t0 > t1)
+        {
+            (t0, t1) = (t1, t0);
+        }
+
+        enter = MathF.Max(enter, t0);
+        exit = MathF.Min(exit, t1);
+        maxT = exit;
+        return enter <= exit;
     }
 
     private bool IsLocalSideVisibleFromCamera(Vector3 entityCenter, float chassisYaw, float localY, float bodyTopM)
     {
         if (Math.Abs(localY) <= 1e-4f)
+        {
+            return true;
+        }
+
+        Vector3 fullOffset = _cameraPositionM - entityCenter;
+        if (fullOffset.LengthSquared() <= MathF.Max(6.5f, bodyTopM * bodyTopM * 6.0f))
         {
             return true;
         }
@@ -638,7 +878,7 @@ internal sealed partial class Simulator3dForm
         }
 
         float cameraSide = Vector3.Dot(Vector3.Normalize(toCamera), right);
-        return MathF.Sign(localY) * cameraSide >= -0.10f;
+        return MathF.Sign(localY) * cameraSide >= -0.24f;
     }
 
     private void DrawTaperedPlate(
@@ -938,7 +1178,9 @@ internal sealed partial class Simulator3dForm
         Color edgeColor,
         string? label)
     {
-        var projectedFaces = new List<ProjectedFace>(faces.Count);
+        _projectedFaceScratchBuffer.Clear();
+        List<ProjectedFace> projectedFaces = _projectedFaceScratchBuffer;
+        projectedFaces.EnsureCapacity(faces.Count);
         Vector3 labelPoint = Vector3.Zero;
         int labelVertices = 0;
         foreach (SolidFace solidFace in faces)
@@ -960,12 +1202,14 @@ internal sealed partial class Simulator3dForm
         }
 
         projectedFaces.Sort((left, right) => right.AverageDepth.CompareTo(left.AverageDepth));
-        foreach (ProjectedFace face in projectedFaces)
+        ReduceProjectedSolidFacesForPerformance(projectedFaces);
+        if (_collectProjectedFacesOnly)
         {
-            using var faceBrush = new SolidBrush(face.FillColor);
-            using var facePen = new Pen(face.EdgeColor, 1f);
-            graphics.FillPolygon(faceBrush, face.Points);
-            graphics.DrawPolygon(facePen, face.Points);
+            _projectedEntityFaceBuffer.AddRange(projectedFaces);
+        }
+        else
+        {
+            DrawProjectedFaceBatch(graphics, projectedFaces, 1f);
         }
 
         if (!string.IsNullOrWhiteSpace(label) && labelVertices > 0)
@@ -980,6 +1224,45 @@ internal sealed partial class Simulator3dForm
         }
     }
 
+    private void ReduceProjectedSolidFacesForPerformance(List<ProjectedFace> projectedFaces)
+    {
+        if (!_firstPersonView || projectedFaces.Count <= 6)
+        {
+            return;
+        }
+
+        var reduced = new List<ProjectedFace>(projectedFaces.Count);
+        int smallFaceBudget = projectedFaces.Count >= 24 ? 10 : 6;
+        foreach (ProjectedFace face in projectedFaces)
+        {
+            GetProjectedFaceBounds(face, out float minX, out float minY, out float maxX, out float maxY);
+            float area = Math.Max(1f, maxX - minX) * Math.Max(1f, maxY - minY);
+            bool deepFar = face.AverageDepth > 18f;
+            bool far = face.AverageDepth > 12f;
+            bool tiny = area < 65f;
+            bool small = area < 140f;
+            if ((deepFar && small) || (far && tiny))
+            {
+                if (smallFaceBudget <= 0)
+                {
+                    continue;
+                }
+
+                smallFaceBudget--;
+                Color fill = deepFar
+                    ? BlendColor(face.FillColor, Color.FromArgb(face.FillColor.A, 206, 208, 212), 0.24f)
+                    : face.FillColor;
+                reduced.Add(new ProjectedFace(face.Points, face.AverageDepth, fill, face.EdgeColor));
+                continue;
+            }
+
+            reduced.Add(face);
+        }
+
+        projectedFaces.Clear();
+        projectedFaces.AddRange(reduced);
+    }
+
     private float DrawBalanceLegAssembly(
         Graphics graphics,
         Vector3 center,
@@ -992,17 +1275,32 @@ internal sealed partial class Simulator3dForm
     {
         BalanceLegGeometry leg = ResolveBalanceLegGeometry(entity, profile, motion);
         float maxHeight = Math.Max(leg.UpperFront.Y, leg.KneeCenter.Y);
+        Vector3 forwardAxis = new(MathF.Cos(yaw), 0f, MathF.Sin(yaw));
+        float bodySideOffset = Math.Max(0.02f, profile.BodyWidthM * profile.BodyRenderWidthScale * 0.5f * 0.98f);
         for (int sideIndex = 0; sideIndex < 2; sideIndex++)
         {
             float sideSign = sideIndex == 0 ? -1f : 1f;
             float sideOffset = leg.SideOffset * sideSign;
+            float mountSideOffset = bodySideOffset * sideSign;
 
+            Vector3 mountFront = OffsetScenePosition(center, leg.UpperFront.X, mountSideOffset, yaw, leg.UpperFront.Y);
+            Vector3 mountRear = OffsetScenePosition(center, leg.UpperRear.X, mountSideOffset, yaw, leg.UpperRear.Y);
             Vector3 upperFront = OffsetScenePosition(center, leg.UpperFront.X, sideOffset, yaw, leg.UpperFront.Y);
             Vector3 upperRear = OffsetScenePosition(center, leg.UpperRear.X, sideOffset, yaw, leg.UpperRear.Y);
             Vector3 kneeFront = OffsetScenePosition(center, leg.KneeFront.X, sideOffset, yaw, leg.KneeFront.Y);
             Vector3 kneeRear = OffsetScenePosition(center, leg.KneeRear.X, sideOffset, yaw, leg.KneeRear.Y);
             Vector3 kneeCenter = OffsetScenePosition(center, leg.KneeCenter.X, sideOffset, yaw, leg.KneeCenter.Y);
             Vector3 foot = OffsetScenePosition(center, leg.Foot.X, sideOffset, yaw, leg.Foot.Y);
+            float wheelSideOffset = (leg.SideOffset + RenderWheelHalfWidthM) * sideSign;
+            Vector3 wheelAnchor = OffsetScenePosition(center, leg.Foot.X, wheelSideOffset, yaw, leg.Foot.Y);
+
+            float mountBeamHeight = Math.Max(0.010f, profile.RearClimbAssistUpperHeightM * 0.88f);
+            float mountBeamWidth = Math.Max(0.010f, profile.RearClimbAssistUpperWidthM * 0.95f);
+            Color mountFill = Color.FromArgb(entity.IsAlive ? 248 : 224, BlendColor(legColor, Color.White, 0.10f));
+            Color mountEdge = Color.FromArgb(entity.IsAlive ? 252 : 216, BlendColor(legColor, Color.Black, 0.08f));
+            DrawBeam3d(graphics, mountFront, upperFront, forwardAxis, mountBeamHeight, mountBeamWidth, mountFill, mountEdge);
+            DrawBeam3d(graphics, mountRear, upperRear, forwardAxis, mountBeamHeight, mountBeamWidth, mountFill, mountEdge);
+            DrawBeam3d(graphics, mountFront, mountRear, lateralAxis, mountBeamHeight, mountBeamWidth, mountFill, mountEdge);
 
             DrawBeam3d(
                 graphics,
@@ -1031,12 +1329,24 @@ internal sealed partial class Simulator3dForm
                 Math.Max(0.010f, profile.RearClimbAssistLowerWidthM),
                 Color.FromArgb(entity.IsAlive ? 248 : 226, legColor),
                 Color.FromArgb(entity.IsAlive ? 250 : 216, legColor));
+            DrawBeam3d(
+                graphics,
+                foot,
+                wheelAnchor,
+                forwardAxis,
+                Math.Max(0.010f, leg.HingeRadius * 1.10f),
+                Math.Max(0.010f, leg.HingeRadius * 1.25f),
+                Color.FromArgb(entity.IsAlive ? 248 : 226, BlendColor(legColor, Color.White, 0.10f)),
+                Color.FromArgb(entity.IsAlive ? 250 : 216, BlendColor(legColor, Color.Black, 0.12f)));
 
+            DrawLegHub(graphics, center, yaw, mountSideOffset, leg.UpperFront, leg.HingeRadius * 0.86f, entity, legColor);
+            DrawLegHub(graphics, center, yaw, mountSideOffset, leg.UpperRear, leg.HingeRadius * 0.86f, entity, legColor);
             DrawLegHub(graphics, center, yaw, sideOffset, leg.UpperFront, leg.HingeRadius, entity, legColor);
             DrawLegHub(graphics, center, yaw, sideOffset, leg.UpperRear, leg.HingeRadius, entity, legColor);
             DrawLegHub(graphics, center, yaw, sideOffset, leg.KneeFront, leg.HingeRadius, entity, legColor);
             DrawLegHub(graphics, center, yaw, sideOffset, leg.KneeRear, leg.HingeRadius, entity, legColor);
             DrawLegHub(graphics, center, yaw, sideOffset, leg.Foot, leg.HingeRadius, entity, legColor);
+            DrawLegHub(graphics, center, yaw, wheelSideOffset, leg.Foot, leg.HingeRadius * 0.72f, entity, legColor);
 
             maxHeight = Math.Max(maxHeight, Math.Max(leg.Foot.Y, leg.KneeCenter.Y) + leg.HingeRadius);
         }
@@ -1074,16 +1384,23 @@ internal sealed partial class Simulator3dForm
     private static BalanceLegGeometry ResolveBalanceLegGeometry(SimulationEntity entity, RobotAppearanceProfile profile, RuntimeChassisMotion motion)
     {
         float bodyHalfX = profile.BodyLengthM * 0.5f;
-        float wheelRadius = Math.Max(0.018f, profile.WheelRadiusM);
+        float wheelRadius = Math.Max(0.018f, profile.RearLegWheelRadiusM);
         float footX = profile.WheelOffsetsM.Count > 0 ? profile.WheelOffsetsM.Min(offset => offset.X) : -bodyHalfX * 0.78f;
         footX += motion.RearFootReachM;
         float footY = wheelRadius + motion.RearFootRaiseM;
         float wheelOuter = profile.WheelOffsetsM.Count > 0
             ? profile.WheelOffsetsM.Max(offset => Math.Abs(offset.Y) * profile.BodyRenderWidthScale)
             : profile.BodyWidthM * 0.5f * profile.BodyRenderWidthScale + wheelRadius * 0.55f;
-        float sideOffset = Math.Max(
-            profile.BodyWidthM * 0.5f * profile.BodyRenderWidthScale * 0.45f,
-            wheelOuter - profile.RearClimbAssistInnerOffsetM * profile.BodyRenderWidthScale);
+        float rawSideOffset = Math.Max(
+            profile.BodyWidthM * 0.5f * profile.BodyRenderWidthScale + wheelRadius * 0.28f,
+            wheelOuter + wheelRadius * 0.08f);
+        float bodyHalfSide = profile.BodyWidthM * 0.5f * profile.BodyRenderWidthScale;
+        float armorThickness = Math.Max(0.012f, Math.Max(0.005f, profile.ArmorPlateGapM) * 0.75f);
+        float armorCenterSide = bodyHalfSide + Math.Max(0.005f, profile.ArmorPlateGapM) + armorThickness * 1.35f;
+        float hingeInsideLimit = armorCenterSide - Math.Max(0.018f, profile.RearClimbAssistHingeRadiusM * 1.35f);
+        float minSideOffset = bodyHalfSide + Math.Max(0.004f, profile.RearClimbAssistHingeRadiusM * 0.30f);
+        float maxSideOffset = Math.Max(minSideOffset, hingeInsideLimit);
+        float sideOffset = Math.Clamp(rawSideOffset, minSideOffset, maxSideOffset);
         float anchorX = -bodyHalfX + profile.RearClimbAssistMountOffsetXM;
         float anchorY = profile.RearClimbAssistMountHeightM + motion.BodyLiftM;
         float rearwardClearance = Math.Max(0.02f, profile.RearClimbAssistUpperLengthM * 0.14f);
@@ -1125,14 +1442,55 @@ internal sealed partial class Simulator3dForm
         if (entity.TraversalActive)
         {
             float progress = Math.Clamp((float)entity.TraversalProgress, 0f, 1f);
+            static float Blend(float a, float b, float t) => a + (b - a) * Math.Clamp(t, 0f, 1f);
             bool heavyChassis =
                 string.Equals(entity.RoleKey, "hero", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(entity.RoleKey, "engineer", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase);
             if (heavyChassis)
             {
-                rearFootRaise = -0.40f * progress;
-                bodyLift = 0.05f * MathF.Sin(progress * MathF.PI);
+                float stepHeight = Math.Clamp(
+                    (float)Math.Max(0.0, entity.TraversalTargetGroundHeightM - entity.TraversalStartGroundHeightM),
+                    0f,
+                    0.45f);
+                float liftPeak = 0.11f + stepHeight * 0.42f;
+                float reachPeak = 0.06f + stepHeight * 0.16f;
+                if (progress < 0.20f)
+                {
+                    float ratio = progress / 0.20f;
+                    rearFootRaise = liftPeak * 0.24f * ratio;
+                    rearFootReach = -reachPeak * 0.30f * ratio;
+                    bodyLift = (0.02f + stepHeight * 0.10f) * ratio;
+                    frontDrop = 0.02f * ratio;
+                    frontRaise = 0.015f * ratio;
+                }
+                else if (progress < 0.56f)
+                {
+                    float ratio = (progress - 0.20f) / 0.36f;
+                    rearFootRaise = liftPeak * Blend(0.24f, 1.00f, ratio);
+                    rearFootReach = -reachPeak * Blend(0.30f, 1.00f, ratio);
+                    bodyLift = Blend(0.02f + stepHeight * 0.10f, 0.09f + stepHeight * 0.18f, ratio);
+                    frontDrop = Blend(0.02f, 0.08f, ratio);
+                    frontRaise = Blend(0.015f, 0.05f, ratio);
+                }
+                else if (progress < 0.84f)
+                {
+                    float ratio = (progress - 0.56f) / 0.28f;
+                    rearFootRaise = liftPeak * Blend(1.00f, 0.62f, ratio);
+                    rearFootReach = -reachPeak * Blend(1.00f, 0.34f, ratio);
+                    bodyLift = Blend(0.09f + stepHeight * 0.18f, 0.05f + stepHeight * 0.08f, ratio);
+                    frontDrop = Blend(0.08f, 0.03f, ratio);
+                    frontRaise = Blend(0.05f, 0.02f, ratio);
+                }
+                else
+                {
+                    float ratio = (progress - 0.84f) / 0.16f;
+                    rearFootRaise = liftPeak * 0.62f * (1f - ratio);
+                    rearFootReach = -reachPeak * 0.34f * (1f - ratio);
+                    bodyLift = (0.05f + stepHeight * 0.08f) * (1f - ratio);
+                    frontDrop = 0.03f * (1f - ratio);
+                    frontRaise = 0.02f * (1f - ratio);
+                }
             }
             else if (progress < 0.4f)
             {

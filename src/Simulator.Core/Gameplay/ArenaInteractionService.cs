@@ -134,9 +134,9 @@ public sealed class ArenaInteractionService
             SimulationTeamState teamState = world.GetOrCreateTeamState(entity.Team);
             if (teamState.EnergyBuffTimerSec > 0)
             {
-                entity.DynamicDamageDealtMult *= _rules.Facility.EnergyDamageDealtMult;
-                entity.DynamicCoolingMult *= _rules.Facility.EnergyCoolingMult;
-                entity.DynamicPowerRecoveryMult *= _rules.Facility.EnergyPowerRecoveryMult;
+                ApplyDamageDealtBuff(entity, _rules.Facility.EnergyDamageDealtMult);
+                ApplyCoolingBuff(entity, _rules.Facility.EnergyCoolingMult);
+                ApplyPowerRecoveryBuff(entity, _rules.Facility.EnergyPowerRecoveryMult);
             }
         }
 
@@ -206,6 +206,16 @@ public sealed class ArenaInteractionService
             entity.ChassisEnergy = Math.Min(entity.MaxChassisEnergy, entity.ChassisEnergy + 3200.0 * deltaTimeSec);
         }
 
+        if (entity.MaxSuperCapEnergyJ > 1e-6)
+        {
+            entity.SuperCapEnergyJ = Math.Min(entity.MaxSuperCapEnergyJ, entity.SuperCapEnergyJ + 650.0 * deltaTimeSec);
+        }
+
+        if (entity.MaxBufferEnergyJ > 1e-6)
+        {
+            entity.BufferEnergyJ = Math.Min(entity.MaxBufferEnergyJ, entity.BufferEnergyJ + 90.0 * deltaTimeSec);
+        }
+
         if (string.Equals(entity.AmmoType, "none", StringComparison.OrdinalIgnoreCase))
         {
             entity.SupplyAccumulatorSec = 0.0;
@@ -263,8 +273,8 @@ public sealed class ArenaInteractionService
             return;
         }
 
-        entity.DynamicDamageTakenMult *= _rules.Facility.FortDamageTakenMult;
-        entity.DynamicCoolingMult *= _rules.Facility.FortCoolingMult;
+        ApplyDamageTakenBuff(entity, _rules.Facility.FortDamageTakenMult);
+        ApplyCoolingBuff(entity, _rules.Facility.FortCoolingMult);
     }
 
     private void ApplyBuffRegion(
@@ -285,7 +295,12 @@ public sealed class ArenaInteractionService
                     return;
                 }
 
-                entity.DynamicDamageTakenMult *= BuffBaseDamageTakenMult;
+                if (entity.BuyAmmoRequested)
+                {
+                    ApplySupply(world, entity, facility, deltaTimeSec, events);
+                }
+
+                ApplyDamageTakenBuff(entity, BuffBaseDamageTakenMult);
                 ClearWeakState(entity);
                 return;
 
@@ -295,7 +310,7 @@ public sealed class ArenaInteractionService
                     return;
                 }
 
-                entity.DynamicDamageTakenMult *= BuffOutpostDamageTakenMult;
+                ApplyDamageTakenBuff(entity, BuffOutpostDamageTakenMult);
                 ClearWeakState(entity);
                 return;
 
@@ -305,7 +320,7 @@ public sealed class ArenaInteractionService
                     return;
                 }
 
-                entity.DynamicDamageTakenMult *= BuffTrapezoidHighlandDamageTakenMult;
+                ApplyDamageTakenBuff(entity, BuffTrapezoidHighlandDamageTakenMult);
                 return;
 
             case "buff_central_highland":
@@ -316,7 +331,7 @@ public sealed class ArenaInteractionService
                     return;
                 }
 
-                entity.DynamicDamageTakenMult *= BuffCentralHighlandDamageTakenMult;
+                ApplyDamageTakenBuff(entity, BuffCentralHighlandDamageTakenMult);
                 return;
 
             case "buff_supply":
@@ -328,7 +343,7 @@ public sealed class ArenaInteractionService
                 ApplySupply(world, entity, facility, deltaTimeSec, events);
                 if (string.Equals(entity.RoleKey, "engineer", StringComparison.OrdinalIgnoreCase))
                 {
-                    entity.DynamicDamageTakenMult = 0.0;
+                    ApplyDamageTakenBuff(entity, 0.0);
                 }
 
                 return;
@@ -339,8 +354,8 @@ public sealed class ArenaInteractionService
                     return;
                 }
 
-                entity.DynamicDamageTakenMult *= _rules.Facility.FortDamageTakenMult;
-                entity.DynamicCoolingMult *= _rules.Facility.FortCoolingMult;
+                ApplyDamageTakenBuff(entity, _rules.Facility.FortDamageTakenMult);
+                ApplyCoolingBuff(entity, _rules.Facility.FortCoolingMult);
                 return;
 
             case "buff_assembly":
@@ -350,7 +365,7 @@ public sealed class ArenaInteractionService
                     return;
                 }
 
-                entity.DynamicDamageTakenMult = 0.0;
+                ApplyDamageTakenBuff(entity, 0.0);
                 return;
 
             case "buff_hero_deployment":
@@ -361,11 +376,20 @@ public sealed class ArenaInteractionService
                     return;
                 }
 
+                if (!entity.HeroDeploymentRequested
+                    || !string.Equals(RuleSet.NormalizeHeroMode(entity.HeroPerformanceMode), "ranged_priority", StringComparison.OrdinalIgnoreCase))
+                {
+                    entity.HeroDeploymentHoldTimerSec = 0.0;
+                    entity.HeroDeploymentActive = false;
+                    return;
+                }
+
                 entity.HeroDeploymentHoldTimerSec += deltaTimeSec;
                 if (entity.HeroDeploymentHoldTimerSec >= 2.0)
                 {
-                    entity.DynamicDamageTakenMult *= BuffHeroDeploymentDamageTakenMult;
-                    entity.DynamicDamageDealtMult *= BuffHeroDeploymentDamageDealtMult;
+                    entity.HeroDeploymentActive = true;
+                    ApplyDamageTakenBuff(entity, BuffHeroDeploymentDamageTakenMult);
+                    ApplyDamageDealtBuff(entity, BuffHeroDeploymentDamageDealtMult);
                 }
 
                 return;
@@ -596,28 +620,59 @@ public sealed class ArenaInteractionService
     {
         if (entity.TerrainHighlandDefenseTimerSec > 1e-6)
         {
-            entity.DynamicDamageTakenMult *= TerrainHighlandDamageTakenMult;
+            ApplyDamageTakenBuff(entity, TerrainHighlandDamageTakenMult);
         }
 
         if (entity.TerrainFlySlopeDefenseTimerSec > 1e-6)
         {
-            entity.DynamicDamageTakenMult *= TerrainFlySlopeDamageTakenMult;
+            ApplyDamageTakenBuff(entity, TerrainFlySlopeDamageTakenMult);
         }
 
         if (entity.TerrainRoadCoolingTimerSec > 1e-6)
         {
-            entity.DynamicCoolingMult *= TerrainRoadCoolingMult;
+            ApplyCoolingBuff(entity, TerrainRoadCoolingMult);
         }
 
         if (entity.TerrainSlopeDefenseTimerSec > 1e-6)
         {
-            entity.DynamicDamageTakenMult *= TerrainSlopeDamageTakenMult;
+            ApplyDamageTakenBuff(entity, TerrainSlopeDamageTakenMult);
         }
 
         if (entity.TerrainSlopeCoolingTimerSec > 1e-6)
         {
-            entity.DynamicCoolingMult *= TerrainSlopeCoolingMult;
+            ApplyCoolingBuff(entity, TerrainSlopeCoolingMult);
         }
+    }
+
+    private static void ApplyDamageTakenBuff(SimulationEntity entity, double multiplier)
+    {
+        if (multiplier <= 1e-9)
+        {
+            entity.DynamicDamageTakenMult = 0.0;
+            return;
+        }
+
+        if (entity.DynamicDamageTakenMult <= 1e-9)
+        {
+            return;
+        }
+
+        entity.DynamicDamageTakenMult = Math.Min(entity.DynamicDamageTakenMult, multiplier);
+    }
+
+    private static void ApplyDamageDealtBuff(SimulationEntity entity, double multiplier)
+    {
+        entity.DynamicDamageDealtMult = Math.Max(entity.DynamicDamageDealtMult, Math.Max(0.0, multiplier));
+    }
+
+    private static void ApplyCoolingBuff(SimulationEntity entity, double multiplier)
+    {
+        entity.DynamicCoolingMult = Math.Max(entity.DynamicCoolingMult, Math.Max(0.0, multiplier));
+    }
+
+    private static void ApplyPowerRecoveryBuff(SimulationEntity entity, double multiplier)
+    {
+        entity.DynamicPowerRecoveryMult = Math.Max(entity.DynamicPowerRecoveryMult, Math.Max(0.0, multiplier));
     }
 
     private void ApplyTerrainSequenceBuff(
