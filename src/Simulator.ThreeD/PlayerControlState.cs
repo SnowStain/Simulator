@@ -28,6 +28,8 @@ internal sealed record PlayerControlState
 
     public bool BuyAmmoRequested { get; init; }
 
+    public bool EnergyActivationPressed { get; init; }
+
     public bool HeroDeployToggleRequested { get; init; }
 
     public bool SuperCapActive { get; init; }

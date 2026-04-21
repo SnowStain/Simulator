@@ -15,6 +15,9 @@ internal sealed partial class Simulator3dForm : Form
     private const int HudHeight = 118;
     private const int SidebarWidth = 270;
     private const int DecisionSidebarWidth = 320;
+    private const float FirstPersonVerticalFovRad = MathF.PI * 0.5f; // 90 degrees.
+    private const float FirstPersonBarrelScreenDropM = 0.030f;
+    private const float FirstPersonSightConvergenceM = 24.0f;
 
     private static readonly string[] HudRosterOrder =
     {
@@ -94,7 +97,17 @@ internal sealed partial class Simulator3dForm : Form
 
     private sealed class FloatingCombatMarker
     {
-        public FloatingCombatMarker(string targetId, double worldX, double worldY, double heightM, string text, Color color, float lifetimeSec)
+        public FloatingCombatMarker(
+            string targetId,
+            double worldX,
+            double worldY,
+            double heightM,
+            string text,
+            Color color,
+            float lifetimeSec,
+            float screenOffsetX = 0f,
+            float screenOffsetY = 0f,
+            float riseSpeed = 0.20f)
         {
             TargetId = targetId;
             WorldX = worldX;
@@ -103,6 +116,9 @@ internal sealed partial class Simulator3dForm : Form
             Text = text;
             Color = color;
             LifetimeSec = Math.Max(0.12f, lifetimeSec);
+            ScreenOffsetX = screenOffsetX;
+            ScreenOffsetY = screenOffsetY;
+            RiseSpeed = Math.Max(0.05f, riseSpeed);
         }
 
         public string TargetId { get; }
@@ -120,6 +136,12 @@ internal sealed partial class Simulator3dForm : Form
         public float LifetimeSec { get; }
 
         public float AgeSec { get; set; }
+
+        public float ScreenOffsetX { get; }
+
+        public float ScreenOffsetY { get; }
+
+        public float RiseSpeed { get; }
     }
 
     private sealed class MatchEventFeedItem
@@ -170,7 +192,7 @@ internal sealed partial class Simulator3dForm : Form
         Color Color,
         bool Timed);
 
-    private const int MaxSimulationCatchUpSteps = 8;
+    private const int MaxSimulationCatchUpSteps = 2;
 
     private readonly Simulator3dHost _host;
     private readonly System.Windows.Forms.Timer _timer;
@@ -204,6 +226,7 @@ internal sealed partial class Simulator3dForm : Form
     private bool _deployKeyWasDown;
     private bool _sentryStanceKeyWasDown;
     private bool _showKeyGuide;
+    private bool _pendingSingleFireRequest;
     private bool _draggingLobbyAutoAimSlider;
     private Point _lastMouse;
     private float _pendingMouseYawDeltaDeg;
@@ -298,6 +321,7 @@ internal sealed partial class Simulator3dForm : Form
     private bool _collectProjectedFacesOnly;
     private bool? _gpuControlStylesActive;
     private bool _gpuGeometryPass;
+    private bool _hasPresentedGpuFrame;
     private readonly bool _previewOnly;
     private readonly string? _previewStructure;
     private readonly string? _previewTeam;
@@ -336,7 +360,7 @@ internal sealed partial class Simulator3dForm : Form
         _lastFrameClockTicks = _frameClock.ElapsedTicks;
         _lastPresentedFrameTicks = _lastFrameClockTicks;
         _displayRefreshRateHz = ResolveDisplayRefreshRateHz();
-        _targetFrameIntervalSec = 1.0 / Math.Max(30, _displayRefreshRateHz);
+        _targetFrameIntervalSec = 1.0 / Math.Max(120, _displayRefreshRateHz);
         _tacticalGroundTargetX = _host.World.Entities.FirstOrDefault(entity => string.Equals(entity.Team, _host.SelectedTeam, StringComparison.OrdinalIgnoreCase))?.X
             ?? 0.0;
         _tacticalGroundTargetY = _host.World.Entities.FirstOrDefault(entity => string.Equals(entity.Team, _host.SelectedTeam, StringComparison.OrdinalIgnoreCase))?.Y
@@ -419,8 +443,10 @@ internal sealed partial class Simulator3dForm : Form
         graphics.SmoothingMode = SmoothingMode.None;
         _uiButtons.Clear();
 
-        bool gpuSceneActive = _appState == SimulatorAppState.InMatch && UseGpuRenderer;
-        if (!gpuSceneActive)
+        bool gpuSceneAvailable = _appState == SimulatorAppState.InMatch
+            && UseGpuRenderer
+            && !UseFastFlatRenderer;
+        if (!gpuSceneAvailable)
         {
             graphics.Clear(BackColor);
             DrawBackground(graphics);
@@ -435,7 +461,7 @@ internal sealed partial class Simulator3dForm : Form
                 break;
             case SimulatorAppState.InMatch:
                 UpdateCameraMatrices();
-                if (UseGpuRenderer)
+                if (gpuSceneAvailable)
                 {
                     DrawGpuMatch(graphics);
                 }
@@ -450,7 +476,7 @@ internal sealed partial class Simulator3dForm : Form
 
     protected override void OnPaintBackground(PaintEventArgs e)
     {
-        if (_appState == SimulatorAppState.InMatch && UseGpuRenderer)
+        if (_appState == SimulatorAppState.InMatch && UseGpuRenderer && !UseFastFlatRenderer)
         {
             return;
         }
@@ -470,7 +496,7 @@ internal sealed partial class Simulator3dForm : Form
         DrawFloor(graphics);
         DrawFacilities(graphics);
         DrawEntities(graphics);
-        if (!_previewOnly)
+        if (!_previewOnly && !_tacticalMode)
         {
             DrawProjectiles(graphics);
             DrawCombatMarkers(graphics);
@@ -489,7 +515,17 @@ internal sealed partial class Simulator3dForm : Form
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
         DrawCrosshair(graphics);
         DrawDeploymentPrompt(graphics);
+        DrawEnergyActivationPrompt(graphics);
         DrawHeroDeploymentFeedOverlay(graphics);
+        if (UseGpuRenderer && !UseFastFlatRenderer && _hasPresentedGpuFrame)
+        {
+            DrawEntityOverlayBars(graphics);
+            if (!_previewOnly)
+            {
+                DrawGpuProjectileTrails(graphics);
+                DrawCombatMarkers(graphics);
+            }
+        }
         DrawMatchToolbar(graphics);
         DrawHud(graphics);
         DrawPlayerStatusPanelV2(graphics);
@@ -503,11 +539,24 @@ internal sealed partial class Simulator3dForm : Form
         {
             DrawDecisionDeploymentPanel(graphics);
         }
+
+        if (_paused)
+        {
+            DrawPauseOverlay(graphics);
+        }
     }
 
     private void OnFrameTick()
     {
         UpdateMouseCaptureState();
+        if (_appState == SimulatorAppState.InMatch && _paused && !_previewOnly)
+        {
+            _simulationAccumulatorSec = 0.0;
+            _lastFrameClockTicks = _frameClock.ElapsedTicks;
+            System.Threading.Thread.Sleep(16);
+            return;
+        }
+
         long presentNowTicks = _frameClock.ElapsedTicks;
         double secondsSincePresent = Math.Max(0.0, (presentNowTicks - _lastPresentedFrameTicks) / (double)Stopwatch.Frequency);
         if (secondsSincePresent + 0.00035 < _targetFrameIntervalSec)
@@ -550,7 +599,8 @@ internal sealed partial class Simulator3dForm : Form
     private void ApplyRendererControlStyles()
     {
         bool gpu = string.Equals(_host.ActiveRendererMode, "gpu", StringComparison.OrdinalIgnoreCase)
-            && _appState == SimulatorAppState.InMatch;
+            && _appState == SimulatorAppState.InMatch
+            && !UseFastFlatRenderer;
         if (_gpuControlStylesActive == gpu)
         {
             return;
@@ -582,9 +632,9 @@ internal sealed partial class Simulator3dForm : Form
         long elapsedTicks = Math.Max(0, currentTicks - _lastFrameClockTicks);
         _lastFrameClockTicks = currentTicks;
 
-        double elapsedSec = Math.Min(0.100, elapsedTicks / (double)Stopwatch.Frequency);
+        double elapsedSec = Math.Min(0.050, elapsedTicks / (double)Stopwatch.Frequency);
         double scaledElapsedSec = elapsedSec * Math.Clamp(_simulationTimeScale, 0.05, 3.0);
-        double fixedDt = Math.Max(0.008, _host.DeltaTimeSec);
+        double fixedDt = Math.Max(_tacticalMode ? 0.024 : 0.016, _host.DeltaTimeSec);
         _simulationAccumulatorSec = Math.Min(_simulationAccumulatorSec + scaledElapsedSec, fixedDt * MaxSimulationCatchUpSteps);
 
         PlayerControlState firstState = BuildPlayerControlState();
@@ -594,6 +644,7 @@ internal sealed partial class Simulator3dForm : Form
             GimbalPitchDeltaDeg = 0.0,
             JumpRequested = false,
             BuyAmmoRequested = false,
+            EnergyActivationPressed = false,
             HeroDeployToggleRequested = false,
             SuperCapActive = false,
             SentryStanceToggleRequested = false,
@@ -604,9 +655,13 @@ internal sealed partial class Simulator3dForm : Form
         {
             _host.Step(simulatedSteps == 0 ? firstState : repeatedState);
             CaptureCombatMarkersFromLatestReport();
-            UpdateSelectedBuffNotifications();
             _simulationAccumulatorSec -= fixedDt;
             simulatedSteps++;
+        }
+
+        if (simulatedSteps > 0)
+        {
+            UpdateSelectedBuffNotifications();
         }
 
         AdvanceCombatMarkers((float)elapsedSec);
@@ -645,6 +700,11 @@ internal sealed partial class Simulator3dForm : Form
             Focus();
         }
 
+        if (_paused)
+        {
+            return;
+        }
+
         if (_tacticalMode && eventArgs.Button == MouseButtons.Left)
         {
             HandleTacticalCanvasClick(eventArgs.Location);
@@ -654,6 +714,7 @@ internal sealed partial class Simulator3dForm : Form
         if (eventArgs.Button == MouseButtons.Left)
         {
             _firePressed = true;
+            _pendingSingleFireRequest = true;
             UpdateMouseCaptureState();
             return;
         }
@@ -902,8 +963,7 @@ internal sealed partial class Simulator3dForm : Form
         switch (eventArgs.KeyCode)
         {
             case Keys.P:
-                _paused = !_paused;
-                UpdateMouseCaptureState();
+                SetPaused(!_paused);
                 break;
             case Keys.N:
                 if (_paused)
@@ -920,8 +980,14 @@ internal sealed partial class Simulator3dForm : Form
                 _host.CycleSelectedEntity(eventArgs.Shift ? -1 : 1);
                 break;
             case Keys.F:
-                _followSelection = true;
-                SnapCameraToSelectedEntity();
+                if (!IsEnergyActivatorSelected())
+                {
+                    _followSelection = true;
+                    SnapCameraToSelectedEntity();
+                }
+                break;
+            case Keys.Q:
+                _host.ToggleSelectedAutoAimTargetMode();
                 break;
             case Keys.V:
                 ToggleViewMode();
@@ -961,9 +1027,6 @@ internal sealed partial class Simulator3dForm : Form
             case Keys.F6:
                 _host.ReloadDecisionDeploymentProfile();
                 break;
-            case Keys.F1:
-                _showDebugSidebars = !_showDebugSidebars;
-                break;
             case Keys.F4:
                 _showProjectileTrails = !_showProjectileTrails;
                 break;
@@ -974,13 +1037,20 @@ internal sealed partial class Simulator3dForm : Form
                 ToggleDriveTelemetryWindow();
                 break;
             case Keys.Escape:
-                _paused = !_paused;
-                UpdateMouseCaptureState();
+                SetPaused(!_paused);
                 break;
             case Keys.L:
                 ReturnToLobby();
                 break;
         }
+    }
+
+    private bool IsEnergyActivatorSelected()
+    {
+        SimulationEntity? entity = _host.SelectedEntity;
+        return entity is not null
+            && (string.Equals(entity.RoleKey, "infantry", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase));
     }
 
     private void DrawBackground(Graphics graphics)
@@ -1388,31 +1458,54 @@ internal sealed partial class Simulator3dForm : Form
             ? $"单兵种测试 | 主控 {_host.SingleUnitTestFocusId}"
             : "完整模式";
         graphics.DrawString(modeText, _tinyHudFont, subtitleBrush, 16f, 32f);
-        string perfText = $"Render {_host.ActiveRendererMode} | Target {_displayRefreshRateHz}Hz | FPS {_smoothedFrameRate:0}";
+        string perfText = $"Render {_host.ActiveRendererMode} | Target {Math.Max(120, _displayRefreshRateHz)}Hz | FPS {_smoothedFrameRate:0}";
         SizeF perfSize = graphics.MeasureString(perfText, _tinyHudFont);
         graphics.DrawString(perfText, _tinyHudFont, subtitleBrush, Math.Max(16f, ClientSize.Width - perfSize.Width - 430f), 32f);
 
-        int buttonY = 11;
-        int right = ClientSize.Width - 12;
+    }
 
-        Rectangle lobby = new(right - 108, buttonY, 108, 32);
-        right = lobby.Left - 8;
-        Rectangle reset = new(right - 92, buttonY, 92, 32);
-        right = reset.Left - 8;
-        Rectangle pause = new(right - 102, buttonY, 102, 32);
-        right = pause.Left - 8;
-        Rectangle panels = new(right - 94, buttonY, 94, 32);
-        right = panels.Left - 8;
-        Rectangle tactical = new(right - 96, buttonY, 96, 32);
-        right = tactical.Left - 8;
-        Rectangle decision = new(right - 118, buttonY, 118, 32);
+    private void DrawPauseOverlay(Graphics graphics)
+    {
+        using var dim = new SolidBrush(Color.FromArgb(172, 62, 68, 74));
+        graphics.FillRectangle(dim, ClientRectangle);
 
-        DrawButton(graphics, decision, "F7 Telemetry", "match_open_drive_telemetry", false, Color.FromArgb(74, 100, 156));
-        DrawButton(graphics, tactical, _tacticalMode ? "Tactical H" : "Tactical H", "match_toggle_tactical", _tacticalMode, Color.FromArgb(54, 142, 122));
-        DrawButton(graphics, panels, _showDebugSidebars ? "Hide F1" : "Panel F1", "match_toggle_debug_sidebars", _showDebugSidebars, Color.FromArgb(86, 110, 166));
-        DrawButton(graphics, pause, _paused ? "继续" : "暂停", "match_toggle_pause", _paused, Color.FromArgb(62, 130, 206));
-        DrawButton(graphics, reset, "重置", "match_reset_world", false, Color.FromArgb(92, 98, 112));
-        DrawButton(graphics, lobby, "返回大厅", "match_return_lobby", false, Color.FromArgb(92, 98, 112));
+        int panelWidth = Math.Min(560, Math.Max(320, ClientSize.Width - 80));
+        int panelHeight = 188;
+        Rectangle panel = new(
+            (ClientSize.Width - panelWidth) / 2,
+            (ClientSize.Height - panelHeight) / 2,
+            panelWidth,
+            panelHeight);
+        using GraphicsPath path = CreateRoundedRectangle(panel, 14);
+        using var fill = new SolidBrush(Color.FromArgb(230, 14, 20, 28));
+        using var border = new Pen(Color.FromArgb(170, 190, 202, 214), 1.2f);
+        graphics.FillPath(fill, path);
+        graphics.DrawPath(border, path);
+
+        using var titleBrush = new SolidBrush(Color.FromArgb(245, 248, 250));
+        using var textBrush = new SolidBrush(Color.FromArgb(204, 218, 228));
+        string title = "已暂停";
+        SizeF titleSize = graphics.MeasureString(title, _hudMidFont);
+        graphics.DrawString(title, _hudMidFont, titleBrush, panel.X + (panel.Width - titleSize.Width) * 0.5f, panel.Y + 22);
+        string hint = "鼠标已释放，点击继续或按 Esc 返回对局";
+        SizeF hintSize = graphics.MeasureString(hint, _tinyHudFont);
+        graphics.DrawString(hint, _tinyHudFont, textBrush, panel.X + (panel.Width - hintSize.Width) * 0.5f, panel.Y + 62);
+
+        int buttonWidth = 96;
+        int buttonHeight = 34;
+        int gap = 10;
+        int totalWidth = buttonWidth * 5 + gap * 4;
+        int x = panel.X + (panel.Width - totalWidth) / 2;
+        int y = panel.Bottom - 62;
+        DrawButton(graphics, new Rectangle(x, y, buttonWidth, buttonHeight), "F7 遥测", "match_open_drive_telemetry", false, Color.FromArgb(74, 100, 156));
+        x += buttonWidth + gap;
+        DrawButton(graphics, new Rectangle(x, y, buttonWidth, buttonHeight), "H 指挥", "match_toggle_tactical", _tacticalMode, Color.FromArgb(54, 142, 122));
+        x += buttonWidth + gap;
+        DrawButton(graphics, new Rectangle(x, y, buttonWidth, buttonHeight), "继续", "match_toggle_pause", true, Color.FromArgb(62, 130, 206));
+        x += buttonWidth + gap;
+        DrawButton(graphics, new Rectangle(x, y, buttonWidth, buttonHeight), "重置", "match_reset_world", false, Color.FromArgb(92, 98, 112));
+        x += buttonWidth + gap;
+        DrawButton(graphics, new Rectangle(x, y, buttonWidth, buttonHeight), "返回大厅", "match_return_lobby", false, Color.FromArgb(92, 98, 112));
     }
 
     private void DrawTacticalOverlay(Graphics graphics)
@@ -1431,7 +1524,7 @@ internal sealed partial class Simulator3dForm : Form
             return;
         }
 
-        Rectangle panel = new(18, ToolbarHeight + HudHeight + 14, 330, 178);
+        Rectangle panel = new(18, ToolbarHeight + HudHeight + 14, 380, 250);
         using GraphicsPath path = CreateRoundedRectangle(panel, 10);
         using var fill = new SolidBrush(Color.FromArgb(218, 10, 18, 26));
         using var border = new Pen(Color.FromArgb(142, 126, 168, 156), 1f);
@@ -1440,8 +1533,8 @@ internal sealed partial class Simulator3dForm : Form
 
         using var titleBrush = new SolidBrush(Color.FromArgb(238, 246, 242));
         using var textBrush = new SolidBrush(Color.FromArgb(204, 218, 224));
-        graphics.DrawString("High Tactical Mode", _hudMidFont, titleBrush, panel.X + 14, panel.Y + 10);
-        graphics.DrawString("Click map: target/position. Click enemy: attack target.", _tinyHudFont, textBrush, panel.X + 14, panel.Y + 36);
+        graphics.DrawString("Command Mode", _hudMidFont, titleBrush, panel.X + 14, panel.Y + 10);
+        graphics.DrawString("Click own unit to select. Click enemy/ground to command selected unit.", _tinyHudFont, textBrush, panel.X + 14, panel.Y + 36);
 
         int y = panel.Y + 58;
         DrawButton(graphics, new Rectangle(panel.X + 14, y, 88, 28), "Attack", "tactical_mode:attack", _tacticalCommandMode == TacticalCommandMode.Attack, Color.FromArgb(190, 82, 76));
@@ -1468,6 +1561,22 @@ internal sealed partial class Simulator3dForm : Form
             : $"Point: {_tacticalGroundTargetX:0},{_tacticalGroundTargetY:0}";
         graphics.DrawString(targetText, _tinyHudFont, textBrush, panel.X + 14, y);
         graphics.DrawString($"Team {_host.SelectedTeam} | H exit | T aim {_autoAimAssistMode}", _tinyHudFont, textBrush, panel.X + 14, y + 18);
+        y += 40;
+        SimulationEntity? selected = _host.SelectedEntity;
+        if (selected is not null)
+        {
+            int ammo = string.Equals(selected.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase)
+                ? selected.Ammo42Mm
+                : selected.Ammo17Mm;
+            graphics.DrawString($"Selected: {selected.Id} / {ResolveRoleLabel(selected)}", _tinyHudFont, titleBrush, panel.X + 14, y);
+            graphics.DrawString(
+                $"HP {selected.Health:0}/{selected.MaxHealth:0}   Ammo {ammo}   Heat {selected.Heat:0}/{Math.Max(1.0, selected.MaxHeat):0}   Power {selected.ChassisPowerDrawW:0}/{Math.Max(1.0, selected.EffectiveDrivePowerLimitW):0}W",
+                _tinyHudFont,
+                textBrush,
+                panel.X + 14,
+                y + 18);
+        }
+
         DrawButton(graphics, new Rectangle(panel.Right - 96, panel.Bottom - 36, 78, 26), "Apply", "tactical_apply", false, Color.FromArgb(86, 126, 156));
     }
 
@@ -1739,6 +1848,34 @@ internal sealed partial class Simulator3dForm : Form
             return;
         }
 
+        if (string.Equals(entity.AutoAimTargetKind, "energy_disk", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(entity.AutoAimTargetId))
+        {
+            SimulationEntity? energyTarget = _host.World.Entities.FirstOrDefault(candidate =>
+                string.Equals(candidate.Id, entity.AutoAimTargetId, StringComparison.OrdinalIgnoreCase));
+            if (energyTarget is not null
+                && TryResolveTrackedEnergyDiskPose(entity, energyTarget, Math.Clamp(entity.AutoAimLeadTimeSec, 0.0, 1.10), out _, out Vector3 energyCenter, out float energyRadius, out _, out _, out _)
+                && TryProject(energyCenter, out PointF energyPoint, out _))
+            {
+                using var energyGuidePen = new Pen(Color.FromArgb(238, 255, 214, 70), 1.5f);
+                using var energyShadowPen = new Pen(Color.FromArgb(160, 0, 0, 0), 3f);
+                float energyGuideRadius = Math.Max(13f, energyRadius * 16f);
+                graphics.DrawEllipse(energyShadowPen, energyPoint.X - energyGuideRadius, energyPoint.Y - energyGuideRadius, energyGuideRadius * 2f, energyGuideRadius * 2f);
+                graphics.DrawLine(energyShadowPen, energyPoint.X - 18f, energyPoint.Y, energyPoint.X - 7f, energyPoint.Y);
+                graphics.DrawLine(energyShadowPen, energyPoint.X + 7f, energyPoint.Y, energyPoint.X + 18f, energyPoint.Y);
+                graphics.DrawLine(energyShadowPen, energyPoint.X, energyPoint.Y - 18f, energyPoint.X, energyPoint.Y - 7f);
+                graphics.DrawLine(energyShadowPen, energyPoint.X, energyPoint.Y + 7f, energyPoint.X, energyPoint.Y + 18f);
+                graphics.DrawEllipse(energyGuidePen, energyPoint.X - energyGuideRadius, energyPoint.Y - energyGuideRadius, energyGuideRadius * 2f, energyGuideRadius * 2f);
+                graphics.DrawLine(energyGuidePen, energyPoint.X - 18f, energyPoint.Y, energyPoint.X - 7f, energyPoint.Y);
+                graphics.DrawLine(energyGuidePen, energyPoint.X + 7f, energyPoint.Y, energyPoint.X + 18f, energyPoint.Y);
+                graphics.DrawLine(energyGuidePen, energyPoint.X, energyPoint.Y - 18f, energyPoint.X, energyPoint.Y - 7f);
+                graphics.DrawLine(energyGuidePen, energyPoint.X, energyPoint.Y + 7f, energyPoint.X, energyPoint.Y + 18f);
+                using var energyTextBrush = new SolidBrush(Color.FromArgb(240, 255, 228, 90));
+                graphics.DrawString($"PRE {entity.AutoAimAccuracy:P0}", _tinyHudFont, energyTextBrush, energyPoint.X + 16f, energyPoint.Y - 10f);
+                return;
+            }
+        }
+
         (double muzzleX, double muzzleY, double muzzleHeightM) = SimulationCombatMath.ComputeMuzzlePoint(_host.World, entity, entity.AutoAimSmoothedPitchDeg);
         double metersPerWorldUnit = Math.Max(_host.World.MetersPerWorldUnit, 1e-6);
         double yawRad = entity.AutoAimSmoothedYawDeg * Math.PI / 180.0;
@@ -1796,6 +1933,12 @@ internal sealed partial class Simulator3dForm : Form
             return;
         }
 
+        if (string.Equals(shooter.AutoAimTargetKind, "energy_disk", StringComparison.OrdinalIgnoreCase))
+        {
+            DrawTrackedEnergyDiskHighlight(graphics, shooter, target);
+            return;
+        }
+
         if (!TryResolveVisualArmorPlatePose(target, shooter.AutoAimPlateId, out VisualArmorPlatePose visualPlate))
         {
             return;
@@ -1831,6 +1974,121 @@ internal sealed partial class Simulator3dForm : Form
             : shooter.AutoAimPlateDirection;
         graphics.DrawString($"\u9501\u5b9a {direction}", _tinyHudFont, shadowBrush, label.X + 1f, label.Y + 1f);
         graphics.DrawString($"\u9501\u5b9a {direction}", _tinyHudFont, textBrush, label);
+    }
+
+    private void DrawTrackedEnergyDiskHighlight(Graphics graphics, SimulationEntity shooter, SimulationEntity target)
+    {
+        if (!TryResolveTrackedEnergyDiskPose(shooter, target, 0.0, out ArmorPlateTarget disk, out Vector3 center, out float diskRadiusM, out _, out _, out Vector3 tangent))
+        {
+            return;
+        }
+
+        if (!TryProject(center, out PointF screenPoint, out _))
+        {
+            return;
+        }
+
+        Vector3 upAxis = Vector3.UnitY;
+        float radius = 12f;
+        if (TryProject(center + upAxis * diskRadiusM, out PointF samplePoint, out _))
+        {
+            radius = Math.Max(radius, Distance(screenPoint, samplePoint));
+        }
+
+        if (TryProject(center - upAxis * diskRadiusM, out samplePoint, out _))
+        {
+            radius = Math.Max(radius, Distance(screenPoint, samplePoint));
+        }
+
+        if (TryProject(center + tangent * diskRadiusM, out samplePoint, out _))
+        {
+            radius = Math.Max(radius, Distance(screenPoint, samplePoint));
+        }
+
+        if (TryProject(center - tangent * diskRadiusM, out samplePoint, out _))
+        {
+            radius = Math.Max(radius, Distance(screenPoint, samplePoint));
+        }
+
+        using var glowPen = new Pen(Color.FromArgb(220, 255, 216, 92), 3.0f);
+        using var outlinePen = new Pen(Color.FromArgb(255, 255, 245, 196), 1.2f) { DashStyle = DashStyle.Dash };
+        using var shadowBrush = new SolidBrush(Color.FromArgb(180, 0, 0, 0));
+        using var textBrush = new SolidBrush(Color.FromArgb(255, 255, 236, 150));
+        graphics.DrawEllipse(glowPen, screenPoint.X - radius, screenPoint.Y - radius, radius * 2f, radius * 2f);
+        graphics.DrawEllipse(outlinePen, screenPoint.X - radius * 1.14f, screenPoint.Y - radius * 1.14f, radius * 2.28f, radius * 2.28f);
+        graphics.DrawLine(glowPen, screenPoint.X - radius * 1.35f, screenPoint.Y, screenPoint.X - radius * 0.58f, screenPoint.Y);
+        graphics.DrawLine(glowPen, screenPoint.X + radius * 0.58f, screenPoint.Y, screenPoint.X + radius * 1.35f, screenPoint.Y);
+        graphics.DrawLine(glowPen, screenPoint.X, screenPoint.Y - radius * 1.35f, screenPoint.X, screenPoint.Y - radius * 0.58f);
+        graphics.DrawLine(glowPen, screenPoint.X, screenPoint.Y + radius * 0.58f, screenPoint.X, screenPoint.Y + radius * 1.35f);
+
+        PointF label = new(screenPoint.X - radius * 0.9f, screenPoint.Y - radius - 18f);
+        const string text = "\u9501\u5b9a \u80fd\u91cf\u5706\u76d8";
+        graphics.DrawString(text, _tinyHudFont, shadowBrush, label.X + 1f, label.Y + 1f);
+        graphics.DrawString(text, _tinyHudFont, textBrush, label);
+    }
+
+    private bool TryResolveTrackedEnergyDiskPose(
+        SimulationEntity shooter,
+        SimulationEntity target,
+        double leadTimeSec,
+        out ArmorPlateTarget disk,
+        out Vector3 center,
+        out float diskRadiusM,
+        out Vector3 normal,
+        out Vector3 upAxis,
+        out Vector3 tangent)
+    {
+        disk = default;
+        center = default;
+        diskRadiusM = 0f;
+        normal = Vector3.UnitX;
+        upAxis = Vector3.UnitY;
+        tangent = Vector3.UnitZ;
+        if (string.IsNullOrWhiteSpace(shooter.AutoAimPlateId))
+        {
+            return false;
+        }
+
+        string targetTeam = shooter.Team;
+        if (SimulationCombatMath.TryParseEnergyArmIndex(shooter.AutoAimPlateId, out string parsedTeam, out _))
+        {
+            targetTeam = parsedTeam;
+        }
+
+        _host.World.Teams.TryGetValue(targetTeam, out SimulationTeamState? teamState);
+        leadTimeSec = Math.Clamp(leadTimeSec, 0.0, 1.10);
+        IReadOnlyList<ArmorPlateTarget> disks = SimulationCombatMath.GetEnergyMechanismTargets(
+            target,
+            Math.Max(_host.World.MetersPerWorldUnit, 1e-6),
+            _host.World.GameTimeSec + leadTimeSec,
+            targetTeam,
+            teamState);
+        for (int index = 0; index < disks.Count; index++)
+        {
+            if (!string.Equals(disks[index].Id, shooter.AutoAimPlateId, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            disk = disks[index];
+            center = ToScenePoint(disk.X, disk.Y, (float)disk.HeightM);
+            diskRadiusM = (float)Math.Max(0.05, Math.Max(disk.WidthM, disk.HeightSpanM) * 0.5);
+            float yawRad = (float)(disk.YawDeg * Math.PI / 180.0);
+            normal = Vector3.Normalize(new Vector3(MathF.Cos(yawRad), 0f, MathF.Sin(yawRad)));
+            upAxis = Vector3.UnitY;
+            tangent = Vector3.Cross(upAxis, normal);
+            tangent = tangent.LengthSquared() <= 1e-6f ? Vector3.UnitZ : Vector3.Normalize(tangent);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static float Distance(PointF a, PointF b)
+    {
+        float dx = a.X - b.X;
+        float dy = a.Y - b.Y;
+        return MathF.Sqrt(dx * dx + dy * dy);
     }
 
     private void DrawPlayerStatusPanel(Graphics graphics)
@@ -2025,6 +2283,93 @@ internal sealed partial class Simulator3dForm : Form
         graphics.DrawPath(border, path);
         graphics.DrawString("Deployment Zone", _smallHudFont, titleBrush, new RectangleF(box.X, box.Y + 6, box.Width, 18), center);
         graphics.DrawString(entity.HeroDeploymentRequested ? "Holding deployment... stay inside zone for 2s" : "Press Z to deploy and switch to top-armor auto fire", _tinyHudFont, textBrush, new RectangleF(box.X + 10, box.Y + 26, box.Width - 20, 18), center);
+    }
+
+    private void DrawEnergyActivationPrompt(Graphics graphics)
+    {
+        if (_appState != SimulatorAppState.InMatch || _paused)
+        {
+            return;
+        }
+
+        SimulationEntity? entity = _host.SelectedEntity;
+        if (entity is null
+            || (!string.Equals(entity.RoleKey, "infantry", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase))
+            || !_host.World.Teams.TryGetValue(entity.Team, out SimulationTeamState? teamState))
+        {
+            return;
+        }
+
+        bool activatingState = string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase);
+        bool activatedState = string.Equals(teamState.EnergyMechanismState, "activated", StringComparison.OrdinalIgnoreCase)
+            && teamState.EnergyBuffTimerSec > 1e-6;
+        bool large = _host.World.GameTimeSec >= 180.0;
+        int slot = ResolveEnergyLargeAttemptSlot(_host.World.GameTimeSec);
+        bool canActivate = activatingState
+            || (!large && !teamState.EnergySmallChanceUsed)
+            || (large && slot > 0 && teamState.EnergyLastLargeAttemptSlot != slot);
+        if (!canActivate && !activatedState)
+        {
+            return;
+        }
+
+        Rectangle box = new(ClientSize.Width / 2 - 220, ClientSize.Height - 248, 440, 58);
+        using GraphicsPath path = CreateRoundedRectangle(box, 8);
+        using var fill = new SolidBrush(Color.FromArgb(218, 18, 26, 34));
+        using var border = new Pen(Color.FromArgb(230, 255, 184, 86), 1.2f);
+        using var titleBrush = new SolidBrush(Color.FromArgb(255, 255, 220, 118));
+        using var textBrush = new SolidBrush(Color.FromArgb(238, 232, 238, 244));
+        StringFormat center = new() { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+        graphics.FillPath(fill, path);
+        graphics.DrawPath(border, path);
+
+        string titleText;
+        string detailText;
+        if (activatedState)
+        {
+            titleText = large
+                ? "\u5927\u80fd\u91cf\u673a\u5173\u5df2\u6fc0\u6d3b"
+                : "\u5c0f\u80fd\u91cf\u673a\u5173\u5df2\u6fc0\u6d3b";
+            detailText = $"\u589e\u76ca\u5269\u4f59 {teamState.EnergyBuffTimerSec:0.0}s";
+        }
+        else if (activatingState)
+        {
+            titleText = large
+                ? "\u5927\u80fd\u91cf\u673a\u5173\u6b63\u5728\u6fc0\u6d3b"
+                : "\u5c0f\u80fd\u91cf\u673a\u5173\u6b63\u5728\u6fc0\u6d3b";
+            detailText = $"\u6b63\u5728\u6fc0\u6d3b\uff1a{teamState.EnergyActivatedGroupCount}/5  \u5f53\u524d\u76ee\u6807\u5269\u4f59 {Math.Max(0.0, 2.5 - teamState.EnergyLitModuleTimerSec):0.0}s";
+        }
+        else
+        {
+            titleText = large
+                ? "\u5927\u80fd\u91cf\u673a\u5173\u53ef\u6fc0\u6d3b"
+                : "\u5c0f\u80fd\u91cf\u673a\u5173\u53ef\u6fc0\u6d3b";
+            detailText = "\u6bd4\u8d5b\u65f6\u95f4\u5141\u8bb8\u65f6\uff0c\u53ef\u76f4\u63a5\u6309 F \u5f00\u542f\uff0cQ \u5207\u6362\u5230\u80fd\u91cf\u5706\u76d8\u81ea\u7784";
+        }
+
+        bool activating = string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase);
+        string title = large ? "大能量机关可激活" : "小能量机关可激活";
+        string detail = activating
+            ? $"正在激活：{teamState.EnergyActivatedGroupCount}/5  亮灯剩余 {Math.Max(0.0, 2.5 - teamState.EnergyLitModuleTimerSec):0.0}s  Q切能量自瞄"
+            : "按住 F 开启，按 Q 切换到能量机关自瞄";
+        graphics.DrawString(titleText, _smallHudFont, titleBrush, new RectangleF(box.X, box.Y + 7, box.Width, 20), center);
+        graphics.DrawString(detailText, _tinyHudFont, textBrush, new RectangleF(box.X + 12, box.Y + 31, box.Width - 24, 18), center);
+    }
+
+    private static int ResolveEnergyLargeAttemptSlot(double gameTimeSec)
+    {
+        if (gameTimeSec >= 330.0)
+        {
+            return 3;
+        }
+
+        if (gameTimeSec >= 245.0)
+        {
+            return 2;
+        }
+
+        return gameTimeSec >= 180.0 ? 1 : 0;
     }
 
     private static (float Ratio, string Label) ResolvePowerGauge(SimulationEntity entity)
@@ -2563,7 +2908,6 @@ internal sealed partial class Simulator3dForm : Form
                 "patrol" => TacticalCommandMode.Patrol,
                 _ => TacticalCommandMode.Attack,
             };
-            ApplyCurrentTacticalCommand();
             return;
         }
 
@@ -2634,7 +2978,6 @@ internal sealed partial class Simulator3dForm : Form
                 ToggleDriveTelemetryWindow();
                 break;
             case "match_toggle_debug_sidebars":
-                _showDebugSidebars = !_showDebugSidebars;
                 break;
             case "match_toggle_tactical":
                 ToggleTacticalMode();
@@ -2643,7 +2986,7 @@ internal sealed partial class Simulator3dForm : Form
                 ApplyCurrentTacticalCommand();
                 break;
             case "match_toggle_pause":
-                _paused = !_paused;
+                SetPaused(!_paused);
                 break;
             case "match_reset_world":
                 _host.ResetWorld();
@@ -2672,27 +3015,108 @@ internal sealed partial class Simulator3dForm : Form
 
     private void HandleTacticalCanvasClick(Point point)
     {
+        if (TryPickTacticalFriendlyUnit(point, out SimulationEntity? selectedUnit))
+        {
+            _host.SetSelectedEntity(selectedUnit!.Id);
+            _tacticalAttackTargetId = selectedUnit.TacticalTargetId;
+            return;
+        }
+
         if (_tacticalCommandMode == TacticalCommandMode.Attack)
         {
             if (TryPickTacticalTarget(point, out SimulationEntity? target))
             {
                 _tacticalAttackTargetId = target!.Id;
-            }
-            else
-            {
-                _tacticalAttackTargetId ??= ResolveDefaultTacticalTargetId();
+                ApplyCurrentTacticalCommand();
             }
         }
         else if (TryPickGroundWorld(point, out double worldX, out double worldY))
         {
             _tacticalGroundTargetX = worldX;
             _tacticalGroundTargetY = worldY;
+            ApplyCurrentTacticalCommand();
         }
-
-        ApplyCurrentTacticalCommand();
     }
 
     private void ApplyCurrentTacticalCommand()
+    {
+        string command = _tacticalCommandMode switch
+        {
+            TacticalCommandMode.Defend => "defend",
+            TacticalCommandMode.Patrol => "patrol",
+            _ => "attack",
+        };
+        string? targetId = _tacticalCommandMode == TacticalCommandMode.Attack
+            ? _tacticalAttackTargetId ?? ResolveDefaultTacticalTargetId()
+            : null;
+        SimulationEntity? selected = _host.SelectedEntity;
+        if (selected is null
+            || !string.Equals(selected.Team, _host.SelectedTeam, StringComparison.OrdinalIgnoreCase)
+            || !_host.SetEntityTacticalCommand(
+                selected.Id,
+                command,
+                targetId,
+                _tacticalGroundTargetX,
+                _tacticalGroundTargetY,
+                _tacticalPatrolRadiusWorld))
+        {
+            _host.SetTeamTacticalCommand(
+                _host.SelectedTeam,
+                command,
+                targetId,
+                _tacticalGroundTargetX,
+                _tacticalGroundTargetY,
+                _tacticalPatrolRadiusWorld);
+        }
+    }
+
+    private bool TryPickTacticalFriendlyUnit(Point screenPoint, out SimulationEntity? unit)
+    {
+        unit = null;
+        float bestDistanceSq = 24f * 24f;
+        foreach (SimulationEntity candidate in _host.GetControlCandidates(_host.SelectedTeam))
+        {
+            if (!candidate.IsAlive || candidate.IsSimulationSuppressed)
+            {
+                continue;
+            }
+
+            PointF projected;
+            if (UseFastFlatRenderer)
+            {
+                if (!TryProjectFlatWorld(candidate.X, candidate.Y, out projected))
+                {
+                    continue;
+                }
+            }
+            else
+            {
+                Vector3 center = ToScenePoint(
+                    candidate.X,
+                    candidate.Y,
+                    (float)(candidate.GroundHeightM + candidate.AirborneHeightM + Math.Max(0.35, candidate.BodyHeightM * 0.6)));
+                if (!TryProject(center, out projected, out _))
+                {
+                    continue;
+                }
+            }
+
+            float dx = projected.X - screenPoint.X;
+            float dy = projected.Y - screenPoint.Y;
+            float distanceSq = dx * dx + dy * dy;
+            if (distanceSq >= bestDistanceSq)
+            {
+                continue;
+            }
+
+            bestDistanceSq = distanceSq;
+            unit = candidate;
+        }
+
+        return unit is not null;
+    }
+
+    private void ApplyCurrentTacticalCommandToTeam()
     {
         string command = _tacticalCommandMode switch
         {
@@ -2828,6 +3252,19 @@ internal sealed partial class Simulator3dForm : Form
         ResetCameraForMap();
         SnapCameraToSelectedEntity();
         UpdateMouseCaptureState();
+    }
+
+    private void SetPaused(bool paused)
+    {
+        _paused = paused;
+        if (paused)
+        {
+            ReleaseMouseCapture();
+            ResetLiveInput();
+        }
+
+        UpdateMouseCaptureState();
+        Invalidate();
     }
 
     private void ReturnToLobby()
@@ -3084,14 +3521,20 @@ internal sealed partial class Simulator3dForm : Form
                 MathF.Cos(pitch) * MathF.Sin(turretYaw)));
             (double muzzleX, double muzzleY, double muzzleHeightM) = SimulationCombatMath.ComputeMuzzlePoint(_host.World, selected);
             Vector3 muzzle = ToScenePoint(muzzleX, muzzleY, (float)muzzleHeightM);
-            Vector3 eye = muzzle - lookDirection * MathF.Max(0.018f, (float)selected.BarrelRadiusM * 0.65f);
+            float bodyHeight = (float)Math.Clamp(selected.BodyHeightM, 0.16, 0.80);
+            float cameraBackOffset = MathF.Max(0.09f, MathF.Min(0.22f, (float)selected.GimbalLengthM * 0.34f));
+            float cameraLift = MathF.Max(0.035f, bodyHeight * 0.10f);
+            Vector3 eye = muzzle
+                - lookDirection * cameraBackOffset
+                + Vector3.UnitY * (cameraLift + FirstPersonBarrelScreenDropM);
+            Vector3 sightConvergence = muzzle + lookDirection * FirstPersonSightConvergenceM;
 
             _cameraPositionM = eye;
-            _cameraTargetM = eye + lookDirection * 24f;
+            _cameraTargetM = sightConvergence;
             _viewMatrix = Matrix4x4.CreateLookAt(_cameraPositionM, _cameraTargetM, Vector3.UnitY);
 
             float aspectFirstPerson = Math.Max(1f, ClientSize.Width / (float)Math.Max(ClientSize.Height, 1));
-            _projectionMatrix = Matrix4x4.CreatePerspectiveFieldOfView(0.98f, aspectFirstPerson, 0.015f, 1500f);
+            _projectionMatrix = Matrix4x4.CreatePerspectiveFieldOfView(FirstPersonVerticalFovRad, aspectFirstPerson, 0.015f, 1500f);
             return;
         }
 
@@ -3444,13 +3887,6 @@ internal sealed partial class Simulator3dForm : Form
         _collectProjectedFacesOnly = !gpuGeometryOnly;
         foreach (SimulationEntity entity in _entityDrawBuffer)
         {
-            if (_firstPersonView
-                && entity.IsPlayerControlled
-                && string.Equals(entity.Id, _host.SelectedEntity?.Id, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
             float height;
             float entityHeightM = (float)Math.Max(0.0, entity.GroundHeightM + entity.AirborneHeightM);
             Vector3 center = ToScenePoint(entity.X, entity.Y, entityHeightM);
@@ -3513,6 +3949,11 @@ internal sealed partial class Simulator3dForm : Form
 
         foreach (EntityRenderOverlay overlay in _entityOverlayBuffer)
         {
+            if (string.Equals(overlay.Entity.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             if (IsAnyKeyHeld(Keys.F3))
             {
                 DrawEntityCollisionBox(graphics, overlay.Entity, overlay.Center, overlay.Profile);
@@ -3539,7 +3980,7 @@ internal sealed partial class Simulator3dForm : Form
 
     private bool ShouldUseSimplifiedEntityRender(SimulationEntity entity, float distanceM)
     {
-        return false;
+        return _tacticalMode;
     }
 
     private void ConfigurePreviewMode()
@@ -3666,7 +4107,7 @@ internal sealed partial class Simulator3dForm : Form
 
     private bool TryResolveEnergyMechanismRenderCenter(out FacilityRegion representative, out double centerWorldX, out double centerWorldY)
     {
-        representative = default;
+        representative = null!;
         centerWorldX = 0.0;
         centerWorldY = 0.0;
         FacilityRegion[] energyRegions = _host.MapPreset.Facilities
@@ -3761,9 +4202,12 @@ internal sealed partial class Simulator3dForm : Form
             return;
         }
 
-        _entityDrawBuffer.Sort((left, right) =>
-            Vector3.DistanceSquared(ToScenePoint(right.X, right.Y, 0), _cameraPositionM)
-                .CompareTo(Vector3.DistanceSquared(ToScenePoint(left.X, left.Y, 0), _cameraPositionM)));
+        if (!(_gpuGeometryPass && UseGpuRenderer))
+        {
+            _entityDrawBuffer.Sort((left, right) =>
+                Vector3.DistanceSquared(ToScenePoint(right.X, right.Y, 0), _cameraPositionM)
+                    .CompareTo(Vector3.DistanceSquared(ToScenePoint(left.X, left.Y, 0), _cameraPositionM)));
+        }
 
         foreach (SimulationEntity entity in _entityDrawBuffer)
         {
@@ -5221,12 +5665,19 @@ internal sealed partial class Simulator3dForm : Form
         _pendingJumpRequest = false;
         bool buyAmmoRequested = _buyAmmoRequested || ConsumePressedInput(Keys.B, 0x42, ref _buyKeyWasDown, heldCountsAsPressed: true);
         _buyAmmoRequested = false;
+        bool energyActivationPressed = IsAnyKeyHeld(Keys.F);
         bool heroDeployToggleRequested = ConsumePressedInput(Keys.Z, 0x5A, ref _deployKeyWasDown);
         bool superCapActive = IsAnyKeyHeld(Keys.C);
         bool sentryStanceToggleRequested = ConsumePressedInput(Keys.X, 0x58, ref _sentryStanceKeyWasDown);
         bool fireModifierPressed = IsAnyKeyHeld(Keys.ControlKey, Keys.LControlKey, Keys.RControlKey);
         bool smallGyroActive = IsAnyKeyHeld(Keys.ShiftKey, Keys.LShiftKey, Keys.RShiftKey);
         bool heroDeployActive = selected.HeroDeploymentActive;
+        bool energyAutoAimSingleShot =
+            string.Equals(selected.AutoAimTargetMode, "energy", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(selected.RoleKey, "hero", StringComparison.OrdinalIgnoreCase);
+        bool firePressed = heroDeployActive
+            || (energyAutoAimSingleShot ? _pendingSingleFireRequest : (_firePressed || fireModifierPressed));
+        _pendingSingleFireRequest = false;
         if (heroDeployActive)
         {
             moveForward = 0.0;
@@ -5245,13 +5696,14 @@ internal sealed partial class Simulator3dForm : Form
             MoveRight = moveRight,
             TurretYawDeltaDeg = turretYawDelta,
             GimbalPitchDeltaDeg = gimbalPitchDelta,
-            FirePressed = heroDeployActive || _firePressed || fireModifierPressed,
+            FirePressed = firePressed,
             AutoAimPressed = heroDeployActive || _autoAimPressed,
             AutoAimGuidanceOnly = _autoAimAssistMode == AutoAimAssistMode.GuidanceOnly,
             JumpRequested = jumpRequested,
             StepClimbModeActive = false,
             SmallGyroActive = smallGyroActive,
             BuyAmmoRequested = buyAmmoRequested,
+            EnergyActivationPressed = energyActivationPressed,
             HeroDeployToggleRequested = heroDeployToggleRequested,
             SuperCapActive = superCapActive,
             SentryStanceToggleRequested = sentryStanceToggleRequested,
@@ -5278,6 +5730,7 @@ internal sealed partial class Simulator3dForm : Form
         _autoAimPressed = false;
         _buyAmmoRequested = false;
         _pendingJumpRequest = false;
+        _pendingSingleFireRequest = false;
         _spaceKeyWasDown = false;
         _buyKeyWasDown = false;
         _deployKeyWasDown = false;
@@ -5291,6 +5744,7 @@ internal sealed partial class Simulator3dForm : Form
         bool shouldCapture =
             _appState == SimulatorAppState.InMatch
             && !_paused
+            && !_tacticalMode
             && Visible
             && (ContainsFocus || IsWindowActive());
 
@@ -5338,6 +5792,12 @@ internal sealed partial class Simulator3dForm : Form
             return;
         }
 
+        var entityById = new Dictionary<string, SimulationEntity>(StringComparer.OrdinalIgnoreCase);
+        foreach (SimulationEntity entity in _host.World.Entities)
+        {
+            entityById[entity.Id] = entity;
+        }
+
         foreach (SimulationCombatEvent combatEvent in _host.LastReport.CombatEvents)
         {
             if (!combatEvent.Hit || combatEvent.Damage <= 0.0)
@@ -5345,29 +5805,40 @@ internal sealed partial class Simulator3dForm : Form
                 continue;
             }
 
-            SimulationEntity? target = _host.World.Entities.FirstOrDefault(entity =>
-                string.Equals(entity.Id, combatEvent.TargetId, StringComparison.OrdinalIgnoreCase));
-            Color tint = target is null
-                ? Color.FromArgb(244, 255, 214, 84)
-                : ResolveTeamColor(target.Team);
+            entityById.TryGetValue(combatEvent.TargetId, out SimulationEntity? target);
+            Color tint = combatEvent.CriticalHit
+                ? Color.FromArgb(255, 236, 188, 62)
+                : target is null
+                    ? Color.FromArgb(244, 255, 214, 84)
+                    : ResolveTeamColor(target.Team);
+            int markerSlot = _combatMarkers.Count % 7;
+            float markerOffsetX = (markerSlot - 3) * 18f;
+            float markerOffsetY = -Math.Abs(markerSlot - 3) * 2.5f;
+            float markerRiseSpeed = 0.18f + (markerSlot % 3) * 0.035f;
             _combatMarkers.Add(new FloatingCombatMarker(
                 combatEvent.TargetId,
                 target?.X ?? 0.0,
                 target?.Y ?? 0.0,
                 (target?.GroundHeightM ?? 0.0) + (target?.AirborneHeightM ?? 0.0) + 0.9,
-                "hit",
+                combatEvent.CriticalHit ? "CRIT" : "HIT",
                 Color.FromArgb(246, tint),
-                0.70f));
+                0.70f,
+                markerOffsetX,
+                markerOffsetY,
+                markerRiseSpeed));
 
-            SimulationEntity? shooter = _host.World.Entities.FirstOrDefault(entity =>
-                string.Equals(entity.Id, combatEvent.ShooterId, StringComparison.OrdinalIgnoreCase));
-            Color eventColor = shooter?.IsPlayerControlled == true
-                ? Color.FromArgb(255, 246, 216, 72)
-                : ResolveTeamColor(shooter?.Team ?? target?.Team ?? "neutral");
+            entityById.TryGetValue(combatEvent.ShooterId, out SimulationEntity? shooter);
+            Color eventColor = combatEvent.CriticalHit
+                ? Color.FromArgb(255, 236, 188, 62)
+                : shooter?.IsPlayerControlled == true
+                    ? Color.FromArgb(255, 246, 216, 72)
+                    : ResolveTeamColor(shooter?.Team ?? target?.Team ?? "neutral");
             string targetLabel = target is null ? combatEvent.TargetId : FormatEventEntityName(target);
             string shooterLabel = shooter is null ? combatEvent.ShooterId : FormatEventEntityName(shooter);
             AppendMatchEvent(
-                $"{shooterLabel} hit {targetLabel}  -{combatEvent.Damage:0}HP  p{combatEvent.HitProbability * 100.0:0}%",
+                combatEvent.CriticalHit
+                    ? $"{shooterLabel} CRITICAL hit {targetLabel}  -{combatEvent.Damage:0}HP  p{combatEvent.HitProbability * 100.0:0}%"
+                    : $"{shooterLabel} hit {targetLabel}  -{combatEvent.Damage:0}HP  p{combatEvent.HitProbability * 100.0:0}%",
                 eventColor);
         }
 
@@ -5378,8 +5849,7 @@ internal sealed partial class Simulator3dForm : Form
 
         foreach (SimulationLifecycleEvent lifecycleEvent in _host.LastReport.LifecycleEvents)
         {
-            SimulationEntity? entity = _host.World.Entities.FirstOrDefault(item =>
-                string.Equals(item.Id, lifecycleEvent.EntityId, StringComparison.OrdinalIgnoreCase));
+            entityById.TryGetValue(lifecycleEvent.EntityId, out SimulationEntity? entity);
             Color eventColor = ResolveTeamColor(entity?.Team ?? lifecycleEvent.Team);
             string prefix = lifecycleEvent.EventType switch
             {
@@ -5394,10 +5864,49 @@ internal sealed partial class Simulator3dForm : Form
         foreach (FacilityInteractionEvent interactionEvent in _host.LastReport.InteractionEvents)
         {
             Color eventColor = ResolveTeamColor(interactionEvent.Team);
-            AppendMatchEvent(
-                $"{interactionEvent.FacilityType}  {interactionEvent.Message}",
-                eventColor,
-                7.0f);
+            string eventText = interactionEvent.Message;
+            if (string.Equals(interactionEvent.FacilityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase))
+            {
+                eventText = $"Energy  {interactionEvent.Message}";
+            }
+
+            AppendMatchEvent(eventText, eventColor, 7.0f);
+            bool sameTeamEnergyEvent =
+                string.Equals(interactionEvent.Team, _host.SelectedTeam, StringComparison.OrdinalIgnoreCase);
+            if (sameTeamEnergyEvent
+                && string.Equals(interactionEvent.FacilityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase))
+            {
+                if (interactionEvent.Message.Contains("\u5c0f\u80fd\u91cf\u673a\u5173\u5f00\u59cb\u6fc0\u6d3b", StringComparison.OrdinalIgnoreCase))
+                {
+                    _centerBuffToasts.Add(new CenterBuffToast(
+                        "\u5c0f\u80fd\u91cf\u673a\u5173\u5df2\u5f00\u542f",
+                        "\u4ec5\u53ef\u9501\u5b9a\u5df1\u65b9\u4eae\u706f\u76ee\u6807\uff0c\u5de6\u952e\u73b0\u5728\u4e3a\u5355\u53d1",
+                        eventColor));
+                }
+                else if (interactionEvent.Message.Contains("\u5927\u80fd\u91cf\u673a\u5173\u5f00\u59cb\u6fc0\u6d3b", StringComparison.OrdinalIgnoreCase))
+                {
+                    _centerBuffToasts.Add(new CenterBuffToast(
+                        "\u5927\u80fd\u91cf\u673a\u5173\u5df2\u5f00\u542f",
+                        "\u8bf7\u4f9d\u6b21\u547d\u4e2d\u5df1\u65b9\u4eae\u706f\u5706\u73af",
+                        eventColor));
+                }
+                else if (interactionEvent.Message.Contains("\u5df2\u6fc0\u6d3b\u6210\u529f", StringComparison.OrdinalIgnoreCase))
+                {
+                    _centerBuffToasts.Add(new CenterBuffToast(
+                        interactionEvent.Message.Contains("\u5927\u80fd\u91cf", StringComparison.OrdinalIgnoreCase)
+                            ? "\u5927\u80fd\u91cf\u673a\u5173\u5df2\u6fc0\u6d3b"
+                            : "\u5c0f\u80fd\u91cf\u673a\u5173\u5df2\u6fc0\u6d3b",
+                        interactionEvent.Message,
+                        eventColor));
+                }
+                else if (interactionEvent.Message.Contains("\u6fc0\u6d3b\u5931\u8d25", StringComparison.OrdinalIgnoreCase))
+                {
+                    _centerBuffToasts.Add(new CenterBuffToast(
+                        "\u80fd\u91cf\u673a\u5173\u6fc0\u6d3b\u5931\u8d25",
+                        interactionEvent.Message,
+                        Color.FromArgb(255, 192, 112, 96)));
+                }
+            }
         }
     }
 
@@ -5483,7 +5992,7 @@ internal sealed partial class Simulator3dForm : Form
         graphics.DrawPath(border, path);
 
         using var titleBrush = new SolidBrush(Color.FromArgb(232, 238, 244));
-        graphics.DrawString("Events", _smallHudFont, titleBrush, panel.X + 12, panel.Y + 7);
+        graphics.DrawString("\u4e8b\u4ef6", _smallHudFont, titleBrush, panel.X + 12, panel.Y + 7);
 
         int y = panel.Y + 28;
         foreach ((MatchEventFeedItem item, IReadOnlyList<string> lines) in wrappedItems)
@@ -5578,7 +6087,7 @@ internal sealed partial class Simulator3dForm : Form
             double worldY = target?.Y ?? marker.WorldY;
             double heightM = target is null
                 ? marker.HeightM
-                : target.GroundHeightM + target.AirborneHeightM + Math.Max(target.BodyHeightM, 0.30) + 0.55 + marker.AgeSec * 0.20;
+                : target.GroundHeightM + target.AirborneHeightM + Math.Max(target.BodyHeightM, 0.30) + 0.55 + marker.AgeSec * marker.RiseSpeed;
 
             Vector3 anchor = ToScenePoint(worldX, worldY, (float)heightM);
             if (!TryProject(anchor, out PointF screenPoint, out _))
@@ -5592,7 +6101,12 @@ internal sealed partial class Simulator3dForm : Form
                 marker.Color);
             using var textBrush = new SolidBrush(textColor);
             SizeF size = graphics.MeasureString(marker.Text, _smallHudFont);
-            graphics.DrawString(marker.Text, _smallHudFont, textBrush, screenPoint.X - size.Width * 0.5f, screenPoint.Y - size.Height * 0.5f);
+            graphics.DrawString(
+                marker.Text,
+                _smallHudFont,
+                textBrush,
+                screenPoint.X - size.Width * 0.5f + marker.ScreenOffsetX,
+                screenPoint.Y - size.Height * 0.5f + marker.ScreenOffsetY);
         }
     }
 }

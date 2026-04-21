@@ -8,7 +8,7 @@ internal sealed partial class Simulator3dForm
 {
     private const int MaxTerrainTopMergeSpan = 36;
     private const int MaxTerrainWallMergeSpan = 56;
-    private const float TerrainSlopeSmoothThresholdM = 0.049f;
+    private const float TerrainSlopeSmoothThresholdM = 0.048f;
 
     private enum TerrainWallEdge
     {
@@ -419,7 +419,7 @@ internal sealed partial class Simulator3dForm
             return false;
         }
 
-        fillColor = ResolveTerrainWallColor(topHeight, bottomHeight);
+        fillColor = ResolveTerrainWallColor(seed.FillColor, topHeight, bottomHeight);
         edgeColor = BlendColor(fillColor, Color.Black, 0.30f);
         return true;
     }
@@ -438,15 +438,15 @@ internal sealed partial class Simulator3dForm
         return baseFill;
     }
 
-    private Color ResolveTerrainWallColor(float topHeight, float bottomHeight)
+    private Color ResolveTerrainWallColor(Color topSurfaceColor, float topHeight, float bottomHeight)
     {
-        if (UsesSolidTerrainWalls())
-        {
-            return ResolveTerrainWallSolidColor();
-        }
-
         float verticalRange = Math.Clamp((topHeight - bottomHeight) / 0.60f, 0f, 1f);
-        return BlendColor(Color.FromArgb(56, 60, 66), Color.FromArgb(92, 96, 104), 0.08f * verticalRange);
+        Color fallback = UsesSolidTerrainWalls()
+            ? ResolveTerrainWallSolidColor()
+            : Color.FromArgb(58, 62, 68);
+        Color sampled = topSurfaceColor.A == 0 ? fallback : topSurfaceColor;
+        Color shaded = BlendColor(sampled, Color.Black, 0.34f + 0.18f * verticalRange);
+        return BlendColor(shaded, fallback, 0.12f);
     }
 
     private bool UsesOrthographicPngTopSurface()
@@ -650,6 +650,10 @@ internal sealed partial class Simulator3dForm
         if (TryResolveExtendedCornerHeight(cornerCellX, cornerCellY, resolved, out float extended))
         {
             resolved = resolved * 0.42f + extended * 0.58f;
+            if (TryResolveExtendedCornerHeight(cornerCellX, cornerCellY, resolved, out float secondExtended))
+            {
+                resolved = resolved * 0.54f + secondExtended * 0.46f;
+            }
         }
 
         return resolved <= 0.02f ? 0.002f : resolved;
@@ -746,7 +750,7 @@ internal sealed partial class Simulator3dForm
         }
 
         Color topColor = facet.TopColor;
-        Color sideColor = facet.SideColor;
+        Color sideColor = ResolveTerrainFacetSideColor(facet);
         float minX = facet.MinX;
         float maxX = facet.MaxX;
         float minY = facet.MinY;
@@ -802,5 +806,33 @@ internal sealed partial class Simulator3dForm
                 BlendColor(sideColor, Color.Black, 0.32f),
                 target);
         }
+    }
+
+    private Color ResolveTerrainFacetSideColor(TerrainFacetRuntime facet)
+    {
+        Color sampled = facet.TopColor;
+        if (_cachedRuntimeGrid is not null
+            && facet.PointsWorld.Count > 0)
+        {
+            float centerX = 0f;
+            float centerY = 0f;
+            for (int index = 0; index < facet.PointsWorld.Count; index++)
+            {
+                centerX += facet.PointsWorld[index].X;
+                centerY += facet.PointsWorld[index].Y;
+            }
+
+            centerX /= facet.PointsWorld.Count;
+            centerY /= facet.PointsWorld.Count;
+            int cellX = Math.Clamp((int)MathF.Floor(centerX / Math.Max(1e-6f, _cachedRuntimeGrid.CellWidthWorld)), 0, _cachedRuntimeGrid.WidthCells - 1);
+            int cellY = Math.Clamp((int)MathF.Floor(centerY / Math.Max(1e-6f, _cachedRuntimeGrid.CellHeightWorld)), 0, _cachedRuntimeGrid.HeightCells - 1);
+            if (TrySampleTerrainBaseColorSmoothed(cellX, cellY, out Color terrainSample))
+            {
+                sampled = BlendColor(sampled, terrainSample, 0.55f);
+            }
+        }
+
+        Color fallback = facet.SideColor.A == 0 ? Color.FromArgb(58, 62, 68) : facet.SideColor;
+        return BlendColor(BlendColor(sampled, Color.Black, 0.38f), fallback, 0.10f);
     }
 }

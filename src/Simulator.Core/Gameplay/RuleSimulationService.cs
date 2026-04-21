@@ -11,7 +11,8 @@ public sealed record SimulationCombatEvent(
     double HitProbability,
     bool Hit,
     double Damage,
-    string Message);
+    string Message,
+    bool CriticalHit = false);
 
 public sealed record SimulationLifecycleEvent(
     double TimeSec,
@@ -53,6 +54,8 @@ public sealed class RuleSimulationService
         public required IReadOnlyList<SimulationEntity> RedTeamTargets { get; init; }
 
         public required IReadOnlyList<SimulationEntity> BlueTeamTargets { get; init; }
+
+        public required IReadOnlyList<SimulationEntity> DamageTargets { get; init; }
 
         public required IReadOnlyList<SimulationEntity> ObstacleCandidates { get; init; }
 
@@ -148,6 +151,12 @@ public sealed class RuleSimulationService
                 || string.Equals(entity.EntityType, "outpost", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
+            }
+
+            if (!entity.IsPlayerControlled)
+            {
+                entity.AutoAimTargetMode = "armor";
+                entity.AutoAimTargetKind = "armor";
             }
 
             SimulationEntity? enemy = FindNearestEnemy(world, entity);
@@ -733,6 +742,11 @@ public sealed class RuleSimulationService
             double startHeightM = projectile.HeightM;
 
             ApplyProjectilePhysicsStep(projectile, Math.Max(world.MetersPerWorldUnit, 1e-6), dt);
+            if (IsProjectileOutsideWorldBounds(world, projectile))
+            {
+                world.Projectiles.RemoveAt(index);
+                continue;
+            }
 
             if (SimulationCombatMath.TryFindProjectileHit(
                 world,
@@ -743,7 +757,7 @@ public sealed class RuleSimulationService
                 projectile.X,
                 projectile.Y,
                 projectile.HeightM,
-                frameCache.GetTargetCandidates(shooter.Team),
+                frameCache.DamageTargets,
                 frameCache.ArmorTargetsByEntityId,
                 out SimulationEntity? hitTarget,
                 out ArmorPlateTarget hitPlate,
@@ -780,6 +794,16 @@ public sealed class RuleSimulationService
                 double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
                 double distanceM = Math.Sqrt(dx * dx + dy * dy) * metersPerWorldUnit;
                 Vector3 hitPointM = new((float)(hitX * metersPerWorldUnit), (float)hitHeightM, (float)(hitY * metersPerWorldUnit));
+                if (TryHandleEnergyMechanismHit(world, shooter, projectile, hitTarget, hitPlate, hitPointM, hitX, hitY, hitHeightM, hitSegmentT, metersPerWorldUnit, report, out bool energyProjectileAlive))
+                {
+                    if (!energyProjectileAlive)
+                    {
+                        world.Projectiles.RemoveAt(index);
+                    }
+
+                    continue;
+                }
+
                 bool criticalHit = SimulationCombatMath.IsCriticalStructureArmorHit(hitPlate, metersPerWorldUnit, hitPointM);
                 double damageScale = criticalHit ? projectile.DamageScale * 1.5 : projectile.DamageScale;
                 double damage = Math.Round(ComputeDamage(shooter, hitTarget, hitPlate) * damageScale, 2);
@@ -874,6 +898,11 @@ public sealed class RuleSimulationService
                 double startY = projectile.Y;
                 double startHeightM = projectile.HeightM;
                 ApplyProjectilePhysicsStep(projectile, metersPerWorldUnit, substepDt);
+                if (IsProjectileOutsideWorldBounds(world, projectile))
+                {
+                    removeProjectile = true;
+                    break;
+                }
 
                 if (SimulationCombatMath.TryFindProjectileHit(
                     world,
@@ -884,7 +913,7 @@ public sealed class RuleSimulationService
                     projectile.X,
                     projectile.Y,
                     projectile.HeightM,
-                    frameCache.GetTargetCandidates(shooter.Team),
+                    frameCache.DamageTargets,
                     frameCache.ArmorTargetsByEntityId,
                     out SimulationEntity? hitTarget,
                     out ArmorPlateTarget hitPlate,
@@ -920,6 +949,12 @@ public sealed class RuleSimulationService
                     double dy = hitTarget.Y - shooter.Y;
                     double distanceM = Math.Sqrt(dx * dx + dy * dy) * metersPerWorldUnit;
                     Vector3 hitPointM = new((float)(hitX * metersPerWorldUnit), (float)hitHeightM, (float)(hitY * metersPerWorldUnit));
+                    if (TryHandleEnergyMechanismHit(world, shooter, projectile, hitTarget, hitPlate, hitPointM, hitX, hitY, hitHeightM, hitSegmentT, metersPerWorldUnit, report, out bool energyProjectileAlive))
+                    {
+                        removeProjectile = !energyProjectileAlive;
+                        break;
+                    }
+
                     bool criticalHit = SimulationCombatMath.IsCriticalStructureArmorHit(hitPlate, metersPerWorldUnit, hitPointM);
                     double damageScale = criticalHit ? projectile.DamageScale * 1.5 : projectile.DamageScale;
                     double damage = Math.Round(ComputeDamage(shooter, hitTarget, hitPlate) * damageScale, 2);
@@ -927,16 +962,17 @@ public sealed class RuleSimulationService
                     UpdateAutoAimCorrection(world, shooter, hitTarget, hitPlate, hitPointM);
                     ApplyDamage(world, shooter, hitTarget, damage, report);
                     report.HitShots++;
-                    report.CombatEvents.Add(new SimulationCombatEvent(
-                        world.GameTimeSec,
-                        shooter.Id,
-                        hitTarget.Id,
-                        shooter.AmmoType,
-                        distanceM,
-                        projectile.AimHitProbability,
-                        true,
-                        damage,
-                        $"鍛戒腑 {hitPlate.Id} 閫犳垚 {damage:0.##}"));
+                report.CombatEvents.Add(new SimulationCombatEvent(
+                    world.GameTimeSec,
+                    shooter.Id,
+                    hitTarget.Id,
+                    shooter.AmmoType,
+                    distanceM,
+                    projectile.AimHitProbability,
+                    true,
+                    damage,
+                    $"Hit {hitPlate.Id} for {damage:0.##}",
+                    criticalHit));
                     if (TryApplyArmorRicochet(projectile, hitPlate, hitX, hitY, hitHeightM, hitSegmentT, metersPerWorldUnit))
                     {
                         break;
@@ -1001,6 +1037,76 @@ public sealed class RuleSimulationService
         }
     }
 
+    private bool TryHandleEnergyMechanismHit(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        SimulationProjectile projectile,
+        SimulationEntity hitTarget,
+        ArmorPlateTarget hitPlate,
+        Vector3 hitPointM,
+        double hitX,
+        double hitY,
+        double hitHeightM,
+        double hitSegmentT,
+        double metersPerWorldUnit,
+        SimulationRunReport report,
+        out bool projectileAlive)
+    {
+        projectileAlive = true;
+        if (!string.Equals(hitTarget.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase)
+            || !hitPlate.Id.StartsWith("energy_", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        int ringScore = ResolveEnergyRingScore(hitPlate, hitPointM, metersPerWorldUnit);
+        FacilityInteractionEvent? energyEvent = _interactionService.ApplyEnergyMechanismHit(world, shooter, hitPlate, ringScore);
+        if (energyEvent is not null)
+        {
+            report.InteractionEvents.Add(energyEvent);
+            report.InteractionEventCount++;
+        }
+
+        report.HitShots++;
+        report.CombatEvents.Add(new SimulationCombatEvent(
+            world.GameTimeSec,
+            shooter.Id,
+            hitTarget.Id,
+            shooter.AmmoType,
+            DistanceM(shooter, hitTarget, metersPerWorldUnit),
+            projectile.AimHitProbability,
+            true,
+            0.0,
+            $"Energy mechanism ring {ringScore} hit {hitPlate.Id}",
+            false));
+
+        projectileAlive = TryApplyArmorRicochet(projectile, hitPlate, hitX, hitY, hitHeightM, hitSegmentT, metersPerWorldUnit);
+        return true;
+    }
+
+    private static int ResolveEnergyRingScore(ArmorPlateTarget plate, Vector3 hitPointM, double metersPerWorldUnit)
+    {
+        _ = metersPerWorldUnit;
+        Vector3 center = new((float)(plate.X * metersPerWorldUnit), (float)plate.HeightM, (float)(plate.Y * metersPerWorldUnit));
+        double yawRad = plate.YawDeg * Math.PI / 180.0;
+        Vector3 side = new(-(float)Math.Sin(yawRad), 0f, (float)Math.Cos(yawRad));
+        Vector3 up = Vector3.UnitY;
+        Vector3 local = hitPointM - center;
+        double radiusM = Math.Max(0.01, Math.Max(plate.WidthM, plate.HeightSpanM) * 0.5);
+        double radialM = Math.Sqrt(
+            Math.Pow(Vector3.Dot(local, side), 2)
+            + Math.Pow(Vector3.Dot(local, up), 2));
+        double normalized = Math.Clamp(radialM / radiusM, 0.0, 1.0);
+        return Math.Clamp((int)Math.Ceiling((1.0 - normalized) * 10.0), 1, 10);
+    }
+
+    private static double DistanceM(SimulationEntity a, SimulationEntity b, double metersPerWorldUnit)
+    {
+        double dx = b.X - a.X;
+        double dy = b.Y - a.Y;
+        return Math.Sqrt(dx * dx + dy * dy) * Math.Max(metersPerWorldUnit, 1e-6);
+    }
+
     private static void ApplyProjectilePhysicsStep(
         SimulationProjectile projectile,
         double metersPerWorldUnit,
@@ -1047,6 +1153,19 @@ public sealed class RuleSimulationService
 
     private static bool ShouldDeleteProjectileBySpeed(SimulationProjectile projectile, double metersPerWorldUnit)
         => ResolveProjectileSpeedMps(projectile, Math.Max(metersPerWorldUnit, 1e-6)) < ProjectileDeleteSpeedMps;
+
+    private static bool IsProjectileOutsideWorldBounds(SimulationWorldState world, SimulationProjectile projectile)
+    {
+        if (world.WorldWidth <= 1e-6 || world.WorldHeight <= 1e-6)
+        {
+            return false;
+        }
+
+        return projectile.X < 0.0
+            || projectile.Y < 0.0
+            || projectile.X > world.WorldWidth
+            || projectile.Y > world.WorldHeight;
+    }
 
     private ProjectileObstacleHit? TryResolveProjectileObstacle(
         SimulationWorldState world,
@@ -1197,6 +1316,7 @@ public sealed class RuleSimulationService
         Dictionary<string, SimulationEntity> entityById = BuildEntityLookup(world);
         var redTargets = new List<SimulationEntity>(world.Entities.Count);
         var blueTargets = new List<SimulationEntity>(world.Entities.Count);
+        var damageTargets = new List<SimulationEntity>(world.Entities.Count);
         var obstacles = new List<SimulationEntity>(world.Entities.Count);
         var armorTargetsByEntityId = new Dictionary<string, IReadOnlyList<ArmorPlateTarget>>(world.Entities.Count, StringComparer.OrdinalIgnoreCase);
         double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
@@ -1212,7 +1332,14 @@ public sealed class RuleSimulationService
                 continue;
             }
 
-            if (string.Equals(entity.Team, "red", StringComparison.OrdinalIgnoreCase))
+            damageTargets.Add(entity);
+
+            if (string.Equals(entity.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase))
+            {
+                redTargets.Add(entity);
+                blueTargets.Add(entity);
+            }
+            else if (string.Equals(entity.Team, "red", StringComparison.OrdinalIgnoreCase))
             {
                 redTargets.Add(entity);
             }
@@ -1221,7 +1348,9 @@ public sealed class RuleSimulationService
                 blueTargets.Add(entity);
             }
 
-            armorTargetsByEntityId[entity.Id] = SimulationCombatMath.GetArmorPlateTargets(entity, metersPerWorldUnit, world.GameTimeSec);
+            armorTargetsByEntityId[entity.Id] = string.Equals(entity.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase)
+                ? BuildEnergyMechanismTargetsForFrame(world, entity, metersPerWorldUnit)
+                : SimulationCombatMath.GetArmorPlateTargets(entity, metersPerWorldUnit, world.GameTimeSec);
         }
 
         return new ProjectileFrameCache
@@ -1229,9 +1358,31 @@ public sealed class RuleSimulationService
             EntityById = entityById,
             RedTeamTargets = redTargets,
             BlueTeamTargets = blueTargets,
+            DamageTargets = damageTargets,
             ObstacleCandidates = obstacles,
             ArmorTargetsByEntityId = armorTargetsByEntityId,
         };
+    }
+
+    private static IReadOnlyList<ArmorPlateTarget> BuildEnergyMechanismTargetsForFrame(
+        SimulationWorldState world,
+        SimulationEntity entity,
+        double metersPerWorldUnit)
+    {
+        var targets = new List<ArmorPlateTarget>(10);
+        if (world.Teams.TryGetValue("red", out SimulationTeamState? redState))
+        {
+            targets.AddRange(SimulationCombatMath.GetEnergyMechanismTargets(entity, metersPerWorldUnit, world.GameTimeSec, "red", redState));
+        }
+
+        if (world.Teams.TryGetValue("blue", out SimulationTeamState? blueState))
+        {
+            targets.AddRange(SimulationCombatMath.GetEnergyMechanismTargets(entity, metersPerWorldUnit, world.GameTimeSec, "blue", blueState));
+        }
+
+        return targets.Count > 0
+            ? targets
+            : SimulationCombatMath.GetEnergyMechanismTargets(entity, metersPerWorldUnit, world.GameTimeSec);
     }
 
     private static void StoreAutoAimDiagnostics(
@@ -1243,6 +1394,9 @@ public sealed class RuleSimulationService
         shooter.AutoAimLocked = true;
         shooter.AutoAimTargetId = target.Id;
         shooter.AutoAimPlateId = plate.Id;
+        shooter.AutoAimTargetKind = plate.Id.StartsWith("energy_", StringComparison.OrdinalIgnoreCase)
+            ? "energy_disk"
+            : "armor";
         shooter.AutoAimPlateDirection = solution.PlateDirection;
         shooter.AutoAimAccuracy = solution.Accuracy;
         shooter.AutoAimDistanceCoefficient = solution.DistanceCoefficient;
@@ -1260,6 +1414,9 @@ public sealed class RuleSimulationService
         entity.AutoAimLocked = false;
         entity.AutoAimTargetId = null;
         entity.AutoAimPlateId = null;
+        entity.AutoAimTargetKind = string.Equals(entity.AutoAimTargetMode, "energy", StringComparison.OrdinalIgnoreCase)
+            ? "energy_disk"
+            : "armor";
         entity.AutoAimPlateDirection = string.Empty;
         entity.AutoAimAccuracy = 0.0;
         entity.AutoAimDistanceCoefficient = 0.0;
@@ -1720,6 +1877,7 @@ public sealed class RuleSimulationService
             AutoAimLocked = source.AutoAimLocked,
             AutoAimTargetId = source.AutoAimTargetId,
             AutoAimPlateId = source.AutoAimPlateId,
+            AutoAimTargetKind = source.AutoAimTargetKind,
             AutoAimPlateDirection = source.AutoAimPlateDirection,
             AutoAimAccuracy = source.AutoAimAccuracy,
             AutoAimAccuracyScale = source.AutoAimAccuracyScale,

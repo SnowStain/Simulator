@@ -38,6 +38,7 @@ public static class SimulationCombatMath
     private const double BaseDiagramHeightM = 1.181;
     private const double BaseTopArmorCenterHeightM = 1.150;
     private const double BaseTopArmorTiltDeg = 27.5;
+    private const double EnergyMechanismYawRad = -Math.PI * 0.25;
 
     public static IReadOnlyList<ArmorPlateTarget> GetArmorPlateTargets(
         SimulationEntity target,
@@ -56,7 +57,7 @@ public static class SimulationCombatMath
 
         if (string.Equals(target.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase))
         {
-            return Array.Empty<ArmorPlateTarget>();
+            return GetEnergyMechanismTargets(target, metersPerWorldUnit, gameTimeSec);
         }
 
         if (IsStructure(target))
@@ -142,6 +143,225 @@ public static class SimulationCombatMath
         return plates;
     }
 
+    public static IReadOnlyList<ArmorPlateTarget> GetEnergyMechanismTargets(
+        SimulationEntity target,
+        double metersPerWorldUnit,
+        double gameTimeSec,
+        string? targetTeam = null,
+        SimulationTeamState? teamState = null)
+    {
+        double safeMeters = Math.Max(metersPerWorldUnit, 1e-6);
+        double anchorXM = target.X * safeMeters;
+        double anchorZM = target.Y * safeMeters;
+        double forwardX = Math.Cos(EnergyMechanismYawRad);
+        double forwardZ = Math.Sin(EnergyMechanismYawRad);
+        double rightX = -forwardZ;
+        double rightZ = forwardX;
+        double normalYawDeg = NormalizeDeg(RadiansToDegrees(Math.Atan2(rightZ, rightX)));
+        EnergyTargetLayout layout = ResolveEnergyTargetLayout(target);
+        double rotorYaw = ResolveEnergyRotorYawRad(gameTimeSec, teamState);
+        string[] sides = string.IsNullOrWhiteSpace(targetTeam)
+            ? new[] { "red", "blue" }
+            : new[] { targetTeam };
+        var plates = new List<ArmorPlateTarget>(sides.Length * 5);
+        foreach (string side in sides)
+        {
+            bool redSide = string.Equals(side, "red", StringComparison.OrdinalIgnoreCase);
+            double localZ = redSide ? -layout.RotorAxisGapM * 0.5 : layout.RotorAxisGapM * 0.5;
+            for (int index = 0; index < 5; index++)
+            {
+                double yaw = rotorYaw + layout.RotorPhaseRad + Math.Tau * index / 5.0;
+                double localX = Math.Cos(yaw) * layout.RotorRadiusM;
+                double localY = layout.RotorCenterHeightM + Math.Sin(yaw) * layout.RotorRadiusM;
+                double xM = anchorXM + forwardX * localX + rightX * localZ;
+                double zM = anchorZM + forwardZ * localX + rightZ * localZ;
+                plates.Add(new ArmorPlateTarget(
+                    $"energy_{(redSide ? "red" : "blue")}_arm_{index}",
+                    xM / safeMeters,
+                    zM / safeMeters,
+                    target.GroundHeightM + localY,
+                    normalYawDeg,
+                    layout.DiskDiameterM,
+                    layout.DiskDiameterM,
+                    layout.DiskDiameterM));
+            }
+        }
+
+        return plates;
+    }
+
+    private static EnergyTargetLayout ResolveEnergyTargetLayout(SimulationEntity target)
+    {
+        double baseHeight = Math.Max(0.0, target.StructureBaseHeightM);
+        double groundClearance = Math.Max(0.0, target.StructureGroundClearanceM);
+        double frameWidth = Math.Max(0.80, target.StructureFrameWidthM > 1e-6 ? target.StructureFrameWidthM : target.BodyLengthM);
+        double frameDepth = Math.Max(0.06, target.StructureFrameDepthM > 1e-6 ? target.StructureFrameDepthM : target.BodyWidthM * 0.18);
+        double rotorCenterHeight = Math.Max(baseHeight + groundClearance + 0.40, target.StructureRotorCenterHeightM);
+        double rotorPhaseRad = DegreesToRadians(target.StructureRotorPhaseDeg);
+        double rotorRadius = Math.Max(0.18, target.StructureRotorRadiusM);
+        double hubRadius = Math.Max(0.05, target.StructureRotorHubRadiusM);
+        double lampLength = Math.Max(0.06, target.StructureLampLengthM);
+        double lampWidth = Math.Max(0.06, target.StructureLampWidthM);
+        double cantileverLength = Math.Max(0.0, target.StructureCantileverLengthM);
+        double cantileverPairGap = Math.Max(
+            frameWidth + cantileverLength,
+            target.StructureCantileverPairGapM > 1e-6 ? target.StructureCantileverPairGapM : frameWidth + cantileverLength);
+        double rotorAxisGap = Math.Max(
+            Math.Max(frameDepth * 1.8, hubRadius * 2.6),
+            Math.Min(cantileverPairGap, frameWidth) * 0.42 + cantileverLength * 0.30);
+        double diskDiameterM = Math.Max(0.18, Math.Max(lampLength, lampWidth));
+        return new EnergyTargetLayout(
+            rotorCenterHeight + target.StructureCantileverOffsetYM,
+            rotorPhaseRad,
+            rotorRadius,
+            rotorAxisGap,
+            diskDiameterM);
+    }
+
+    private static double ResolveEnergyRotorYawRad(double gameTimeSec, SimulationTeamState? teamState)
+    {
+        const double smallSpeedRadPerSec = Math.PI / 3.0;
+        const double largeActiveA = 0.9125;
+        const double largeActiveOmega = 1.942;
+        const double largeActiveB = 2.090 - largeActiveA;
+        if (teamState is null
+            || (!string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(teamState.EnergyMechanismState, "activated", StringComparison.OrdinalIgnoreCase)))
+        {
+            return 0.0;
+        }
+
+        int direction = teamState.EnergyRotorDirectionSign != 0 ? teamState.EnergyRotorDirectionSign : 1;
+        bool largeActive = string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
+            && teamState.EnergyLargeMechanismActive;
+        double safeTime = Math.Max(0.0, gameTimeSec - teamState.EnergyStateStartTimeSec);
+        if (!largeActive)
+        {
+            return direction * safeTime * smallSpeedRadPerSec;
+        }
+
+        double speedIntegral = largeActiveB * safeTime
+            + largeActiveA / largeActiveOmega * (1.0 - Math.Cos(largeActiveOmega * safeTime));
+        return direction * speedIntegral;
+    }
+
+    public static bool TryAcquireEnergyMechanismTarget(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        double maxDistanceM,
+        out SimulationEntity? target,
+        out ArmorPlateTarget plate,
+        Func<SimulationEntity, ArmorPlateTarget, bool>? canSeePlate = null)
+    {
+        target = null;
+        plate = default;
+        if (!world.Teams.TryGetValue(shooter.Team, out SimulationTeamState? teamState)
+            || !string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
+            || teamState.EnergyNextModuleDelaySec > 1e-6)
+        {
+            return false;
+        }
+
+        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
+        double bestScore = double.MaxValue;
+        foreach (SimulationEntity candidate in world.Entities)
+        {
+            if (!candidate.IsAlive
+                || candidate.IsSimulationSuppressed
+                || !string.Equals(candidate.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            foreach (ArmorPlateTarget candidatePlate in GetEnergyMechanismTargets(candidate, metersPerWorldUnit, world.GameTimeSec, shooter.Team, teamState))
+            {
+                if (!IsEnergyPlateLitForTeam(teamState, candidatePlate.Id))
+                {
+                    continue;
+                }
+
+                double dxWorld = candidatePlate.X - shooter.X;
+                double dyWorld = candidatePlate.Y - shooter.Y;
+                double distanceM = Math.Sqrt(dxWorld * dxWorld + dyWorld * dyWorld) * metersPerWorldUnit;
+                if (distanceM > maxDistanceM)
+                {
+                    continue;
+                }
+
+                (double predictedX, double predictedY, double predictedHeightM) = PredictArmorPlatePoint(
+                    world,
+                    shooter,
+                    candidate,
+                    candidatePlate,
+                    distanceM,
+                    out _,
+                    out _);
+                (double yawDeg, double pitchDeg) = ComputeAimAnglesToPoint(
+                    world,
+                    shooter,
+                    predictedX,
+                    predictedY,
+                    predictedHeightM,
+                    preferHighArc: false);
+
+                double yawError = Math.Abs(NormalizeSignedDeg(yawDeg - shooter.TurretYawDeg));
+                double pitchError = Math.Abs(pitchDeg - shooter.GimbalPitchDeg);
+                if (shooter.IsPlayerControlled && (yawError > 80.0 || pitchError > 48.0))
+                {
+                    continue;
+                }
+
+                if (canSeePlate is not null && !canSeePlate(candidate, candidatePlate))
+                {
+                    continue;
+                }
+
+                double score = yawError * yawError * 1.45 + pitchError * pitchError * 1.85 + distanceM * 0.04;
+                if (score >= bestScore)
+                {
+                    continue;
+                }
+
+                bestScore = score;
+                target = candidate;
+                plate = candidatePlate;
+            }
+        }
+
+        return target is not null;
+    }
+
+    public static bool IsEnergyPlateLitForTeam(SimulationTeamState teamState, string plateId)
+    {
+        if (!TryParseEnergyArmIndex(plateId, out string team, out int armIndex)
+            || !string.Equals(team, teamState.Team, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return (teamState.EnergyCurrentLitMask & (1 << armIndex)) != 0;
+    }
+
+    public static bool TryParseEnergyArmIndex(string plateId, out string team, out int armIndex)
+    {
+        team = string.Empty;
+        armIndex = -1;
+        string[] parts = (plateId ?? string.Empty).Split('_', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length != 4
+            || !parts[0].Equals("energy", StringComparison.OrdinalIgnoreCase)
+            || !parts[2].Equals("arm", StringComparison.OrdinalIgnoreCase)
+            || !int.TryParse(parts[3], out armIndex)
+            || armIndex < 0
+            || armIndex > 4)
+        {
+            return false;
+        }
+
+        team = parts[1];
+        return team.Equals("red", StringComparison.OrdinalIgnoreCase)
+            || team.Equals("blue", StringComparison.OrdinalIgnoreCase);
+    }
+
     public static bool TryAcquireAutoAimTarget(
         SimulationWorldState world,
         SimulationEntity shooter,
@@ -150,6 +370,12 @@ public static class SimulationCombatMath
         out ArmorPlateTarget plate,
         Func<SimulationEntity, ArmorPlateTarget, bool>? canSeePlate = null)
     {
+        if (string.Equals(shooter.AutoAimTargetMode, "energy", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(shooter.RoleKey, "hero", StringComparison.OrdinalIgnoreCase))
+        {
+            return TryAcquireEnergyMechanismTarget(world, shooter, maxDistanceM, out target, out plate, canSeePlate);
+        }
+
         target = null;
         plate = default;
 
@@ -161,6 +387,7 @@ public static class SimulationCombatMath
         {
             if (!candidate.IsAlive
                 || candidate.IsSimulationSuppressed
+                || string.Equals(candidate.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(candidate.Team, shooter.Team, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(candidate.Id, shooter.Id, StringComparison.OrdinalIgnoreCase))
             {
@@ -782,7 +1009,6 @@ public static class SimulationCombatMath
         {
             if (!candidate.IsAlive
                 || candidate.IsSimulationSuppressed
-                || string.Equals(candidate.Team, shooter.Team, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(candidate.Id, shooter.Id, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
@@ -802,8 +1028,23 @@ public static class SimulationCombatMath
                 && cachedArmorTargets.TryGetValue(candidate.Id, out IReadOnlyList<ArmorPlateTarget>? cachedTargets)
                     ? cachedTargets
                     : GetArmorPlateTargets(candidate, metersPerWorldUnit, world.GameTimeSec);
+            bool energyMechanismTarget = string.Equals(candidate.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase);
+            world.Teams.TryGetValue(shooter.Team, out SimulationTeamState? shooterTeamState);
+            bool restrictToCurrentEnergyTarget = energyMechanismTarget
+                && shooterTeamState is not null
+                && string.Equals(shooterTeamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
+                && shooterTeamState.EnergyNextModuleDelaySec <= 1e-6
+                && shooterTeamState.EnergyCurrentLitMask != 0;
             foreach (ArmorPlateTarget plate in armorTargets)
             {
+                if (restrictToCurrentEnergyTarget
+                    && (!TryParseEnergyArmIndex(plate.Id, out string plateTeam, out int armIndex)
+                        || !string.Equals(plateTeam, shooter.Team, StringComparison.OrdinalIgnoreCase)
+                        || (shooterTeamState!.EnergyCurrentLitMask & (1 << armIndex)) == 0))
+                {
+                    continue;
+                }
+
                 if (!TryIntersectProjectileWithArmorPlate(
                     plate,
                     metersPerWorldUnit,
@@ -998,6 +1239,11 @@ public static class SimulationCombatMath
 
     public static string DescribeArmorPlateDirection(SimulationEntity target, ArmorPlateTarget plate)
     {
+        if (plate.Id.StartsWith("energy_", StringComparison.OrdinalIgnoreCase))
+        {
+            return "energy disk";
+        }
+
         if (plate.Id.StartsWith("armor_", StringComparison.OrdinalIgnoreCase))
         {
             double relativeYaw = NormalizeSignedDeg(plate.YawDeg - target.AngleDeg);
@@ -1092,6 +1338,13 @@ public static class SimulationCombatMath
                 entity.ArmorPlateWidthM * 0.24));
     }
 
+    private readonly record struct EnergyTargetLayout(
+        double RotorCenterHeightM,
+        double RotorPhaseRad,
+        double RotorRadiusM,
+        double RotorAxisGapM,
+        double DiskDiameterM);
+
     private static void ResolveChassisAxes(
         double yawDeg,
         double pitchDeg,
@@ -1125,16 +1378,95 @@ public static class SimulationCombatMath
         double travelLeadTimeSec = Math.Clamp(distanceM / projectileSpeedMps * dragTimeScale, 0.0, 0.75);
         double fireLatencySec = ResolveAutoAimFiringLatencySec(shooter);
         leadTimeSec = Math.Clamp(travelLeadTimeSec + fireLatencySec, 0.0, 0.85);
-        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
+        bool preferHighArc = shooter.HeroDeploymentActive
+            && string.Equals(shooter.RoleKey, "hero", StringComparison.OrdinalIgnoreCase)
+            && IsHeroDeploymentTargetPlate(target, plate);
 
+        (double predictedX, double predictedY, double predictedHeightM) = (plate.X, plate.Y, plate.HeightM);
+        for (int iteration = 0; iteration < 4; iteration++)
+        {
+            (predictedX, predictedY, predictedHeightM, leadDistanceM) = PredictArmorPlatePointAtLeadTime(
+                world,
+                shooter,
+                target,
+                plate,
+                leadTimeSec);
+            (double yawDeg, double pitchDeg) = ComputeAimAnglesToPoint(
+                world,
+                shooter,
+                predictedX,
+                predictedY,
+                predictedHeightM,
+                preferHighArc);
+            double refinedTravelTimeSec = EstimateProjectileTravelTimeSec(
+                world,
+                shooter,
+                predictedX,
+                predictedY,
+                predictedHeightM,
+                pitchDeg);
+            double refinedLeadTimeSec = Math.Clamp(refinedTravelTimeSec + fireLatencySec, 0.0, 1.10);
+            if (Math.Abs(refinedLeadTimeSec - leadTimeSec) <= 0.004)
+            {
+                leadTimeSec = refinedLeadTimeSec;
+                break;
+            }
+
+            leadTimeSec = leadTimeSec * 0.38 + refinedLeadTimeSec * 0.62;
+        }
+
+        (predictedX, predictedY, predictedHeightM, leadDistanceM) = PredictArmorPlatePointAtLeadTime(
+            world,
+            shooter,
+            target,
+            plate,
+            leadTimeSec);
+        return (predictedX, predictedY, predictedHeightM);
+    }
+
+    private static (double X, double Y, double HeightM, double LeadDistanceM) PredictArmorPlatePointAtLeadTime(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        SimulationEntity target,
+        ArmorPlateTarget plate,
+        double leadTimeSec)
+    {
+        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
         if (leadTimeSec <= 1e-4)
         {
-            leadDistanceM = 0.0;
-            return (plate.X, plate.Y, plate.HeightM);
+            return (plate.X, plate.Y, plate.HeightM, 0.0);
         }
 
         bool suppressLateralLead = ShouldSuppressStructureTopLateralLead(shooter, plate);
         (double translationLeadScale, double angularLeadScale) = ResolveAutoAimLeadScales(shooter, target);
+        if (string.Equals(target.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase))
+        {
+            string? plateTeam = null;
+            SimulationTeamState? teamState = null;
+            if (TryParseEnergyArmIndex(plate.Id, out string parsedTeam, out _))
+            {
+                plateTeam = parsedTeam;
+                world.Teams.TryGetValue(parsedTeam, out teamState);
+            }
+            else if (world.Teams.TryGetValue(shooter.Team, out SimulationTeamState? shooterTeamState))
+            {
+                plateTeam = shooter.Team;
+                teamState = shooterTeamState;
+            }
+
+            ArmorPlateTarget predictedPlate = GetEnergyMechanismTargets(
+                    target,
+                    metersPerWorldUnit,
+                    world.GameTimeSec + leadTimeSec,
+                    plateTeam,
+                    teamState)
+                .FirstOrDefault(candidate => string.Equals(candidate.Id, plate.Id, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(predictedPlate.Id))
+            {
+                return (predictedPlate.X, predictedPlate.Y, predictedPlate.HeightM, DistanceBetweenPlatePointsM(metersPerWorldUnit, plate, predictedPlate));
+            }
+        }
+
         if (IsStructure(target))
         {
             ArmorPlateTarget predictedPlate = GetArmorPlateTargets(target, metersPerWorldUnit, world.GameTimeSec + leadTimeSec)
@@ -1143,12 +1475,10 @@ public static class SimulationCombatMath
             {
                 if (suppressLateralLead)
                 {
-                    leadDistanceM = Math.Abs(predictedPlate.HeightM - plate.HeightM);
-                    return (plate.X, plate.Y, predictedPlate.HeightM);
+                    return (plate.X, plate.Y, predictedPlate.HeightM, Math.Abs(predictedPlate.HeightM - plate.HeightM));
                 }
 
-                leadDistanceM = DistanceBetweenPlatePointsM(metersPerWorldUnit, plate, predictedPlate);
-                return (predictedPlate.X, predictedPlate.Y, predictedPlate.HeightM);
+                return (predictedPlate.X, predictedPlate.Y, predictedPlate.HeightM, DistanceBetweenPlatePointsM(metersPerWorldUnit, plate, predictedPlate));
             }
         }
 
@@ -1170,8 +1500,109 @@ public static class SimulationCombatMath
         double leadDxM = (predictedX - plate.X) * metersPerWorldUnit;
         double leadDyM = (predictedY - plate.Y) * metersPerWorldUnit;
         double leadDzM = predictedHeightM - plate.HeightM;
-        leadDistanceM = Math.Sqrt(leadDxM * leadDxM + leadDyM * leadDyM + leadDzM * leadDzM);
-        return (predictedX, predictedY, predictedHeightM);
+        double leadDistanceM = Math.Sqrt(leadDxM * leadDxM + leadDyM * leadDyM + leadDzM * leadDzM);
+        return (predictedX, predictedY, predictedHeightM, leadDistanceM);
+    }
+
+    private static double EstimateProjectileTravelTimeSec(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        double targetX,
+        double targetY,
+        double targetHeightM,
+        double pitchDeg)
+    {
+        (double muzzleX, double muzzleY, double muzzleHeightM) = ComputeMuzzlePoint(world, shooter, pitchDeg);
+        double horizontalM = Math.Sqrt(
+            Math.Pow(targetX - muzzleX, 2)
+            + Math.Pow(targetY - muzzleY, 2)) * Math.Max(world.MetersPerWorldUnit, 1e-6);
+        double dzM = targetHeightM - muzzleHeightM;
+        double speedMps = Math.Max(1.0, ProjectileSpeedMps(shooter));
+        if (horizontalM <= 1e-4)
+        {
+            return 0.0;
+        }
+
+        if (TryEstimateBallisticTravelTimeWithDrag(horizontalM, dzM, speedMps, shooter.AmmoType, DegreesToRadians(pitchDeg), out double dragTimeSec))
+        {
+            return dragTimeSec;
+        }
+
+        double horizontalSpeedMps = Math.Max(0.1, speedMps * Math.Cos(DegreesToRadians(pitchDeg)));
+        return horizontalM / horizontalSpeedMps;
+    }
+
+    private static bool TryEstimateBallisticTravelTimeWithDrag(
+        double horizontalM,
+        double dzM,
+        double speedMps,
+        string ammoType,
+        double pitchRad,
+        out double travelTimeSec)
+    {
+        travelTimeSec = 0.0;
+        double vxMps = speedMps * Math.Cos(pitchRad);
+        double vzMps = speedMps * Math.Sin(pitchRad);
+        if (vxMps <= 1e-5)
+        {
+            return false;
+        }
+
+        double xM = 0.0;
+        double zM = 0.0;
+        double previousXM = 0.0;
+        double previousZM = 0.0;
+        double previousTimeSec = 0.0;
+        double diameterM = ProjectileDiameterM(ammoType);
+        double areaM2 = Math.PI * diameterM * diameterM * 0.25;
+        double massKg = string.Equals(ammoType, "42mm", StringComparison.OrdinalIgnoreCase) ? 0.041 : 0.0032;
+        double dt = string.Equals(ammoType, "42mm", StringComparison.OrdinalIgnoreCase) ? 1.0 / 240.0 : 1.0 / 220.0;
+        int maxSteps = string.Equals(ammoType, "42mm", StringComparison.OrdinalIgnoreCase) ? 900 : 620;
+        for (int step = 0; step < maxSteps; step++)
+        {
+            previousXM = xM;
+            previousZM = zM;
+            previousTimeSec = travelTimeSec;
+
+            double speed = Math.Sqrt(vxMps * vxMps + vzMps * vzMps);
+            if (speed > 1e-6)
+            {
+                double dragCoefficient = 0.47;
+                double airDensityKgM3 = 1.20;
+                double dragAccelMps2 = 0.5 * airDensityKgM3 * dragCoefficient * areaM2 * speed * speed / Math.Max(0.001, massKg);
+                dragAccelMps2 = Math.Min(dragAccelMps2, speed / Math.Max(dt, 1e-6) * 0.72);
+                double dragStep = dragAccelMps2 * dt / speed;
+                vxMps -= vxMps * dragStep;
+                vzMps -= vzMps * dragStep;
+            }
+
+            vzMps -= GravityMps2 * dt;
+            xM += vxMps * dt;
+            zM += vzMps * dt;
+            travelTimeSec += dt;
+
+            if (xM >= horizontalM)
+            {
+                double segment = Math.Max(xM - previousXM, 1e-6);
+                double lerp = Math.Clamp((horizontalM - previousXM) / segment, 0.0, 1.0);
+                double sampledZM = previousZM + (zM - previousZM) * lerp;
+                if (Math.Abs(sampledZM - dzM) <= Math.Max(0.45, horizontalM * 0.10))
+                {
+                    travelTimeSec = previousTimeSec + (travelTimeSec - previousTimeSec) * lerp;
+                    return true;
+                }
+
+                travelTimeSec = previousTimeSec + (travelTimeSec - previousTimeSec) * lerp;
+                return true;
+            }
+
+            if (vxMps <= 1e-4 || (zM < dzM - 6.0 && vzMps < 0.0))
+            {
+                break;
+            }
+        }
+
+        return false;
     }
 
     private static double ResolveAutoAimFiringLatencySec(SimulationEntity shooter)

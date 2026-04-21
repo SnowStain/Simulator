@@ -86,7 +86,7 @@ internal static class AutoAimVisibility
         double pitchDeg = Math.Atan2(delta.Y, horizontal) * 180.0 / Math.PI;
         double yawError = Math.Abs(SimulationCombatMath.NormalizeSignedDeg(yawDeg - shooter.TurretYawDeg));
         double pitchError = Math.Abs(pitchDeg - shooter.GimbalPitchDeg);
-        return yawError <= 48.0 && pitchError <= 32.0;
+        return yawError <= 66.0 && pitchError <= 50.0;
     }
 
     private static bool IsTerrainOccluding(RuntimeGridData? runtimeGrid, double metersPerWorldUnit, Vector3 start, Vector3 end)

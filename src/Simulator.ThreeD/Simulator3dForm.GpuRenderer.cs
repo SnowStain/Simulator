@@ -37,6 +37,8 @@ internal sealed partial class Simulator3dForm
     private const int GlArrayBuffer = 0x8892;
     private const int GlStaticDraw = 0x88E4;
     private const int GlDynamicDraw = 0x88E8;
+    private const float GpuTerrainChunkSizeM = 2.0f;
+    private const float GpuTerrainSmoothFlatSkipHeightM = 0.048f;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct PixelFormatDescriptor
@@ -88,8 +90,11 @@ internal sealed partial class Simulator3dForm
     private int _gpuSharedVertexArray;
     private bool _gpuBufferApiReady;
     private bool _gpuBatchingDynamicGeometry;
+    private int _gpuTerrainChunkColumns = 1;
+    private int _gpuTerrainChunkRows = 1;
     private readonly List<GpuVertex> _gpuTerrainVertexBuildBuffer = new(65536);
     private readonly List<GpuVertex> _gpuDynamicVertexBuildBuffer = new(16384);
+    private readonly List<GpuTerrainChunk> _gpuTerrainChunks = new(512);
     private GlGenBuffersDelegate? _glGenBuffers;
     private GlBindBufferDelegate? _glBindBuffer;
     private GlBufferDataDelegate? _glBufferData;
@@ -121,6 +126,19 @@ internal sealed partial class Simulator3dForm
         public readonly byte B;
         public readonly byte A;
     }
+
+    private sealed class GpuTerrainChunk
+    {
+        public int Buffer;
+
+        public int VertexCount;
+
+        public int Version = -1;
+
+        public readonly List<GpuVertex> BuildBuffer = new(768);
+    }
+
+    private readonly record struct GpuTerrainChunkWindow(int CenterColumn, int CenterRow);
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetDC(IntPtr hWnd);
@@ -262,12 +280,6 @@ internal sealed partial class Simulator3dForm
             RebuildTerrainTileCache();
         }
 
-        EnsureGpuOverlaySurface();
-        if (_gpuOverlayGraphics is not null)
-        {
-            _gpuOverlayGraphics.Clear(Color.Transparent);
-        }
-
         wglMakeCurrent(_gpuDeviceContext, _gpuRenderContext);
         glViewport(0, 0, Math.Max(1, ClientSize.Width), Math.Max(1, ClientSize.Height));
         glClearColor(0.035f, 0.047f, 0.065f, 1f);
@@ -293,8 +305,8 @@ internal sealed partial class Simulator3dForm
             _suppressEntityLabels = true;
             try
             {
-                DrawStaticStructureBodies(_gpuOverlayGraphics ?? graphics);
-                DrawEntityGeometry(_gpuOverlayGraphics ?? graphics);
+                DrawStaticStructureBodies(graphics);
+                DrawEntityGeometry(graphics);
                 if (!_previewOnly)
                 {
                     DrawGpuProjectiles();
@@ -303,28 +315,6 @@ internal sealed partial class Simulator3dForm
             finally
             {
                 _suppressEntityLabels = previousSuppressLabels;
-            }
-
-            if (_gpuOverlayGraphics is not null)
-            {
-                try
-                {
-                    DrawEntityOverlayBars(_gpuOverlayGraphics);
-                    if (!_previewOnly)
-                    {
-                        DrawGpuProjectileTrails(_gpuOverlayGraphics);
-                        DrawCombatMarkers(_gpuOverlayGraphics);
-                    }
-
-                    DrawInMatchOverlay(_gpuOverlayGraphics);
-                }
-                finally
-                {
-                }
-            }
-            else
-            {
-                DrawEntityOverlayBars(graphics);
             }
         }
         finally
@@ -339,13 +329,24 @@ internal sealed partial class Simulator3dForm
             DrawGpuDebugReference();
         }
 
-        if (_gpuOverlayGraphics is not null)
+        _hasPresentedGpuFrame = true;
+        DrawGpuOverlayLayer();
+        SwapBuffers(_gpuDeviceContext);
+    }
+
+    private void DrawGpuOverlayLayer()
+    {
+        EnsureGpuOverlaySurface();
+        if (_gpuOverlayGraphics is null)
         {
-            UploadGpuOverlayBitmap();
-            PresentGpuOverlayTexture();
+            return;
         }
 
-        SwapBuffers(_gpuDeviceContext);
+        _gpuOverlayGraphics.Clear(Color.Transparent);
+        _gpuOverlayGraphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        DrawInMatchOverlay(_gpuOverlayGraphics);
+        UploadGpuOverlayBitmap();
+        PresentGpuOverlayTexture();
     }
 
     private bool EnsureGpuContext()
@@ -498,22 +499,35 @@ internal sealed partial class Simulator3dForm
 
     private void DrawGpuTerrainGeometry()
     {
-        if (!EnsureGpuTerrainVertexBuffer())
+        if (!EnsureGpuTerrainChunkBuildBuffers())
         {
             DrawGpuTerrainMeshImmediate();
             DrawGpuTerrainFacetsImmediate();
             return;
         }
 
-        if (_gpuTerrainVertexCount <= 0 || _glBindBuffer is null)
+        if (_glBindBuffer is null)
         {
             return;
         }
 
-        DrawGpuVertexBuffer(_gpuTerrainVertexBuffer, _gpuTerrainVertexCount);
+        GpuTerrainChunkWindow window = ResolveGpuTerrainChunkWindow();
+        for (int row = Math.Max(0, window.CenterRow - 1); row <= Math.Min(_gpuTerrainChunkRows - 1, window.CenterRow + 1); row++)
+        {
+            for (int column = Math.Max(0, window.CenterColumn - 1); column <= Math.Min(_gpuTerrainChunkColumns - 1, window.CenterColumn + 1); column++)
+            {
+                GpuTerrainChunk chunk = _gpuTerrainChunks[row * _gpuTerrainChunkColumns + column];
+                if (!EnsureGpuTerrainChunkUploaded(chunk))
+                {
+                    continue;
+                }
+
+                DrawGpuVertexBuffer(chunk.Buffer, chunk.VertexCount);
+            }
+        }
     }
 
-    private bool EnsureGpuTerrainVertexBuffer()
+    private bool EnsureGpuTerrainChunkBuildBuffers()
     {
         if (!_gpuBufferApiReady || _glGenBuffers is null || _glBindBuffer is null || _glBufferData is null)
         {
@@ -525,24 +539,182 @@ internal sealed partial class Simulator3dForm
             RebuildTerrainTileCache();
         }
 
-        if (_gpuTerrainVertexBuffer != 0 && _gpuTerrainBufferVersion == _terrainProjectionCacheVersion)
+        EnsureGpuTerrainChunkList();
+        if (_gpuTerrainChunks.Count == _gpuTerrainChunkColumns * _gpuTerrainChunkRows
+            && _gpuTerrainBufferVersion == _terrainProjectionCacheVersion)
         {
             return true;
         }
 
-        _gpuTerrainVertexBuildBuffer.Clear();
-        AppendGpuTerrainFaces(_terrainFaces, _gpuTerrainVertexBuildBuffer);
-        AppendGpuTerrainFacets(_gpuTerrainVertexBuildBuffer);
-        _gpuTerrainVertexCount = _gpuTerrainVertexBuildBuffer.Count;
-
-        if (_gpuTerrainVertexBuffer == 0)
+        foreach (GpuTerrainChunk chunk in _gpuTerrainChunks)
         {
-            _glGenBuffers(1, out _gpuTerrainVertexBuffer);
+            chunk.BuildBuffer.Clear();
+            chunk.VertexCount = 0;
+            chunk.Version = -1;
         }
 
-        UploadGpuVertexBuffer(_gpuTerrainVertexBuffer, _gpuTerrainVertexBuildBuffer, GlStaticDraw);
+        AppendGpuTerrainFacesToChunks(_terrainFaces);
+        AppendGpuTerrainFacetsToChunks();
+
+        _gpuTerrainVertexCount = 0;
+        foreach (GpuTerrainChunk chunk in _gpuTerrainChunks)
+        {
+            chunk.VertexCount = chunk.BuildBuffer.Count;
+            _gpuTerrainVertexCount += chunk.VertexCount;
+            if (chunk.VertexCount <= 0)
+            {
+                continue;
+            }
+        }
+
         _gpuTerrainBufferVersion = _terrainProjectionCacheVersion;
         return true;
+    }
+
+    private bool EnsureGpuTerrainChunkUploaded(GpuTerrainChunk chunk)
+    {
+        if (chunk.VertexCount <= 0)
+        {
+            return false;
+        }
+
+        if (chunk.Buffer != 0 && chunk.Version == _terrainProjectionCacheVersion)
+        {
+            return true;
+        }
+
+        if (_glGenBuffers is null)
+        {
+            return false;
+        }
+
+        if (chunk.Buffer == 0)
+        {
+            _glGenBuffers(1, out chunk.Buffer);
+        }
+
+        UploadGpuVertexBuffer(chunk.Buffer, chunk.BuildBuffer, GlStaticDraw);
+        chunk.Version = _terrainProjectionCacheVersion;
+        return true;
+    }
+
+    private GpuTerrainChunkWindow ResolveGpuTerrainChunkWindow()
+    {
+        Vector3 focus = _cameraTargetM;
+        SimulationEntity? selected = _host.SelectedEntity;
+        if (selected is not null)
+        {
+            focus = ToScenePoint(selected.X, selected.Y, (float)Math.Max(0.0, selected.GroundHeightM + selected.AirborneHeightM));
+        }
+        else if (_firstPersonView)
+        {
+            focus = _cameraPositionM;
+        }
+
+        float scale = (float)Math.Max(1e-6, _host.World.MetersPerWorldUnit);
+        int column = Math.Clamp((int)MathF.Floor(focus.X / Math.Max(1e-4f, GpuTerrainChunkSizeM)), 0, _gpuTerrainChunkColumns - 1);
+        int row = Math.Clamp((int)MathF.Floor(focus.Z / Math.Max(1e-4f, GpuTerrainChunkSizeM)), 0, _gpuTerrainChunkRows - 1);
+        return new GpuTerrainChunkWindow(column, row);
+    }
+
+    private void EnsureGpuTerrainChunkList()
+    {
+        int columns = ResolveGpuTerrainChunkColumnCount();
+        int rows = ResolveGpuTerrainChunkRowCount();
+        int targetCount = columns * rows;
+        if (_gpuTerrainChunkColumns != columns || _gpuTerrainChunkRows != rows)
+        {
+            foreach (GpuTerrainChunk chunk in _gpuTerrainChunks)
+            {
+                DeleteGpuBuffer(ref chunk.Buffer);
+                chunk.VertexCount = 0;
+                chunk.Version = -1;
+                chunk.BuildBuffer.Clear();
+            }
+
+            _gpuTerrainChunks.Clear();
+            _gpuTerrainChunkColumns = columns;
+            _gpuTerrainChunkRows = rows;
+            _gpuTerrainBufferVersion = -1;
+        }
+
+        while (_gpuTerrainChunks.Count < targetCount)
+        {
+            _gpuTerrainChunks.Add(new GpuTerrainChunk());
+        }
+    }
+
+    private int ResolveGpuTerrainChunkColumnCount()
+    {
+        float scale = (float)Math.Max(1e-6, _host.World.MetersPerWorldUnit);
+        float widthM = Math.Max(scale, _host.MapPreset.Width * scale);
+        return Math.Max(1, (int)MathF.Ceiling(widthM / GpuTerrainChunkSizeM));
+    }
+
+    private int ResolveGpuTerrainChunkRowCount()
+    {
+        float scale = (float)Math.Max(1e-6, _host.World.MetersPerWorldUnit);
+        float heightM = Math.Max(scale, _host.MapPreset.Height * scale);
+        return Math.Max(1, (int)MathF.Ceiling(heightM / GpuTerrainChunkSizeM));
+    }
+
+    private void AppendGpuTerrainFacesToChunks(IReadOnlyList<TerrainFacePatch> faces)
+    {
+        foreach (TerrainFacePatch face in faces)
+        {
+            AppendGpuTerrainFaceToTarget(face, ResolveGpuTerrainChunk(face.CenterScene).BuildBuffer);
+        }
+    }
+
+    private void AppendGpuTerrainFaceToTarget(TerrainFacePatch face, List<GpuVertex> target)
+    {
+        if (IsGpuSmoothFlatTerrainFace(face))
+        {
+            return;
+        }
+
+        if (face.Vertices.Length == 3)
+        {
+            AppendGpuTriangle(target, face.Vertices[0], face.Vertices[1], face.Vertices[2], face.FillColor);
+        }
+        else if (face.Vertices.Length == 4)
+        {
+            AppendGpuQuad(target, face.Vertices[0], face.Vertices[1], face.Vertices[2], face.Vertices[3], face.FillColor);
+        }
+        else if (face.Vertices.Length > 4)
+        {
+            for (int index = 1; index < face.Vertices.Length - 1; index++)
+            {
+                AppendGpuTriangle(target, face.Vertices[0], face.Vertices[index], face.Vertices[index + 1], face.FillColor);
+            }
+        }
+    }
+
+    private static bool IsGpuSmoothFlatTerrainFace(TerrainFacePatch face)
+    {
+        if (face.Vertices.Length < 3)
+        {
+            return true;
+        }
+
+        float minY = float.MaxValue;
+        float maxY = float.MinValue;
+        foreach (Vector3 vertex in face.Vertices)
+        {
+            minY = Math.Min(minY, vertex.Y);
+            maxY = Math.Max(maxY, vertex.Y);
+        }
+
+        return maxY <= GpuTerrainSmoothFlatSkipHeightM
+            && maxY - minY <= GpuTerrainSmoothFlatSkipHeightM;
+    }
+
+    private GpuTerrainChunk ResolveGpuTerrainChunk(Vector3 centerScene)
+    {
+        EnsureGpuTerrainChunkList();
+        int column = Math.Clamp((int)MathF.Floor(centerScene.X / Math.Max(1e-4f, GpuTerrainChunkSizeM)), 0, _gpuTerrainChunkColumns - 1);
+        int row = Math.Clamp((int)MathF.Floor(centerScene.Z / Math.Max(1e-4f, GpuTerrainChunkSizeM)), 0, _gpuTerrainChunkRows - 1);
+        return _gpuTerrainChunks[row * _gpuTerrainChunkColumns + column];
     }
 
     private void AppendGpuTerrainFaces(IReadOnlyList<TerrainFacePatch> faces, List<GpuVertex> target)
@@ -592,6 +764,38 @@ internal sealed partial class Simulator3dForm
                 float hb = index < facet.HeightsM.Count ? facet.HeightsM[index] : facet.HeightsM[^1];
                 float hc = index + 1 < facet.HeightsM.Count ? facet.HeightsM[index + 1] : facet.HeightsM[^1];
                 AppendGpuTriangle(target, a, ToScenePoint(b.X, b.Y, hb), ToScenePoint(c.X, c.Y, hc), facet.TopColor);
+            }
+        }
+    }
+
+    private void AppendGpuTerrainFacetsToChunks()
+    {
+        RuntimeGridData? runtimeGrid = _host.RuntimeGrid;
+        if (runtimeGrid is null)
+        {
+            return;
+        }
+
+        foreach (TerrainFacetRuntime facet in runtimeGrid.Facets)
+        {
+            if (facet.PointsWorld.Count < 3 || facet.HeightsM.Count < 3)
+            {
+                continue;
+            }
+
+            Vector2 anchor = facet.PointsWorld[0];
+            float anchorHeight = facet.HeightsM[0];
+            Vector3 a = ToScenePoint(anchor.X, anchor.Y, anchorHeight);
+            for (int index = 1; index < facet.PointsWorld.Count - 1; index++)
+            {
+                Vector2 b = facet.PointsWorld[index];
+                Vector2 c = facet.PointsWorld[index + 1];
+                float hb = index < facet.HeightsM.Count ? facet.HeightsM[index] : facet.HeightsM[^1];
+                float hc = index + 1 < facet.HeightsM.Count ? facet.HeightsM[index + 1] : facet.HeightsM[^1];
+                Vector3 vb = ToScenePoint(b.X, b.Y, hb);
+                Vector3 vc = ToScenePoint(c.X, c.Y, hc);
+                Vector3 center = (a + vb + vc) / 3f;
+                AppendGpuTriangle(ResolveGpuTerrainChunk(center).BuildBuffer, a, vb, vc, facet.TopColor);
             }
         }
     }
@@ -933,7 +1137,8 @@ internal sealed partial class Simulator3dForm
             profile,
             center,
             EnergyMechanismGeometry.ResolveAccentColor(region.Team),
-            (float)_host.World.GameTimeSec);
+            (float)_host.World.GameTimeSec,
+            ResolveEnergyRotorYawForRender);
 
         foreach (EnergyRenderPrism prism in mesh.Prisms)
         {
@@ -947,8 +1152,171 @@ internal sealed partial class Simulator3dForm
 
         foreach (EnergyRenderCylinder cylinder in mesh.Cylinders)
         {
-            DrawGpuDiskTarget(cylinder.Center, cylinder.NormalAxis, cylinder.UpAxis, cylinder.Radius, cylinder.Thickness, cylinder.FillColor);
+            DrawGpuDiskTarget(cylinder.Center, cylinder.NormalAxis, cylinder.UpAxis, cylinder.Radius, cylinder.Thickness, cylinder.FillColor, cylinder.Segments);
         }
+
+        foreach (EnergyRenderAnnulus annulus in mesh.Annuli)
+        {
+            DrawGpuAnnulus(annulus.Center, annulus.NormalAxis, annulus.UpAxis, annulus.InnerRadius, annulus.OuterRadius, annulus.FillColor, annulus.Segments);
+        }
+
+        DrawGpuEnergyMechanismRuleHighlights(region, centerWorldX, centerWorldY);
+    }
+
+    private float ResolveEnergyRotorYawForRender(int rotorIndex)
+    {
+        string team = rotorIndex == 0 ? "red" : "blue";
+        _host.World.Teams.TryGetValue(team, out SimulationTeamState? teamState);
+        return EnergyMechanismGeometry.ResolveRuleRotorYaw((float)_host.World.GameTimeSec, teamState);
+    }
+
+    private void DrawGpuEnergyMechanismRuleHighlights(FacilityRegion region, double centerWorldX, double centerWorldY)
+    {
+        SimulationEntity? mechanism = null;
+        double bestMechanismScore = double.MaxValue;
+        foreach (SimulationEntity entity in _host.World.Entities)
+        {
+            if (!string.Equals(entity.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            double dx = entity.X - centerWorldX;
+            double dy = entity.Y - centerWorldY;
+            double score = dx * dx + dy * dy;
+            if (string.Equals(entity.Id, region.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                score -= 100000.0;
+            }
+
+            if (score >= bestMechanismScore)
+            {
+                continue;
+            }
+
+            bestMechanismScore = score;
+            mechanism = entity;
+        }
+
+        if (mechanism is null)
+        {
+            return;
+        }
+
+        double metersPerWorldUnit = Math.Max(_host.World.MetersPerWorldUnit, 1e-6);
+        foreach (SimulationTeamState teamState in _host.World.Teams.Values)
+        {
+            bool showActive = string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
+                && teamState.EnergyNextModuleDelaySec <= 1e-6
+                && teamState.EnergyCurrentLitMask != 0;
+            bool showActivated = string.Equals(teamState.EnergyMechanismState, "activated", StringComparison.OrdinalIgnoreCase)
+                && teamState.EnergyBuffTimerSec > 1e-6;
+            bool showLastHit = teamState.EnergyLastHitArmIndex >= 0 && teamState.EnergyLastRingScore > 0;
+            Color teamColor = ResolveTeamColor(teamState.Team);
+            Color activeColor = Color.FromArgb(220, Math.Min(255, teamColor.R + 45), Math.Min(255, teamColor.G + 45), Math.Min(255, teamColor.B + 45));
+            Color activatedColor = Color.FromArgb(210, teamColor.R, teamColor.G, teamColor.B);
+            Color ringHitColor = Color.FromArgb(245, Math.Min(255, teamColor.R + 58), Math.Min(255, teamColor.G + 58), Math.Min(255, teamColor.B + 58));
+            Color ringSteadyColor = Color.FromArgb(204, teamColor.R, teamColor.G, teamColor.B);
+            foreach (ArmorPlateTarget plate in SimulationCombatMath.GetEnergyMechanismTargets(mechanism, metersPerWorldUnit, _host.World.GameTimeSec, teamState.Team, teamState))
+            {
+                if (!SimulationCombatMath.TryParseEnergyArmIndex(plate.Id, out _, out int armIndex))
+                {
+                    continue;
+                }
+
+                Vector3 center = ToScenePoint(plate.X, plate.Y, (float)plate.HeightM);
+                Vector3 normal = ResolveGpuPlateNormal(plate);
+                float diskRadius = Math.Max(0.06f, (float)Math.Max(plate.WidthM, plate.HeightSpanM) * 0.5f);
+                if (showActive && (teamState.EnergyCurrentLitMask & (1 << armIndex)) != 0)
+                {
+                    double blinkPhase = (_host.World.GameTimeSec * 3.0) % 1.0;
+                    Color blinkColor = blinkPhase < 0.5 ? activeColor : Color.FromArgb(185, activeColor.R, activeColor.G, activeColor.B);
+                    DrawGpuActivationMarkerDoubleSided(center, normal, Vector3.UnitY, diskRadius * 1.02f, blinkColor, true);
+                }
+                else if (showActivated)
+                {
+                    DrawGpuActivationMarkerDoubleSided(center, normal, Vector3.UnitY, diskRadius * 1.01f, activatedColor, false);
+                }
+
+                int persistentRingScore = armIndex >= 0 && armIndex < teamState.EnergyHitRingsByArm.Length
+                    ? Math.Clamp(teamState.EnergyHitRingsByArm[armIndex], 0, 10)
+                    : 0;
+                if (persistentRingScore <= 0)
+                {
+                    continue;
+                }
+
+                float outer = diskRadius * (11 - persistentRingScore) / 10f;
+                float inner = persistentRingScore >= 10 ? 0f : diskRadius * (10 - persistentRingScore) / 10f;
+                bool flashing = showLastHit
+                    && teamState.EnergyLastHitArmIndex == armIndex
+                    && _host.World.GameTimeSec <= teamState.EnergyLastHitFlashEndSec;
+                if (flashing)
+                {
+                    double blinkPhase = (_host.World.GameTimeSec * 8.0) % 1.0;
+                    Color flashColor = blinkPhase < 0.5 ? ringHitColor : Color.FromArgb(210, teamColor.R, teamColor.G, teamColor.B);
+                    DrawGpuAnnulusDoubleSided(center, normal, Vector3.UnitY, inner, Math.Max(inner + 0.004f, outer), flashColor, 32, 0.0140f);
+                }
+                else
+                {
+                    DrawGpuAnnulusDoubleSided(center, normal, Vector3.UnitY, inner, Math.Max(inner + 0.003f, outer), ringSteadyColor, 32, 0.0130f);
+                }
+            }
+        }
+    }
+
+    private void DrawGpuActivationMarkerDoubleSided(Vector3 center, Vector3 normalAxis, Vector3 upAxis, float diskRadius, Color color, bool drawCross)
+    {
+        Vector3 normal = normalAxis.LengthSquared() <= 1e-8f ? Vector3.UnitX : Vector3.Normalize(normalAxis);
+        DrawGpuActivationMarker(center + normal * 0.0070f, normal, upAxis, diskRadius, color, drawCross);
+        DrawGpuActivationMarker(center - normal * 0.0070f, -normal, upAxis, diskRadius, color, drawCross);
+    }
+
+    private void DrawGpuActivationMarker(Vector3 center, Vector3 normalAxis, Vector3 upAxis, float diskRadius, Color color, bool drawCross)
+    {
+        DrawGpuAnnulus(center, normalAxis, upAxis, diskRadius * 0.18f, diskRadius * 0.24f, color, 32);
+        DrawGpuAnnulus(center, normalAxis, upAxis, diskRadius * 0.62f, diskRadius * 0.70f, color, 32);
+        if (!drawCross)
+        {
+            DrawGpuAnnulus(center, normalAxis, upAxis, diskRadius * 0.92f, diskRadius * 1.02f, color, 32);
+            return;
+        }
+
+        Vector3 normal = normalAxis.LengthSquared() <= 1e-8f ? Vector3.UnitX : Vector3.Normalize(normalAxis);
+        Vector3 up = upAxis.LengthSquared() <= 1e-8f ? Vector3.UnitY : Vector3.Normalize(upAxis);
+        if (MathF.Abs(Vector3.Dot(normal, up)) > 0.98f)
+        {
+            up = MathF.Abs(Vector3.Dot(normal, Vector3.UnitY)) > 0.98f ? Vector3.UnitZ : Vector3.UnitY;
+        }
+
+        Vector3 tangent = Vector3.Normalize(up - normal * Vector3.Dot(up, normal));
+        Vector3 bitangent = Vector3.Normalize(Vector3.Cross(normal, tangent));
+        float armHalfLength = diskRadius * 0.82f;
+        float armHalfWidth = Math.Max(0.007f, diskRadius * 0.07f);
+        AppendOrDrawGpuQuad(
+            center - tangent * armHalfLength - bitangent * armHalfWidth,
+            center + tangent * armHalfLength - bitangent * armHalfWidth,
+            center + tangent * armHalfLength + bitangent * armHalfWidth,
+            center - tangent * armHalfLength + bitangent * armHalfWidth,
+            color);
+        AppendOrDrawGpuQuad(
+            center - bitangent * armHalfLength - tangent * armHalfWidth,
+            center + bitangent * armHalfLength - tangent * armHalfWidth,
+            center + bitangent * armHalfLength + tangent * armHalfWidth,
+            center - bitangent * armHalfLength + tangent * armHalfWidth,
+            color);
+    }
+
+    private void DrawGpuIdleEnergyMarker(Vector3 center, Vector3 normalAxis, Vector3 upAxis, float diskRadius, Color color)
+    {
+        DrawGpuAnnulus(center, normalAxis, upAxis, diskRadius * 0.78f, diskRadius * 0.86f, color, 32);
+    }
+
+    private void DrawGpuAnnulusDoubleSided(Vector3 center, Vector3 normalAxis, Vector3 upAxis, float innerRadius, float outerRadius, Color color, int segmentCount, float offset)
+    {
+        Vector3 normal = normalAxis.LengthSquared() <= 1e-8f ? Vector3.UnitX : Vector3.Normalize(normalAxis);
+        DrawGpuAnnulus(center + normal * offset, normal, upAxis, innerRadius, outerRadius, color, segmentCount);
+        DrawGpuAnnulus(center - normal * offset, -normal, upAxis, innerRadius, outerRadius, color, segmentCount);
     }
 
     private void DrawGpuGeneralPrism(IReadOnlyList<Vector3> bottom, IReadOnlyList<Vector3> top, Color color)
@@ -1130,7 +1498,7 @@ internal sealed partial class Simulator3dForm
         DrawGpuOrientedBox(center - forward * (length * 0.06f) - right * (width * 0.18f), forward, right, up, length * 0.14f, width * 0.22f, height * 0.18f, Color.FromArgb(255, 60, 64, 70), edgeColor);
     }
 
-    private void DrawGpuDiskTarget(Vector3 center, Vector3 normalAxis, Vector3 upAxis, float radius, float thickness, Color ringColor)
+    private void DrawGpuDiskTarget(Vector3 center, Vector3 normalAxis, Vector3 upAxis, float radius, float thickness, Color ringColor, int segmentCount = 20)
     {
         Vector3 normal = normalAxis.LengthSquared() <= 1e-8f ? Vector3.UnitX : Vector3.Normalize(normalAxis);
         Vector3 up = upAxis.LengthSquared() <= 1e-8f ? Vector3.UnitY : Vector3.Normalize(upAxis);
@@ -1146,27 +1514,63 @@ internal sealed partial class Simulator3dForm
         Vector3 tangent = Vector3.Normalize(up - normal * Vector3.Dot(up, normal));
         Vector3 bitangent = Vector3.Normalize(Vector3.Cross(normal, tangent));
         float halfThickness = Math.Max(0.001f, thickness * 0.5f);
-        int segments = 20;
+        int segments = Math.Clamp(segmentCount, 12, 48);
         Color shellColor = Color.FromArgb(255, 68, 72, 78);
         Vector3 frontCenter = center - normal * halfThickness;
         Vector3 backCenter = center + normal * halfThickness;
-        Vector3[] front = new Vector3[segments];
-        Vector3[] back = new Vector3[segments];
         for (int index = 0; index < segments; index++)
         {
-            float angle = index * MathF.Tau / segments;
-            Vector3 radial = tangent * (MathF.Cos(angle) * radius) + bitangent * (MathF.Sin(angle) * radius);
-            front[index] = frontCenter + radial;
-            back[index] = backCenter + radial;
+            float a0 = index * MathF.Tau / segments;
+            float a1 = (index + 1) * MathF.Tau / segments;
+            Vector3 radial0 = tangent * (MathF.Cos(a0) * radius) + bitangent * (MathF.Sin(a0) * radius);
+            Vector3 radial1 = tangent * (MathF.Cos(a1) * radius) + bitangent * (MathF.Sin(a1) * radius);
+            Vector3 front0 = frontCenter + radial0;
+            Vector3 front1 = frontCenter + radial1;
+            Vector3 back0 = backCenter + radial0;
+            Vector3 back1 = backCenter + radial1;
+            AppendOrDrawGpuQuad(front0, front1, back1, back0, shellColor);
+            AppendOrDrawGpuTriangle(frontCenter, front1, front0, ScaleGpuColor(ringColor, 1.0f));
+            AppendOrDrawGpuTriangle(backCenter, back0, back1, ScaleGpuColor(ringColor, 1.0f));
+        }
+    }
+
+    private void DrawGpuAnnulus(Vector3 center, Vector3 normalAxis, Vector3 upAxis, float innerRadius, float outerRadius, Color color, int segmentCount = 28)
+    {
+        outerRadius = Math.Max(0.002f, outerRadius);
+        innerRadius = Math.Clamp(innerRadius, 0f, outerRadius - 0.001f);
+        Vector3 normal = normalAxis.LengthSquared() <= 1e-8f ? Vector3.UnitX : Vector3.Normalize(normalAxis);
+        Vector3 up = upAxis.LengthSquared() <= 1e-8f ? Vector3.UnitY : Vector3.Normalize(upAxis);
+        if (MathF.Abs(Vector3.Dot(normal, up)) > 0.98f)
+        {
+            up = MathF.Abs(Vector3.Dot(normal, Vector3.UnitY)) > 0.98f ? Vector3.UnitZ : Vector3.UnitY;
         }
 
+        Vector3 tangent = Vector3.Normalize(up - normal * Vector3.Dot(up, normal));
+        Vector3 bitangent = Vector3.Normalize(Vector3.Cross(normal, tangent));
+        int segments = Math.Clamp(segmentCount, 12, 64);
+        Vector3 faceCenter = center - normal * 0.0015f;
         for (int index = 0; index < segments; index++)
         {
-            int next = (index + 1) % segments;
-            AppendOrDrawGpuQuad(front[index], front[next], back[next], back[index], shellColor);
-            AppendOrDrawGpuTriangle(frontCenter, front[next], front[index], ScaleGpuColor(shellColor, 0.92f));
-            AppendOrDrawGpuTriangle(backCenter, back[index], back[next], ScaleGpuColor(ringColor, 1.0f));
+            float a0 = index * MathF.Tau / segments;
+            float a1 = (index + 1) * MathF.Tau / segments;
+            Vector3 outer0 = faceCenter + tangent * (MathF.Cos(a0) * outerRadius) + bitangent * (MathF.Sin(a0) * outerRadius);
+            Vector3 outer1 = faceCenter + tangent * (MathF.Cos(a1) * outerRadius) + bitangent * (MathF.Sin(a1) * outerRadius);
+            if (innerRadius <= 0.002f)
+            {
+                AppendOrDrawGpuTriangle(faceCenter, outer1, outer0, color);
+                continue;
+            }
+
+            Vector3 inner0 = faceCenter + tangent * (MathF.Cos(a0) * innerRadius) + bitangent * (MathF.Sin(a0) * innerRadius);
+            Vector3 inner1 = faceCenter + tangent * (MathF.Cos(a1) * innerRadius) + bitangent * (MathF.Sin(a1) * innerRadius);
+            AppendOrDrawGpuQuad(inner0, inner1, outer1, outer0, color);
         }
+    }
+
+    private static Vector3 ResolveGpuPlateNormal(ArmorPlateTarget plate)
+    {
+        double yawRad = plate.YawDeg * Math.PI / 180.0;
+        return Vector3.Normalize(new Vector3((float)Math.Cos(yawRad), 0f, (float)Math.Sin(yawRad)));
     }
 
     private void DrawGpuOrientedBox(
@@ -1200,6 +1604,17 @@ internal sealed partial class Simulator3dForm
         Vector3 v101 = center - hf + hr + hu;
         Vector3 v110 = center + hf + hr + hu;
         Vector3 v111 = center + hf - hr + hu;
+
+        if (_gpuBatchingDynamicGeometry)
+        {
+            AppendGpuQuad(_gpuDynamicVertexBuildBuffer, v100, v101, v110, v111, ScaleGpuColor(fillColor, 0.82f));
+            AppendGpuQuad(_gpuDynamicVertexBuildBuffer, v001, v000, v011, v010, ScaleGpuColor(fillColor, 0.46f));
+            AppendGpuQuad(_gpuDynamicVertexBuildBuffer, v000, v100, v111, v011, ScaleGpuColor(fillColor, 0.58f));
+            AppendGpuQuad(_gpuDynamicVertexBuildBuffer, v101, v001, v010, v110, ScaleGpuColor(fillColor, 0.54f));
+            AppendGpuQuad(_gpuDynamicVertexBuildBuffer, v011, v111, v110, v010, ScaleGpuColor(fillColor, 0.62f));
+            AppendGpuQuad(_gpuDynamicVertexBuildBuffer, v000, v001, v101, v100, ScaleGpuColor(fillColor, 0.50f));
+            return;
+        }
 
         var faces = new List<SolidFace>(6)
         {
@@ -1726,6 +2141,14 @@ internal sealed partial class Simulator3dForm
         _gpuOverlayBitmap = null;
 
         DeleteGpuBuffer(ref _gpuTerrainVertexBuffer);
+        foreach (GpuTerrainChunk chunk in _gpuTerrainChunks)
+        {
+            DeleteGpuBuffer(ref chunk.Buffer);
+            chunk.VertexCount = 0;
+            chunk.Version = -1;
+            chunk.BuildBuffer.Clear();
+        }
+
         DeleteGpuBuffer(ref _gpuDynamicVertexBuffer);
         DeleteGpuVertexArray(ref _gpuSharedVertexArray);
         _gpuTerrainVertexCount = 0;
@@ -1768,6 +2191,11 @@ internal sealed partial class Simulator3dForm
     {
         _gpuTerrainBufferVersion = -1;
         _gpuTerrainVertexCount = 0;
+        foreach (GpuTerrainChunk chunk in _gpuTerrainChunks)
+        {
+            chunk.VertexCount = 0;
+            chunk.Version = -1;
+        }
     }
 
     private void DeleteGpuBuffer(ref int buffer)

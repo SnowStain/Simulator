@@ -14,12 +14,17 @@ public sealed class SimulationBootstrapService
         var world = new SimulationWorldState
         {
             MetersPerWorldUnit = ResolveMetersPerWorldUnit(config, mapPreset),
+            WorldWidth = Math.Max(1.0, mapPreset.Width),
+            WorldHeight = Math.Max(1.0, mapPreset.Height),
         };
         double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
 
         double initialGold = ResolveInitialGold(config);
-        world.GetOrCreateTeamState("red", initialGold);
-        world.GetOrCreateTeamState("blue", initialGold);
+        SimulationTeamState redTeam = world.GetOrCreateTeamState("red", initialGold);
+        SimulationTeamState blueTeam = world.GetOrCreateTeamState("blue", initialGold);
+        int redDirection = Random.Shared.Next(0, 2) == 0 ? -1 : 1;
+        redTeam.EnergyRotorDirectionSign = redDirection;
+        blueTeam.EnergyRotorDirectionSign = -redDirection;
 
         JsonObject? entities = config["entities"] as JsonObject;
         JsonObject? initialPositions = entities?["initial_positions"] as JsonObject;
@@ -74,8 +79,7 @@ public sealed class SimulationBootstrapService
                 entity.MaxHeat = profile.MaxHeat;
                 entity.Heat = 0;
                 entity.AmmoType = profile.AmmoType;
-                entity.Ammo17Mm = IsSentryRole(roleKey) ? profile.InitialAllowedAmmo17Mm : 0;
-                entity.Ammo42Mm = IsSentryRole(roleKey) ? profile.InitialAllowedAmmo42Mm : 0;
+                ApplyInitialPurchasedAmmo(entity, profile, roleKey);
                 entity.RuleDrivePowerLimitW = profile.MaxPower;
                 entity.MaxChassisEnergy = profile.MaxChassisEnergy;
                 entity.ChassisEnergy = profile.UsesChassisEnergy ? profile.InitialChassisEnergy : 0.0;
@@ -116,7 +120,12 @@ public sealed class SimulationBootstrapService
             bool exists = world.Entities.Any(entity =>
                 string.Equals(entity.EntityType, type, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(entity.Team, region.Team, StringComparison.OrdinalIgnoreCase)
-                && (type != "energy_mechanism" || string.Equals(entity.Id, entityId, StringComparison.OrdinalIgnoreCase)));
+                && type != "energy_mechanism");
+            if (string.Equals(type, "energy_mechanism", StringComparison.OrdinalIgnoreCase))
+            {
+                exists = world.Entities.Any(entity =>
+                    string.Equals(entity.EntityType, type, StringComparison.OrdinalIgnoreCase));
+            }
 
             if (exists)
             {
@@ -127,6 +136,7 @@ public sealed class SimulationBootstrapService
             double bodyHeightM = ResolveFacilityOverride(region, "body_height_m", type == "outpost" ? 1.578 : type == "base" ? 1.181 : 2.30, 0.05);
             double bodyWidthM = ResolveFacilityOverride(region, "body_width_m", type == "outpost" ? 0.65 : type == "base" ? 1.609 : 1.30, 0.05);
             double bodyLengthM = ResolveFacilityOverride(region, "body_length_m", type == "outpost" ? 0.65 : type == "base" ? 1.881 : 2.06, 0.05);
+            double maxHealth = type == "base" ? 5000.0 : type == "outpost" ? 1500.0 : 0.0;
             world.Entities.Add(new SimulationEntity
             {
                 Id = entityId,
@@ -137,8 +147,8 @@ public sealed class SimulationBootstrapService
                 Y = cy,
                 AngleDeg = ResolveStructureYawDeg(region.Team, type),
                 TurretYawDeg = ResolveStructureYawDeg(region.Team, type),
-                MaxHealth = type == "base" ? 5000.0 : type == "outpost" ? 1500.0 : 1.0,
-                Health = type == "base" ? 5000.0 : type == "outpost" ? 1500.0 : 1.0,
+                MaxHealth = maxHealth,
+                Health = maxHealth,
                 MaxPower = 0,
                 Power = 0,
                 MaxHeat = 0,
@@ -152,6 +162,29 @@ public sealed class SimulationBootstrapService
                 BodyRenderWidthScale = 1.0,
                 CollisionRadiusWorld = structureCollisionRadiusM / Math.Max(world.MetersPerWorldUnit, 1e-6),
             });
+        }
+    }
+
+    private static void ApplyInitialPurchasedAmmo(SimulationEntity entity, ResolvedRoleProfile profile, string roleKey)
+    {
+        entity.Ammo17Mm = 0;
+        entity.Ammo42Mm = 0;
+        if (IsSentryRole(roleKey))
+        {
+            entity.Ammo17Mm = profile.InitialAllowedAmmo17Mm;
+            entity.Ammo42Mm = profile.InitialAllowedAmmo42Mm;
+            return;
+        }
+
+        if (string.Equals(roleKey, "infantry", StringComparison.OrdinalIgnoreCase))
+        {
+            entity.Ammo17Mm = 100;
+            return;
+        }
+
+        if (string.Equals(roleKey, "hero", StringComparison.OrdinalIgnoreCase))
+        {
+            entity.Ammo42Mm = 10;
         }
     }
 

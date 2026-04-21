@@ -36,10 +36,24 @@ public sealed class ArenaInteractionService
         var events = new List<FacilityInteractionEvent>();
         var energyActiveTeams = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         IReadOnlyDictionary<string, string> centralHighlandControl = ResolveCentralHighlandControl(world, facilities);
+        NormalizeEnergyRotorDirections(world);
 
         foreach (SimulationTeamState team in world.Teams.Values)
         {
             team.EnergyBuffTimerSec = Math.Max(0.0, team.EnergyBuffTimerSec - deltaTimeSec);
+            if (team.EnergyBuffTimerSec <= 1e-6)
+            {
+                team.EnergyBuffDamageDealtMult = 1.0;
+                team.EnergyBuffDamageTakenMult = 1.0;
+                team.EnergyBuffCoolingMult = 1.0;
+                if (string.Equals(team.EnergyMechanismState, "activated", StringComparison.OrdinalIgnoreCase))
+                {
+                    team.EnergyMechanismState = "inactive";
+                    ResetEnergyVisualState(team);
+                }
+            }
+
+            TickEnergyMechanismActivation(world, team, deltaTimeSec, events);
         }
 
         foreach (SimulationEntity entity in world.Entities)
@@ -102,6 +116,8 @@ public sealed class ArenaInteractionService
                 }
             }
 
+            TryStartEnergyMechanismAttempt(world, entity, "energy_mechanism", energyActiveTeams, events);
+
             if (!touchedDeadZone)
             {
                 entity.DeadZoneTimerSec = 0.0;
@@ -134,9 +150,9 @@ public sealed class ArenaInteractionService
             SimulationTeamState teamState = world.GetOrCreateTeamState(entity.Team);
             if (teamState.EnergyBuffTimerSec > 0)
             {
-                ApplyDamageDealtBuff(entity, _rules.Facility.EnergyDamageDealtMult);
-                ApplyCoolingBuff(entity, _rules.Facility.EnergyCoolingMult);
-                ApplyPowerRecoveryBuff(entity, _rules.Facility.EnergyPowerRecoveryMult);
+                ApplyDamageDealtBuff(entity, teamState.EnergyBuffDamageDealtMult);
+                ApplyDamageTakenBuff(entity, teamState.EnergyBuffDamageTakenMult);
+                ApplyCoolingBuff(entity, teamState.EnergyBuffCoolingMult);
             }
         }
 
@@ -301,7 +317,6 @@ public sealed class ArenaInteractionService
                 }
 
                 ApplyDamageTakenBuff(entity, BuffBaseDamageTakenMult);
-                ClearWeakState(entity);
                 return;
 
             case "buff_outpost":
@@ -522,46 +537,382 @@ public sealed class ArenaInteractionService
             return;
         }
 
-        SimulationTeamState teamState = world.GetOrCreateTeamState(entity.Team);
-        energyActiveTeams.Add(entity.Team);
+        TryStartEnergyMechanismAttempt(world, entity, facility.Id, energyActiveTeams, events);
+    }
 
-        teamState.EnergyActivationTimerSec += deltaTimeSec;
-        teamState.EnergyVirtualHits += ResolveEnergyVirtualHitRate(entity.RoleKey) * deltaTimeSec;
-
-        if (teamState.EnergyActivationTimerSec < _rules.Facility.EnergyActivationHoldSec)
+    private void TryStartEnergyMechanismAttempt(
+        SimulationWorldState world,
+        SimulationEntity entity,
+        string facilityId,
+        ISet<string> energyActiveTeams,
+        ICollection<FacilityInteractionEvent> events)
+    {
+        if (!CanActivateEnergy(entity))
         {
             return;
         }
-
-        int requiredHits = world.GameTimeSec >= _rules.Facility.EnergyLargeWindowStartSec
-            ? _rules.Facility.EnergyLargeHitThreshold
-            : _rules.Facility.EnergySmallHitThreshold;
-
-        bool activated = teamState.EnergyVirtualHits >= requiredHits;
-        if (activated)
+        SimulationTeamState teamState = world.GetOrCreateTeamState(entity.Team);
+        energyActiveTeams.Add(entity.Team);
+        if (!entity.EnergyActivationRequested
+            || string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase))
         {
-            teamState.EnergyBuffTimerSec = Math.Max(teamState.EnergyBuffTimerSec, _rules.Facility.EnergyBuffDurationSec);
+            return;
+        }
+        bool large = world.GameTimeSec >= _rules.Facility.EnergyLargeWindowStartSec;
+        int largeSlot = ResolveLargeEnergyAttemptSlot(world.GameTimeSec);
+        if (!CanStartEnergyAttempt(teamState, large, largeSlot))
+        {
+            return;
+        }
+        StartEnergyAttempt(teamState, large, largeSlot, world.GameTimeSec);
+        events.Add(new FacilityInteractionEvent(
+            world.GameTimeSec,
+            entity.Team,
+            entity.Id,
+            string.IsNullOrWhiteSpace(facilityId) ? "energy_mechanism" : facilityId,
+            "energy_mechanism",
+            large
+                ? "\u5927\u80fd\u91cf\u673a\u5173\u5f00\u59cb\u6fc0\u6d3b\uff1a\u8bf7\u6309\u968f\u673a\u987a\u5e8f\u547d\u4e2d\u5df1\u65b9 5 \u4e2a\u5f85\u6fc0\u6d3b\u5706\u76d8\u3002"
+                : "\u5c0f\u80fd\u91cf\u673a\u5173\u5f00\u59cb\u6fc0\u6d3b\uff1a\u8bf7\u6309\u968f\u673a\u987a\u5e8f\u547d\u4e2d\u5df1\u65b9 5 \u4e2a\u5f85\u6fc0\u6d3b\u5706\u76d8\u3002"));
+    }
+    public FacilityInteractionEvent? ApplyEnergyMechanismHit(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        ArmorPlateTarget hitPlate,
+        int ringScore)
+    {
+        if (!CanActivateEnergy(shooter)
+            || !SimulationCombatMath.TryParseEnergyArmIndex(hitPlate.Id, out string plateTeam, out int armIndex))
+        {
+            return null;
+        }
+        SimulationTeamState teamState = world.GetOrCreateTeamState(shooter.Team);
+        if (!string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+        if (teamState.EnergyNextModuleDelaySec > 1e-6
+            || !string.Equals(plateTeam, shooter.Team, StringComparison.OrdinalIgnoreCase)
+            || (teamState.EnergyCurrentLitMask & (1 << armIndex)) == 0)
+        {
+            double failedAverageRing = teamState.EnergyHitRingCount > 0
+                ? teamState.EnergyHitRingSum / Math.Max(1.0, teamState.EnergyHitRingCount)
+                : 0.0;
+            ResetEnergyAttemptProgress(teamState, world.GameTimeSec, armIndex + 31);
+            return new FacilityInteractionEvent(
+                world.GameTimeSec,
+                shooter.Team,
+                shooter.Id,
+                hitPlate.Id,
+                "energy_mechanism",
+                failedAverageRing > 0.0
+                    ? $"\u80fd\u91cf\u673a\u5173\u6fc0\u6d3b\u5931\u8d25\uff1a\u8bef\u51fb\u975e\u5f53\u524d\u76ee\u6807\uff0c\u5e73\u5747\u73af\u6570 {failedAverageRing:0.0}\uff0c\u8fdb\u5ea6\u5df2\u6e05\u96f6\u5e76\u91cd\u65b0\u968f\u673a\u76ee\u6807\u3002"
+                    : "\u80fd\u91cf\u673a\u5173\u6fc0\u6d3b\u5931\u8d25\uff1a\u8bef\u51fb\u975e\u5f53\u524d\u76ee\u6807\uff0c\u8fdb\u5ea6\u5df2\u6e05\u96f6\u5e76\u91cd\u65b0\u968f\u673a\u76ee\u6807\u3002");
+        }
+        int safeRingScore = Math.Clamp(ringScore, 1, 10);
+        teamState.EnergyLastRingScore = safeRingScore;
+        teamState.EnergyLastHitArmIndex = armIndex;
+        teamState.EnergyLastHitFlashEndSec = world.GameTimeSec + 2.0;
+        teamState.EnergyHitRingsByArm[armIndex] = Math.Max(teamState.EnergyHitRingsByArm[armIndex], safeRingScore);
+        teamState.EnergyActivatedGroupCount++;
+        teamState.EnergyHitRingCount++;
+        teamState.EnergyHitRingSum += safeRingScore;
+        if (teamState.EnergyActivatedGroupCount >= 5)
+        {
+            if (teamState.EnergyLargeMechanismActive)
+            {
+                teamState.EnergyLastLargeAttemptSlot = ResolveLargeEnergyAttemptSlot(world.GameTimeSec);
+                GrantLargeEnergyBuff(teamState);
+            }
+            else
+            {
+                teamState.EnergySmallChanceUsed = true;
+                GrantSmallEnergyBuff(teamState);
+            }
+            teamState.EnergyMechanismState = "activated";
+            return new FacilityInteractionEvent(
+                world.GameTimeSec,
+                shooter.Team,
+                shooter.Id,
+                hitPlate.Id,
+                "energy_mechanism",
+                teamState.EnergyLargeMechanismActive
+                    ? $"\u5927\u80fd\u91cf\u673a\u5173\u6fc0\u6d3b\u6210\u529f\uff1a\u5e73\u5747\u73af\u6570 {teamState.EnergyHitRingSum / Math.Max(1.0, teamState.EnergyHitRingCount):0.0}\uff0c\u589e\u76ca\u6301\u7eed {teamState.EnergyBuffTimerSec:0} \u79d2\u3002"
+                    : "\u5c0f\u80fd\u91cf\u673a\u5173\u6fc0\u6d3b\u6210\u529f\uff1a\u5168\u961f\u83b7\u5f97 25% \u9632\u5fa1\u589e\u76ca\uff0c\u6301\u7eed 45 \u79d2\u3002");
+        }
+        teamState.EnergyActiveGroupIndex = ResolveCurrentEnergyActiveGroupIndex(teamState);
+        teamState.EnergyCurrentLitMask = 0;
+        teamState.EnergyLitModuleTimerSec = 0.0;
+        teamState.EnergyNextModuleDelaySec = 1.0;
+        return new FacilityInteractionEvent(
+            world.GameTimeSec,
+            shooter.Team,
+            shooter.Id,
+            hitPlate.Id,
+            "energy_mechanism",
+            $"\u547d\u4e2d\u80fd\u91cf\u673a\u5173\uff1a\u5df2\u5b8c\u6210 {teamState.EnergyActivatedGroupCount}/5\uff0c\u672c\u6b21\u73af\u6570 {safeRingScore}\u3002");
+    }
+    private static void TickEnergyMechanismActivation(
+        SimulationWorldState world,
+        SimulationTeamState teamState,
+        double deltaTimeSec,
+        ICollection<FacilityInteractionEvent> events)
+    {
+        if (!string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+        teamState.EnergyActivationWindowTimerSec += deltaTimeSec;
+        if (teamState.EnergyActivationWindowTimerSec > 20.0)
+        {
+            double failedAverageRing = teamState.EnergyHitRingCount > 0
+                ? teamState.EnergyHitRingSum / Math.Max(1.0, teamState.EnergyHitRingCount)
+                : 0.0;
+            StopEnergyAttempt(world, teamState);
             events.Add(new FacilityInteractionEvent(
                 world.GameTimeSec,
-                entity.Team,
-                entity.Id,
-                facility.Id,
+                teamState.Team,
+                string.Empty,
                 "energy_mechanism",
-                $"Energy mechanism activated, effective hits {teamState.EnergyVirtualHits:0.##}"));
+                "energy_mechanism",
+                failedAverageRing > 0.0
+                    ? $"\u80fd\u91cf\u673a\u5173\u6fc0\u6d3b\u5931\u8d25\uff1a20 \u79d2\u6fc0\u6d3b\u7a97\u53e3\u7ed3\u675f\uff0c\u5e73\u5747\u73af\u6570 {failedAverageRing:0.0}\uff0c\u5df2\u7184\u706d\u5e76\u56de\u5230\u521d\u59cb\u76f8\u4f4d\u3002"
+                    : "\u80fd\u91cf\u673a\u5173\u6fc0\u6d3b\u5931\u8d25\uff1a20 \u79d2\u6fc0\u6d3b\u7a97\u53e3\u7ed3\u675f\uff0c\u5df2\u7184\u706d\u5e76\u56de\u5230\u521d\u59cb\u76f8\u4f4d\u3002"));
+            return;
+        }
+        if (teamState.EnergyNextModuleDelaySec > 1e-6)
+        {
+            teamState.EnergyNextModuleDelaySec = Math.Max(0.0, teamState.EnergyNextModuleDelaySec - deltaTimeSec);
+            if (teamState.EnergyNextModuleDelaySec <= 1e-6)
+            {
+                teamState.EnergyCurrentLitMask = ResolveEnergyLitMask(teamState);
+                teamState.EnergyLitModuleTimerSec = 0.0;
+            }
+            return;
+        }
+        teamState.EnergyLitModuleTimerSec += deltaTimeSec;
+        if (teamState.EnergyLitModuleTimerSec > 2.5)
+        {
+            double failedAverageRing = teamState.EnergyHitRingCount > 0
+                ? teamState.EnergyHitRingSum / Math.Max(1.0, teamState.EnergyHitRingCount)
+                : 0.0;
+            ResetEnergyAttemptProgress(teamState, world.GameTimeSec, 47);
+            events.Add(new FacilityInteractionEvent(
+                world.GameTimeSec,
+                teamState.Team,
+                string.Empty,
+                "energy_mechanism",
+                "energy_mechanism",
+                failedAverageRing > 0.0
+                    ? $"\u80fd\u91cf\u673a\u5173\u6fc0\u6d3b\u5931\u8d25\uff1a\u5f53\u524d\u76ee\u6807\u8d85\u65f6\uff0c\u5e73\u5747\u73af\u6570 {failedAverageRing:0.0}\uff0c\u8fdb\u5ea6\u5df2\u6e05\u96f6\u5e76\u91cd\u65b0\u968f\u673a\u76ee\u6807\u3002"
+                    : "\u80fd\u91cf\u673a\u5173\u6fc0\u6d3b\u5931\u8d25\uff1a\u5f53\u524d\u76ee\u6807\u8d85\u65f6\uff0c\u8fdb\u5ea6\u5df2\u6e05\u96f6\u5e76\u91cd\u65b0\u968f\u673a\u76ee\u6807\u3002"));
+        }
+    }
+    private static bool CanStartEnergyAttempt(SimulationTeamState teamState, bool large, int largeSlot)
+    {
+        if (large)
+        {
+            return largeSlot > 0 && teamState.EnergyLastLargeAttemptSlot != largeSlot;
+        }
+
+        return !teamState.EnergySmallChanceUsed;
+    }
+
+    private static void StartEnergyAttempt(SimulationTeamState teamState, bool large, int largeSlot, double gameTimeSec)
+    {
+        _ = largeSlot;
+        teamState.EnergyMechanismState = "activating";
+        teamState.EnergyStateStartTimeSec = gameTimeSec;
+        teamState.EnergyLargeMechanismActive = large;
+        teamState.EnergyActivationTimerSec = 0.0;
+        teamState.EnergyVirtualHits = 0.0;
+        teamState.EnergyActivationWindowTimerSec = 0.0;
+        teamState.EnergyLitModuleTimerSec = 0.0;
+        teamState.EnergyNextModuleDelaySec = 0.0;
+        teamState.EnergyActivatedGroupCount = 0;
+        teamState.EnergyHitRingCount = 0;
+        teamState.EnergyHitRingSum = 0;
+        teamState.EnergyLastRingScore = 0;
+        teamState.EnergyLastHitArmIndex = -1;
+        teamState.EnergyLastHitFlashEndSec = 0.0;
+        Array.Clear(teamState.EnergyHitRingsByArm, 0, teamState.EnergyHitRingsByArm.Length);
+        PopulateEnergyActivationOrder(teamState, gameTimeSec, large ? 17 : 0);
+        teamState.EnergyActiveGroupIndex = ResolveCurrentEnergyActiveGroupIndex(teamState);
+        teamState.EnergyCurrentLitMask = ResolveEnergyLitMask(teamState);
+    }
+    private static int ResolveEnergyLitMask(SimulationTeamState teamState)
+    {
+        int active = ResolveCurrentEnergyActiveGroupIndex(teamState);
+        return active >= 0 ? 1 << active : 0;
+    }
+    private static int ResolveCurrentEnergyActiveGroupIndex(SimulationTeamState teamState)
+    {
+        if (teamState.EnergyActivatedGroupCount >= 5)
+        {
+            return -1;
+        }
+        int orderIndex = Math.Clamp(teamState.EnergyActivatedGroupCount, 0, 4);
+        int active = teamState.EnergyActivationOrder[orderIndex];
+        return Math.Clamp(active, 0, 4);
+    }
+    private static void PopulateEnergyActivationOrder(SimulationTeamState teamState, double gameTimeSec, int salt)
+    {
+        for (int index = 0; index < teamState.EnergyActivationOrder.Length; index++)
+        {
+            teamState.EnergyActivationOrder[index] = index;
+        }
+        int seed = Math.Abs(
+            StringComparer.OrdinalIgnoreCase.GetHashCode(teamState.Team)
+            ^ ((int)Math.Round(gameTimeSec * 1000.0))
+            ^ salt);
+        var random = new Random(seed);
+        for (int index = teamState.EnergyActivationOrder.Length - 1; index > 0; index--)
+        {
+            int swapIndex = random.Next(index + 1);
+            (teamState.EnergyActivationOrder[index], teamState.EnergyActivationOrder[swapIndex]) =
+                (teamState.EnergyActivationOrder[swapIndex], teamState.EnergyActivationOrder[index]);
+        }
+    }
+    private static int ResolveRandomEnergyArmIndex(SimulationTeamState teamState, double gameTimeSec, int salt)
+    {
+        int seed = Math.Abs(
+            StringComparer.OrdinalIgnoreCase.GetHashCode(teamState.Team)
+            ^ ((int)Math.Round(gameTimeSec * 1000.0))
+            ^ salt);
+        return seed % 5;
+    }
+
+    private static int ResolveLargeEnergyAttemptSlot(double gameTimeSec)
+    {
+        if (gameTimeSec >= 330.0)
+        {
+            return 3;
+        }
+
+        if (gameTimeSec >= 245.0)
+        {
+            return 2;
+        }
+
+        return gameTimeSec >= 180.0 ? 1 : 0;
+    }
+
+    private static void ResetEnergyAttemptProgress(SimulationTeamState teamState, double gameTimeSec, int salt)
+    {
+        teamState.EnergyActivatedGroupCount = 0;
+        teamState.EnergyHitRingCount = 0;
+        teamState.EnergyHitRingSum = 0;
+        teamState.EnergyLitModuleTimerSec = 0.0;
+        teamState.EnergyNextModuleDelaySec = 0.0;
+        PopulateEnergyActivationOrder(teamState, gameTimeSec, salt + teamState.EnergyLastHitArmIndex * 13);
+        teamState.EnergyActiveGroupIndex = ResolveCurrentEnergyActiveGroupIndex(teamState);
+        ResetEnergyVisualState(teamState);
+        teamState.EnergyCurrentLitMask = ResolveEnergyLitMask(teamState);
+    }
+    private static void StopEnergyAttempt(SimulationWorldState world, SimulationTeamState teamState)
+    {
+        _ = world;
+        teamState.EnergyMechanismState = "inactive";
+        teamState.EnergyStateStartTimeSec = world.GameTimeSec;
+        teamState.EnergyLargeMechanismActive = false;
+        teamState.EnergyActivatedGroupCount = 0;
+        teamState.EnergyHitRingCount = 0;
+        teamState.EnergyHitRingSum = 0;
+        teamState.EnergyActivationTimerSec = 0.0;
+        teamState.EnergyVirtualHits = 0.0;
+        teamState.EnergyActivationWindowTimerSec = 0.0;
+        teamState.EnergyLitModuleTimerSec = 0.0;
+        teamState.EnergyNextModuleDelaySec = 0.0;
+        Array.Clear(teamState.EnergyActivationOrder, 0, teamState.EnergyActivationOrder.Length);
+        ResetEnergyVisualState(teamState);
+    }
+
+    private static void GrantSmallEnergyBuff(SimulationTeamState teamState)
+    {
+        teamState.EnergyBuffTimerSec = Math.Max(teamState.EnergyBuffTimerSec, 45.0);
+        teamState.EnergyMechanismState = "activated";
+        teamState.EnergyBuffDamageDealtMult = Math.Max(teamState.EnergyBuffDamageDealtMult, 1.0);
+        teamState.EnergyBuffDamageTakenMult = Math.Min(teamState.EnergyBuffDamageTakenMult, 0.75);
+        teamState.EnergyBuffCoolingMult = Math.Max(teamState.EnergyBuffCoolingMult, 1.0);
+        teamState.EnergyCurrentLitMask = 0;
+    }
+
+    private static void GrantLargeEnergyBuff(SimulationTeamState teamState)
+    {
+        double averageRing = teamState.EnergyHitRingSum / Math.Max(1.0, teamState.EnergyHitRingCount);
+        int durationRing = Math.Clamp((int)Math.Round(averageRing), 5, 10);
+        double durationSec = durationRing switch
+        {
+            <= 5 => 30.0,
+            6 => 35.0,
+            7 => 40.0,
+            8 => 45.0,
+            9 => 50.0,
+            _ => 60.0,
+        };
+
+        double damageDealtMult;
+        double damageTakenMult;
+        double coolingMult;
+        if (averageRing <= 3.0)
+        {
+            damageDealtMult = 2.50;
+            damageTakenMult = 0.75;
+            coolingMult = 1.00;
+        }
+        else if (averageRing <= 7.0)
+        {
+            damageDealtMult = 2.50;
+            damageTakenMult = 0.75;
+            coolingMult = 2.00;
+        }
+        else if (averageRing <= 8.0)
+        {
+            damageDealtMult = 3.00;
+            damageTakenMult = 0.75;
+            coolingMult = 2.00;
+        }
+        else if (averageRing <= 9.0)
+        {
+            damageDealtMult = 3.00;
+            damageTakenMult = 0.75;
+            coolingMult = 3.00;
         }
         else
         {
-            events.Add(new FacilityInteractionEvent(
-                world.GameTimeSec,
-                entity.Team,
-                entity.Id,
-                facility.Id,
-                "energy_mechanism",
-                $"Energy mechanism failed, effective hits {teamState.EnergyVirtualHits:0.##}"));
+            damageDealtMult = 4.00;
+            damageTakenMult = 0.50;
+            coolingMult = 5.00;
         }
 
-        teamState.EnergyActivationTimerSec = 0.0;
-        teamState.EnergyVirtualHits = 0.0;
+        teamState.EnergyBuffTimerSec = Math.Max(teamState.EnergyBuffTimerSec, durationSec);
+        teamState.EnergyMechanismState = "activated";
+        teamState.EnergyBuffDamageDealtMult = Math.Max(teamState.EnergyBuffDamageDealtMult, damageDealtMult);
+        teamState.EnergyBuffDamageTakenMult = Math.Min(teamState.EnergyBuffDamageTakenMult, damageTakenMult);
+        teamState.EnergyBuffCoolingMult = Math.Max(teamState.EnergyBuffCoolingMult, coolingMult);
+        teamState.EnergyCurrentLitMask = 0;
+    }
+
+    private static void ResetEnergyVisualState(SimulationTeamState teamState)
+    {
+        teamState.EnergyCurrentLitMask = 0;
+        teamState.EnergyLastRingScore = 0;
+        teamState.EnergyLastHitArmIndex = -1;
+        teamState.EnergyLastHitFlashEndSec = 0.0;
+        Array.Clear(teamState.EnergyHitRingsByArm, 0, teamState.EnergyHitRingsByArm.Length);
+    }
+
+    private static void NormalizeEnergyRotorDirections(SimulationWorldState world)
+    {
+        SimulationTeamState red = world.GetOrCreateTeamState("red");
+        SimulationTeamState blue = world.GetOrCreateTeamState("blue");
+        if (red.EnergyRotorDirectionSign == 0)
+        {
+            red.EnergyRotorDirectionSign = 1;
+        }
+
+        red.EnergyRotorDirectionSign = red.EnergyRotorDirectionSign < 0 ? -1 : 1;
+        blue.EnergyRotorDirectionSign = -red.EnergyRotorDirectionSign;
     }
 
     private static IReadOnlyDictionary<string, string> ResolveCentralHighlandControl(
@@ -867,7 +1218,8 @@ public sealed class ArenaInteractionService
             return false;
         }
 
-        if (string.Equals(entity.RoleKey, "engineer", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(entity.RoleKey, "infantry", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }

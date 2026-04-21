@@ -98,11 +98,15 @@ public sealed class SimulationEntity
 
     public bool AutoAimGuidanceOnly { get; set; }
 
+    public string AutoAimTargetMode { get; set; } = "armor";
+
     public bool AutoAimLocked { get; set; }
 
     public string? AutoAimTargetId { get; set; }
 
     public string? AutoAimPlateId { get; set; }
+
+    public string AutoAimTargetKind { get; set; } = "armor";
 
     public string AutoAimPlateDirection { get; set; } = string.Empty;
 
@@ -167,6 +171,8 @@ public sealed class SimulationEntity
     public bool SmallGyroActive { get; set; }
 
     public bool BuyAmmoRequested { get; set; }
+
+    public bool EnergyActivationRequested { get; set; }
 
     public bool HeroDeploymentRequested { get; set; }
 
@@ -291,6 +297,32 @@ public sealed class SimulationEntity
     public double StructureSideArmorOpenAngleDeg { get; set; } = 27.5;
 
     public double StructureSideArmorOutwardOffsetM { get; set; } = 0.12;
+
+    public double StructureGroundClearanceM { get; set; }
+
+    public double StructureBaseHeightM { get; set; } = 0.30;
+
+    public double StructureFrameWidthM { get; set; } = 2.06;
+
+    public double StructureFrameDepthM { get; set; } = 0.16;
+
+    public double StructureRotorCenterHeightM { get; set; } = 1.45;
+
+    public double StructureRotorPhaseDeg { get; set; } = 90.0;
+
+    public double StructureRotorRadiusM { get; set; } = 1.40;
+
+    public double StructureRotorHubRadiusM { get; set; } = 0.09;
+
+    public double StructureLampLengthM { get; set; } = 0.30;
+
+    public double StructureLampWidthM { get; set; } = 0.30;
+
+    public double StructureCantileverPairGapM { get; set; } = 2.34;
+
+    public double StructureCantileverLengthM { get; set; } = 0.28;
+
+    public double StructureCantileverOffsetYM { get; set; } = -0.02;
 
     public double WheelRadiusM { get; set; } = 0.08;
 
@@ -543,6 +575,50 @@ public sealed class SimulationTeamState
     public double EnergyVirtualHits { get; set; }
 
     public double EnergyBuffTimerSec { get; set; }
+
+    public string EnergyMechanismState { get; set; } = "inactive";
+
+    public bool EnergyLargeMechanismActive { get; set; }
+
+    public bool EnergySmallChanceUsed { get; set; }
+
+    public int EnergyLastLargeAttemptSlot { get; set; }
+
+    public double EnergyActivationWindowTimerSec { get; set; }
+
+    public double EnergyLitModuleTimerSec { get; set; }
+
+    public double EnergyNextModuleDelaySec { get; set; }
+
+    public int EnergyActiveGroupIndex { get; set; }
+
+    public int EnergyCurrentLitMask { get; set; }
+
+    public int EnergyActivatedGroupCount { get; set; }
+
+    public int[] EnergyActivationOrder { get; } = new int[5];
+
+    public int EnergyHitRingSum { get; set; }
+
+    public int EnergyHitRingCount { get; set; }
+
+    public int EnergyLastRingScore { get; set; }
+
+    public int EnergyLastHitArmIndex { get; set; } = -1;
+
+    public int[] EnergyHitRingsByArm { get; } = new int[5];
+
+    public double EnergyLastHitFlashEndSec { get; set; }
+
+    public int EnergyRotorDirectionSign { get; set; } = 1;
+
+    public double EnergyStateStartTimeSec { get; set; }
+
+    public double EnergyBuffDamageDealtMult { get; set; } = 1.0;
+
+    public double EnergyBuffDamageTakenMult { get; set; } = 1.0;
+
+    public double EnergyBuffCoolingMult { get; set; } = 1.0;
 }
 
 public sealed class SimulationWorldState
@@ -550,6 +626,10 @@ public sealed class SimulationWorldState
     public double GameTimeSec { get; set; }
 
     public double MetersPerWorldUnit { get; set; } = 0.0178;
+
+    public double WorldWidth { get; set; }
+
+    public double WorldHeight { get; set; }
 
     public IList<SimulationEntity> Entities { get; } = new List<SimulationEntity>();
 

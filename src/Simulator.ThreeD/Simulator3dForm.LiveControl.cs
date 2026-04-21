@@ -76,6 +76,8 @@ internal sealed partial class Simulator3dForm
         {
             _firstPersonView = false;
             _followSelection = false;
+            ReleaseMouseCapture();
+            ResetLiveInput();
             _cameraTargetM = ComputeMapCenterMeters();
             _cameraDistanceM = Math.Clamp(ComputeDefaultCameraDistance() * 0.85f, 22f, 150f);
             _cameraYawRad = -MathF.PI * 0.5f;
@@ -135,16 +137,17 @@ internal sealed partial class Simulator3dForm
         graphics.DrawString(motionText, _tinyHudFont, textBrush, panel.X + 16, panel.Y + 54);
 
         string aimMode = _autoAimAssistMode == AutoAimAssistMode.HardLock ? "\u786c\u9501" : "\u5f15\u5bfc";
+        string targetTypeText = ResolveAutoAimTargetTypeText(entity);
         string autoAimText = entity.AutoAimLocked
-            ? $"\u81ea\u7784 {aimMode} {entity.AutoAimPlateDirection}   \u547d\u4e2d {entity.AutoAimAccuracy:P0}   \u63d0\u524d {entity.AutoAimLeadTimeSec:0.00}s/{entity.AutoAimLeadDistanceM:0.00}m"
-            : $"\u81ea\u7784 {aimMode}   \u672a\u9501\u5b9a\u88c5\u7532\u677f";
+            ? $"\u81ea\u7784 {aimMode} {targetTypeText} {entity.AutoAimPlateDirection}   \u547d\u4e2d {entity.AutoAimAccuracy:P0}   \u63d0\u524d {entity.AutoAimLeadTimeSec:0.00}s/{entity.AutoAimLeadDistanceM:0.00}m"
+            : $"\u81ea\u7784 {aimMode}   \u672a\u9501\u5b9a{targetTypeText}";
         graphics.DrawString(autoAimText, _tinyHudFont, textBrush, panel.X + 16, panel.Y + 72);
 
         (string buffText, string debuffText) = ResolveBuffDebuffSummary(entity);
         graphics.DrawString($"Buff {buffText}", _tinyHudFont, textBrush, panel.X + 16, panel.Y + 90);
         graphics.DrawString($"Debuff {debuffText}", _tinyHudFont, textBrush, panel.X + 300, panel.Y + 90);
 
-        bool inFriendlySupply = IsInFriendlyFacility(entity, "supply", "buff_supply", "buff_base");
+        bool inFriendlySupply = IsInFriendlyFacility(entity, "supply", "buff_supply");
         bool inDeployZone = IsInFriendlyFacility(entity, "buff_hero_deployment");
         string supplyPrompt = inFriendlySupply ? "   B Resupply" : string.Empty;
         string deployText = entity.HeroDeploymentActive
@@ -155,8 +158,26 @@ internal sealed partial class Simulator3dForm
         string sentryPrompt = string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase)
             ? "   X SentryStance"
             : string.Empty;
-        string statusText = $"T AimMode   H Tactical   RMB AutoAim   LMB Fire   Shift Spin   V View   \u6309\u4f4fC\u8d85\u7535   F5 \u952e\u4f4d   F7 Telemetry{sentryPrompt}{supplyPrompt}{deployText}";
+        string statusText = $"\u76ee\u6807 {ResolveAutoAimModeLabel(entity)}   LMB Fire   RMB AutoAim   F5 Help   F7 Power   H Tactical{sentryPrompt}{supplyPrompt}{deployText}";
         graphics.DrawString(statusText, _tinyHudFont, textBrush, panel.X + 16, panel.Y + 108);
+    }
+
+    private static string ResolveAutoAimTargetTypeText(SimulationEntity entity)
+    {
+        if (string.Equals(entity.AutoAimTargetKind, "energy_disk", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(entity.AutoAimTargetMode, "energy", StringComparison.OrdinalIgnoreCase))
+        {
+            return "\u80fd\u91cf\u673a\u5173\u5706\u76d8";
+        }
+
+        return "\u88c5\u7532\u677f";
+    }
+
+    private static string ResolveAutoAimModeLabel(SimulationEntity entity)
+    {
+        return string.Equals(entity.AutoAimTargetMode, "energy", StringComparison.OrdinalIgnoreCase)
+            ? "\u80fd\u91cf\u673a\u5173"
+            : "\u88c5\u7532\u677f";
     }
 
     private double ResolveDisplayedFireRateHz(SimulationEntity entity)
@@ -210,6 +231,9 @@ internal sealed partial class Simulator3dForm
             "\u53f3\u952e \u81ea\u7784",
             "Shift \u5c0f\u9640\u87ba",
             "\u6309\u4f4f C \u542f\u7528\u8d85\u7ea7\u7535\u5bb9\u52a0\u901f",
+            "Q \u5207\u6362\u81ea\u7784\u76ee\u6807\uff08\u88c5\u7532 / \u80fd\u91cf\u673a\u5173\uff09",
+            "T \u5207\u6362\u81ea\u7784\u65b9\u5f0f\uff08\u786c\u9501 / \u5f15\u5bfc\uff09",
+            "F \u5f00\u542f\u80fd\u91cf\u673a\u5173",
             "B \u8865\u5f39",
             "Z \u82f1\u96c4\u90e8\u7f72",
             "X \u54e8\u5175\u5207\u6362\u5f62\u6001",
@@ -279,7 +303,8 @@ internal sealed partial class Simulator3dForm
         if (_host.World.Teams.TryGetValue(entity.Team, out SimulationTeamState? teamState)
             && teamState.EnergyBuffTimerSec > 1e-3)
         {
-            AddTimedBuff(entries, "energy_team", "\u80fd\u91cf\u673a\u5173\u589e\u76ca", "\u4f24\u5bb3/\u51b7\u5374/\u56de\u80fd\u63d0\u5347", teamState.EnergyBuffTimerSec, 45.0, Color.FromArgb(255, 174, 82));
+            string effect = $"\u4f24\u5bb3 x{teamState.EnergyBuffDamageDealtMult:0.00}  \u53d7\u4f24 x{teamState.EnergyBuffDamageTakenMult:0.00}  \u51b7\u5374 x{teamState.EnergyBuffCoolingMult:0.00}";
+            AddTimedBuff(entries, "energy_team", "\u80fd\u91cf\u673a\u5173\u589e\u76ca", effect, teamState.EnergyBuffTimerSec, Math.Max(45.0, teamState.EnergyBuffTimerSec), Color.FromArgb(255, 174, 82));
         }
 
         if (entity.DynamicDamageTakenMult < 0.995)
@@ -383,13 +408,20 @@ internal sealed partial class Simulator3dForm
                 continue;
             }
 
-            string durationText = entry.Timed
-                ? $"\u6301\u7eed {entry.RemainingSec:0}\u79d2"
-                : "\u533a\u57df\u5185\u6301\u7eed";
-            _centerBuffToasts.Add(new CenterBuffToast(
-                $"\u83b7\u5f97 {entry.Name}",
-                $"{entry.Effect}  {durationText}",
-                entry.Color));
+            if (TryBuildFacilityBuffToast(entity, entry, out CenterBuffToast? facilityToast))
+            {
+                _centerBuffToasts.Add(facilityToast!);
+            }
+            else
+            {
+                string durationText = entry.Timed
+                    ? $"\u6301\u7eed {entry.RemainingSec:0}\u79d2"
+                    : "\u533a\u57df\u5185\u6301\u7eed";
+                _centerBuffToasts.Add(new CenterBuffToast(
+                    $"\u83b7\u5f97 {entry.Name}",
+                    $"{entry.Effect}  {durationText}",
+                    entry.Color));
+            }
         }
 
         foreach (string oldKey in _selectedBuffSnapshot.Keys.ToArray())
@@ -409,6 +441,129 @@ internal sealed partial class Simulator3dForm
         {
             _centerBuffToasts.RemoveRange(0, _centerBuffToasts.Count - 5);
         }
+    }
+
+    private bool TryBuildFacilityBuffToast(SimulationEntity entity, BuffProgressEntry entry, out CenterBuffToast? toast)
+    {
+        toast = null;
+        Simulator.Core.Map.FacilityRegion? region = ResolveFacilityToastRegion(entity, entry.Key);
+        if (region is null)
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(region.Team)
+            && !string.Equals(region.Team, "neutral", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(region.Team, _host.SelectedTeam, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        string durationText = entry.Timed
+            ? $"\u6301\u7eed {entry.RemainingSec:0}\u79d2"
+            : "\u533a\u57df\u5185\u6301\u7eed";
+        string ownerText = ResolveFacilityOwnerText(region.Team, entity.Team);
+        string facilityText = ResolveFacilityToastLabel(region.Type);
+        if (!string.IsNullOrWhiteSpace(region.Id))
+        {
+            facilityText = $"{facilityText} {region.Id}";
+        }
+        toast = new CenterBuffToast(
+            $"\u89e6\u53d1 {ownerText}{facilityText}",
+            $"{entry.Name}  {entry.Effect}  {durationText}",
+            entry.Color);
+        return true;
+    }
+
+    private Simulator.Core.Map.FacilityRegion? ResolveFacilityToastRegion(SimulationEntity entity, string entryKey)
+    {
+        foreach (Simulator.Core.Map.FacilityRegion region in _host.MapPreset.Facilities)
+        {
+            if (!region.Contains(entity.X, entity.Y))
+            {
+                continue;
+            }
+
+            string type = region.Type ?? string.Empty;
+            if (entryKey.Equals("terrain_highland_def", StringComparison.OrdinalIgnoreCase)
+                && (type.Equals("buff_trapezoid_highland", StringComparison.OrdinalIgnoreCase)
+                    || type.Equals("buff_central_highland", StringComparison.OrdinalIgnoreCase)))
+            {
+                return region;
+            }
+
+            if (entryKey.Equals("terrain_fly_def", StringComparison.OrdinalIgnoreCase)
+                && type.Equals("buff_terrain_fly_slope", StringComparison.OrdinalIgnoreCase))
+            {
+                return region;
+            }
+
+            if (entryKey.Equals("terrain_road_cool", StringComparison.OrdinalIgnoreCase)
+                && type.Equals("buff_terrain_road", StringComparison.OrdinalIgnoreCase))
+            {
+                return region;
+            }
+
+            if ((entryKey.Equals("terrain_slope_def", StringComparison.OrdinalIgnoreCase)
+                    || entryKey.Equals("terrain_slope_cool", StringComparison.OrdinalIgnoreCase))
+                && type.Equals("buff_terrain_slope", StringComparison.OrdinalIgnoreCase))
+            {
+                return region;
+            }
+
+            if (entryKey.StartsWith("defense_", StringComparison.OrdinalIgnoreCase)
+                && (type.Equals("buff_base", StringComparison.OrdinalIgnoreCase)
+                    || type.Equals("buff_outpost", StringComparison.OrdinalIgnoreCase)
+                    || type.Equals("buff_fort", StringComparison.OrdinalIgnoreCase)
+                    || type.Equals("buff_hero_deployment", StringComparison.OrdinalIgnoreCase)))
+            {
+                return region;
+            }
+
+            if (entryKey.StartsWith("damage_", StringComparison.OrdinalIgnoreCase)
+                && type.Equals("buff_hero_deployment", StringComparison.OrdinalIgnoreCase))
+            {
+                return region;
+            }
+
+            if (entryKey.StartsWith("cooling_", StringComparison.OrdinalIgnoreCase)
+                && type.Equals("buff_fort", StringComparison.OrdinalIgnoreCase))
+            {
+                return region;
+            }
+        }
+
+        return null;
+    }
+
+    private static string ResolveFacilityOwnerText(string facilityTeam, string entityTeam)
+    {
+        if (string.Equals(facilityTeam, "neutral", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(facilityTeam))
+        {
+            return "\u4e2d\u7acb";
+        }
+
+        return string.Equals(facilityTeam, entityTeam, StringComparison.OrdinalIgnoreCase)
+            ? "\u5df1\u65b9"
+            : "\u654c\u65b9";
+    }
+
+    private static string ResolveFacilityToastLabel(string facilityType)
+    {
+        string type = facilityType ?? string.Empty;
+        return type switch
+        {
+            "buff_trapezoid_highland" => "\u68af\u5f62\u9ad8\u5730",
+            "buff_central_highland" => "\u4e2d\u592e\u9ad8\u5730",
+            "buff_terrain_fly_slope" => "\u98de\u5761",
+            "buff_terrain_road" => "\u516c\u8def",
+            "buff_terrain_slope" => "\u659c\u9762",
+            "buff_base" => "\u57fa\u5730\u589e\u76ca\u533a",
+            "buff_outpost" => "\u524d\u54e8\u7ad9\u589e\u76ca\u533a",
+            "buff_fort" => "\u57ce\u5821\u589e\u76ca\u533a",
+            "buff_hero_deployment" => "\u82f1\u96c4\u90e8\u7f72\u533a",
+            _ => "\u573a\u5730\u589e\u76ca",
+        };
     }
 
     private void AdvanceBuffToasts(float deltaSec)
@@ -552,7 +707,7 @@ internal sealed partial class Simulator3dForm
             return;
         }
 
-        Rectangle panel = new(ClientSize.Width - 198, ClientSize.Height - 182, 166, 128);
+        Rectangle panel = new(ClientSize.Width - 190, ClientSize.Height - 142, 158, 88);
         using GraphicsPath path = CreateRoundedRectangle(panel, 10);
         using var fill = new SolidBrush(Color.FromArgb(214, 10, 16, 24));
         using var border = new Pen(Color.FromArgb(150, 118, 136, 156), 1f);
@@ -561,32 +716,60 @@ internal sealed partial class Simulator3dForm
 
         using var textBrush = new SolidBrush(Color.FromArgb(230, 236, 241, 245));
         using var subTextBrush = new SolidBrush(Color.FromArgb(196, 198, 207, 216));
-        graphics.DrawString(_firstPersonView ? "First Person" : "Third Person", _smallHudFont, textBrush, panel.X + 12, panel.Y + 10);
+        graphics.DrawString(_firstPersonView ? "First Person" : "Third Person", _smallHudFont, textBrush, panel.X + 12, panel.Y + 8);
 
-        PointF center = new(panel.X + 46, panel.Y + 67);
-        float radius = 26f;
-        using var ringPen = new Pen(Color.FromArgb(118, 144, 162, 178), 1.1f);
-        graphics.DrawEllipse(ringPen, center.X - radius, center.Y - radius, radius * 2f, radius * 2f);
-        graphics.DrawEllipse(ringPen, center.X - radius * 0.58f, center.Y - radius * 0.58f, radius * 1.16f, radius * 1.16f);
+        PointF center = new(panel.X + 58, panel.Y + 52);
+        using var axisPen = new Pen(Color.FromArgb(96, 154, 170, 188), 1f);
+        graphics.DrawLine(axisPen, center.X - 42f, center.Y, center.X + 42f, center.Y);
+        graphics.DrawLine(axisPen, center.X, center.Y - 24f, center.X, center.Y + 24f);
 
-        DrawHeadingNeedle(graphics, center, radius * 0.92f, (float)(entity.AngleDeg * Math.PI / 180.0), Color.FromArgb(236, 238, 244));
-        DrawHeadingNeedle(graphics, center, radius * 0.74f, (float)(entity.TurretYawDeg * Math.PI / 180.0), ResolveTeamColor(entity.Team));
+        DrawRotatedHudRectangle(
+            graphics,
+            center,
+            58f,
+            24f,
+            (float)(entity.AngleDeg * Math.PI / 180.0),
+            Color.FromArgb(190, 68, 82, 98),
+            Color.FromArgb(235, 222, 230, 238));
+        DrawRotatedHudRectangle(
+            graphics,
+            center,
+            46f,
+            13f,
+            (float)(entity.TurretYawDeg * Math.PI / 180.0),
+            Color.FromArgb(220, ResolveTeamColor(entity.Team)),
+            Color.FromArgb(250, 245, 232, 132));
 
-        float pitchRatio = (float)Math.Clamp((entity.GimbalPitchDeg + 40.0) / 80.0, 0.0, 1.0);
-        RectangleF pitchBar = new(panel.X + 92, panel.Y + 56, 52, 8);
-        using var pitchBack = new SolidBrush(Color.FromArgb(110, 44, 52, 62));
-        using var pitchFill = new SolidBrush(Color.FromArgb(216, 90, 170, 232));
-        using var pitchPen = new Pen(Color.FromArgb(124, 182, 198, 214), 1f);
-        graphics.FillRectangle(pitchBack, pitchBar);
-        graphics.FillRectangle(pitchFill, pitchBar.X, pitchBar.Y, pitchBar.Width * pitchRatio, pitchBar.Height);
-        graphics.DrawRectangle(pitchPen, pitchBar.X, pitchBar.Y, pitchBar.Width, pitchBar.Height);
-        graphics.DrawString($"Chassis {NormalizeCompassDeg(entity.AngleDeg):000}deg", _tinyHudFont, subTextBrush, panel.X + 92, panel.Y + 20);
-        graphics.DrawString($"Turret  {NormalizeCompassDeg(entity.TurretYawDeg):000}deg", _tinyHudFont, subTextBrush, panel.X + 92, panel.Y + 36);
-        graphics.DrawString($"Pitch {entity.GimbalPitchDeg:+0;-0;0}deg", _tinyHudFont, subTextBrush, panel.X + 92, panel.Y + 68);
-        graphics.DrawString($"Drive {entity.ChassisPowerDrawW:0}W", _tinyHudFont, subTextBrush, panel.X + 92, panel.Y + 84);
-        graphics.DrawString($"E {entity.ChassisEnergy / 1000.0:0.0}/{Math.Max(0.0, entity.MaxChassisEnergy) / 1000.0:0.0}kJ", _tinyHudFont, subTextBrush, panel.X + 92, panel.Y + 100);
-        graphics.DrawString($"SC {(entity.SuperCapEnabled ? "ON" : "OFF")} {entity.SuperCapEnergyJ:0}J", _tinyHudFont, subTextBrush, panel.X + 92, panel.Y + 100);
-        graphics.DrawString("Body / Turret", _tinyHudFont, subTextBrush, panel.X + 14, panel.Bottom - 20);
+        graphics.DrawString("Body", _tinyHudFont, subTextBrush, panel.X + 112, panel.Y + 32);
+        graphics.DrawString("Turret", _tinyHudFont, textBrush, panel.X + 112, panel.Y + 48);
+        graphics.DrawString($"P {entity.GimbalPitchDeg:+0;-0;0}\u00b0", _tinyHudFont, subTextBrush, panel.X + 112, panel.Y + 64);
+    }
+
+    private static void DrawRotatedHudRectangle(
+        Graphics graphics,
+        PointF center,
+        float width,
+        float height,
+        float yawRad,
+        Color fillColor,
+        Color edgeColor)
+    {
+        float c = MathF.Cos(yawRad);
+        float s = MathF.Sin(yawRad);
+        PointF Transform(float x, float y) => new(
+            center.X + x * c - y * s,
+            center.Y + x * s + y * c);
+        PointF[] points =
+        {
+            Transform(-width * 0.5f, -height * 0.5f),
+            Transform(width * 0.5f, -height * 0.5f),
+            Transform(width * 0.5f, height * 0.5f),
+            Transform(-width * 0.5f, height * 0.5f),
+        };
+        using var fill = new SolidBrush(fillColor);
+        using var edge = new Pen(edgeColor, 1.2f);
+        graphics.FillPolygon(fill, points);
+        graphics.DrawPolygon(edge, points);
     }
 
     private static void DrawHeadingNeedle(Graphics graphics, PointF center, float length, float yawRad, Color color)

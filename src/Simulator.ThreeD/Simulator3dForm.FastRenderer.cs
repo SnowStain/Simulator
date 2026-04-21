@@ -43,7 +43,8 @@ internal sealed partial class Simulator3dForm
         using var badgeText = new SolidBrush(Color.FromArgb(236, 244, 248));
         Rectangle badge = new(_fastRendererMapRect.X + 10, _fastRendererMapRect.Y + 10, 178, 26);
         graphics.FillRectangle(badgeFill, badge);
-        graphics.DrawString("Fast Renderer / native_cpp", _tinyHudFont, badgeText, badge.X + 8, badge.Y + 6);
+        string badgeLabel = _tacticalMode ? "Tactical Fast Renderer" : "Fast Renderer / native_cpp";
+        graphics.DrawString(badgeLabel, _tinyHudFont, badgeText, badge.X + 8, badge.Y + 6);
     }
 
     private void DrawFastMapBase(Graphics graphics, Rectangle mapRect)
@@ -101,6 +102,8 @@ internal sealed partial class Simulator3dForm
 
         Graphics graphics = _fastEntityLayerGraphics;
         graphics.Clear(Color.Transparent);
+        using var tacticalTextBrush = new SolidBrush(Color.FromArgb(232, 238, 244, 246));
+        using var tacticalShadowBrush = new SolidBrush(Color.FromArgb(210, 6, 10, 14));
         foreach (SimulationEntity entity in _host.World.Entities)
         {
             if (!entity.IsAlive
@@ -161,7 +164,34 @@ internal sealed partial class Simulator3dForm
             }
 
             DrawFastHealthBar(graphics, entity, center, radius);
+            if (_tacticalMode
+                && (string.Equals(entity.EntityType, "robot", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(entity.EntityType, "sentry", StringComparison.OrdinalIgnoreCase))
+                && string.Equals(entity.Team, _host.SelectedTeam, StringComparison.OrdinalIgnoreCase))
+            {
+                DrawFastTacticalUnitMetrics(graphics, entity, center, radius, tacticalTextBrush, tacticalShadowBrush);
+            }
         }
+    }
+
+    private void DrawFastTacticalUnitMetrics(
+        Graphics graphics,
+        SimulationEntity entity,
+        PointF center,
+        float radius,
+        Brush textBrush,
+        Brush shadowBrush)
+    {
+        int ammo = string.Equals(entity.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase)
+            ? entity.Ammo42Mm
+            : entity.Ammo17Mm;
+        string role = ResolveRoleLabel(entity);
+        string stats = $"{role} HP {entity.Health:0}/{entity.MaxHealth:0}  A {ammo}  H {entity.Heat:0}/{Math.Max(1.0, entity.MaxHeat):0}  P {entity.ChassisPowerDrawW:0}/{Math.Max(1.0, entity.EffectiveDrivePowerLimitW):0}W";
+        float x = center.X + radius + 6f;
+        float y = center.Y - 12f;
+        graphics.FillRectangle(shadowBrush, x - 3f, y - 2f, Math.Min(330f, stats.Length * 6.2f), 28f);
+        graphics.DrawString(entity.Id, _tinyHudFont, textBrush, x, y);
+        graphics.DrawString(stats, _tinyHudFont, textBrush, x, y + 12f);
     }
 
     private void DrawFastHealthBar(Graphics graphics, SimulationEntity entity, PointF center, float radius)
@@ -212,7 +242,7 @@ internal sealed partial class Simulator3dForm
             }
 
             using var brush = new SolidBrush(marker.Color);
-            graphics.DrawString(marker.Text, _tinyHudFont, brush, point.X + 4f, point.Y - 8f);
+            graphics.DrawString(marker.Text, _tinyHudFont, brush, point.X + 4f + marker.ScreenOffsetX, point.Y - 8f + marker.ScreenOffsetY);
         }
     }
 

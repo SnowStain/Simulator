@@ -15,7 +15,8 @@ internal sealed partial class Simulator3dForm
         float CenterHeightM,
         float RadiusM,
         float HalfThicknessM,
-        float SpinRad);
+        float SpinRad,
+        bool FixedToLeg);
 
     private readonly record struct ArmorRenderComponent(Vector3 LocalCenter, float YawRad);
 
@@ -149,6 +150,11 @@ internal sealed partial class Simulator3dForm
                 + chassisForward3 * wheel.LocalX
                 + chassisRight3 * wheel.LocalY
                 + chassisUp3 * wheel.CenterHeightM;
+            if (!wheel.FixedToLeg && entity.AirborneHeightM <= 1e-4f)
+            {
+                wheelCenter.Y = MathF.Max(wheelCenter.Y, center.Y + wheel.RadiusM);
+            }
+
             Vector3 wheelForward = chassisForward3;
             Vector3 wheelAxle = lateralAxis;
             if (string.Equals(profile.WheelStyle, "omni", StringComparison.OrdinalIgnoreCase))
@@ -524,6 +530,11 @@ internal sealed partial class Simulator3dForm
                     wheel.LocalY,
                     yaw,
                     Math.Max(wheel.RadiusM, wheel.CenterHeightM));
+                if (!wheel.FixedToLeg && entity.AirborneHeightM <= 1e-4f)
+                {
+                    wheelCenter.Y = MathF.Max(wheelCenter.Y, center.Y + wheel.RadiusM);
+                }
+
                 DrawCylinderSolid(
                     graphics,
                     wheelCenter,
@@ -698,6 +709,7 @@ internal sealed partial class Simulator3dForm
             float localY = rawOffset.Y * profile.BodyRenderWidthScale;
             float wheelRadius = Math.Clamp(profile.WheelRadiusM, 0.03f, 0.24f);
             float centerHeight = wheelRadius + motion.BodyLiftM;
+            bool fixedToLeg = false;
             if (leg is not null && dynamicIndices.Contains(index))
             {
                 wheelRadius = Math.Clamp(profile.RearLegWheelRadiusM, 0.03f, 0.32f);
@@ -710,6 +722,7 @@ internal sealed partial class Simulator3dForm
                 localX = leg.Value.Foot.X;
                 localY = leg.Value.SideOffset * sideSign;
                 centerHeight = leg.Value.Foot.Y;
+                fixedToLeg = true;
             }
 
             float halfThickness = RenderWheelHalfWidthM;
@@ -719,7 +732,8 @@ internal sealed partial class Simulator3dForm
                 centerHeight,
                 wheelRadius,
                 halfThickness,
-                spinBase + index * 0.85f));
+                spinBase + index * 0.85f,
+                fixedToLeg));
         }
 
         return result;
@@ -850,22 +864,9 @@ internal sealed partial class Simulator3dForm
         {
             float orbitRad = orbitYaws[index] * MathF.PI / 180f;
             Vector2 outward = new(MathF.Cos(orbitRad), MathF.Sin(orbitRad));
-            bool frontBackFace = MathF.Abs(outward.X) >= MathF.Abs(outward.Y);
-            float localX = 0f;
-            float localZ = 0f;
-            float defaultYaw = 0f;
-            if (frontBackFace)
-            {
-                float sign = outward.X >= 0f ? 1f : -1f;
-                localX = radiusX * sign;
-                defaultYaw = sign > 0f ? 0f : MathF.PI;
-            }
-            else
-            {
-                float sign = outward.Y >= 0f ? 1f : -1f;
-                localZ = radiusZ * sign;
-                defaultYaw = sign > 0f ? MathF.PI * 0.5f : -MathF.PI * 0.5f;
-            }
+            float localX = outward.X * radiusX;
+            float localZ = outward.Y * radiusZ;
+            float defaultYaw = orbitRad;
 
             float selfYaw = (index < selfYaws.Count ? selfYaws[index] : orbitYaws[index]) * MathF.PI / 180f;
             if (profile.ArmorSelfYawsDeg.Count == 0)
@@ -949,7 +950,10 @@ internal sealed partial class Simulator3dForm
         }
 
         Vector3 fillCenter = rearEdgeCenter - chassisRight3 * ((fullWidth - filledWidth) * 0.5f);
-        Color fill = Color.FromArgb(entity.IsAlive ? 248 : 168, teamColor);
+        Color fillBase = entity.RespawnInvincibleTimerSec > 1e-6
+            ? Color.FromArgb(82, 238, 112)
+            : teamColor;
+        Color fill = Color.FromArgb(entity.IsAlive ? 248 : 168, fillBase);
         DrawOrientedBoxSolid(
             graphics,
             fillCenter,
@@ -960,7 +964,7 @@ internal sealed partial class Simulator3dForm
             filledWidth,
             barHeight * 1.18f,
             fill,
-            Color.FromArgb(entity.IsAlive ? 255 : 180, BlendColor(teamColor, Color.White, 0.28f)),
+            Color.FromArgb(entity.IsAlive ? 255 : 180, BlendColor(fillBase, Color.White, 0.28f)),
             null);
     }
 

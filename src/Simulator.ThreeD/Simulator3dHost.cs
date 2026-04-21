@@ -694,6 +694,36 @@ internal sealed class Simulator3dHost
         }
     }
 
+    public bool SetEntityTacticalCommand(
+        string entityId,
+        string command,
+        string? targetId,
+        double targetX,
+        double targetY,
+        double patrolRadiusWorld)
+    {
+        string normalizedCommand = (command ?? string.Empty).Trim().ToLowerInvariant();
+        if (normalizedCommand is not ("attack" or "defend" or "patrol"))
+        {
+            normalizedCommand = string.Empty;
+        }
+
+        SimulationEntity? entity = World.Entities.FirstOrDefault(candidate =>
+            IsControlEntity(candidate)
+            && string.Equals(candidate.Id, entityId, StringComparison.OrdinalIgnoreCase));
+        if (entity is null)
+        {
+            return false;
+        }
+
+        entity.TacticalCommand = normalizedCommand;
+        entity.TacticalTargetId = normalizedCommand == "attack" ? targetId : null;
+        entity.TacticalTargetX = targetX;
+        entity.TacticalTargetY = targetY;
+        entity.TacticalPatrolRadiusWorld = Math.Max(4.0, patrolRadiusWorld);
+        return true;
+    }
+
     public void SetSelectedTeam(string team)
     {
         string normalized = Simulator3dOptions.NormalizeTeam(team);
@@ -922,6 +952,7 @@ internal sealed class Simulator3dHost
             entity.AutoAimGuidanceOnly = false;
             entity.SmallGyroActive = false;
             entity.BuyAmmoRequested = false;
+            entity.EnergyActivationRequested = false;
         }
 
         if (state is null || !state.Enabled)
@@ -957,6 +988,7 @@ internal sealed class Simulator3dHost
         entityToControl.AutoAimGuidanceOnly = state.AutoAimGuidanceOnly;
         entityToControl.SmallGyroActive = state.SmallGyroActive;
         entityToControl.BuyAmmoRequested = state.BuyAmmoRequested;
+        entityToControl.EnergyActivationRequested = state.EnergyActivationPressed;
         if (state.HeroDeployToggleRequested && string.Equals(entityToControl.RoleKey, "hero", StringComparison.OrdinalIgnoreCase))
         {
             bool rangedHero = string.Equals(
@@ -988,6 +1020,33 @@ internal sealed class Simulator3dHost
 
         entityToControl.TurretYawDeg = NormalizeDegrees(entityToControl.TurretYawDeg + state.TurretYawDeltaDeg);
         entityToControl.GimbalPitchDeg = Math.Clamp(entityToControl.GimbalPitchDeg + state.GimbalPitchDeltaDeg, -35.0, 35.0);
+    }
+
+    public string ToggleSelectedAutoAimTargetMode()
+    {
+        SimulationEntity? entity = SelectedEntity;
+        if (entity is null || !IsMovableEntity(entity))
+        {
+            return "armor";
+        }
+
+        if (string.Equals(entity.RoleKey, "hero", StringComparison.OrdinalIgnoreCase))
+        {
+            entity.AutoAimTargetMode = "armor";
+            return entity.AutoAimTargetMode;
+        }
+
+        entity.AutoAimTargetMode = string.Equals(entity.AutoAimTargetMode, "energy", StringComparison.OrdinalIgnoreCase)
+            ? "armor"
+            : "energy";
+        entity.AutoAimLocked = false;
+        entity.AutoAimTargetId = null;
+        entity.AutoAimPlateId = null;
+        entity.AutoAimTargetKind = string.Equals(entity.AutoAimTargetMode, "energy", StringComparison.OrdinalIgnoreCase)
+            ? "energy_disk"
+            : "armor";
+        entity.AutoAimLockKey = null;
+        return entity.AutoAimTargetMode;
     }
 
     private static bool IsMovableEntity(SimulationEntity entity)
@@ -1557,9 +1616,7 @@ internal sealed class Simulator3dHost
                 entity.Heat = 0.0;
                 entity.BufferEnergyJ = entity.MaxBufferEnergyJ;
                 entity.SuperCapEnergyJ = entity.MaxSuperCapEnergyJ;
-                bool sentry = string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase);
-                entity.Ammo17Mm = sentry ? profile.InitialAllowedAmmo17Mm : 0;
-                entity.Ammo42Mm = sentry ? profile.InitialAllowedAmmo42Mm : 0;
+                ApplyInitialPurchasedAmmo(entity, profile);
             }
             else
             {
@@ -1585,5 +1642,28 @@ internal sealed class Simulator3dHost
     private static string NormalizeProjectilePhysicsBackend(string? backend)
     {
         return string.Equals(backend, "bepu", StringComparison.OrdinalIgnoreCase) ? "bepu" : "native";
+    }
+
+    private static void ApplyInitialPurchasedAmmo(SimulationEntity entity, ResolvedRoleProfile profile)
+    {
+        entity.Ammo17Mm = 0;
+        entity.Ammo42Mm = 0;
+        if (string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase))
+        {
+            entity.Ammo17Mm = profile.InitialAllowedAmmo17Mm;
+            entity.Ammo42Mm = profile.InitialAllowedAmmo42Mm;
+            return;
+        }
+
+        if (string.Equals(entity.RoleKey, "infantry", StringComparison.OrdinalIgnoreCase))
+        {
+            entity.Ammo17Mm = 100;
+            return;
+        }
+
+        if (string.Equals(entity.RoleKey, "hero", StringComparison.OrdinalIgnoreCase))
+        {
+            entity.Ammo42Mm = 10;
+        }
     }
 }

@@ -131,6 +131,18 @@ internal sealed partial class Simulator3dForm
 
             DrawOutpostHead(graphics, center, yaw, towerHeight, headBaseHeight, entity, profile, capColor, edgeColor);
             DrawOutpostRibs(graphics, center, yaw, entity, bodyColor, edgeColor);
+            Vector3 forward = new(MathF.Cos(yaw), 0f, MathF.Sin(yaw));
+            Vector3 side = new(-forward.Z, 0f, forward.X);
+            DrawStructureHealthLightBar(
+                graphics,
+                entity,
+                center + forward * (towerRadius + 0.040f) + Vector3.UnitY * ((lowerShoulderHeight + upperShoulderHeight) * 0.5f),
+                Vector3.UnitY,
+                forward,
+                side,
+                Math.Max(0.42f, upperShoulderHeight - lowerShoulderHeight),
+                0.018f,
+                0.026f);
         }
 
         if (renderPass != StructureRenderPass.StaticBody)
@@ -458,18 +470,16 @@ internal sealed partial class Simulator3dForm
                 null);
 
             Vector3 stripCenter = sideCenter + right * (sideSign * 0.041f) + Vector3.UnitY * (baseHeight * 0.08f);
-            DrawOrientedBoxSolid(
+            DrawStructureHealthLightBar(
                 graphics,
+                entity,
                 stripCenter,
                 forward,
                 right,
                 Vector3.UnitY,
                 baseLength * 0.23f,
                 0.018f,
-                baseHeight * 0.32f,
-                Color.FromArgb(entity.IsAlive ? 255 : 226, teamColor),
-                Color.FromArgb(255, BlendColor(teamColor, Color.Black, 0.18f)),
-                null);
+                baseHeight * 0.32f);
         }
 
         Vector3 frontPanel = center + forward * (baseLength * 0.42f) + Vector3.UnitY * (baseHeight * 0.28f);
@@ -509,19 +519,72 @@ internal sealed partial class Simulator3dForm
                 + Vector3.UnitY * (baseHeight * 0.62f);
             Vector3 panelUp = Vector3.Normalize(Vector3.UnitY * 0.92f + right * (sideSign * 0.40f));
             Vector3 panelRight = Vector3.Normalize(Vector3.Cross(panelUp, forward));
-            DrawOrientedBoxSolid(
+            DrawStructureHealthLightBar(
                 graphics,
+                entity,
                 sideLightCenter,
                 forward,
                 panelRight,
                 panelUp,
                 baseLength * 0.26f,
                 0.020f,
-                baseHeight * 0.30f,
-                Color.FromArgb(entity.IsAlive ? 255 : 218, teamColor),
-                Color.FromArgb(248, BlendColor(teamColor, Color.White, 0.18f)),
-                null);
+                baseHeight * 0.30f);
         }
+    }
+
+    private void DrawStructureHealthLightBar(
+        Graphics graphics,
+        SimulationEntity entity,
+        Vector3 center,
+        Vector3 lengthAxis,
+        Vector3 depthAxis,
+        Vector3 upAxis,
+        float length,
+        float depth,
+        float height)
+    {
+        Color teamColor = ResolveTeamColor(entity.Team);
+        float healthRatio = entity.MaxHealth <= 1e-6
+            ? 0f
+            : (float)Math.Clamp(entity.Health / entity.MaxHealth, 0.0, 1.0);
+        Vector3 safeLengthAxis = lengthAxis.LengthSquared() <= 1e-8f ? Vector3.UnitX : Vector3.Normalize(lengthAxis);
+        Vector3 safeDepthAxis = depthAxis.LengthSquared() <= 1e-8f ? Vector3.UnitZ : Vector3.Normalize(depthAxis);
+        Vector3 safeUpAxis = upAxis.LengthSquared() <= 1e-8f ? Vector3.UnitY : Vector3.Normalize(upAxis);
+        float safeLength = Math.Max(0.04f, length);
+        float safeDepth = Math.Max(0.008f, depth);
+        float safeHeight = Math.Max(0.010f, height);
+
+        DrawOrientedBoxSolid(
+            graphics,
+            center,
+            safeLengthAxis,
+            safeDepthAxis,
+            safeUpAxis,
+            safeLength,
+            safeDepth,
+            safeHeight,
+            Color.FromArgb(entity.IsAlive ? 255 : 226, 30, 34, 40),
+            Color.FromArgb(255, 12, 14, 18),
+            null);
+
+        float fillLength = safeLength * healthRatio;
+        if (fillLength <= 0.002f)
+        {
+            return;
+        }
+
+        DrawOrientedBoxSolid(
+            graphics,
+            center - safeLengthAxis * ((safeLength - fillLength) * 0.5f),
+            safeLengthAxis,
+            safeDepthAxis,
+            safeUpAxis,
+            fillLength,
+            safeDepth * 1.08f,
+            safeHeight * 1.08f,
+            Color.FromArgb(entity.IsAlive ? 255 : 180, teamColor),
+            Color.FromArgb(255, BlendColor(teamColor, Color.Black, 0.18f)),
+            null);
     }
 
     private void DrawBaseExpandedArmor(
@@ -892,7 +955,8 @@ internal sealed partial class Simulator3dForm
             profile,
             center,
             EnergyMechanismGeometry.ResolveAccentColor(region.Team),
-            (float)_host.World.GameTimeSec);
+            (float)_host.World.GameTimeSec,
+            ResolveEnergyRotorYawForRender);
 
         foreach (EnergyRenderPrism prism in mesh.Prisms)
         {

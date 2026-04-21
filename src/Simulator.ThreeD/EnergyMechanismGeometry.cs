@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Numerics;
+using Simulator.Core.Gameplay;
 
 namespace Simulator.ThreeD;
 
@@ -30,6 +31,15 @@ internal readonly record struct EnergyRenderCylinder(
     Color EdgeColor,
     int Segments);
 
+internal readonly record struct EnergyRenderAnnulus(
+    Vector3 Center,
+    Vector3 NormalAxis,
+    Vector3 UpAxis,
+    float InnerRadius,
+    float OuterRadius,
+    Color FillColor,
+    int Segments);
+
 internal sealed class EnergyRenderMesh
 {
     public List<EnergyRenderBox> Boxes { get; } = new();
@@ -38,6 +48,8 @@ internal sealed class EnergyRenderMesh
 
     public List<EnergyRenderCylinder> Cylinders { get; } = new();
 
+    public List<EnergyRenderAnnulus> Annuli { get; } = new();
+
     public float MaxHeight { get; set; }
 
     public void Append(EnergyRenderMesh other)
@@ -45,6 +57,7 @@ internal sealed class EnergyRenderMesh
         Boxes.AddRange(other.Boxes);
         Prisms.AddRange(other.Prisms);
         Cylinders.AddRange(other.Cylinders);
+        Annuli.AddRange(other.Annuli);
         MaxHeight = Math.Max(MaxHeight, other.MaxHeight);
     }
 }
@@ -57,7 +70,8 @@ internal static class EnergyMechanismGeometry
         RobotAppearanceProfile profile,
         Vector3 anchor,
         Color accentColor,
-        float animationTimeSec)
+        float animationTimeSec,
+        Func<int, float>? rotorYawResolver = null)
     {
         _ = accentColor;
         var mesh = new EnergyRenderMesh();
@@ -76,7 +90,6 @@ internal static class EnergyMechanismGeometry
             Color.FromArgb(255, 58, 112, 232),
         ];
 
-        float rotorYaw = animationTimeSec * MathF.Tau * 0.32f;
         float baseHeight = Math.Max(0.00f, profile.StructureBaseHeightM);
         float groundClearance = Math.Max(0.0f, profile.StructureGroundClearanceM);
         float frameWidth = Math.Max(0.80f, profile.StructureFrameWidthM);
@@ -150,6 +163,7 @@ internal static class EnergyMechanismGeometry
             float cy = rotorCenterY;
             float cz = rotorIndex == 0 ? -rotorAxisGap * 0.5f : rotorAxisGap * 0.5f;
             Color rotorColor = rotorColors[rotorIndex];
+            float rotorYaw = rotorYawResolver?.Invoke(rotorIndex) ?? ResolveRuleRotorYaw(animationTimeSec, null);
 
             AddBrace(
                 mesh,
@@ -202,7 +216,7 @@ internal static class EnergyMechanismGeometry
                     lampCenter,
                     groundRight,
                     Vector3.UnitY,
-                    lampLength * 0.43f,
+                    Math.Max(lampLength, lampWidth) * 0.50f,
                     Math.Max(0.005f, podDepth * 0.18f),
                     rotorColor,
                     ringGrayOuter,
@@ -263,6 +277,33 @@ internal static class EnergyMechanismGeometry
             : string.Equals(team, "blue", StringComparison.OrdinalIgnoreCase)
                 ? Color.FromArgb(255, 58, 112, 232)
                 : Color.FromArgb(255, 255, 195, 64);
+
+    public static float ResolveRuleRotorYaw(float animationTimeSec, SimulationTeamState? teamState)
+    {
+        const float smallSpeedRadPerSec = MathF.PI / 3f;
+        const float largeActiveA = 0.9125f;
+        const float largeActiveOmega = 1.942f;
+        const float largeActiveB = 2.090f - largeActiveA;
+        if (teamState is null
+            || (!string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(teamState.EnergyMechanismState, "activated", StringComparison.OrdinalIgnoreCase)))
+        {
+            return 0f;
+        }
+
+        int direction = teamState.EnergyRotorDirectionSign != 0 ? teamState.EnergyRotorDirectionSign : 1;
+        bool largeActive = string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
+            && teamState.EnergyLargeMechanismActive;
+        float safeTime = Math.Max(0f, animationTimeSec - (float)teamState.EnergyStateStartTimeSec);
+        if (!largeActive)
+        {
+            return safeTime * smallSpeedRadPerSec * direction;
+        }
+
+        float speedIntegral = largeActiveB * safeTime
+            + largeActiveA / largeActiveOmega * (1f - MathF.Cos(largeActiveOmega * safeTime));
+        return speedIntegral * direction;
+    }
 
     private static void AddHanger(
         EnergyRenderMesh mesh,
@@ -467,21 +508,30 @@ internal static class EnergyMechanismGeometry
         }
 
         const int diskSegments = 14;
-        mesh.Cylinders.Add(new EnergyRenderCylinder(center, safeNormal, safeUp, safeRadius * 1.05f, safeThickness * 0.55f, accentColor, edgeColor, diskSegments));
+        Color diskBodyColor = Color.FromArgb(255, 78, 82, 88);
+        mesh.Cylinders.Add(new EnergyRenderCylinder(center, safeNormal, safeUp, safeRadius * 1.05f, safeThickness, diskBodyColor, edgeColor, diskSegments));
         for (int ringIndex = 0; ringIndex < Math.Max(2, ringCount); ringIndex++)
         {
-            float t = ringIndex / (float)Math.Max(1, ringCount - 1);
-            float ringRadius = safeRadius * (1.0f - t * 0.88f);
-            float ringThickness = safeThickness * (0.90f - t * 0.42f);
-            Color color = ringIndex == 0 ? accentColor : (ringIndex % 2 == 0 ? outerGray : innerGray);
-            mesh.Cylinders.Add(new EnergyRenderCylinder(
-                center,
+            float outer = safeRadius * (1.0f - ringIndex / (float)Math.Max(1, ringCount) * 0.88f);
+            float inner = Math.Max(safeRadius * 0.025f, outer - Math.Max(0.004f, safeRadius * 0.018f));
+            Color color = ringIndex == 0
+                ? Color.FromArgb(255, Math.Min(255, accentColor.R + 16), Math.Min(255, accentColor.G + 16), Math.Min(255, accentColor.B + 16))
+                : ringIndex % 2 == 0 ? outerGray : innerGray;
+            mesh.Annuli.Add(new EnergyRenderAnnulus(
+                center - safeNormal * (safeThickness * 0.54f + 0.0008f),
                 safeNormal,
                 safeUp,
-                Math.Max(safeRadius * 0.08f, ringRadius),
-                Math.Max(0.0025f, ringThickness),
+                inner,
+                Math.Max(inner + 0.002f, outer),
                 color,
-                edgeColor,
+                diskSegments));
+            mesh.Annuli.Add(new EnergyRenderAnnulus(
+                center + safeNormal * (safeThickness * 0.54f + 0.0008f),
+                safeNormal,
+                safeUp,
+                inner,
+                Math.Max(inner + 0.002f, outer),
+                color,
                 diskSegments));
         }
 

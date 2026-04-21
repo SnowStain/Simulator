@@ -8,7 +8,7 @@ internal sealed class DriveTelemetryForm : Form
 {
     private readonly Simulator3dHost _host;
     private readonly System.Windows.Forms.Timer _timer;
-    private readonly Queue<PointF> _wheelPowerSamples = new();
+    private readonly Queue<PointF> _totalPowerSamples = new();
     private readonly Queue<PointF> _superCapSamples = new();
     private readonly Font _titleFont = new("Microsoft YaHei UI", 11f, FontStyle.Bold, GraphicsUnit.Point);
     private readonly Font _textFont = new("Microsoft YaHei UI", 8.5f, FontStyle.Regular, GraphicsUnit.Point);
@@ -62,7 +62,7 @@ internal sealed class DriveTelemetryForm : Form
 
         Rectangle powerRect = new(18, 54, ClientSize.Width - 36, (ClientSize.Height - 86) / 2);
         Rectangle capRect = new(18, powerRect.Bottom + 12, ClientSize.Width - 36, ClientSize.Height - powerRect.Bottom - 30);
-        DrawChart(g, powerRect, _wheelPowerSamples, "Wheel Motor Power", "W", Color.FromArgb(90, 170, 245));
+        DrawChart(g, powerRect, _totalPowerSamples, "Chassis Total Power", "W", Color.FromArgb(90, 170, 245));
         DrawChart(g, capRect, _superCapSamples, "SuperCap Energy", "J", Color.FromArgb(255, 210, 76));
 
         if (entity is not null)
@@ -71,7 +71,7 @@ internal sealed class DriveTelemetryForm : Form
                 || string.Equals(entity.WheelStyle, "omni", StringComparison.OrdinalIgnoreCase)
                 ? 4.0
                 : Math.Max(2.0, entity.WheelOffsetsM.Count);
-            string footer = $"Current wheel {entity.ChassisPowerDrawW / Math.Max(1.0, wheelCount):0.0}W   total {entity.ChassisPowerDrawW:0.0}W   SC {entity.SuperCapEnergyJ:0.0}/{Math.Max(1.0, entity.MaxSuperCapEnergyJ):0.0}J";
+            string footer = $"Chassis total {entity.ChassisPowerDrawW:0.0}W   wheel avg {entity.ChassisPowerDrawW / Math.Max(1.0, wheelCount):0.0}W   SC {entity.SuperCapEnergyJ:0.0}/{Math.Max(1.0, entity.MaxSuperCapEnergyJ):0.0}J";
             g.DrawString(footer, _textFont, textBrush, 18, ClientSize.Height - 22);
         }
     }
@@ -85,11 +85,7 @@ internal sealed class DriveTelemetryForm : Form
         }
 
         float timeSec = (float)_clock.Elapsed.TotalSeconds;
-        double wheelCount = string.Equals(entity.WheelStyle, "mecanum", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(entity.WheelStyle, "omni", StringComparison.OrdinalIgnoreCase)
-            ? 4.0
-            : Math.Max(2.0, entity.WheelOffsetsM.Count);
-        EnqueueSample(_wheelPowerSamples, new PointF(timeSec, (float)(entity.ChassisPowerDrawW / Math.Max(1.0, wheelCount))));
+        EnqueueSample(_totalPowerSamples, new PointF(timeSec, (float)entity.ChassisPowerDrawW));
         EnqueueSample(_superCapSamples, new PointF(timeSec, (float)entity.SuperCapEnergyJ));
     }
 

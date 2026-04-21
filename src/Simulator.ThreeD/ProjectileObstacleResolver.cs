@@ -264,7 +264,13 @@ internal static class ProjectileObstacleResolver
                 profile,
                 anchor,
                 EnergyMechanismGeometry.ResolveAccentColor(entity.Team),
-                (float)world.GameTimeSec);
+                (float)world.GameTimeSec,
+                rotorIndex =>
+                {
+                    string team = rotorIndex == 0 ? "red" : "blue";
+                    world.Teams.TryGetValue(team, out SimulationTeamState? teamState);
+                    return EnergyMechanismGeometry.ResolveRuleRotorYaw((float)world.GameTimeSec, teamState);
+                });
             foreach (EnergyRenderBox box in mesh.Boxes)
             {
                 TryStoreBest(TryIntersectOrientedBox(start, end, box.Center, box.Forward, box.Right, box.Up, box.Length, box.Width, box.Height, projectileRadiusM, entity.EntityType), ref best);
