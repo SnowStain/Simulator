@@ -464,3 +464,6 @@ E:\Artinx\260111new\Simulator\build_verify\rules_locked_reuse\Simulator.Editors.
 E:\Artinx\260111new\Simulator\build_verify\perf_followup\Simulator.Editors.deps.json
 E:\Artinx\260111new\Simulator\build_verify\perf_followup\Simulator.Editors.dll
 E:\Artinx\260111new\Simulator\build_verify\perf_followup\Simulator.Editors.pdb
+E:\Artinx\260111new\Simulator\build_verify\energy_nav_damage_fix\Simulator.Editors.deps.json
+E:\Artinx\260111new\Simulator\build_verify\energy_nav_damage_fix\Simulator.Editors.dll
+E:\Artinx\260111new\Simulator\build_verify\energy_nav_damage_fix\Simulator.Editors.pdb

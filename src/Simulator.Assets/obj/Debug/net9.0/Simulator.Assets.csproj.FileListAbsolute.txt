@@ -430,3 +430,6 @@ E:\Artinx\260111new\Simulator\build_verify\rules_locked_reuse\Simulator.Assets.p
 E:\Artinx\260111new\Simulator\build_verify\perf_followup\Simulator.Assets.deps.json
 E:\Artinx\260111new\Simulator\build_verify\perf_followup\Simulator.Assets.dll
 E:\Artinx\260111new\Simulator\build_verify\perf_followup\Simulator.Assets.pdb
+E:\Artinx\260111new\Simulator\build_verify\energy_nav_damage_fix\Simulator.Assets.deps.json
+E:\Artinx\260111new\Simulator\build_verify\energy_nav_damage_fix\Simulator.Assets.dll
+E:\Artinx\260111new\Simulator\build_verify\energy_nav_damage_fix\Simulator.Assets.pdb

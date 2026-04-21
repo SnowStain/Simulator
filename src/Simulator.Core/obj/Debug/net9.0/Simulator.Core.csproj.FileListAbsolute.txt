@@ -397,3 +397,6 @@ E:\Artinx\260111new\Simulator\build_verify\rules_locked_reuse\Simulator.Core.pdb
 E:\Artinx\260111new\Simulator\build_verify\perf_followup\Simulator.Core.deps.json
 E:\Artinx\260111new\Simulator\build_verify\perf_followup\Simulator.Core.dll
 E:\Artinx\260111new\Simulator\build_verify\perf_followup\Simulator.Core.pdb
+E:\Artinx\260111new\Simulator\build_verify\energy_nav_damage_fix\Simulator.Core.deps.json
+E:\Artinx\260111new\Simulator\build_verify\energy_nav_damage_fix\Simulator.Core.dll
+E:\Artinx\260111new\Simulator\build_verify\energy_nav_damage_fix\Simulator.Core.pdb

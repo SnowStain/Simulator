@@ -768,3 +768,8 @@ E:\Artinx\260111new\Simulator\build_verify\perf_followup\Simulator.ThreeD.deps.j
 E:\Artinx\260111new\Simulator\build_verify\perf_followup\Simulator.ThreeD.runtimeconfig.json
 E:\Artinx\260111new\Simulator\build_verify\perf_followup\Simulator.ThreeD.dll
 E:\Artinx\260111new\Simulator\build_verify\perf_followup\Simulator.ThreeD.pdb
+E:\Artinx\260111new\Simulator\build_verify\energy_nav_damage_fix\Simulator.ThreeD.exe
+E:\Artinx\260111new\Simulator\build_verify\energy_nav_damage_fix\Simulator.ThreeD.deps.json
+E:\Artinx\260111new\Simulator\build_verify\energy_nav_damage_fix\Simulator.ThreeD.runtimeconfig.json
+E:\Artinx\260111new\Simulator\build_verify\energy_nav_damage_fix\Simulator.ThreeD.dll
+E:\Artinx\260111new\Simulator\build_verify\energy_nav_damage_fix\Simulator.ThreeD.pdb

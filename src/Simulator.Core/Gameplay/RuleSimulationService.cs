@@ -632,7 +632,17 @@ public sealed class RuleSimulationService
         ArmorPlateTarget? preferredPlate,
         double yawRad)
     {
-        return yawRad;
+        if (!shooter.HeroDeploymentActive || !preferredPlate.HasValue)
+        {
+            return yawRad;
+        }
+
+        if (!string.Equals(shooter.HeroDeploymentCorrectionPlateId, preferredPlate.Value.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            return yawRad;
+        }
+
+        return yawRad + shooter.HeroDeploymentYawCorrectionDeg * Math.PI / 180.0;
     }
 
     private static double ApplyHeroDeploymentCorrectionPitch(
@@ -650,7 +660,7 @@ public sealed class RuleSimulationService
             return pitchRad;
         }
 
-        double lastShotAssistDeg = Math.Clamp(shooter.HeroDeploymentLastPitchErrorDeg * 0.24, -2.5, 2.5);
+        double lastShotAssistDeg = Math.Clamp(shooter.HeroDeploymentLastPitchErrorDeg * 0.32, -3.5, 3.5);
         return pitchRad + (shooter.HeroDeploymentPitchCorrectionDeg + lastShotAssistDeg) * Math.PI / 180.0;
     }
 
@@ -712,14 +722,18 @@ public sealed class RuleSimulationService
             hitPointM.Z / metersPerWorldUnit,
             hitPointM.Y,
             preferHighArc: true);
+        double yawErrorDeg = SimulationCombatMath.NormalizeSignedDeg(centerYawDeg - actualYawDeg);
         double pitchErrorDeg = centerPitchDeg - actualPitchDeg;
         shooter.HeroDeploymentCorrectionPlateId = plate.Id;
-        shooter.HeroDeploymentYawCorrectionDeg = 0.0;
+        shooter.HeroDeploymentYawCorrectionDeg = Math.Clamp(
+            shooter.HeroDeploymentYawCorrectionDeg * 0.72 + yawErrorDeg * 0.18,
+            -1.2,
+            1.2);
         shooter.HeroDeploymentLastPitchErrorDeg = pitchErrorDeg;
         shooter.HeroDeploymentPitchCorrectionDeg = Math.Clamp(
-            shooter.HeroDeploymentPitchCorrectionDeg * 0.55 + pitchErrorDeg * 0.70,
-            -7.5,
-            7.5);
+            shooter.HeroDeploymentPitchCorrectionDeg * 0.48 + pitchErrorDeg * 0.82,
+            -10.0,
+            10.0);
     }
 
     private static void UpdateHeroDeploymentMissCorrection(
@@ -767,14 +781,18 @@ public sealed class RuleSimulationService
             impactPointM.Z / metersPerWorldUnit,
             impactPointM.Y,
             preferHighArc: true);
+        double yawErrorDeg = SimulationCombatMath.NormalizeSignedDeg(centerYawDeg - actualYawDeg);
         double pitchErrorDeg = centerPitchDeg - actualPitchDeg;
         shooter.HeroDeploymentCorrectionPlateId = plate.Id;
-        shooter.HeroDeploymentYawCorrectionDeg = 0.0;
+        shooter.HeroDeploymentYawCorrectionDeg = Math.Clamp(
+            shooter.HeroDeploymentYawCorrectionDeg * 0.82 + yawErrorDeg * 0.12,
+            -1.4,
+            1.4);
         shooter.HeroDeploymentLastPitchErrorDeg = pitchErrorDeg;
         shooter.HeroDeploymentPitchCorrectionDeg = Math.Clamp(
-            shooter.HeroDeploymentPitchCorrectionDeg * 0.78 + pitchErrorDeg * 0.34,
-            -9.0,
-            9.0);
+            shooter.HeroDeploymentPitchCorrectionDeg * 0.74 + pitchErrorDeg * 0.42,
+            -11.0,
+            11.0);
     }
 
     private static void UpdateAutoAimCorrection(
@@ -1972,7 +1990,7 @@ public sealed class RuleSimulationService
             takenMultiplier *= _rules.Respawn.WeakenDamageTakenMult;
         }
 
-        return Math.Max(0.0, Math.Round(baseDamage * dealtMultiplier * takenMultiplier, 2));
+        return Math.Max(0.0, Math.Round(baseDamage * dealtMultiplier * takenMultiplier, 0, MidpointRounding.AwayFromZero));
     }
 
     private static bool ShouldApplyHeroDeploymentBaseDamageBoost(SimulationEntity shooter, SimulationEntity target)

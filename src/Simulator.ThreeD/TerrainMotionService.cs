@@ -10,6 +10,7 @@ internal sealed class TerrainMotionService
     private const double GravityMps2 = 9.81;
     private const double TerrainSmoothHeightThresholdM = 0.048;
     private const double TerrainRenderAnchorThresholdM = 0.02;
+    private const double NavigationFailedRetryCooldownSec = 1.00;
     private const double NavigationReplanIntervalMovingSec = 1.35;
     private const double NavigationReplanIntervalStaticSec = 1.50;
     private const double NavigationDirectProbeIntervalSec = 1.50;
@@ -618,6 +619,21 @@ internal sealed class TerrainMotionService
             return false;
         }
 
+        if (existingState is not null
+            && existingState.PendingPlanTask is { IsCompleted: false }
+            && string.Equals(existingState.PendingNavigationKey, navigationKey, StringComparison.Ordinal)
+            && world.GameTimeSec - existingState.LastPlanQueuedSec < NavigationPlanQueueIntervalSec)
+        {
+            return false;
+        }
+
+        if (existingState is not null
+            && string.Equals(existingState.LastFailedNavigationKey, navigationKey, StringComparison.Ordinal)
+            && world.GameTimeSec - existingState.LastFailedPlanSec < NavigationFailedRetryCooldownSec)
+        {
+            return false;
+        }
+
         double quickReuseInterval = targetEntity is null ? NavigationReplanIntervalStaticSec : NavigationReplanIntervalMovingSec;
         bool existingPathBlocked = IsNavigationBlockReason(entity.MotionBlockReason);
         if (existingState is not null
@@ -651,6 +667,8 @@ internal sealed class TerrainMotionService
             out double goalWorldX,
             out double goalWorldY))
         {
+            NavigationPathState failedState = GetOrCreateNavigationState(entity.Id, world.GameTimeSec);
+            RememberFailedNavigationAttempt(failedState, navigationKey, -1, -1, world.GameTimeSec);
             return false;
         }
 
@@ -698,6 +716,13 @@ internal sealed class TerrainMotionService
             }
             else
             {
+                if (state.PendingPlanTask is { IsCompleted: true })
+                {
+                    state.PendingPlanTask = null;
+                    RememberFailedNavigationAttempt(state, navigationKey, goalCellX, goalCellY, world.GameTimeSec);
+                    return false;
+                }
+
                 QueueNavigationPlan(world, runtimeGrid, entity, state, navigationKey, goalCellX, goalCellY);
                 if (state.Waypoints.Count == 0
                     || state.NextWaypointIndex >= state.Waypoints.Count
@@ -719,6 +744,27 @@ internal sealed class TerrainMotionService
             targetEntity);
     }
 
+    private static void RememberFailedNavigationAttempt(
+        NavigationPathState state,
+        string navigationKey,
+        int goalCellX,
+        int goalCellY,
+        double gameTimeSec)
+    {
+        state.PendingPlanTask = null;
+        state.PendingNavigationKey = string.Empty;
+        state.PendingGoalCellX = -1;
+        state.PendingGoalCellY = -1;
+        state.Waypoints.Clear();
+        state.NextWaypointIndex = 0;
+        state.NavigationKey = navigationKey;
+        state.GoalCellX = goalCellX;
+        state.GoalCellY = goalCellY;
+        state.PlannedAtSec = gameTimeSec;
+        state.LastFailedNavigationKey = navigationKey;
+        state.LastFailedPlanSec = gameTimeSec;
+    }
+
     private static void ApplyNavigationWaypoints(
         NavigationPathState state,
         string navigationKey,
@@ -738,6 +784,8 @@ internal sealed class TerrainMotionService
         state.GoalCellX = goalCellX;
         state.GoalCellY = goalCellY;
         state.PlannedAtSec = gameTimeSec;
+        state.LastFailedNavigationKey = string.Empty;
+        state.LastFailedPlanSec = -999.0;
     }
 
     private static bool TryConsumeCompletedNavigationPlan(
@@ -4950,6 +4998,10 @@ internal sealed class TerrainMotionService
         public int PendingGoalCellX { get; set; } = -1;
 
         public int PendingGoalCellY { get; set; } = -1;
+
+        public string LastFailedNavigationKey { get; set; } = string.Empty;
+
+        public double LastFailedPlanSec { get; set; } = -999.0;
 
         public List<(double X, double Y)> Waypoints { get; } = new();
     }

@@ -741,16 +741,17 @@ public sealed class ArenaInteractionService
     private static bool TryConsumeEnergyOpportunityToken(SimulationTeamState teamState, out bool large)
     {
         large = false;
-        if (teamState.EnergySmallTokens > 0)
-        {
-            teamState.EnergySmallTokens--;
-            return true;
-        }
-
         if (teamState.EnergyLargeTokens > 0)
         {
             teamState.EnergyLargeTokens--;
+            teamState.EnergySmallTokens = 0;
             large = true;
+            return true;
+        }
+
+        if (teamState.EnergySmallTokens > 0)
+        {
+            teamState.EnergySmallTokens--;
             return true;
         }
 
@@ -763,6 +764,10 @@ public sealed class ArenaInteractionService
         teamState.EnergyMechanismState = "activating";
         teamState.EnergyStateStartTimeSec = gameTimeSec;
         teamState.EnergyLargeMechanismActive = large;
+        if (large)
+        {
+            teamState.EnergySmallTokens = 0;
+        }
         teamState.EnergyActivationTimerSec = 0.0;
         teamState.EnergyVirtualHits = 0.0;
         teamState.EnergyActivationWindowTimerSec = 0.0;
