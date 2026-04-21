@@ -333,9 +333,9 @@ internal sealed partial class Simulator3dForm
             float bodyTop = bodyBase + bodyHeight;
             if (profile.GimbalMountGapM + profile.GimbalMountHeightM > 0.02f)
             {
-                float mountHeight = Math.Max(0.02f, profile.GimbalMountGapM + profile.GimbalMountHeightM);
-                float mountBase = bodyTop;
-                Vector3 mountCenter = OffsetScenePosition(center, profile.GimbalOffsetXM, profile.GimbalOffsetYM, mountBase, chassisForward3, chassisRight3, chassisUp3);
+                float mountHeight = Math.Max(0.02f, profile.GimbalMountGapM + profile.GimbalMountHeightM + 0.08f);
+                float mountCenterHeight = bodyTop + mountHeight * 0.5f;
+                Vector3 mountCenter = OffsetScenePosition(center, profile.GimbalOffsetXM, profile.GimbalOffsetYM, mountCenterHeight, chassisForward3, chassisRight3, chassisUp3);
                 DrawOrientedBoxSolid(
                     graphics,
                     mountCenter,
@@ -348,7 +348,7 @@ internal sealed partial class Simulator3dForm
                     Color.FromArgb(entity.IsAlive ? 246 : 224, BlendColor(bodyColor, Color.FromArgb(96, 100, 112), 0.45f)),
                     Color.FromArgb(entity.IsAlive ? 250 : 216, BlendColor(bodyColor, Color.Black, 0.12f)),
                     null);
-                maxHeight = Math.Max(maxHeight, mountBase + mountHeight);
+                maxHeight = Math.Max(maxHeight, bodyTop + mountHeight);
             }
 
             float turretBase = Math.Max(bodyTop + profile.GimbalMountGapM + profile.GimbalMountHeightM, profile.GimbalHeightM - profile.GimbalBodyHeightM * 0.5f);
@@ -390,29 +390,8 @@ internal sealed partial class Simulator3dForm
                 Vector3 barrelAxis = pitchedForward;
                 Vector3 pivot = turretCenter
                     + pitchedForward * (profile.GimbalLengthM * 0.5f + profile.BarrelRadiusM * 0.45f)
-                    + pitchedUp * (profile.GimbalBodyHeightM * 0.12f);
+                    + pitchedUp * (profile.GimbalBodyHeightM * 0.12f - 0.03f);
                 Vector3 barrelCenter = pivot + barrelAxis * (profile.BarrelLengthM * 0.5f);
-                float neckHeight = Math.Max(0.035f, hingeBase - bodyTop + profile.GimbalBodyHeightM * 0.18f);
-                Vector3 neckCenter = OffsetScenePosition(
-                    center,
-                    profile.GimbalOffsetXM + profile.GimbalLengthM * 0.18f,
-                    profile.GimbalOffsetYM,
-                    bodyTop + neckHeight * 0.5f,
-                    chassisForward3,
-                    chassisRight3,
-                    chassisUp3);
-                DrawOrientedBoxSolid(
-                    graphics,
-                    neckCenter,
-                    chassisForward3,
-                    chassisRight3,
-                    chassisUp3,
-                    Math.Max(0.055f, profile.GimbalLengthM * 0.30f),
-                    Math.Max(0.045f, profile.GimbalWidthM * profile.BodyRenderWidthScale * 0.48f),
-                    neckHeight,
-                    Color.FromArgb(entity.IsAlive ? 248 : 226, BlendColor(turretColor, bodyColor, 0.35f)),
-                    Color.FromArgb(entity.IsAlive ? 250 : 216, BlendColor(turretColor, Color.Black, 0.14f)),
-                    null);
 
                 DrawCylinderSolid(
                     graphics,
@@ -505,6 +484,7 @@ internal sealed partial class Simulator3dForm
         if (profile.BarrelLengthM > 0.03f)
         {
             Vector3 barrelCenter = turretCenter
+                - pitchedUp * 0.03f
                 + pitchedForward * (Math.Max(0.16f, profile.BarrelLengthM * (ultraSimple ? 0.42f : 0.50f)));
             DrawCylinderSolid(
                 graphics,

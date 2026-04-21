@@ -9,7 +9,7 @@ public sealed class ArenaInteractionService
     private const double BuffTrapezoidHighlandDamageTakenMult = 0.50;
     private const double BuffOutpostDamageTakenMult = 0.75;
     private const double BuffHeroDeploymentDamageTakenMult = 0.75;
-    private const double BuffHeroDeploymentDamageDealtMult = 1.50;
+    private const double BuffEngineerAliveDamageTakenMult = 0.50;
     private const double TerrainHighlandDamageTakenMult = 0.75;
     private const double TerrainFlySlopeDamageTakenMult = 0.75;
     private const double TerrainRoadCoolingMult = 2.00;
@@ -40,6 +40,7 @@ public sealed class ArenaInteractionService
 
         foreach (SimulationTeamState team in world.Teams.Values)
         {
+            AwardEnergyOpportunityTokens(team, world.GameTimeSec);
             team.EnergyBuffTimerSec = Math.Max(0.0, team.EnergyBuffTimerSec - deltaTimeSec);
             if (team.EnergyBuffTimerSec <= 1e-6)
             {
@@ -83,7 +84,7 @@ public sealed class ArenaInteractionService
                         ApplySupply(world, entity, facility, deltaTimeSec, events);
                         break;
                     case "fort":
-                        ApplyFort(entity, facility);
+                        ApplyFort(world, entity, facility);
                         break;
                     case "dead_zone":
                         touchedDeadZone = true;
@@ -147,8 +148,16 @@ public sealed class ArenaInteractionService
                 continue;
             }
 
+            if (world.GameTimeSec < 180.0
+                && entity.IsAlive
+                && string.Equals(entity.RoleKey, "engineer", StringComparison.OrdinalIgnoreCase))
+            {
+                ApplyDamageTakenBuff(entity, BuffEngineerAliveDamageTakenMult);
+            }
+
             SimulationTeamState teamState = world.GetOrCreateTeamState(entity.Team);
-            if (teamState.EnergyBuffTimerSec > 0)
+            if (teamState.EnergyBuffTimerSec > 0
+                && IsRobotEntity(entity))
             {
                 ApplyDamageDealtBuff(entity, teamState.EnergyBuffDamageDealtMult);
                 ApplyDamageTakenBuff(entity, teamState.EnergyBuffDamageTakenMult);
@@ -282,9 +291,9 @@ public sealed class ArenaInteractionService
             $"Bought ammo -{ammoCost} gold, +{unitGain}"));
     }
 
-    private void ApplyFort(SimulationEntity entity, FacilityRegion facility)
+    private void ApplyFort(SimulationWorldState world, SimulationEntity entity, FacilityRegion facility)
     {
-        if (!IsFriendlyFacility(entity.Team, facility.Team))
+        if (!CanUseFortBuff(world, entity, facility))
         {
             return;
         }
@@ -404,7 +413,6 @@ public sealed class ArenaInteractionService
                 {
                     entity.HeroDeploymentActive = true;
                     ApplyDamageTakenBuff(entity, BuffHeroDeploymentDamageTakenMult);
-                    ApplyDamageDealtBuff(entity, BuffHeroDeploymentDamageDealtMult);
                 }
 
                 return;
@@ -552,18 +560,19 @@ public sealed class ArenaInteractionService
             return;
         }
         SimulationTeamState teamState = world.GetOrCreateTeamState(entity.Team);
+        AwardEnergyOpportunityTokens(teamState, world.GameTimeSec);
         energyActiveTeams.Add(entity.Team);
         if (!entity.EnergyActivationRequested
             || string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
-        bool large = world.GameTimeSec >= _rules.Facility.EnergyLargeWindowStartSec;
-        int largeSlot = ResolveLargeEnergyAttemptSlot(world.GameTimeSec);
-        if (!CanStartEnergyAttempt(teamState, large, largeSlot))
+        if (!TryConsumeEnergyOpportunityToken(teamState, out bool large))
         {
             return;
         }
+
+        int largeSlot = ResolveLargeEnergyAttemptSlot(world.GameTimeSec);
         StartEnergyAttempt(teamState, large, largeSlot, world.GameTimeSec);
         events.Add(new FacilityInteractionEvent(
             world.GameTimeSec,
@@ -591,8 +600,12 @@ public sealed class ArenaInteractionService
         {
             return null;
         }
-        if (teamState.EnergyNextModuleDelaySec > 1e-6
-            || !string.Equals(plateTeam, shooter.Team, StringComparison.OrdinalIgnoreCase)
+        if (teamState.EnergyNextModuleDelaySec > 1e-6)
+        {
+            return null;
+        }
+
+        if (!string.Equals(plateTeam, shooter.Team, StringComparison.OrdinalIgnoreCase)
             || (teamState.EnergyCurrentLitMask & (1 << armIndex)) == 0)
         {
             double failedAverageRing = teamState.EnergyHitRingCount > 0
@@ -638,7 +651,7 @@ public sealed class ArenaInteractionService
                 "energy_mechanism",
                 teamState.EnergyLargeMechanismActive
                     ? $"\u5927\u80fd\u91cf\u673a\u5173\u6fc0\u6d3b\u6210\u529f\uff1a\u5e73\u5747\u73af\u6570 {teamState.EnergyHitRingSum / Math.Max(1.0, teamState.EnergyHitRingCount):0.0}\uff0c\u589e\u76ca\u6301\u7eed {teamState.EnergyBuffTimerSec:0} \u79d2\u3002"
-                    : "\u5c0f\u80fd\u91cf\u673a\u5173\u6fc0\u6d3b\u6210\u529f\uff1a\u5168\u961f\u83b7\u5f97 25% \u9632\u5fa1\u589e\u76ca\uff0c\u6301\u7eed 45 \u79d2\u3002");
+                    : $"\u5c0f\u80fd\u91cf\u673a\u5173\u6fc0\u6d3b\u6210\u529f\uff1a\u5168\u961f\u83b7\u5f97 25% \u9632\u5fa1\u589e\u76ca\uff0c\u6301\u7eed {teamState.EnergyBuffTimerSec:0} \u79d2\u3002");
         }
         teamState.EnergyActiveGroupIndex = ResolveCurrentEnergyActiveGroupIndex(teamState);
         teamState.EnergyCurrentLitMask = 0;
@@ -708,14 +721,40 @@ public sealed class ArenaInteractionService
                     : "\u80fd\u91cf\u673a\u5173\u6fc0\u6d3b\u5931\u8d25\uff1a\u5f53\u524d\u76ee\u6807\u8d85\u65f6\uff0c\u8fdb\u5ea6\u5df2\u6e05\u96f6\u5e76\u91cd\u65b0\u968f\u673a\u76ee\u6807\u3002"));
         }
     }
-    private static bool CanStartEnergyAttempt(SimulationTeamState teamState, bool large, int largeSlot)
+    private void AwardEnergyOpportunityTokens(SimulationTeamState teamState, double gameTimeSec)
     {
-        if (large)
+        while (teamState.EnergySmallOpportunityIndex < _rules.Facility.EnergySmallOpportunityTimesSec.Count
+            && gameTimeSec >= _rules.Facility.EnergySmallOpportunityTimesSec[teamState.EnergySmallOpportunityIndex])
         {
-            return largeSlot > 0 && teamState.EnergyLastLargeAttemptSlot != largeSlot;
+            teamState.EnergySmallTokens++;
+            teamState.EnergySmallOpportunityIndex++;
         }
 
-        return !teamState.EnergySmallChanceUsed;
+        while (teamState.EnergyLargeOpportunityIndex < _rules.Facility.EnergyLargeOpportunityTimesSec.Count
+            && gameTimeSec >= _rules.Facility.EnergyLargeOpportunityTimesSec[teamState.EnergyLargeOpportunityIndex])
+        {
+            teamState.EnergyLargeTokens++;
+            teamState.EnergyLargeOpportunityIndex++;
+        }
+    }
+
+    private static bool TryConsumeEnergyOpportunityToken(SimulationTeamState teamState, out bool large)
+    {
+        large = false;
+        if (teamState.EnergySmallTokens > 0)
+        {
+            teamState.EnergySmallTokens--;
+            return true;
+        }
+
+        if (teamState.EnergyLargeTokens > 0)
+        {
+            teamState.EnergyLargeTokens--;
+            large = true;
+            return true;
+        }
+
+        return false;
     }
 
     private static void StartEnergyAttempt(SimulationTeamState teamState, bool large, int largeSlot, double gameTimeSec)
@@ -827,9 +866,9 @@ public sealed class ArenaInteractionService
         ResetEnergyVisualState(teamState);
     }
 
-    private static void GrantSmallEnergyBuff(SimulationTeamState teamState)
+    private void GrantSmallEnergyBuff(SimulationTeamState teamState)
     {
-        teamState.EnergyBuffTimerSec = Math.Max(teamState.EnergyBuffTimerSec, 45.0);
+        teamState.EnergyBuffTimerSec = Math.Max(teamState.EnergyBuffTimerSec, _rules.Facility.EnergySmallBuffDurationSec);
         teamState.EnergyMechanismState = "activated";
         teamState.EnergyBuffDamageDealtMult = Math.Max(teamState.EnergyBuffDamageDealtMult, 1.0);
         teamState.EnergyBuffDamageTakenMult = Math.Min(teamState.EnergyBuffDamageTakenMult, 0.75);
@@ -854,35 +893,29 @@ public sealed class ArenaInteractionService
         double damageDealtMult;
         double damageTakenMult;
         double coolingMult;
-        if (averageRing <= 3.0)
-        {
-            damageDealtMult = 2.50;
-            damageTakenMult = 0.75;
-            coolingMult = 1.00;
-        }
-        else if (averageRing <= 7.0)
-        {
-            damageDealtMult = 2.50;
-            damageTakenMult = 0.75;
-            coolingMult = 2.00;
-        }
-        else if (averageRing <= 8.0)
+        if (averageRing >= 9.0)
         {
             damageDealtMult = 3.00;
-            damageTakenMult = 0.75;
-            coolingMult = 2.00;
+            damageTakenMult = 0.50;
+            coolingMult = 5.00;
         }
-        else if (averageRing <= 9.0)
+        else if (averageRing >= 8.0)
         {
-            damageDealtMult = 3.00;
+            damageDealtMult = 2.00;
             damageTakenMult = 0.75;
             coolingMult = 3.00;
         }
+        else if (averageRing >= 7.0)
+        {
+            damageDealtMult = 2.00;
+            damageTakenMult = 0.75;
+            coolingMult = 2.00;
+        }
         else
         {
-            damageDealtMult = 4.00;
-            damageTakenMult = 0.50;
-            coolingMult = 5.00;
+            damageDealtMult = 1.50;
+            damageTakenMult = 0.75;
+            coolingMult = 2.00;
         }
 
         teamState.EnergyBuffTimerSec = Math.Max(teamState.EnergyBuffTimerSec, durationSec);

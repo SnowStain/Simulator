@@ -284,25 +284,26 @@ internal static class EnergyMechanismGeometry
         const float largeActiveA = 0.9125f;
         const float largeActiveOmega = 1.942f;
         const float largeActiveB = 2.090f - largeActiveA;
+        int direction = teamState?.EnergyRotorDirectionSign != 0 ? teamState?.EnergyRotorDirectionSign ?? 1 : 1;
         if (teamState is null
             || (!string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(teamState.EnergyMechanismState, "activated", StringComparison.OrdinalIgnoreCase)))
         {
-            return 0f;
+            return animationTimeSec * smallSpeedRadPerSec * direction;
         }
 
-        int direction = teamState.EnergyRotorDirectionSign != 0 ? teamState.EnergyRotorDirectionSign : 1;
         bool largeActive = string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
             && teamState.EnergyLargeMechanismActive;
         float safeTime = Math.Max(0f, animationTimeSec - (float)teamState.EnergyStateStartTimeSec);
+        float basePhase = Math.Max(0f, (float)teamState.EnergyStateStartTimeSec) * smallSpeedRadPerSec;
         if (!largeActive)
         {
-            return safeTime * smallSpeedRadPerSec * direction;
+            return animationTimeSec * smallSpeedRadPerSec * direction;
         }
 
         float speedIntegral = largeActiveB * safeTime
             + largeActiveA / largeActiveOmega * (1f - MathF.Cos(largeActiveOmega * safeTime));
-        return speedIntegral * direction;
+        return (basePhase + speedIntegral) * direction;
     }
 
     private static void AddHanger(

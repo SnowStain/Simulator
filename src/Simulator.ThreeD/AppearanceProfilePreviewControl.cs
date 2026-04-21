@@ -257,7 +257,7 @@ internal sealed class AppearanceProfilePreviewControl : Control
                 faces,
                 new Vector3(
                     (float)(profile.GimbalOffsetXM + profile.GimbalLengthM * 0.5 + profile.BarrelLengthM * 0.5),
-                    (float)(profile.GimbalHeightM + profile.GimbalBodyHeightM * 0.55),
+                    (float)(profile.GimbalHeightM + profile.GimbalBodyHeightM * 0.55 - 0.03),
                     (float)profile.GimbalOffsetYM),
                 new Vector3(
                     (float)Math.Max(0.03, profile.BarrelLengthM * 0.5),

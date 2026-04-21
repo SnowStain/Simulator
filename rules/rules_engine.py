@@ -393,7 +393,7 @@ class RulesEngine:
                 'small_opportunity_times_sec': [0.0, 90.0],
                 'large_opportunity_times_sec': [180.0, 255.0, 330.0],
                 'small_defense_mult': 0.75,
-                'small_buff_duration_sec': 45.0,
+                'small_buff_duration_sec': 20.0,
                 'large_duration_by_hits': {'5': 30.0, '6': 35.0, '7': 40.0, '8': 45.0, '9': 50.0, '10': 60.0},
                 'virtual_hits_per_sec': {'hero': 0.45, 'infantry': 0.36, 'sentry': 0.32},
             },

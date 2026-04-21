@@ -66,9 +66,12 @@ public sealed class RuleSetLoader
         ruleSet.Facility.EnergyLargeHitThreshold = GetInt(rules, ruleSet.Facility.EnergyLargeHitThreshold, "energy_mechanism", "large_hit_threshold");
         ruleSet.Facility.EnergyLargeWindowStartSec = GetDouble(rules, ruleSet.Facility.EnergyLargeWindowStartSec, "energy_mechanism", "large_window_start_sec");
         ruleSet.Facility.EnergyBuffDurationSec = GetDouble(rules, ruleSet.Facility.EnergyBuffDurationSec, "energy_mechanism", "buff_duration_sec");
+        ruleSet.Facility.EnergySmallBuffDurationSec = GetDouble(rules, ruleSet.Facility.EnergySmallBuffDurationSec, "energy_mechanism", "small_buff_duration_sec");
         ruleSet.Facility.EnergyDamageDealtMult = GetDouble(rules, ruleSet.Facility.EnergyDamageDealtMult, "energy_mechanism", "damage_dealt_mult");
         ruleSet.Facility.EnergyCoolingMult = GetDouble(rules, ruleSet.Facility.EnergyCoolingMult, "energy_mechanism", "cooling_mult");
         ruleSet.Facility.EnergyPowerRecoveryMult = GetDouble(rules, ruleSet.Facility.EnergyPowerRecoveryMult, "energy_mechanism", "power_recovery_mult");
+        ReadDoubleArray(rules, ruleSet.Facility.EnergySmallOpportunityTimesSec, "energy_mechanism", "small_opportunity_times_sec");
+        ReadDoubleArray(rules, ruleSet.Facility.EnergyLargeOpportunityTimesSec, "energy_mechanism", "large_opportunity_times_sec");
 
         JsonNode? allowedRolesNode = GetNode(rules, "energy_mechanism", "allowed_role_keys");
         if (allowedRolesNode is JsonArray allowedRolesArray)
@@ -318,6 +321,26 @@ public sealed class RuleSetLoader
         }
 
         return false;
+    }
+
+    private static void ReadDoubleArray(JsonObject root, List<double> target, params string[] path)
+    {
+        JsonNode? node = GetNode(root, path);
+        if (node is not JsonArray array)
+        {
+            return;
+        }
+
+        target.Clear();
+        foreach (JsonNode? item in array)
+        {
+            if (item is not null && TryReadDouble(item, out double value))
+            {
+                target.Add(value);
+            }
+        }
+
+        target.Sort();
     }
 
     private static double GetDouble(JsonObject root, double fallback, params string[] path)

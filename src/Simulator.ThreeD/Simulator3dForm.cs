@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
+using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
@@ -223,7 +224,6 @@ internal sealed partial class Simulator3dForm : Form
     private bool _suppressMouseWarp;
     private bool _spaceKeyWasDown;
     private bool _buyKeyWasDown;
-    private bool _deployKeyWasDown;
     private bool _sentryStanceKeyWasDown;
     private bool _showKeyGuide;
     private bool _pendingSingleFireRequest;
@@ -314,6 +314,13 @@ internal sealed partial class Simulator3dForm : Form
     private float _staticStructureProjectionCacheDistanceM = float.NaN;
     private long _lastFrameClockTicks;
     private long _lastPresentedFrameTicks;
+    private long _lastFramePumpLogTicks;
+    private double _framePumpAccumulatedGapMs;
+    private double _framePumpMaxGapMs;
+    private double _framePumpAccumulatedSimulationMs;
+    private double _framePumpMaxSimulationMs;
+    private int _framePumpPresentedFrames;
+    private int _framePumpSimulationSteps;
     private double _simulationAccumulatorSec;
     private double _targetFrameIntervalSec;
     private double _smoothedFrameRate;
@@ -564,9 +571,11 @@ internal sealed partial class Simulator3dForm : Form
             return;
         }
 
+        long simulationStartTicks = Stopwatch.GetTimestamp();
+        int simulatedSteps = 0;
         if (_appState == SimulatorAppState.InMatch && !_paused)
         {
-            AdvanceSimulationClock();
+            simulatedSteps = AdvanceSimulationClock();
             UpdateProjectileTrailCache();
         }
         else if (_appState != SimulatorAppState.InMatch)
@@ -584,6 +593,8 @@ internal sealed partial class Simulator3dForm : Form
             }
         }
 
+        double simulationMs = (Stopwatch.GetTimestamp() - simulationStartTicks) * 1000.0 / Stopwatch.Frequency;
+        TrackFramePumpPerf(presentNowTicks, secondsSincePresent, simulationMs, simulatedSteps);
         _lastPresentedFrameTicks = presentNowTicks;
         if (secondsSincePresent > 1e-4)
         {
@@ -594,6 +605,57 @@ internal sealed partial class Simulator3dForm : Form
         }
 
         Invalidate();
+    }
+
+    private void TrackFramePumpPerf(long nowTicks, double secondsSincePresent, double simulationMs, int simulatedSteps)
+    {
+        if (_appState != SimulatorAppState.InMatch || _previewOnly)
+        {
+            return;
+        }
+
+        double gapMs = secondsSincePresent * 1000.0;
+        _framePumpPresentedFrames++;
+        _framePumpSimulationSteps += simulatedSteps;
+        _framePumpAccumulatedGapMs += gapMs;
+        _framePumpMaxGapMs = Math.Max(_framePumpMaxGapMs, gapMs);
+        _framePumpAccumulatedSimulationMs += simulationMs;
+        _framePumpMaxSimulationMs = Math.Max(_framePumpMaxSimulationMs, simulationMs);
+
+        if (_lastFramePumpLogTicks > 0
+            && (nowTicks - _lastFramePumpLogTicks) / (double)Stopwatch.Frequency < 2.0)
+        {
+            return;
+        }
+
+        int frames = Math.Max(1, _framePumpPresentedFrames);
+        string line =
+            $"{DateTime.Now:HH:mm:ss.fff} "
+            + $"frames={_framePumpPresentedFrames} "
+            + $"gapAvg={_framePumpAccumulatedGapMs / frames:0.00}ms "
+            + $"gapMax={_framePumpMaxGapMs:0.00}ms "
+            + $"simAvg={_framePumpAccumulatedSimulationMs / frames:0.00}ms "
+            + $"simMax={_framePumpMaxSimulationMs:0.00}ms "
+            + $"simSteps={_framePumpSimulationSteps} "
+            + $"fps={_smoothedFrameRate:0.0}";
+
+        try
+        {
+            string logDirectory = Path.Combine(AppContext.BaseDirectory, "logs");
+            Directory.CreateDirectory(logDirectory);
+            File.AppendAllText(Path.Combine(logDirectory, "frame_pump.log"), line + Environment.NewLine);
+        }
+        catch
+        {
+        }
+
+        _lastFramePumpLogTicks = nowTicks;
+        _framePumpPresentedFrames = 0;
+        _framePumpSimulationSteps = 0;
+        _framePumpAccumulatedGapMs = 0.0;
+        _framePumpMaxGapMs = 0.0;
+        _framePumpAccumulatedSimulationMs = 0.0;
+        _framePumpMaxSimulationMs = 0.0;
     }
 
     private void ApplyRendererControlStyles()
@@ -626,7 +688,7 @@ internal sealed partial class Simulator3dForm : Form
         return !PeekMessage(out _, IntPtr.Zero, 0, 0, 0);
     }
 
-    private void AdvanceSimulationClock()
+    private int AdvanceSimulationClock()
     {
         long currentTicks = _frameClock.ElapsedTicks;
         long elapsedTicks = Math.Max(0, currentTicks - _lastFrameClockTicks);
@@ -667,6 +729,7 @@ internal sealed partial class Simulator3dForm : Form
         AdvanceCombatMarkers((float)elapsedSec);
         AdvanceMatchEventFeed((float)elapsedSec);
         AdvanceBuffToasts((float)elapsedSec);
+        return simulatedSteps;
     }
 
     private void OnMouseDownInternal(object? sender, MouseEventArgs eventArgs)
@@ -1776,8 +1839,39 @@ internal sealed partial class Simulator3dForm : Form
         graphics.DrawLine(crossPen, x, y - 12, x, y - 4);
         graphics.DrawLine(crossPen, x, y + 4, x, y + 12);
         graphics.FillEllipse(Brushes.WhiteSmoke, x - 1.5f, y - 1.5f, 3f, 3f);
+        DrawHeroDeploymentChargeRing(graphics, x, y);
         DrawTrackedArmorPlateHighlight(graphics);
         DrawAutoAimGuidanceMarker(graphics);
+    }
+
+    private void DrawHeroDeploymentChargeRing(Graphics graphics, float centerX, float centerY)
+    {
+        SimulationEntity? entity = _host.SelectedEntity;
+        if (entity is null
+            || !string.Equals(entity.RoleKey, "hero", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        bool exiting = entity.HeroDeploymentActive;
+        double timerSec = exiting
+            ? entity.HeroDeploymentExitHoldTimerSec
+            : entity.HeroDeploymentHoldTimerSec;
+        if (timerSec <= 1e-4)
+        {
+            return;
+        }
+
+        float progress = (float)Math.Clamp(timerSec / 2.0, 0.0, 1.0);
+        RectangleF ring = new(centerX - 30f, centerY - 30f, 60f, 60f);
+        using var backPen = new Pen(Color.FromArgb(128, 24, 28, 34), 4f);
+        using var progressPen = new Pen(exiting ? Color.FromArgb(235, 255, 132, 92) : Color.FromArgb(235, 255, 216, 92), 4f)
+        {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round,
+        };
+        graphics.DrawEllipse(backPen, ring);
+        graphics.DrawArc(progressPen, ring, -90f, progress * 360f);
     }
 
     private void DrawWeaponLockOverlay(Graphics graphics)
@@ -2245,7 +2339,7 @@ internal sealed partial class Simulator3dForm : Form
         StringFormat center = new() { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
         graphics.DrawString("HERO DEPLOYMENT MODE", _hudMidFont, titleBrush, new RectangleF(box.X, box.Y + 18, box.Width, 26), center);
         graphics.DrawString("First-person video feed is cut. Auto aim and auto trigger are active.", _smallHudFont, textBrush, new RectangleF(box.X + 18, box.Y + 50, box.Width - 36, 24), center);
-        graphics.DrawString("Target priority: outpost top 80%, base top 50%. Critical center zone: 1cm x 1cm.", _tinyHudFont, textBrush, new RectangleF(box.X + 18, box.Y + 82, box.Width - 36, 22), center);
+        graphics.DrawString("Target priority: outpost top 80%, base top 50%. Hold Z for 2s to exit deploy mode.", _tinyHudFont, textBrush, new RectangleF(box.X + 18, box.Y + 82, box.Width - 36, 22), center);
     }
 
     private void DrawDeploymentPrompt(Graphics graphics)
@@ -2282,7 +2376,7 @@ internal sealed partial class Simulator3dForm : Form
         graphics.FillPath(fill, path);
         graphics.DrawPath(border, path);
         graphics.DrawString("Deployment Zone", _smallHudFont, titleBrush, new RectangleF(box.X, box.Y + 6, box.Width, 18), center);
-        graphics.DrawString(entity.HeroDeploymentRequested ? "Holding deployment... stay inside zone for 2s" : "Press Z to deploy and switch to top-armor auto fire", _tinyHudFont, textBrush, new RectangleF(box.X + 10, box.Y + 26, box.Width - 20, 18), center);
+        graphics.DrawString(entity.HeroDeploymentRequested ? "Holding deployment... stay inside zone for 2s" : "Hold Z for 2s to deploy and switch to top-armor auto fire", _tinyHudFont, textBrush, new RectangleF(box.X + 10, box.Y + 26, box.Width - 20, 18), center);
     }
 
     private void DrawEnergyActivationPrompt(Graphics graphics)
@@ -3512,26 +3606,57 @@ internal sealed partial class Simulator3dForm : Form
         SimulationEntity? selected = _host.SelectedEntity;
         if (_firstPersonView && selected is not null)
         {
-            float metersPerWorldUnit = (float)Math.Max(_host.World.MetersPerWorldUnit, 1e-6);
+            float yaw = ResolveEntityYaw(selected);
             float turretYaw = (float)(selected.TurretYawDeg * Math.PI / 180.0);
-            float pitch = (float)(selected.GimbalPitchDeg * Math.PI / 180.0);
-            Vector3 lookDirection = Vector3.Normalize(new Vector3(
-                MathF.Cos(pitch) * MathF.Cos(turretYaw),
-                MathF.Sin(pitch),
-                MathF.Cos(pitch) * MathF.Sin(turretYaw)));
-            (double muzzleX, double muzzleY, double muzzleHeightM) = SimulationCombatMath.ComputeMuzzlePoint(_host.World, selected);
-            Vector3 muzzle = ToScenePoint(muzzleX, muzzleY, (float)muzzleHeightM);
-            float bodyHeight = (float)Math.Clamp(selected.BodyHeightM, 0.16, 0.80);
-            float cameraBackOffset = MathF.Max(0.09f, MathF.Min(0.22f, (float)selected.GimbalLengthM * 0.34f));
-            float cameraLift = MathF.Max(0.035f, bodyHeight * 0.10f);
-            Vector3 eye = muzzle
-                - lookDirection * cameraBackOffset
-                + Vector3.UnitY * (cameraLift + FirstPersonBarrelScreenDropM);
-            Vector3 sightConvergence = muzzle + lookDirection * FirstPersonSightConvergenceM;
+            float gimbalPitch = (float)(selected.GimbalPitchDeg * Math.PI / 180.0);
+            RuntimeChassisMotion motion = ResolveRuntimeChassisMotion(selected);
+            ResolveChassisAxes(yaw, selected.ChassisPitchDeg, selected.ChassisRollDeg, out Vector3 chassisForward, out Vector3 chassisRight, out Vector3 chassisUp);
+            ResolveMountedTurretAxes(
+                chassisForward,
+                chassisRight,
+                chassisUp,
+                turretYaw - yaw,
+                gimbalPitch,
+                out _,
+                out Vector3 turretRight,
+                out Vector3 pitchedForward,
+                out Vector3 pitchedUp);
+            float groundHeight = (float)(selected.GroundHeightM + selected.AirborneHeightM);
+            float bodyTop = (float)Math.Max(0.0, selected.BodyClearanceM + motion.BodyLiftM + selected.BodyHeightM);
+            float turretBase = MathF.Max(
+                bodyTop + (float)selected.GimbalMountGapM + (float)selected.GimbalMountHeightM,
+                selected.GimbalHeightM > 1e-4
+                    ? (float)(selected.GimbalHeightM - selected.GimbalBodyHeightM * 0.5)
+                    : bodyTop);
+            float hingeBase = MathF.Max(
+                bodyTop + (float)selected.GimbalMountGapM + (float)selected.GimbalMountHeightM,
+                turretBase);
+            Vector3 chassisOrigin = ToScenePoint(selected.X, selected.Y, groundHeight);
+            Vector3 hingeCenter = OffsetScenePosition(
+                chassisOrigin,
+                (float)selected.GimbalOffsetXM,
+                (float)selected.GimbalOffsetYM,
+                hingeBase,
+                chassisForward,
+                chassisRight,
+                chassisUp);
+            Vector3 turretCenter = hingeCenter
+                + pitchedUp * ((float)selected.GimbalBodyHeightM * 0.50f + 0.006f)
+                + pitchedForward * ((float)selected.GimbalLengthM * 0.04f);
+            Vector3 barrelAxisAnchor = turretCenter
+                + pitchedForward * ((float)selected.GimbalLengthM * 0.5f + MathF.Max(0.006f, (float)selected.BarrelRadiusM * 0.45f))
+                + pitchedUp * (MathF.Max(0.0f, (float)selected.GimbalBodyHeightM * 0.12f) - 0.03f);
+            bool heroFirstPerson = string.Equals(selected.RoleKey, "hero", StringComparison.OrdinalIgnoreCase);
+            float heroForwardCameraBiasM = heroFirstPerson ? 0.04f : 0.0f;
+            float cameraHeightOffsetM = heroFirstPerson ? 0.06f : 0.05f;
+            Vector3 eye = barrelAxisAnchor
+                + pitchedForward * heroForwardCameraBiasM
+                + pitchedUp * cameraHeightOffsetM;
+            Vector3 sightConvergence = eye + pitchedForward * FirstPersonSightConvergenceM;
 
             _cameraPositionM = eye;
             _cameraTargetM = sightConvergence;
-            _viewMatrix = Matrix4x4.CreateLookAt(_cameraPositionM, _cameraTargetM, Vector3.UnitY);
+            _viewMatrix = Matrix4x4.CreateLookAt(_cameraPositionM, _cameraTargetM, pitchedUp.LengthSquared() > 1e-8f ? pitchedUp : Vector3.UnitY);
 
             float aspectFirstPerson = Math.Max(1f, ClientSize.Width / (float)Math.Max(ClientSize.Height, 1));
             _projectionMatrix = Matrix4x4.CreatePerspectiveFieldOfView(FirstPersonVerticalFovRad, aspectFirstPerson, 0.015f, 1500f);
@@ -3892,9 +4017,17 @@ internal sealed partial class Simulator3dForm : Form
             Vector3 center = ToScenePoint(entity.X, entity.Y, entityHeightM);
             float distanceM = Vector3.Distance(center, _cameraPositionM);
             RobotAppearanceProfile profile = _host.ResolveAppearanceProfile(entity);
-            if (IsEntityFullyTerrainOccluded(entity, center, profile))
+            if (!gpuGeometryOnly && IsEntityFullyTerrainOccluded(entity, center, profile))
             {
                 continue;
+            }
+
+            if (gpuGeometryOnly)
+            {
+                _gpuCurrentDynamicBatch = entity.EntityType.Equals("outpost", StringComparison.OrdinalIgnoreCase)
+                    || entity.EntityType.Equals("base", StringComparison.OrdinalIgnoreCase)
+                        ? GpuDynamicBatchKind.Facility
+                        : GpuDynamicBatchKind.Entity;
             }
 
             if (entity.EntityType.Equals("outpost", StringComparison.OrdinalIgnoreCase))
@@ -4110,26 +4243,30 @@ internal sealed partial class Simulator3dForm : Form
         representative = null!;
         centerWorldX = 0.0;
         centerWorldY = 0.0;
-        FacilityRegion[] energyRegions = _host.MapPreset.Facilities
-            .Where(region => string.Equals(region.Type, "energy_mechanism", StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-        if (energyRegions.Length == 0)
+        int count = 0;
+        double sumX = 0.0;
+        double sumY = 0.0;
+        foreach (FacilityRegion region in _host.MapPreset.Facilities)
+        {
+            if (!string.Equals(region.Type, "energy_mechanism", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            representative ??= region;
+            (double regionCenterX, double regionCenterY) = ResolveFacilityRegionCenter(region);
+            sumX += regionCenterX;
+            sumY += regionCenterY;
+            count++;
+        }
+
+        if (count == 0)
         {
             return false;
         }
 
-        representative = energyRegions[0];
-        double sumX = 0.0;
-        double sumY = 0.0;
-        foreach (FacilityRegion region in energyRegions)
-        {
-            (double regionCenterX, double regionCenterY) = ResolveFacilityRegionCenter(region);
-            sumX += regionCenterX;
-            sumY += regionCenterY;
-        }
-
-        centerWorldX = sumX / energyRegions.Length;
-        centerWorldY = sumY / energyRegions.Length;
+        centerWorldX = sumX / count;
+        centerWorldY = sumY / count;
         return true;
     }
 
@@ -4526,7 +4663,7 @@ internal sealed partial class Simulator3dForm : Form
             if (profile.BarrelLengthM > 0.04f && profile.BarrelRadiusM > 0.004f)
             {
                 float barrelHeight = Math.Max(0.02f, profile.BarrelRadiusM * 2f);
-                float barrelBase = turretBase + profile.GimbalBodyHeightM * 0.46f - profile.BarrelRadiusM;
+                float barrelBase = turretBase + profile.GimbalBodyHeightM * 0.46f - profile.BarrelRadiusM - 0.03f;
                 float barrelForwardOffset = profile.GimbalLengthM * 0.5f + profile.BarrelLengthM * 0.5f;
                 Vector3 barrelCenter = OffsetScenePosition(
                     turretCenter,
@@ -5666,7 +5803,7 @@ internal sealed partial class Simulator3dForm : Form
         bool buyAmmoRequested = _buyAmmoRequested || ConsumePressedInput(Keys.B, 0x42, ref _buyKeyWasDown, heldCountsAsPressed: true);
         _buyAmmoRequested = false;
         bool energyActivationPressed = IsAnyKeyHeld(Keys.F);
-        bool heroDeployToggleRequested = ConsumePressedInput(Keys.Z, 0x5A, ref _deployKeyWasDown);
+        bool heroDeployHoldPressed = IsAnyKeyHeld(Keys.Z);
         bool superCapActive = IsAnyKeyHeld(Keys.C);
         bool sentryStanceToggleRequested = ConsumePressedInput(Keys.X, 0x58, ref _sentryStanceKeyWasDown);
         bool fireModifierPressed = IsAnyKeyHeld(Keys.ControlKey, Keys.LControlKey, Keys.RControlKey);
@@ -5704,7 +5841,8 @@ internal sealed partial class Simulator3dForm : Form
             SmallGyroActive = smallGyroActive,
             BuyAmmoRequested = buyAmmoRequested,
             EnergyActivationPressed = energyActivationPressed,
-            HeroDeployToggleRequested = heroDeployToggleRequested,
+            HeroDeployToggleRequested = false,
+            HeroDeployHoldPressed = heroDeployHoldPressed,
             SuperCapActive = superCapActive,
             SentryStanceToggleRequested = sentryStanceToggleRequested,
         };
@@ -5733,7 +5871,6 @@ internal sealed partial class Simulator3dForm : Form
         _pendingSingleFireRequest = false;
         _spaceKeyWasDown = false;
         _buyKeyWasDown = false;
-        _deployKeyWasDown = false;
         _sentryStanceKeyWasDown = false;
         _pendingMouseYawDeltaDeg = 0f;
         _pendingMousePitchDeltaDeg = 0f;
@@ -5820,7 +5957,7 @@ internal sealed partial class Simulator3dForm : Form
                 target?.X ?? 0.0,
                 target?.Y ?? 0.0,
                 (target?.GroundHeightM ?? 0.0) + (target?.AirborneHeightM ?? 0.0) + 0.9,
-                combatEvent.CriticalHit ? "CRIT" : "HIT",
+                $"-{combatEvent.Damage:0.##}",
                 Color.FromArgb(246, tint),
                 0.70f,
                 markerOffsetX,
@@ -5837,8 +5974,8 @@ internal sealed partial class Simulator3dForm : Form
             string shooterLabel = shooter is null ? combatEvent.ShooterId : FormatEventEntityName(shooter);
             AppendMatchEvent(
                 combatEvent.CriticalHit
-                    ? $"{shooterLabel} CRITICAL hit {targetLabel}  -{combatEvent.Damage:0}HP  p{combatEvent.HitProbability * 100.0:0}%"
-                    : $"{shooterLabel} hit {targetLabel}  -{combatEvent.Damage:0}HP  p{combatEvent.HitProbability * 100.0:0}%",
+                    ? $"{shooterLabel} 暴击 {targetLabel}  -{combatEvent.Damage:0.##}HP  (150%)  p{combatEvent.HitProbability * 100.0:0}%"
+                    : $"{shooterLabel} 命中 {targetLabel}  -{combatEvent.Damage:0.##}HP  p{combatEvent.HitProbability * 100.0:0}%",
                 eventColor);
         }
 

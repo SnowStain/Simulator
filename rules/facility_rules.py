@@ -155,7 +155,7 @@ def energy_large_reward(engine, hit_count):
 
 
 def grant_small_energy_buff(engine, entities, team):
-    duration = float(engine.rules.get('energy_mechanism', {}).get('small_buff_duration_sec', 45.0))
+    duration = float(engine.rules.get('energy_mechanism', {}).get('small_buff_duration_sec', 20.0))
     for entity in entities:
         if entity.team != team or entity.type not in {'robot', 'sentry'} or not entity.is_alive():
             continue

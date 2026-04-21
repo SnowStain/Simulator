@@ -151,10 +151,10 @@ internal sealed partial class Simulator3dForm
         bool inDeployZone = IsInFriendlyFacility(entity, "buff_hero_deployment");
         string supplyPrompt = inFriendlySupply ? "   B Resupply" : string.Empty;
         string deployText = entity.HeroDeploymentActive
-            ? "   HERO DEPLOY AUTO"
+            ? "   Hold Z ExitDeploy"
             : entity.HeroDeploymentRequested
                 ? "   HERO DEPLOY HOLD"
-                : inDeployZone ? "   Z Deploy" : string.Empty;
+                : inDeployZone ? "   Hold Z Deploy" : string.Empty;
         string sentryPrompt = string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase)
             ? "   X SentryStance"
             : string.Empty;
@@ -303,8 +303,18 @@ internal sealed partial class Simulator3dForm
         if (_host.World.Teams.TryGetValue(entity.Team, out SimulationTeamState? teamState)
             && teamState.EnergyBuffTimerSec > 1e-3)
         {
-            string effect = $"\u4f24\u5bb3 x{teamState.EnergyBuffDamageDealtMult:0.00}  \u53d7\u4f24 x{teamState.EnergyBuffDamageTakenMult:0.00}  \u51b7\u5374 x{teamState.EnergyBuffCoolingMult:0.00}";
-            AddTimedBuff(entries, "energy_team", "\u80fd\u91cf\u673a\u5173\u589e\u76ca", effect, teamState.EnergyBuffTimerSec, Math.Max(45.0, teamState.EnergyBuffTimerSec), Color.FromArgb(255, 174, 82));
+            bool largeEnergy = teamState.EnergyLargeMechanismActive;
+            string effect = largeEnergy
+                ? $"\u4f24\u5bb3 x{teamState.EnergyBuffDamageDealtMult:0.0}  \u51b7\u5374 x{teamState.EnergyBuffCoolingMult:0.0}  \u53d7\u4f24 x{teamState.EnergyBuffDamageTakenMult:0.0}"
+                : "\u9632\u5fa1 +25%";
+            AddTimedBuff(
+                entries,
+                largeEnergy ? "energy_team_large" : "energy_team_small",
+                largeEnergy ? "\u5927\u80fd\u91cf\u673a\u5173" : "\u5c0f\u80fd\u91cf\u673a\u5173",
+                effect,
+                teamState.EnergyBuffTimerSec,
+                largeEnergy ? Math.Max(30.0, teamState.EnergyBuffTimerSec) : 20.0,
+                Color.FromArgb(255, 174, 82));
         }
 
         if (entity.DynamicDamageTakenMult < 0.995)
@@ -408,6 +418,11 @@ internal sealed partial class Simulator3dForm
                 continue;
             }
 
+            if (!entry.Timed)
+            {
+                continue;
+            }
+
             if (TryBuildFacilityBuffToast(entity, entry, out CenterBuffToast? facilityToast))
             {
                 _centerBuffToasts.Add(facilityToast!);
@@ -418,8 +433,8 @@ internal sealed partial class Simulator3dForm
                     ? $"\u6301\u7eed {entry.RemainingSec:0}\u79d2"
                     : "\u533a\u57df\u5185\u6301\u7eed";
                 _centerBuffToasts.Add(new CenterBuffToast(
-                    $"\u83b7\u5f97 {entry.Name}",
-                    $"{entry.Effect}  {durationText}",
+                    "\u83b7\u5f97\u589e\u76ca",
+                    $"{entry.Name}  {durationText}",
                     entry.Color));
             }
         }
@@ -459,18 +474,10 @@ internal sealed partial class Simulator3dForm
             return false;
         }
 
-        string durationText = entry.Timed
-            ? $"\u6301\u7eed {entry.RemainingSec:0}\u79d2"
-            : "\u533a\u57df\u5185\u6301\u7eed";
-        string ownerText = ResolveFacilityOwnerText(region.Team, entity.Team);
         string facilityText = ResolveFacilityToastLabel(region.Type);
-        if (!string.IsNullOrWhiteSpace(region.Id))
-        {
-            facilityText = $"{facilityText} {region.Id}";
-        }
         toast = new CenterBuffToast(
-            $"\u89e6\u53d1 {ownerText}{facilityText}",
-            $"{entry.Name}  {entry.Effect}  {durationText}",
+            "\u83b7\u5f97\u573a\u5730\u589e\u76ca",
+            $"{facilityText}  {entry.Name}  {entry.RemainingSec:0}\u79d2",
             entry.Color);
         return true;
     }
@@ -586,7 +593,7 @@ internal sealed partial class Simulator3dForm
             return;
         }
 
-        int shown = Math.Min(3, _centerBuffToasts.Count);
+        int shown = Math.Min(1, _centerBuffToasts.Count);
         float y = ClientSize.Height * 0.30f;
         for (int i = 0; i < shown; i++)
         {
@@ -1133,8 +1140,9 @@ internal sealed partial class Simulator3dForm
         int rebuildThresholdY;
         if (_firstPersonView)
         {
-            rebuildThresholdX = Math.Max(6, (int)MathF.Ceiling(0.18f / Math.Max(_cachedRuntimeGrid.CellWidthWorld * metersPerWorldUnit, 1e-4f)));
-            rebuildThresholdY = Math.Max(6, (int)MathF.Ceiling(0.18f / Math.Max(_cachedRuntimeGrid.CellHeightWorld * metersPerWorldUnit, 1e-4f)));
+            float rebuildMeters = UseGpuRenderer ? 0.60f : 0.18f;
+            rebuildThresholdX = Math.Max(6, (int)MathF.Ceiling(rebuildMeters / Math.Max(_cachedRuntimeGrid.CellWidthWorld * metersPerWorldUnit, 1e-4f)));
+            rebuildThresholdY = Math.Max(6, (int)MathF.Ceiling(rebuildMeters / Math.Max(_cachedRuntimeGrid.CellHeightWorld * metersPerWorldUnit, 1e-4f)));
         }
         else
         {
@@ -1157,7 +1165,7 @@ internal sealed partial class Simulator3dForm
             && _firstPersonView
             && _terrainDetailFaces.Count > 0
             && _lastTerrainDetailRebuildTicks > 0
-            && (_frameClock.ElapsedTicks - _lastTerrainDetailRebuildTicks) / (double)Stopwatch.Frequency < 0.055)
+            && (_frameClock.ElapsedTicks - _lastTerrainDetailRebuildTicks) / (double)Stopwatch.Frequency < (UseGpuRenderer ? 0.120 : 0.055))
         {
             return;
         }
@@ -1191,8 +1199,11 @@ internal sealed partial class Simulator3dForm
         RebuildTerrainTileCacheMerged(detailStep, detailStep, _terrainDetailFaces, startCellX, endCellX, startCellY, endCellY);
         AppendTerrainFacetFaces(_terrainDetailFaces, _terrainDetailMinXWorld, _terrainDetailMaxXWorld, _terrainDetailMinYWorld, _terrainDetailMaxYWorld);
         _lastTerrainDetailRebuildTicks = _frameClock.ElapsedTicks;
-        _terrainProjectionCacheVersion++;
-        _terrainProjectionBuiltVersion = -1;
+        if (!UseGpuRenderer || UseFastFlatRenderer)
+        {
+            _terrainProjectionCacheVersion++;
+            _terrainProjectionBuiltVersion = -1;
+        }
     }
 
     private static int ResolveTerrainDetailStep(RuntimeGridData runtimeGrid)
@@ -1233,11 +1244,18 @@ internal sealed partial class Simulator3dForm
         SimulationEntity? selected = _host.SelectedEntity;
         if (_firstPersonView)
         {
-            focusXWorld = _cameraPositionM.X / metersPerWorldUnit;
-            focusYWorld = _cameraPositionM.Z / metersPerWorldUnit;
+            focusXWorld = selected is null
+                ? _cameraPositionM.X / metersPerWorldUnit
+                : (float)selected.X;
+            focusYWorld = selected is null
+                ? _cameraPositionM.Z / metersPerWorldUnit
+                : (float)selected.Y;
             Vector3 lookDirection = ResolveTerrainProjectionViewDirection();
             float lookAheadMeters = Math.Clamp(ResolveTerrainDetailRadiusM() * 0.9f, 4.5f, 10.5f);
-            Vector3 forwardHotspot = _cameraPositionM + lookDirection * lookAheadMeters;
+            Vector3 focusAnchor = selected is null
+                ? _cameraPositionM
+                : ToScenePoint(selected.X, selected.Y, 0f);
+            Vector3 forwardHotspot = focusAnchor + lookDirection * lookAheadMeters;
             secondaryFocusXWorld = forwardHotspot.X / metersPerWorldUnit;
             secondaryFocusYWorld = forwardHotspot.Z / metersPerWorldUnit;
             hasSecondaryFocus = true;

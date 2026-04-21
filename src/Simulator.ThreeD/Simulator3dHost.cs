@@ -62,6 +62,7 @@ internal sealed class Simulator3dHost
     private readonly JsonObject _config;
     private DateTime _lastDecisionConfigProbeUtc;
     private DateTime _decisionConfigLastWriteUtc;
+    private long _lastSimulationPerfLogTicks;
     private RuleSet _rules;
     private RuleSimulationService _simulationService;
     private TerrainMotionService _terrainMotionService;
@@ -619,21 +620,77 @@ internal sealed class Simulator3dHost
 
     public void Step(PlayerControlState? playerControlState = null)
     {
+        long stepStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+        long segmentStartTicks = stepStartTicks;
         MaybeReloadDecisionDeploymentProfile();
+        long reloadTicks = System.Diagnostics.Stopwatch.GetTimestamp() - segmentStartTicks;
+        segmentStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
         EnsureSingleUnitTestFocus();
         ApplyPlayerControlState(playerControlState);
         ApplySingleUnitTestRuntimeFilters();
+        long inputTicks = System.Diagnostics.Stopwatch.GetTimestamp() - segmentStartTicks;
+        segmentStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
         _terrainMotionService.Step(World, _runtimeGrid, DeltaTimeSec);
+        long motionTicks = System.Diagnostics.Stopwatch.GetTimestamp() - segmentStartTicks;
+        segmentStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
         ApplySingleUnitTestRuntimeFilters();
+        long postMotionFilterTicks = System.Diagnostics.Stopwatch.GetTimestamp() - segmentStartTicks;
+        segmentStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
         LastReport = _simulationService.Run(
             World,
             MapPreset.Facilities,
             DeltaTimeSec,
             DeltaTimeSec,
             captureFinalEntities: false);
+        long rulesTicks = System.Diagnostics.Stopwatch.GetTimestamp() - segmentStartTicks;
+        segmentStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
         ApplySingleUnitTestRuntimeFilters();
         EnsureSelectedEntity();
+        long selectTicks = System.Diagnostics.Stopwatch.GetTimestamp() - segmentStartTicks;
+        long totalTicks = System.Diagnostics.Stopwatch.GetTimestamp() - stepStartTicks;
+        LogSimulationPerfIfDue(totalTicks, reloadTicks, inputTicks, motionTicks, postMotionFilterTicks, rulesTicks, selectTicks);
     }
+
+    private void LogSimulationPerfIfDue(
+        long totalTicks,
+        long reloadTicks,
+        long inputTicks,
+        long motionTicks,
+        long postMotionFilterTicks,
+        long rulesTicks,
+        long selectTicks)
+    {
+        long nowTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+        if (_lastSimulationPerfLogTicks > 0
+            && (nowTicks - _lastSimulationPerfLogTicks) / (double)System.Diagnostics.Stopwatch.Frequency < 2.0)
+        {
+            return;
+        }
+
+        _lastSimulationPerfLogTicks = nowTicks;
+        string line =
+            $"{DateTime.Now:HH:mm:ss.fff} "
+            + $"total={TicksToMs(totalTicks):0.00}ms "
+            + $"reload={TicksToMs(reloadTicks):0.00}ms "
+            + $"input={TicksToMs(inputTicks):0.00}ms "
+            + $"motion={TicksToMs(motionTicks):0.00}ms "
+            + $"filter={TicksToMs(postMotionFilterTicks):0.00}ms "
+            + $"rules={TicksToMs(rulesTicks):0.00}ms "
+            + $"select={TicksToMs(selectTicks):0.00}ms "
+            + $"entities={World.Entities.Count} projectiles={World.Projectiles.Count}";
+        try
+        {
+            string logDirectory = Path.Combine(AppContext.BaseDirectory, "logs");
+            Directory.CreateDirectory(logDirectory);
+            File.AppendAllText(Path.Combine(logDirectory, "simulation_perf.log"), line + Environment.NewLine);
+        }
+        catch
+        {
+        }
+    }
+
+    private static double TicksToMs(long ticks)
+        => ticks * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
 
     public IReadOnlyList<SimulationEntity> GetControlCandidates(string? team = null)
     {
@@ -989,17 +1046,52 @@ internal sealed class Simulator3dHost
         entityToControl.SmallGyroActive = state.SmallGyroActive;
         entityToControl.BuyAmmoRequested = state.BuyAmmoRequested;
         entityToControl.EnergyActivationRequested = state.EnergyActivationPressed;
-        if (state.HeroDeployToggleRequested && string.Equals(entityToControl.RoleKey, "hero", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(entityToControl.RoleKey, "hero", StringComparison.OrdinalIgnoreCase))
         {
             bool rangedHero = string.Equals(
                 RuleSet.NormalizeHeroMode(entityToControl.HeroPerformanceMode),
                 "ranged_priority",
                 StringComparison.OrdinalIgnoreCase);
-            entityToControl.HeroDeploymentRequested = rangedHero && !entityToControl.HeroDeploymentRequested;
-            if (!entityToControl.HeroDeploymentRequested)
+            if (!rangedHero)
             {
+                entityToControl.HeroDeploymentRequested = false;
                 entityToControl.HeroDeploymentActive = false;
                 entityToControl.HeroDeploymentHoldTimerSec = 0.0;
+                entityToControl.HeroDeploymentExitHoldTimerSec = 0.0;
+                entityToControl.HeroDeploymentLastPitchErrorDeg = 0.0;
+            }
+            else if (entityToControl.HeroDeploymentActive)
+            {
+                entityToControl.HeroDeploymentRequested = true;
+                if (state.HeroDeployHoldPressed)
+                {
+                    entityToControl.HeroDeploymentExitHoldTimerSec += DeltaTimeSec;
+                    if (entityToControl.HeroDeploymentExitHoldTimerSec >= 2.0)
+                    {
+                        entityToControl.HeroDeploymentRequested = false;
+                        entityToControl.HeroDeploymentActive = false;
+                        entityToControl.HeroDeploymentHoldTimerSec = 0.0;
+                        entityToControl.HeroDeploymentExitHoldTimerSec = 0.0;
+                        entityToControl.HeroDeploymentYawCorrectionDeg = 0.0;
+                        entityToControl.HeroDeploymentPitchCorrectionDeg = 0.0;
+                        entityToControl.HeroDeploymentLastPitchErrorDeg = 0.0;
+                        entityToControl.HeroDeploymentCorrectionPlateId = null;
+                    }
+                }
+                else
+                {
+                    entityToControl.HeroDeploymentExitHoldTimerSec = 0.0;
+                }
+            }
+            else
+            {
+                entityToControl.HeroDeploymentExitHoldTimerSec = 0.0;
+                entityToControl.HeroDeploymentRequested = state.HeroDeployHoldPressed;
+                if (!entityToControl.HeroDeploymentRequested)
+                {
+                    entityToControl.HeroDeploymentActive = false;
+                    entityToControl.HeroDeploymentHoldTimerSec = 0.0;
+                }
             }
         }
 
@@ -1363,7 +1455,7 @@ internal sealed class Simulator3dHost
     private void MaybeReloadDecisionDeploymentProfile()
     {
         DateTime nowUtc = DateTime.UtcNow;
-        if ((nowUtc - _lastDecisionConfigProbeUtc).TotalMilliseconds < 250)
+        if ((nowUtc - _lastDecisionConfigProbeUtc).TotalSeconds < 2.0)
         {
             return;
         }

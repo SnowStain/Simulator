@@ -19,26 +19,6 @@ internal static class AutoAimVisibility
             (float)muzzleHeightM,
             (float)(muzzleY * metersPerWorldUnit));
 
-        foreach (Vector3 sample in BuildPlateSamplePoints(plate, metersPerWorldUnit))
-        {
-            if (!IsSampleInsideFirstPersonFov(shooter, start, sample))
-            {
-                continue;
-            }
-
-            if (!IsTerrainOccluding(runtimeGrid, metersPerWorldUnit, start, sample)
-                && !IsTargetBodyOccludingPlate(metersPerWorldUnit, target, plate, start, sample)
-                && !IsEntityOccluding(world, metersPerWorldUnit, shooter, target, start, sample))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static IEnumerable<Vector3> BuildPlateSamplePoints(ArmorPlateTarget plate, double metersPerWorldUnit)
-    {
         float centerX = (float)(plate.X * metersPerWorldUnit);
         float centerY = (float)plate.HeightM;
         float centerZ = (float)(plate.Y * metersPerWorldUnit);
@@ -51,15 +31,23 @@ internal static class AutoAimVisibility
             : Vector3.UnitY;
         float halfSideM = (float)Math.Clamp(plate.SideLengthM * 0.46, 0.025, 0.30);
 
-        yield return center;
-        yield return center + side * halfSideM;
-        yield return center - side * halfSideM;
-        yield return center + vertical * halfSideM;
-        yield return center - vertical * halfSideM;
-        yield return center + side * halfSideM + vertical * halfSideM;
-        yield return center + side * halfSideM - vertical * halfSideM;
-        yield return center - side * halfSideM + vertical * halfSideM;
-        yield return center - side * halfSideM - vertical * halfSideM;
+        return CanSeeSample(center)
+            || CanSeeSample(center + side * halfSideM)
+            || CanSeeSample(center - side * halfSideM)
+            || CanSeeSample(center + vertical * halfSideM)
+            || CanSeeSample(center - vertical * halfSideM)
+            || CanSeeSample(center + side * halfSideM + vertical * halfSideM)
+            || CanSeeSample(center + side * halfSideM - vertical * halfSideM)
+            || CanSeeSample(center - side * halfSideM + vertical * halfSideM)
+            || CanSeeSample(center - side * halfSideM - vertical * halfSideM);
+
+        bool CanSeeSample(Vector3 sample)
+        {
+            return IsSampleInsideFirstPersonFov(shooter, start, sample)
+                && !IsTerrainOccluding(runtimeGrid, metersPerWorldUnit, start, sample)
+                && !IsTargetBodyOccludingPlate(metersPerWorldUnit, target, plate, start, sample)
+                && !IsEntityOccluding(world, metersPerWorldUnit, shooter, target, start, sample);
+        }
     }
 
     private static bool IsSampleInsideFirstPersonFov(SimulationEntity shooter, Vector3 start, Vector3 sample)
@@ -103,7 +91,7 @@ internal static class AutoAimVisibility
             return false;
         }
 
-        int samples = Math.Clamp((int)MathF.Ceiling(distanceM / 0.08f), 8, 180);
+        int samples = Math.Clamp((int)MathF.Ceiling(distanceM / 0.14f), 6, 96);
         double maxWorldX = runtimeGrid.WidthCells * runtimeGrid.CellWidthWorld;
         double maxWorldY = runtimeGrid.HeightCells * runtimeGrid.CellHeightWorld;
         for (int index = 1; index < samples; index++)

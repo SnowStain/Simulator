@@ -10,21 +10,31 @@ internal sealed class TerrainMotionService
     private const double GravityMps2 = 9.81;
     private const double TerrainSmoothHeightThresholdM = 0.048;
     private const double TerrainRenderAnchorThresholdM = 0.02;
-    private const double NavigationReplanIntervalMovingSec = 3.20;
-    private const double NavigationReplanIntervalStaticSec = 5.00;
-    private const double NavigationDirectProbeIntervalSec = 0.85;
-    private const double NavigationLookAheadProbeIntervalSec = 0.42;
-    private const double AutoDecisionIntervalSec = 0.20;
-    private const double AutoAimIntervalSec = 0.08;
-    private const double EnemyProbeIntervalSec = 0.28;
-    private const double NavigationPendingPlanTimeoutSec = 1.60;
+    private const double NavigationReplanIntervalMovingSec = 1.35;
+    private const double NavigationReplanIntervalStaticSec = 1.50;
+    private const double NavigationDirectProbeIntervalSec = 1.50;
+    private const double NavigationLookAheadProbeIntervalSec = 1.50;
+    private const double AutoDecisionIntervalSec = 1.00;
+    private const double AutoAimIntervalSec = 0.30;
+    private const double LargeProjectileAutoAimReuseSec = 0.10;
+    private const double TraversalAutoAimReuseSec = 0.12;
+    private const double EnemyProbeIntervalSec = 0.75;
+    private const double NavigationPendingPlanTimeoutSec = 1.00;
+    private const double NavigationPlanQueueIntervalSec = 1.50;
     private const double NavigationWaypointReachM = 0.55;
-    private const int NavigationMaxExpandedCells = 420;
+    private const int NavigationMaxExpandedCells = 320;
     private const int NavigationMaxLookAheadWaypoints = 2;
+    private const int NavigationMaxPendingPlanTasks = 2;
     private readonly RuleSet _rules;
     private readonly DecisionDeploymentConfig _decisionDeployment;
     private readonly IReadOnlyList<FacilityRegion> _facilities;
     private readonly Dictionary<string, NavigationPathState> _navigationStates = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, AutoAimSolveCache> _autoAimSolveCache = new(StringComparer.OrdinalIgnoreCase);
+    private List<FacilityCollisionShape>? _facilityCollisionShapes;
+    private double _facilityCollisionCellWidthWorld = -1.0;
+    private double _facilityCollisionCellHeightWorld = -1.0;
+    private long _lastMotionPerfLogTicks;
+    private long _lastSlowControlLogTicks;
 
     private readonly record struct NavigationUnitSnapshot(
         string Id,
@@ -68,6 +78,12 @@ internal sealed class TerrainMotionService
         }
 
         double dt = Math.Clamp(deltaTimeSec, 0.01, 0.2);
+        long totalStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+        long controlTicks = 0;
+        long rotationTicks = 0;
+        long verticalTicks = 0;
+        long translationTicks = 0;
+        int movableCount = 0;
         foreach (SimulationEntity entity in world.Entities)
         {
             if (!IsMovableEntity(entity))
@@ -75,6 +91,7 @@ internal sealed class TerrainMotionService
                 continue;
             }
 
+            movableCount++;
             if (!entity.IsAlive || entity.IsSimulationSuppressed)
             {
                 ClearMotion(entity);
@@ -85,6 +102,7 @@ internal sealed class TerrainMotionService
             SimulationEntity? enemy = entity.IsPlayerControlled ? null : ResolveCachedNearestEnemy(world, entity);
             double previousAimSpeedMps = entity.LastAimSpeedMps;
             double previousAimHeightM = entity.LastAimHeightM;
+            long segmentStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
             if (entity.IsPlayerControlled)
             {
                 ApplyPlayerControl(world, runtimeGrid, entity, dt);
@@ -93,6 +111,7 @@ internal sealed class TerrainMotionService
             {
                 ApplyAutoControl(world, runtimeGrid, entity, enemy, dt);
             }
+            controlTicks += System.Diagnostics.Stopwatch.GetTimestamp() - segmentStartTicks;
 
             double chassisTargetYaw = entity.TraversalActive
                 ? entity.TraversalDirectionDeg
@@ -100,12 +119,61 @@ internal sealed class TerrainMotionService
                     ? entity.AngleDeg + ResolveSmallGyroYawRateDegPerSec(entity) * dt
                     : entity.ChassisTargetYawDeg;
 
+            segmentStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
             ApplyRotation(entity, chassisTargetYaw, dt);
+            rotationTicks += System.Diagnostics.Stopwatch.GetTimestamp() - segmentStartTicks;
+            segmentStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
             ApplyVerticalMotion(entity, dt);
+            verticalTicks += System.Diagnostics.Stopwatch.GetTimestamp() - segmentStartTicks;
+            segmentStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
             ApplyTranslationWithTerrain(world, runtimeGrid, entity, dt);
+            translationTicks += System.Diagnostics.Stopwatch.GetTimestamp() - segmentStartTicks;
             UpdateAutoAimInstability(world, entity, dt, previousAimSpeedMps, previousAimHeightM);
 
             entity.JumpRequested = false;
+        }
+
+        LogMotionPerfIfDue(
+            System.Diagnostics.Stopwatch.GetTimestamp() - totalStartTicks,
+            controlTicks,
+            rotationTicks,
+            verticalTicks,
+            translationTicks,
+            movableCount);
+    }
+
+    private void LogMotionPerfIfDue(
+        long totalTicks,
+        long controlTicks,
+        long rotationTicks,
+        long verticalTicks,
+        long translationTicks,
+        int movableCount)
+    {
+        long nowTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+        if (_lastMotionPerfLogTicks > 0
+            && (nowTicks - _lastMotionPerfLogTicks) / (double)System.Diagnostics.Stopwatch.Frequency < 2.0)
+        {
+            return;
+        }
+
+        _lastMotionPerfLogTicks = nowTicks;
+        string line =
+            $"{DateTime.Now:HH:mm:ss.fff} "
+            + $"total={TicksToMs(totalTicks):0.00}ms "
+            + $"control={TicksToMs(controlTicks):0.00}ms "
+            + $"rotation={TicksToMs(rotationTicks):0.00}ms "
+            + $"vertical={TicksToMs(verticalTicks):0.00}ms "
+            + $"translation={TicksToMs(translationTicks):0.00}ms "
+            + $"movable={movableCount}";
+        try
+        {
+            string logDirectory = Path.Combine(AppContext.BaseDirectory, "logs");
+            Directory.CreateDirectory(logDirectory);
+            File.AppendAllText(Path.Combine(logDirectory, "motion_perf.log"), line + Environment.NewLine);
+        }
+        catch
+        {
         }
     }
 
@@ -221,9 +289,13 @@ internal sealed class TerrainMotionService
         SimulationEntity? enemy,
         double dt)
     {
+        long controlStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+        long navigationTicks = 0;
+        long autoAimTicks = 0;
+        string controlBranch = "idle";
         entity.EnergyActivationRequested = false;
         entity.AutoAimTargetMode = "armor";
-        NavigationPathState autoState = GetOrCreateNavigationState(entity.Id);
+        NavigationPathState autoState = GetOrCreateNavigationState(entity.Id, world.GameTimeSec);
         bool canReuseAutoDrive =
             autoState.HasCachedAutoDrive
             && !entity.TraversalActive
@@ -231,30 +303,36 @@ internal sealed class TerrainMotionService
             && world.GameTimeSec - autoState.LastAutoDecisionSec < AutoDecisionIntervalSec;
         if (canReuseAutoDrive)
         {
+            controlBranch = "reuse_drive";
             entity.TraversalDirectionDeg = autoState.CachedDriveYawDeg;
             entity.ChassisTargetYawDeg = autoState.CachedDriveYawDeg;
             ApplyDriveControl(world, entity, autoState.CachedMoveForward, autoState.CachedMoveRight, dt, autoState.CachedDriveYawDeg);
-            if (world.GameTimeSec - autoState.LastAutoAimSec >= AutoAimIntervalSec)
-            {
-                UpdateTurretAim(world, runtimeGrid, entity, dt, playerControlled: false);
-                autoState.LastAutoAimSec = world.GameTimeSec;
-            }
-
+            long aimStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+            MaybeUpdateAutoTurretAim(world, runtimeGrid, entity, dt, autoState);
+            autoAimTicks += System.Diagnostics.Stopwatch.GetTimestamp() - aimStartTicks;
+            LogSlowAutoControlIfNeeded(entity, controlBranch, controlStartTicks, navigationTicks, autoAimTicks);
             return;
         }
 
         autoState.LastAutoDecisionSec = world.GameTimeSec;
+        long navigationStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
         if (TryApplyRespawnRecoveryNavigation(world, runtimeGrid, entity, dt))
         {
-            UpdateTurretAim(world, runtimeGrid, entity, dt, playerControlled: false);
-            autoState.LastAutoAimSec = world.GameTimeSec;
+            navigationTicks += System.Diagnostics.Stopwatch.GetTimestamp() - navigationStartTicks;
+            controlBranch = "recover";
+            long aimStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+            MaybeUpdateAutoTurretAim(world, runtimeGrid, entity, dt, autoState, force: true);
+            autoAimTicks += System.Diagnostics.Stopwatch.GetTimestamp() - aimStartTicks;
+            LogSlowAutoControlIfNeeded(entity, controlBranch, controlStartTicks, navigationTicks, autoAimTicks);
             return;
         }
+        navigationTicks += System.Diagnostics.Stopwatch.GetTimestamp() - navigationStartTicks;
 
         bool hasNonAttackTacticalCommand = string.Equals(entity.TacticalCommand, "defend", StringComparison.OrdinalIgnoreCase)
             || string.Equals(entity.TacticalCommand, "patrol", StringComparison.OrdinalIgnoreCase);
         if (enemy is null && !hasNonAttackTacticalCommand)
         {
+            controlBranch = "idle_no_enemy";
             _navigationStates.Remove(entity.Id);
             entity.TraversalDirectionDeg = entity.AngleDeg;
             entity.ChassisTargetYawDeg = entity.AngleDeg;
@@ -263,24 +341,34 @@ internal sealed class TerrainMotionService
             entity.AutoAimLocked = false;
             entity.AutoAimTargetId = null;
             entity.AutoAimPlateId = null;
+            LogSlowAutoControlIfNeeded(entity, controlBranch, controlStartTicks, navigationTicks, autoAimTicks);
             entity.AiDecisionSelected = "idle";
             entity.AiDecision = "待机";
             return;
         }
 
         double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
+        navigationStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
         SimulationEntity? tacticalTarget = ResolveTacticalAttackTarget(world, entity) ?? enemy;
-        if (TryApplyTacticalNavigation(world, runtimeGrid, entity, tacticalTarget, dt, metersPerWorldUnit))
+        navigationTicks += System.Diagnostics.Stopwatch.GetTimestamp() - navigationStartTicks;
+        navigationStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+        if (TryApplyTacticalNavigation(world, runtimeGrid, entity, autoState, tacticalTarget, dt, metersPerWorldUnit))
         {
+            navigationTicks += System.Diagnostics.Stopwatch.GetTimestamp() - navigationStartTicks;
+            controlBranch = "tactical_nav";
+            LogSlowAutoControlIfNeeded(entity, controlBranch, controlStartTicks, navigationTicks, autoAimTicks);
             return;
         }
+        navigationTicks += System.Diagnostics.Stopwatch.GetTimestamp() - navigationStartTicks;
 
         if (tacticalTarget is null)
         {
+            controlBranch = "idle_no_tactical";
             entity.TraversalDirectionDeg = entity.AngleDeg;
             entity.ChassisTargetYawDeg = entity.AngleDeg;
             CacheAutoDrive(autoState, 0.0, 0.0, entity.TraversalDirectionDeg);
             ApplyDriveControl(world, entity, 0, 0, dt, entity.TraversalDirectionDeg);
+            LogSlowAutoControlIfNeeded(entity, controlBranch, controlStartTicks, navigationTicks, autoAimTicks);
             ClearAutoAimState(entity);
             entity.AiDecisionSelected = "idle";
             entity.AiDecision = "待机";
@@ -336,6 +424,7 @@ internal sealed class TerrainMotionService
         bool plannedNavigationApplied = false;
         if (distanceM > desiredDistanceM + 0.25)
         {
+            controlBranch = "advance";
             double heading = RadiansToDegrees(Math.Atan2(dy, dx));
             if (string.Equals(mode, "flank", StringComparison.OrdinalIgnoreCase))
             {
@@ -351,6 +440,7 @@ internal sealed class TerrainMotionService
                 shouldUsePlannedNavigation = true;
             }
 
+            navigationStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
             if (shouldUsePlannedNavigation
                 && TryApplyPlannedNavigation(
                     world,
@@ -366,29 +456,54 @@ internal sealed class TerrainMotionService
                     tacticalTarget))
             {
                 plannedNavigationApplied = true;
+                controlBranch = "planned_nav";
             }
             else
             {
                 entity.TraversalDirectionDeg = SimulationCombatMath.NormalizeDeg(heading);
                 moveForward = aggressionScale;
+                controlBranch = shouldUsePlannedNavigation ? "fallback_direct" : "direct";
             }
+            navigationTicks += System.Diagnostics.Stopwatch.GetTimestamp() - navigationStartTicks;
         }
         else
         {
+            controlBranch = "hold_range";
             _navigationStates.Remove(entity.Id);
             entity.TraversalDirectionDeg = entity.AngleDeg;
         }
 
         if (plannedNavigationApplied)
         {
-            UpdateTurretAim(world, runtimeGrid, entity, dt, playerControlled: false);
-            autoState.LastAutoAimSec = world.GameTimeSec;
+            long aimStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+            MaybeUpdateAutoTurretAim(world, runtimeGrid, entity, dt, autoState);
+            autoAimTicks += System.Diagnostics.Stopwatch.GetTimestamp() - aimStartTicks;
+            LogSlowAutoControlIfNeeded(entity, controlBranch, controlStartTicks, navigationTicks, autoAimTicks);
             return;
         }
 
         entity.ChassisTargetYawDeg = entity.TraversalDirectionDeg;
         CacheAutoDrive(autoState, moveForward, moveRight, entity.TraversalDirectionDeg);
         ApplyDriveControl(world, entity, moveForward, moveRight, dt, entity.TraversalDirectionDeg);
+        long finalAimStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+        MaybeUpdateAutoTurretAim(world, runtimeGrid, entity, dt, autoState);
+        autoAimTicks += System.Diagnostics.Stopwatch.GetTimestamp() - finalAimStartTicks;
+        LogSlowAutoControlIfNeeded(entity, controlBranch, controlStartTicks, navigationTicks, autoAimTicks);
+    }
+
+    private void MaybeUpdateAutoTurretAim(
+        SimulationWorldState world,
+        RuntimeGridData runtimeGrid,
+        SimulationEntity entity,
+        double dt,
+        NavigationPathState autoState,
+        bool force = false)
+    {
+        if (!force && world.GameTimeSec - autoState.LastAutoAimSec < AutoAimIntervalSec)
+        {
+            return;
+        }
+
         UpdateTurretAim(world, runtimeGrid, entity, dt, playerControlled: false);
         autoState.LastAutoAimSec = world.GameTimeSec;
     }
@@ -397,6 +512,7 @@ internal sealed class TerrainMotionService
         SimulationWorldState world,
         RuntimeGridData runtimeGrid,
         SimulationEntity entity,
+        NavigationPathState autoState,
         SimulationEntity? tacticalTarget,
         double dt,
         double metersPerWorldUnit)
@@ -465,7 +581,7 @@ internal sealed class TerrainMotionService
             {
                 entity.TraversalDirectionDeg = SimulationCombatMath.NormalizeDeg(RadiansToDegrees(Math.Atan2(dy, dx)));
                 entity.ChassisTargetYawDeg = entity.TraversalDirectionDeg;
-                CacheAutoDrive(GetOrCreateNavigationState(entity.Id), drive, 0.0, entity.TraversalDirectionDeg);
+                CacheAutoDrive(GetOrCreateNavigationState(entity.Id, world.GameTimeSec), drive, 0.0, entity.TraversalDirectionDeg);
                 ApplyDriveControl(world, entity, drive, 0.0, dt, entity.TraversalDirectionDeg);
             }
         }
@@ -473,11 +589,11 @@ internal sealed class TerrainMotionService
         {
             _navigationStates.Remove(entity.Id);
             entity.ChassisTargetYawDeg = entity.AngleDeg;
-            CacheAutoDrive(GetOrCreateNavigationState(entity.Id), 0.0, 0.0, entity.AngleDeg);
+            CacheAutoDrive(GetOrCreateNavigationState(entity.Id, world.GameTimeSec), 0.0, 0.0, entity.AngleDeg);
             ApplyDriveControl(world, entity, 0.0, 0.0, dt, entity.AngleDeg);
         }
 
-        UpdateTurretAim(world, runtimeGrid, entity, dt, playerControlled: false);
+        MaybeUpdateAutoTurretAim(world, runtimeGrid, entity, dt, autoState);
         return true;
     }
 
@@ -497,7 +613,7 @@ internal sealed class TerrainMotionService
         if (_navigationStates.TryGetValue(entity.Id, out NavigationPathState? existingState)
             && existingState.Waypoints.Count == 0
             && string.Equals(existingState.NavigationKey, navigationKey, StringComparison.Ordinal)
-            && world.GameTimeSec - existingState.PlannedAtSec < 0.75)
+            && world.GameTimeSec - existingState.PlannedAtSec < NavigationPlanQueueIntervalSec)
         {
             return false;
         }
@@ -550,7 +666,7 @@ internal sealed class TerrainMotionService
             return true;
         }
 
-        NavigationPathState state = GetOrCreateNavigationState(entity.Id);
+        NavigationPathState state = GetOrCreateNavigationState(entity.Id, world.GameTimeSec);
         double replanInterval = targetEntity is null ? NavigationReplanIntervalStaticSec : NavigationReplanIntervalMovingSec;
         string motionBlockReason = entity.MotionBlockReason ?? string.Empty;
         double elapsedSincePlan = world.GameTimeSec - state.PlannedAtSec;
@@ -566,7 +682,7 @@ internal sealed class TerrainMotionService
         bool blockedReplan =
             !string.IsNullOrWhiteSpace(motionBlockReason)
             && IsNavigationBlockReason(motionBlockReason)
-            && elapsedSincePlan >= 0.65;
+            && elapsedSincePlan >= NavigationPlanQueueIntervalSec;
         bool needsReplan =
             emptyPlanExpired
             || goalMovedEnough
@@ -667,10 +783,17 @@ internal sealed class TerrainMotionService
         int goalCellX,
         int goalCellY)
     {
-        if (state.PendingPlanTask is { IsCompleted: false }
-            && string.Equals(state.PendingNavigationKey, navigationKey, StringComparison.Ordinal)
-            && state.PendingGoalCellX == goalCellX
-            && state.PendingGoalCellY == goalCellY)
+        if (state.PendingPlanTask is { IsCompleted: false })
+        {
+            return;
+        }
+
+        if (world.GameTimeSec - state.LastPlanQueuedSec < NavigationPlanQueueIntervalSec)
+        {
+            return;
+        }
+
+        if (CountPendingNavigationPlans() >= NavigationMaxPendingPlanTasks)
         {
             return;
         }
@@ -680,8 +803,23 @@ internal sealed class TerrainMotionService
         state.PendingNavigationKey = navigationKey;
         state.PendingGoalCellX = goalCellX;
         state.PendingGoalCellY = goalCellY;
+        state.LastPlanQueuedSec = world.GameTimeSec;
         state.PendingPlanTask = Task.Run(() =>
             BuildNavigationPathFromSnapshot(runtimeGrid, unit, obstacles, navigationKey, goalCellX, goalCellY));
+    }
+
+    private int CountPendingNavigationPlans()
+    {
+        int count = 0;
+        foreach (NavigationPathState state in _navigationStates.Values)
+        {
+            if (state.PendingPlanTask is { IsCompleted: false })
+            {
+                count++;
+            }
+        }
+
+        return count;
     }
 
     private static NavigationUnitSnapshot CaptureNavigationUnitSnapshot(SimulationEntity entity)
@@ -770,7 +908,7 @@ internal sealed class TerrainMotionService
         state.CachedDriveYawDeg = SimulationCombatMath.NormalizeDeg(driveYawDeg);
     }
 
-    private NavigationPathState GetOrCreateNavigationState(string entityId)
+    private NavigationPathState GetOrCreateNavigationState(string entityId, double? gameTimeSec = null)
     {
         if (!_navigationStates.TryGetValue(entityId, out NavigationPathState? state))
         {
@@ -778,7 +916,24 @@ internal sealed class TerrainMotionService
             _navigationStates[entityId] = state;
         }
 
+        if (gameTimeSec.HasValue && !state.PhaseSeeded)
+        {
+            SeedNavigationStatePhase(state, entityId, gameTimeSec.Value);
+        }
+
         return state;
+    }
+
+    private static void SeedNavigationStatePhase(NavigationPathState state, string entityId, double gameTimeSec)
+    {
+        double phase = StableUnitPhase(entityId);
+        state.LastAutoDecisionSec = gameTimeSec - phase % AutoDecisionIntervalSec;
+        state.LastAutoAimSec = gameTimeSec - (phase * 1.37) % AutoAimIntervalSec;
+        state.LastEnemyProbeSec = gameTimeSec - (phase * 1.73) % EnemyProbeIntervalSec;
+        state.LastDirectProbeSec = gameTimeSec - (phase * 1.91) % NavigationDirectProbeIntervalSec;
+        state.LastLookAheadProbeSec = gameTimeSec - (phase * 2.07) % NavigationLookAheadProbeIntervalSec;
+        state.LastPlanQueuedSec = gameTimeSec - (phase * 2.21) % NavigationPlanQueueIntervalSec;
+        state.PhaseSeeded = true;
     }
 
     private bool HasActiveNavigationState(string entityId)
@@ -795,7 +950,7 @@ internal sealed class TerrainMotionService
         double targetX,
         double targetY)
     {
-        NavigationPathState state = GetOrCreateNavigationState(entity.Id);
+        NavigationPathState state = GetOrCreateNavigationState(entity.Id, world.GameTimeSec);
         if (world.GameTimeSec - state.LastDirectProbeSec < NavigationDirectProbeIntervalSec)
         {
             return state.LastDirectCorridorBlocked;
@@ -1665,6 +1820,33 @@ internal sealed class TerrainMotionService
         bool useAutoAim = entity.AutoAimRequested || !playerControlled;
         if (!useAutoAim)
         {
+            _autoAimSolveCache.Remove(entity.Id);
+            ClearAutoAimState(entity);
+            return;
+        }
+
+        if (TryReuseRecentAutoAimSolution(world, entity, playerControlled, out SimulationEntity? cachedTarget, out ArmorPlateTarget cachedPlate, out AutoAimSolution cachedSolution))
+        {
+            ApplyAutoAimSolution(entity, cachedTarget!, cachedPlate, cachedSolution, dt);
+            return;
+        }
+
+        if (TryResolveLockedArmorTarget(world, entity, _rules.Combat.AutoAimMaxDistanceM, out SimulationEntity? lockedTarget, out ArmorPlateTarget lockedPlate))
+        {
+            AutoAimSolution lockedSolution = SimulationCombatMath.ComputeAutoAimSolution(
+                world,
+                entity,
+                lockedTarget!,
+                lockedPlate,
+                _rules.Combat.AutoAimMaxDistanceM);
+            StoreAutoAimSolution(entity, lockedTarget!, lockedPlate, lockedSolution, world.GameTimeSec);
+            ApplyAutoAimSolution(entity, lockedTarget!, lockedPlate, lockedSolution, dt);
+            return;
+        }
+
+        if (!HasRoughAutoAimCandidate(world, entity, _rules.Combat.AutoAimMaxDistanceM))
+        {
+            _autoAimSolveCache.Remove(entity.Id);
             ClearAutoAimState(entity);
             return;
         }
@@ -1677,6 +1859,7 @@ internal sealed class TerrainMotionService
             out ArmorPlateTarget plate,
             (candidate, candidatePlate) => AutoAimVisibility.CanSeePlate(world, runtimeGrid, entity, candidate, candidatePlate)))
         {
+            _autoAimSolveCache.Remove(entity.Id);
             ClearAutoAimState(entity);
             return;
         }
@@ -1687,7 +1870,261 @@ internal sealed class TerrainMotionService
             target!,
             plate,
             _rules.Combat.AutoAimMaxDistanceM);
+        StoreAutoAimSolution(entity, target!, plate, solution, world.GameTimeSec);
         ApplyAutoAimSolution(entity, target!, plate, solution, dt);
+    }
+
+    private bool TryReuseRecentAutoAimSolution(
+        SimulationWorldState world,
+        SimulationEntity entity,
+        bool playerControlled,
+        out SimulationEntity? target,
+        out ArmorPlateTarget plate,
+        out AutoAimSolution solution)
+    {
+        target = null;
+        plate = default;
+        solution = default;
+
+        if (!_autoAimSolveCache.TryGetValue(entity.Id, out AutoAimSolveCache? cache))
+        {
+            return false;
+        }
+
+        double reuseWindowSec = ResolveAutoAimReuseWindowSec(entity, playerControlled);
+        if (reuseWindowSec <= 1e-6 || world.GameTimeSec - cache.GameTimeSec > reuseWindowSec)
+        {
+            return false;
+        }
+
+        if (string.Equals(entity.AutoAimTargetMode, "energy", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(cache.TargetKind, "energy_disk", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        target = world.Entities.FirstOrDefault(candidate =>
+            candidate.IsAlive
+            && !candidate.IsSimulationSuppressed
+            && string.Equals(candidate.Id, cache.TargetId, StringComparison.OrdinalIgnoreCase));
+        if (target is null)
+        {
+            return false;
+        }
+
+        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
+        plate = SimulationCombatMath.GetArmorPlateTargets(target, metersPerWorldUnit, world.GameTimeSec)
+            .FirstOrDefault(candidate => string.Equals(candidate.Id, cache.PlateId, StringComparison.OrdinalIgnoreCase));
+        if (string.IsNullOrWhiteSpace(plate.Id))
+        {
+            target = null;
+            plate = default;
+            return false;
+        }
+
+        double dxWorld = plate.X - entity.X;
+        double dyWorld = plate.Y - entity.Y;
+        double distanceM = Math.Sqrt(dxWorld * dxWorld + dyWorld * dyWorld) * metersPerWorldUnit;
+        if (distanceM > _rules.Combat.AutoAimMaxDistanceM + 0.4)
+        {
+            target = null;
+            plate = default;
+            return false;
+        }
+
+        solution = cache.Solution;
+        return true;
+    }
+
+    private static double ResolveAutoAimReuseWindowSec(SimulationEntity entity, bool playerControlled)
+    {
+        bool largeProjectile = string.Equals(entity.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase);
+        if (!largeProjectile && !entity.TraversalActive)
+        {
+            return 0.0;
+        }
+
+        double reuseWindowSec = 0.0;
+        if (largeProjectile && playerControlled)
+        {
+            reuseWindowSec = LargeProjectileAutoAimReuseSec;
+        }
+
+        if (entity.TraversalActive)
+        {
+            reuseWindowSec = Math.Max(reuseWindowSec, TraversalAutoAimReuseSec);
+        }
+
+        return reuseWindowSec;
+    }
+
+    private void StoreAutoAimSolution(
+        SimulationEntity entity,
+        SimulationEntity target,
+        ArmorPlateTarget plate,
+        AutoAimSolution solution,
+        double gameTimeSec)
+    {
+        _autoAimSolveCache[entity.Id] = new AutoAimSolveCache(
+            gameTimeSec,
+            target.Id,
+            plate.Id,
+            plate.Id.StartsWith("energy_", StringComparison.OrdinalIgnoreCase) ? "energy_disk" : "armor",
+            solution);
+    }
+
+    private static bool TryResolveLockedArmorTarget(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        double maxDistanceM,
+        out SimulationEntity? target,
+        out ArmorPlateTarget plate)
+    {
+        target = null;
+        plate = default;
+        if (!shooter.AutoAimLocked
+            || !string.Equals(shooter.AutoAimTargetKind, "armor", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(shooter.AutoAimTargetMode, "energy", StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(shooter.AutoAimTargetId)
+            || string.IsNullOrWhiteSpace(shooter.AutoAimPlateId))
+        {
+            return false;
+        }
+
+        target = world.Entities.FirstOrDefault(candidate =>
+            candidate.IsAlive
+            && !candidate.IsSimulationSuppressed
+            && !string.Equals(candidate.Team, shooter.Team, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(candidate.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(candidate.Id, shooter.AutoAimTargetId, StringComparison.OrdinalIgnoreCase));
+        if (target is null)
+        {
+            return false;
+        }
+
+        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
+        plate = SimulationCombatMath.GetArmorPlateTargets(target, metersPerWorldUnit, world.GameTimeSec)
+            .FirstOrDefault(candidate => string.Equals(candidate.Id, shooter.AutoAimPlateId, StringComparison.OrdinalIgnoreCase));
+        if (string.IsNullOrWhiteSpace(plate.Id))
+        {
+            target = null;
+            plate = default;
+            return false;
+        }
+
+        double dxWorld = plate.X - shooter.X;
+        double dyWorld = plate.Y - shooter.Y;
+        double distanceM = Math.Sqrt(dxWorld * dxWorld + dyWorld * dyWorld) * metersPerWorldUnit;
+        if (distanceM > maxDistanceM + 0.4 || !IsArmorPlateFacingShooter(shooter, plate))
+        {
+            target = null;
+            plate = default;
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsArmorPlateFacingShooter(SimulationEntity shooter, ArmorPlateTarget plate)
+    {
+        if (plate.Id.Contains("top", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        double toShooterYawDeg = SimulationCombatMath.NormalizeDeg(Math.Atan2(shooter.Y - plate.Y, shooter.X - plate.X) * 180.0 / Math.PI);
+        double facingError = Math.Abs(SimulationCombatMath.NormalizeSignedDeg(toShooterYawDeg - plate.YawDeg));
+        return facingError <= 86.0;
+    }
+
+    private static bool HasRoughAutoAimCandidate(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        double maxDistanceM)
+    {
+        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
+        double maxDistanceWorld = Math.Max(0.0, maxDistanceM) / metersPerWorldUnit;
+        double maxDistanceSquared = (maxDistanceWorld + 1.5) * (maxDistanceWorld + 1.5);
+        bool energyMode = string.Equals(shooter.AutoAimTargetMode, "energy", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(shooter.RoleKey, "hero", StringComparison.OrdinalIgnoreCase);
+        foreach (SimulationEntity candidate in world.Entities)
+        {
+            if (!candidate.IsAlive
+                || candidate.IsSimulationSuppressed
+                || string.Equals(candidate.Id, shooter.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            bool energyCandidate = string.Equals(candidate.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase);
+            if (energyMode)
+            {
+                if (!energyCandidate)
+                {
+                    continue;
+                }
+            }
+            else
+            {
+                if (energyCandidate || string.Equals(candidate.Team, shooter.Team, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+            }
+
+            double dx = candidate.X - shooter.X;
+            double dy = candidate.Y - shooter.Y;
+            double radius = candidate.CollisionRadiusWorld > 1e-6
+                ? candidate.CollisionRadiusWorld
+                : Math.Max(0.15, Math.Max(candidate.BodyLengthM, candidate.BodyWidthM) * 0.5);
+            double allowed = maxDistanceWorld + radius + 0.4;
+            if (dx * dx + dy * dy <= Math.Min(maxDistanceSquared, allowed * allowed))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void LogSlowAutoControlIfNeeded(
+        SimulationEntity entity,
+        string branch,
+        long controlStartTicks,
+        long navigationTicks,
+        long autoAimTicks)
+    {
+        long totalTicks = System.Diagnostics.Stopwatch.GetTimestamp() - controlStartTicks;
+        double totalMs = TicksToMs(totalTicks);
+        if (totalMs < 4.0)
+        {
+            return;
+        }
+
+        long nowTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+        if (_lastSlowControlLogTicks > 0
+            && (nowTicks - _lastSlowControlLogTicks) / (double)System.Diagnostics.Stopwatch.Frequency < 0.35)
+        {
+            return;
+        }
+
+        _lastSlowControlLogTicks = nowTicks;
+        string line =
+            $"{DateTime.Now:HH:mm:ss.fff} "
+            + $"entity={entity.Id} role={entity.RoleKey} team={entity.Team} "
+            + $"branch={branch} total={totalMs:0.00}ms "
+            + $"nav={TicksToMs(navigationTicks):0.00}ms "
+            + $"aim={TicksToMs(autoAimTicks):0.00}ms "
+            + $"block={entity.MotionBlockReason}";
+        try
+        {
+            string logDirectory = Path.Combine(AppContext.BaseDirectory, "logs");
+            Directory.CreateDirectory(logDirectory);
+            File.AppendAllText(Path.Combine(logDirectory, "motion_control_slow.log"), line + Environment.NewLine);
+        }
+        catch
+        {
+        }
     }
 
     private static void ApplyAutoAimSolution(
@@ -2612,13 +3049,54 @@ internal sealed class TerrainMotionService
         double maxX = runtimeGrid.WidthCells * runtimeGrid.CellWidthWorld;
         double maxY = runtimeGrid.HeightCells * runtimeGrid.CellHeightWorld;
         double allowedRise = maxStepHeightM + jumpClearanceM + 1e-6;
-        foreach ((double offsetX, double offsetY) in BuildCollisionFootprintSamples(
-            runtimeGrid,
-            entity,
-            Math.Max(world.MetersPerWorldUnit, 1e-6)))
+        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
+        double halfLengthWorld = ResolveCollisionHalfLengthM(entity) / metersPerWorldUnit;
+        double halfWidthWorld = ResolveCollisionHalfWidthM(entity) / metersPerWorldUnit;
+        double yawRad = DegreesToRadians(entity.AngleDeg);
+        double forwardX = Math.Cos(yawRad);
+        double forwardY = Math.Sin(yawRad);
+        double rightX = -forwardY;
+        double rightY = forwardX;
+        double spacing = Math.Max(
+            Math.Min(runtimeGrid.CellWidthWorld, runtimeGrid.CellHeightWorld) * 0.55,
+            Math.Min(halfLengthWorld, halfWidthWorld) * 0.45);
+        int xSteps = Math.Clamp((int)Math.Ceiling(halfLengthWorld * 2.0 / Math.Max(spacing, 1e-6)), 2, 6);
+        int ySteps = Math.Clamp((int)Math.Ceiling(halfWidthWorld * 2.0 / Math.Max(spacing, 1e-6)), 2, 6);
+
+        if (!CanOccupyLocalSample(0.0, 0.0))
         {
-            double sampleX = centerX + offsetX;
-            double sampleY = centerY + offsetY;
+            return false;
+        }
+
+        for (int xi = 0; xi <= xSteps; xi++)
+        {
+            double localX = -halfLengthWorld + halfLengthWorld * 2.0 * xi / xSteps;
+            if (!CanOccupyLocalSample(localX, -halfWidthWorld)
+                || !CanOccupyLocalSample(localX, halfWidthWorld))
+            {
+                return false;
+            }
+        }
+
+        for (int yi = 1; yi < ySteps; yi++)
+        {
+            double localY = -halfWidthWorld + halfWidthWorld * 2.0 * yi / ySteps;
+            if (!CanOccupyLocalSample(-halfLengthWorld, localY)
+                || !CanOccupyLocalSample(halfLengthWorld, localY))
+            {
+                return false;
+            }
+        }
+
+        return CanOccupyLocalSample(halfLengthWorld * 0.50, 0.0)
+            && CanOccupyLocalSample(-halfLengthWorld * 0.50, 0.0)
+            && CanOccupyLocalSample(0.0, halfWidthWorld * 0.50)
+            && CanOccupyLocalSample(0.0, -halfWidthWorld * 0.50);
+
+        bool CanOccupyLocalSample(double localX, double localY)
+        {
+            double sampleX = centerX + forwardX * localX + rightX * localY;
+            double sampleY = centerY + forwardY * localX + rightY * localY;
             if (sampleX < 0.0 || sampleY < 0.0 || sampleX >= maxX || sampleY >= maxY)
             {
                 return false;
@@ -2637,58 +3115,8 @@ internal sealed class TerrainMotionService
             {
                 return false;
             }
-        }
 
-        return true;
-    }
-
-    private static IReadOnlyList<(double X, double Y)> BuildCollisionFootprintSamples(
-        RuntimeGridData runtimeGrid,
-        SimulationEntity entity,
-        double metersPerWorldUnit)
-    {
-        double halfLengthWorld = ResolveCollisionHalfLengthM(entity) / metersPerWorldUnit;
-        double halfWidthWorld = ResolveCollisionHalfWidthM(entity) / metersPerWorldUnit;
-        double yawRad = DegreesToRadians(entity.AngleDeg);
-        double forwardX = Math.Cos(yawRad);
-        double forwardY = Math.Sin(yawRad);
-        double rightX = Math.Cos(yawRad + Math.PI * 0.5);
-        double rightY = Math.Sin(yawRad + Math.PI * 0.5);
-        double spacing = Math.Max(
-            Math.Min(runtimeGrid.CellWidthWorld, runtimeGrid.CellHeightWorld) * 0.55,
-            Math.Min(halfLengthWorld, halfWidthWorld) * 0.45);
-        var samples = new List<(double X, double Y)>(20)
-        {
-            (0.0, 0.0),
-        };
-
-        int xSteps = Math.Clamp((int)Math.Ceiling(halfLengthWorld * 2.0 / Math.Max(spacing, 1e-6)), 2, 6);
-        int ySteps = Math.Clamp((int)Math.Ceiling(halfWidthWorld * 2.0 / Math.Max(spacing, 1e-6)), 2, 6);
-        for (int xi = 0; xi <= xSteps; xi++)
-        {
-            double localX = -halfLengthWorld + halfLengthWorld * 2.0 * xi / xSteps;
-            AddLocalSample(localX, -halfWidthWorld);
-            AddLocalSample(localX, halfWidthWorld);
-        }
-
-        for (int yi = 1; yi < ySteps; yi++)
-        {
-            double localY = -halfWidthWorld + halfWidthWorld * 2.0 * yi / ySteps;
-            AddLocalSample(-halfLengthWorld, localY);
-            AddLocalSample(halfLengthWorld, localY);
-        }
-
-        AddLocalSample(halfLengthWorld * 0.50, 0.0);
-        AddLocalSample(-halfLengthWorld * 0.50, 0.0);
-        AddLocalSample(0.0, halfWidthWorld * 0.50);
-        AddLocalSample(0.0, -halfWidthWorld * 0.50);
-        return samples;
-
-        void AddLocalSample(double localX, double localY)
-        {
-            samples.Add((
-                forwardX * localX + rightX * localY,
-                forwardY * localX + rightY * localY));
+            return true;
         }
     }
 
@@ -2721,7 +3149,7 @@ internal sealed class TerrainMotionService
         {
             entity.TraversalDirectionDeg = entity.AngleDeg;
             entity.ChassisTargetYawDeg = entity.AngleDeg;
-            CacheAutoDrive(GetOrCreateNavigationState(entity.Id), 0.0, 0.0, entity.AngleDeg);
+            CacheAutoDrive(GetOrCreateNavigationState(entity.Id, world.GameTimeSec), 0.0, 0.0, entity.AngleDeg);
             ApplyDriveControl(world, entity, 0.0, 0.0, dt, entity.AngleDeg);
             entity.BuyAmmoRequested = false;
             entity.AiDecisionSelected = "recover";
@@ -2758,7 +3186,7 @@ internal sealed class TerrainMotionService
         double dy = targetY - entity.Y;
         entity.TraversalDirectionDeg = SimulationCombatMath.NormalizeDeg(RadiansToDegrees(Math.Atan2(dy, dx)));
         entity.ChassisTargetYawDeg = entity.TraversalDirectionDeg;
-        CacheAutoDrive(GetOrCreateNavigationState(entity.Id), 0.88, 0.0, entity.TraversalDirectionDeg);
+        CacheAutoDrive(GetOrCreateNavigationState(entity.Id, world.GameTimeSec), 0.88, 0.0, entity.TraversalDirectionDeg);
         ApplyDriveControl(world, entity, 0.88, 0.0, dt, entity.TraversalDirectionDeg);
         entity.AiDecisionSelected = "recover";
         entity.AiDecision = "回家恢复";
@@ -3427,23 +3855,12 @@ internal sealed class TerrainMotionService
         reason = string.Empty;
         bool found = false;
         float bestPenetration = 0f;
-        foreach ((CollisionFootprint obstacle, string obstacleReason) in EnumerateBlockingGridCells(runtimeGrid, footprint, currentHeight))
+
+        if (TryFindBlockingGridCellContact(runtimeGrid, footprint, currentHeight, out Vector2 gridMtv, out float gridPenetration))
         {
-            if (!IntersectsFootprint(footprint, obstacle))
-            {
-                continue;
-            }
-
-            Vector2 mtv = ComputeMinimumTranslationVector(footprint, obstacle);
-            float penetration = mtv.Length();
-            if (penetration <= bestPenetration)
-            {
-                continue;
-            }
-
-            bestPenetration = penetration;
-            separationVector = mtv;
-            reason = obstacleReason;
+            bestPenetration = gridPenetration;
+            separationVector = gridMtv;
+            reason = "static_grid_contact";
             found = true;
         }
 
@@ -3462,16 +3879,25 @@ internal sealed class TerrainMotionService
         return found;
     }
 
-    private IEnumerable<(CollisionFootprint Footprint, string Reason)> EnumerateBlockingGridCells(
+    private static bool TryFindBlockingGridCellContact(
         RuntimeGridData runtimeGrid,
         CollisionFootprint footprint,
-        double currentHeight)
+        double currentHeight,
+        out Vector2 separationVector,
+        out float bestPenetration)
     {
-        Vector2[] corners = GetFootprintVertices(footprint);
-        float minX = corners.Min(point => point.X) - (float)runtimeGrid.CellWidthWorld;
-        float maxX = corners.Max(point => point.X) + (float)runtimeGrid.CellWidthWorld;
-        float minY = corners.Min(point => point.Y) - (float)runtimeGrid.CellHeightWorld;
-        float maxY = corners.Max(point => point.Y) + (float)runtimeGrid.CellHeightWorld;
+        separationVector = Vector2.Zero;
+        bestPenetration = 0f;
+        float halfExtentX = (float)(
+            Math.Abs(footprint.Forward.X) * footprint.HalfLengthWorld
+            + Math.Abs(footprint.Right.X) * footprint.HalfWidthWorld);
+        float halfExtentY = (float)(
+            Math.Abs(footprint.Forward.Y) * footprint.HalfLengthWorld
+            + Math.Abs(footprint.Right.Y) * footprint.HalfWidthWorld);
+        float minX = footprint.Center.X - halfExtentX - (float)runtimeGrid.CellWidthWorld;
+        float maxX = footprint.Center.X + halfExtentX + (float)runtimeGrid.CellWidthWorld;
+        float minY = footprint.Center.Y - halfExtentY - (float)runtimeGrid.CellHeightWorld;
+        float maxY = footprint.Center.Y + halfExtentY + (float)runtimeGrid.CellHeightWorld;
         int startCellX = Math.Clamp(WorldToCellX(runtimeGrid, minX), 0, runtimeGrid.WidthCells - 1);
         int endCellX = Math.Clamp(WorldToCellX(runtimeGrid, maxX), 0, runtimeGrid.WidthCells - 1);
         int startCellY = Math.Clamp(WorldToCellY(runtimeGrid, minY), 0, runtimeGrid.HeightCells - 1);
@@ -3490,19 +3916,33 @@ internal sealed class TerrainMotionService
 
                 double centerX = (cellX + 0.5) * runtimeGrid.CellWidthWorld;
                 double centerY = (cellY + 0.5) * runtimeGrid.CellHeightWorld;
-                yield return (
-                    new CollisionFootprint(
-                        new Vector2((float)centerX, (float)centerY),
-                        Vector2.UnitX,
-                        Vector2.UnitY,
-                        halfCellWidth,
-                        halfCellHeight,
-                        currentHeight - 0.5,
-                        currentHeight + 4.0,
-                        radius),
-                    "static_grid_contact");
+                CollisionFootprint obstacle = new(
+                    new Vector2((float)centerX, (float)centerY),
+                    Vector2.UnitX,
+                    Vector2.UnitY,
+                    halfCellWidth,
+                    halfCellHeight,
+                    currentHeight - 0.5,
+                    currentHeight + 4.0,
+                    radius);
+                if (!IntersectsFootprint(footprint, obstacle))
+                {
+                    continue;
+                }
+
+                Vector2 mtv = ComputeMinimumTranslationVector(footprint, obstacle);
+                float penetration = mtv.Length();
+                if (penetration <= bestPenetration)
+                {
+                    continue;
+                }
+
+                bestPenetration = penetration;
+                separationVector = mtv;
             }
         }
+
+        return bestPenetration > 0f;
     }
 
     private static void ApplyAirborneInertia(
@@ -3540,14 +3980,15 @@ internal sealed class TerrainMotionService
         reason = string.Empty;
         bool found = false;
         float bestPenetration = 0f;
-        foreach (FacilityRegion facility in _facilities)
+        foreach (FacilityCollisionShape shape in EnsureFacilityCollisionShapes(runtimeGrid))
         {
-            if (!FacilityBlocksMovement(facility))
+            float broadPhaseRadius = (float)footprint.BoundingRadiusWorld + shape.BoundingRadiusWorld + 0.03f;
+            if (DistanceSquared(footprint.Center, shape.Center) > broadPhaseRadius * broadPhaseRadius)
             {
                 continue;
             }
 
-            if (TryBuildFacilityPolygon(facility, out List<Vector2> polygon))
+            if (shape.Polygon is { Length: >= 3 } polygon)
             {
                 if (!IntersectsFootprint(footprint, polygon))
                 {
@@ -3563,22 +4004,17 @@ internal sealed class TerrainMotionService
 
                 bestPenetration = penetration;
                 separationVector = mtv;
-                reason = $"facility_contact:{facility.Id}";
+                reason = shape.Reason;
                 found = true;
                 continue;
             }
 
-            if (!TryBuildFacilityCollisionFootprint(runtimeGrid, facility, out CollisionFootprint obstacle))
+            if (!IntersectsFootprint(footprint, shape.Footprint))
             {
                 continue;
             }
 
-            if (!IntersectsFootprint(footprint, obstacle))
-            {
-                continue;
-            }
-
-            Vector2 obstacleMtv = ComputeMinimumTranslationVector(footprint, obstacle);
+            Vector2 obstacleMtv = ComputeMinimumTranslationVector(footprint, shape.Footprint);
             float obstaclePenetration = obstacleMtv.Length();
             if (obstaclePenetration <= bestPenetration)
             {
@@ -3587,11 +4023,66 @@ internal sealed class TerrainMotionService
 
             bestPenetration = obstaclePenetration;
             separationVector = obstacleMtv;
-            reason = $"facility_contact:{facility.Id}";
+            reason = shape.Reason;
             found = true;
         }
 
         return found;
+    }
+
+    private IReadOnlyList<FacilityCollisionShape> EnsureFacilityCollisionShapes(RuntimeGridData runtimeGrid)
+    {
+        if (_facilityCollisionShapes is not null
+            && Math.Abs(_facilityCollisionCellWidthWorld - runtimeGrid.CellWidthWorld) <= 1e-9
+            && Math.Abs(_facilityCollisionCellHeightWorld - runtimeGrid.CellHeightWorld) <= 1e-9)
+        {
+            return _facilityCollisionShapes;
+        }
+
+        var shapes = new List<FacilityCollisionShape>(_facilities.Count);
+        foreach (FacilityRegion facility in _facilities)
+        {
+            if (!FacilityBlocksMovement(facility))
+            {
+                continue;
+            }
+
+            string reason = $"facility_contact:{facility.Id}";
+            if (TryBuildFacilityPolygon(facility, out Vector2[] polygon))
+            {
+                Vector2 center = ComputePolygonCenter(polygon);
+                float radius = 0f;
+                foreach (Vector2 point in polygon)
+                {
+                    radius = MathF.Max(radius, Vector2.Distance(center, point));
+                }
+
+                shapes.Add(new FacilityCollisionShape(
+                    reason,
+                    default,
+                    polygon,
+                    center,
+                    MathF.Max(0.05f, radius)));
+                continue;
+            }
+
+            if (!TryBuildFacilityCollisionFootprint(runtimeGrid, facility, out CollisionFootprint footprint))
+            {
+                continue;
+            }
+
+            shapes.Add(new FacilityCollisionShape(
+                reason,
+                footprint,
+                null,
+                footprint.Center,
+                (float)Math.Max(0.05, footprint.BoundingRadiusWorld)));
+        }
+
+        _facilityCollisionCellWidthWorld = runtimeGrid.CellWidthWorld;
+        _facilityCollisionCellHeightWorld = runtimeGrid.CellHeightWorld;
+        _facilityCollisionShapes = shapes;
+        return shapes;
     }
 
     private static bool TryBuildFacilityCollisionFootprint(
@@ -3659,16 +4150,22 @@ internal sealed class TerrainMotionService
         return true;
     }
 
-    private static bool TryBuildFacilityPolygon(FacilityRegion facility, out List<Vector2> polygon)
+    private static bool TryBuildFacilityPolygon(FacilityRegion facility, out Vector2[] polygon)
     {
-        polygon = new List<Vector2>();
+        polygon = Array.Empty<Vector2>();
         if (!facility.Shape.Equals("polygon", StringComparison.OrdinalIgnoreCase) || facility.Points.Count < 3)
         {
             return false;
         }
 
-        polygon = facility.Points.Select(point => new Vector2((float)point.X, (float)point.Y)).ToList();
-        return polygon.Count >= 3;
+        polygon = new Vector2[facility.Points.Count];
+        for (int index = 0; index < facility.Points.Count; index++)
+        {
+            var point = facility.Points[index];
+            polygon[index] = new Vector2((float)point.X, (float)point.Y);
+        }
+
+        return polygon.Length >= 3;
     }
 
     private static bool FacilityBlocksMovement(FacilityRegion facility)
@@ -4121,7 +4618,7 @@ internal sealed class TerrainMotionService
 
     private SimulationEntity? ResolveCachedNearestEnemy(SimulationWorldState world, SimulationEntity self)
     {
-        NavigationPathState state = GetOrCreateNavigationState(self.Id);
+        NavigationPathState state = GetOrCreateNavigationState(self.Id, world.GameTimeSec);
         if (world.GameTimeSec - state.LastEnemyProbeSec < EnemyProbeIntervalSec
             && !string.IsNullOrWhiteSpace(state.CachedEnemyId))
         {
@@ -4237,8 +4734,10 @@ internal sealed class TerrainMotionService
             entity.HeroDeploymentRequested = false;
             entity.HeroDeploymentActive = false;
             entity.HeroDeploymentHoldTimerSec = 0.0;
+            entity.HeroDeploymentExitHoldTimerSec = 0.0;
             entity.HeroDeploymentYawCorrectionDeg = 0.0;
             entity.HeroDeploymentPitchCorrectionDeg = 0.0;
+            entity.HeroDeploymentLastPitchErrorDeg = 0.0;
             entity.HeroDeploymentCorrectionPlateId = null;
             return;
         }
@@ -4246,8 +4745,10 @@ internal sealed class TerrainMotionService
         if (!entity.HeroDeploymentRequested)
         {
             entity.HeroDeploymentActive = false;
+            entity.HeroDeploymentExitHoldTimerSec = 0.0;
             entity.HeroDeploymentYawCorrectionDeg = 0.0;
             entity.HeroDeploymentPitchCorrectionDeg = 0.0;
+            entity.HeroDeploymentLastPitchErrorDeg = 0.0;
             entity.HeroDeploymentCorrectionPlateId = null;
             return;
         }
@@ -4368,6 +4869,9 @@ internal sealed class TerrainMotionService
         return dx * dx + dy * dy;
     }
 
+    private static double TicksToMs(long ticks)
+        => ticks * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+
     private static double Lerp(double a, double b, double t) => a + (b - a) * Math.Clamp(t, 0.0, 1.0);
 
     private readonly record struct CollisionFootprint(
@@ -4394,6 +4898,13 @@ internal sealed class TerrainMotionService
         Vector2 SeparationVector,
         double PenetrationWorld);
 
+    private readonly record struct FacilityCollisionShape(
+        string Reason,
+        CollisionFootprint Footprint,
+        Vector2[]? Polygon,
+        Vector2 Center,
+        float BoundingRadiusWorld);
+
     private sealed class NavigationPathState
     {
         public string NavigationKey { get; set; } = string.Empty;
@@ -4403,6 +4914,8 @@ internal sealed class TerrainMotionService
         public int GoalCellY { get; set; } = -1;
 
         public double PlannedAtSec { get; set; }
+
+        public double LastPlanQueuedSec { get; set; } = -999.0;
 
         public int NextWaypointIndex { get; set; }
 
@@ -4417,6 +4930,8 @@ internal sealed class TerrainMotionService
         public double LastAutoAimSec { get; set; } = -999.0;
 
         public bool HasCachedAutoDrive { get; set; }
+
+        public bool PhaseSeeded { get; set; }
 
         public double CachedMoveForward { get; set; }
 
@@ -4438,4 +4953,11 @@ internal sealed class TerrainMotionService
 
         public List<(double X, double Y)> Waypoints { get; } = new();
     }
+
+    private sealed record AutoAimSolveCache(
+        double GameTimeSec,
+        string TargetId,
+        string PlateId,
+        string TargetKind,
+        AutoAimSolution Solution);
 }

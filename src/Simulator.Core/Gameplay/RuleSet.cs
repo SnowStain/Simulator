@@ -738,6 +738,8 @@ public sealed class FacilityRuleSet
 
     public double EnergyBuffDurationSec { get; set; } = 45.0;
 
+    public double EnergySmallBuffDurationSec { get; set; } = 20.0;
+
     public double EnergyDamageDealtMult { get; set; } = 1.15;
 
     public double EnergyCoolingMult { get; set; } = 1.20;
@@ -746,6 +748,10 @@ public sealed class FacilityRuleSet
 
     public HashSet<string> EnergyAllowedRoles { get; } =
         new(StringComparer.OrdinalIgnoreCase) { "hero", "infantry", "sentry" };
+
+    public List<double> EnergySmallOpportunityTimesSec { get; } = new() { 0.0, 90.0 };
+
+    public List<double> EnergyLargeOpportunityTimesSec { get; } = new() { 180.0, 255.0, 330.0 };
 
     public Dictionary<string, double> EnergyVirtualHitsPerSec { get; } =
         new(StringComparer.OrdinalIgnoreCase)

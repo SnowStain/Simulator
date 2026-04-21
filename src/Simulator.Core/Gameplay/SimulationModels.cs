@@ -43,7 +43,13 @@ public sealed class SimulationProjectile
 
     public int RicochetCount { get; set; }
 
+    public bool HasAppliedDamage { get; set; }
+
     public double RemainingLifeSec { get; set; } = 3.0;
+
+    public double LastAcceptedSurfaceHitTimeSec { get; set; } = double.NegativeInfinity;
+
+    public string LastAcceptedSurfaceHitKey { get; set; } = string.Empty;
 }
 
 public sealed class SimulationEntity
@@ -133,6 +139,8 @@ public sealed class SimulationEntity
     public double HeroDeploymentYawCorrectionDeg { get; set; }
 
     public double HeroDeploymentPitchCorrectionDeg { get; set; }
+
+    public double HeroDeploymentLastPitchErrorDeg { get; set; }
 
     public string? HeroDeploymentCorrectionPlateId { get; set; }
 
@@ -461,6 +469,8 @@ public sealed class SimulationEntity
 
     public string AmmoType { get; set; } = "17mm";
 
+    public int ShotsFired { get; set; }
+
     public int CarriedMinerals { get; set; }
 
     public double SupplyAccumulatorSec { get; set; }
@@ -490,6 +500,8 @@ public sealed class SimulationEntity
     public double TerrainSlopeCoolingTimerSec { get; set; }
 
     public double HeroDeploymentHoldTimerSec { get; set; }
+
+    public double HeroDeploymentExitHoldTimerSec { get; set; }
 
     public double SuperCapEnergyJ { get; set; }
 
@@ -521,6 +533,7 @@ public sealed class SimulationEntity
             }
 
             Ammo42Mm -= 1;
+            ShotsFired++;
             return true;
         }
 
@@ -535,6 +548,7 @@ public sealed class SimulationEntity
         }
 
         Ammo17Mm -= 1;
+        ShotsFired++;
         return true;
     }
 
@@ -583,6 +597,14 @@ public sealed class SimulationTeamState
     public bool EnergySmallChanceUsed { get; set; }
 
     public int EnergyLastLargeAttemptSlot { get; set; }
+
+    public int EnergySmallOpportunityIndex { get; set; }
+
+    public int EnergyLargeOpportunityIndex { get; set; }
+
+    public int EnergySmallTokens { get; set; }
+
+    public int EnergyLargeTokens { get; set; }
 
     public double EnergyActivationWindowTimerSec { get; set; }
 
@@ -634,6 +656,9 @@ public sealed class SimulationWorldState
     public IList<SimulationEntity> Entities { get; } = new List<SimulationEntity>();
 
     public IList<SimulationProjectile> Projectiles { get; } = new List<SimulationProjectile>();
+
+    public IDictionary<string, double> SurfaceLastAcceptedHitTimes { get; } =
+        new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
 
     public IDictionary<string, SimulationTeamState> Teams { get; } =
         new Dictionary<string, SimulationTeamState>(StringComparer.OrdinalIgnoreCase);

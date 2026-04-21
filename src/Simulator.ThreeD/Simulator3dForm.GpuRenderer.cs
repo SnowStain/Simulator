@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Drawing.Imaging;
+using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Simulator.Core.Gameplay;
@@ -37,8 +39,16 @@ internal sealed partial class Simulator3dForm
     private const int GlArrayBuffer = 0x8892;
     private const int GlStaticDraw = 0x88E4;
     private const int GlDynamicDraw = 0x88E8;
-    private const float GpuTerrainChunkSizeM = 2.0f;
+    private const float GpuTerrainChunkSizeM = 128.0f;
     private const float GpuTerrainSmoothFlatSkipHeightM = 0.048f;
+    private const double GpuOverlayUploadIntervalSec = 1.0 / 30.0;
+
+    private enum GpuDynamicBatchKind
+    {
+        Entity,
+        Facility,
+        Projectile,
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct PixelFormatDescriptor
@@ -82,18 +92,28 @@ internal sealed partial class Simulator3dForm
     private Graphics? _gpuOverlayGraphics;
     private int _gpuOverlayTexture;
     private Size _gpuOverlayTextureSize = Size.Empty;
+    private long _lastGpuOverlayUploadTicks;
     private int _gpuTerrainVertexBuffer;
     private int _gpuTerrainVertexCount;
     private int _gpuTerrainBufferVersion = -1;
     private int _gpuDynamicVertexBuffer;
     private int _gpuDynamicVertexCapacity;
+    private int _gpuEnergyMechanismVertexBuffer;
+    private int _gpuEnergyMechanismVertexCapacity;
+    private int _gpuProjectileVertexBuffer;
+    private int _gpuProjectileVertexCapacity;
     private int _gpuSharedVertexArray;
     private bool _gpuBufferApiReady;
     private bool _gpuBatchingDynamicGeometry;
+    private bool _gpuEnergyMechanismBatchActive;
+    private GpuDynamicBatchKind _gpuCurrentDynamicBatch = GpuDynamicBatchKind.Entity;
+    private long _lastGpuRenderPerfLogTicks;
     private int _gpuTerrainChunkColumns = 1;
     private int _gpuTerrainChunkRows = 1;
     private readonly List<GpuVertex> _gpuTerrainVertexBuildBuffer = new(65536);
     private readonly List<GpuVertex> _gpuDynamicVertexBuildBuffer = new(16384);
+    private readonly List<GpuVertex> _gpuEnergyMechanismVertexBuildBuffer = new(8192);
+    private readonly List<GpuVertex> _gpuProjectileVertexBuildBuffer = new(8192);
     private readonly List<GpuTerrainChunk> _gpuTerrainChunks = new(512);
     private GlGenBuffersDelegate? _glGenBuffers;
     private GlBindBufferDelegate? _glBindBuffer;
@@ -268,6 +288,14 @@ internal sealed partial class Simulator3dForm
 
     private void DrawGpuMatch(Graphics graphics)
     {
+        long frameStartTicks = Stopwatch.GetTimestamp();
+        long terrainTicks = 0;
+        long facilityTicks = 0;
+        long entityTicks = 0;
+        long projectileTicks = 0;
+        long flushTicks = 0;
+        long overlayTicks = 0;
+        long swapTicks = 0;
         if (!EnsureGpuContext())
         {
             DrawInMatchWorld(graphics);
@@ -294,22 +322,38 @@ internal sealed partial class Simulator3dForm
         glLoadMatrixf(ToOpenGlMatrix(_viewMatrix));
 
         _gpuDynamicVertexBuildBuffer.Clear();
+        _gpuEnergyMechanismVertexBuildBuffer.Clear();
+        _gpuProjectileVertexBuildBuffer.Clear();
+        long stepStartTicks = Stopwatch.GetTimestamp();
         DrawGpuTerrainBase();
         DrawGpuTerrainGeometry();
+        terrainTicks = Stopwatch.GetTimestamp() - stepStartTicks;
         _gpuBatchingDynamicGeometry = true;
         _gpuGeometryPass = true;
+        GpuDynamicBatchKind previousBatch = _gpuCurrentDynamicBatch;
         try
         {
+            stepStartTicks = Stopwatch.GetTimestamp();
+            _gpuCurrentDynamicBatch = GpuDynamicBatchKind.Facility;
             DrawGpuFacilities();
             bool previousSuppressLabels = _suppressEntityLabels;
             _suppressEntityLabels = true;
             try
             {
                 DrawStaticStructureBodies(graphics);
+                facilityTicks = Stopwatch.GetTimestamp() - stepStartTicks;
+
+                stepStartTicks = Stopwatch.GetTimestamp();
+                _gpuCurrentDynamicBatch = GpuDynamicBatchKind.Entity;
                 DrawEntityGeometry(graphics);
+                entityTicks = Stopwatch.GetTimestamp() - stepStartTicks;
+
                 if (!_previewOnly)
                 {
+                    stepStartTicks = Stopwatch.GetTimestamp();
+                    _gpuCurrentDynamicBatch = GpuDynamicBatchKind.Projectile;
                     DrawGpuProjectiles();
+                    projectileTicks = Stopwatch.GetTimestamp() - stepStartTicks;
                 }
             }
             finally
@@ -319,19 +363,43 @@ internal sealed partial class Simulator3dForm
         }
         finally
         {
+            _gpuCurrentDynamicBatch = previousBatch;
             _gpuGeometryPass = false;
             _gpuBatchingDynamicGeometry = false;
         }
 
+        int facilityVertices = _gpuEnergyMechanismVertexBuildBuffer.Count;
+        int entityVertices = _gpuDynamicVertexBuildBuffer.Count;
+        int projectileVertices = _gpuProjectileVertexBuildBuffer.Count;
+        stepStartTicks = Stopwatch.GetTimestamp();
+        FlushGpuEnergyMechanismVertices();
         FlushGpuDynamicVertices();
+        FlushGpuProjectileVertices();
+        flushTicks = Stopwatch.GetTimestamp() - stepStartTicks;
         if (!_previewOnly)
         {
             DrawGpuDebugReference();
         }
 
         _hasPresentedGpuFrame = true;
+        stepStartTicks = Stopwatch.GetTimestamp();
         DrawGpuOverlayLayer();
+        overlayTicks = Stopwatch.GetTimestamp() - stepStartTicks;
+        stepStartTicks = Stopwatch.GetTimestamp();
         SwapBuffers(_gpuDeviceContext);
+        swapTicks = Stopwatch.GetTimestamp() - stepStartTicks;
+        LogGpuRenderPerfIfDue(
+            frameStartTicks,
+            terrainTicks,
+            facilityTicks,
+            entityTicks,
+            projectileTicks,
+            flushTicks,
+            overlayTicks,
+            swapTicks,
+            facilityVertices,
+            entityVertices,
+            projectileVertices);
     }
 
     private void DrawGpuOverlayLayer()
@@ -342,12 +410,70 @@ internal sealed partial class Simulator3dForm
             return;
         }
 
-        _gpuOverlayGraphics.Clear(Color.Transparent);
-        _gpuOverlayGraphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        DrawInMatchOverlay(_gpuOverlayGraphics);
-        UploadGpuOverlayBitmap();
+        long nowTicks = _frameClock.ElapsedTicks;
+        bool mustUpload = _gpuOverlayTexture == 0
+            || _gpuOverlayTextureSize != ClientSize
+            || _lastGpuOverlayUploadTicks <= 0
+            || (nowTicks - _lastGpuOverlayUploadTicks) / (double)Stopwatch.Frequency >= GpuOverlayUploadIntervalSec;
+        if (mustUpload)
+        {
+            _gpuOverlayGraphics.Clear(Color.Transparent);
+            _gpuOverlayGraphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            DrawInMatchOverlay(_gpuOverlayGraphics);
+            UploadGpuOverlayBitmap();
+            _lastGpuOverlayUploadTicks = nowTicks;
+        }
+
         PresentGpuOverlayTexture();
     }
+
+    private void LogGpuRenderPerfIfDue(
+        long frameStartTicks,
+        long terrainTicks,
+        long facilityTicks,
+        long entityTicks,
+        long projectileTicks,
+        long flushTicks,
+        long overlayTicks,
+        long swapTicks,
+        int facilityVertices,
+        int entityVertices,
+        int projectileVertices)
+    {
+        long nowTicks = Stopwatch.GetTimestamp();
+        if (_lastGpuRenderPerfLogTicks > 0
+            && (nowTicks - _lastGpuRenderPerfLogTicks) / (double)Stopwatch.Frequency < 2.0)
+        {
+            return;
+        }
+
+        _lastGpuRenderPerfLogTicks = nowTicks;
+        string line =
+            $"{DateTime.Now:HH:mm:ss.fff} "
+            + $"frame={ElapsedMs(frameStartTicks, nowTicks):0.00}ms "
+            + $"map={TicksToMs(terrainTicks):0.00}ms/{_gpuTerrainVertexCount}v/1draw "
+            + $"facility={TicksToMs(facilityTicks):0.00}ms/{facilityVertices}v/{(facilityVertices > 0 ? 1 : 0)}draw "
+            + $"unit={TicksToMs(entityTicks):0.00}ms/{entityVertices}v/{(entityVertices > 0 ? 1 : 0)}draw "
+            + $"projectile={TicksToMs(projectileTicks):0.00}ms/{projectileVertices}v/{(projectileVertices > 0 ? 1 : 0)}draw "
+            + $"flush={TicksToMs(flushTicks):0.00}ms overlay={TicksToMs(overlayTicks):0.00}ms swap={TicksToMs(swapTicks):0.00}ms "
+            + $"entities={_host.World.Entities.Count} projectiles={_host.World.Projectiles.Count}";
+
+        try
+        {
+            string logDirectory = Path.Combine(AppContext.BaseDirectory, "logs");
+            Directory.CreateDirectory(logDirectory);
+            File.AppendAllText(Path.Combine(logDirectory, "render_perf.log"), line + Environment.NewLine);
+        }
+        catch
+        {
+        }
+    }
+
+    private static double ElapsedMs(long startTicks, long endTicks)
+        => (endTicks - startTicks) * 1000.0 / Stopwatch.Frequency;
+
+    private static double TicksToMs(long ticks)
+        => ticks * 1000.0 / Stopwatch.Frequency;
 
     private bool EnsureGpuContext()
     {
@@ -427,13 +553,13 @@ internal sealed partial class Simulator3dForm
             glBindTexture(GlTexture2D, _gpuTerrainTexture);
             glColor4ub(255, 255, 255, 255);
             glBegin(GlQuads);
-            glTexCoord2f(0f, 1f);
-            glVertex3f(0f, 0f, 0f);
-            glTexCoord2f(1f, 1f);
-            glVertex3f(widthM, 0f, 0f);
-            glTexCoord2f(1f, 0f);
-            glVertex3f(widthM, 0f, heightM);
             glTexCoord2f(0f, 0f);
+            glVertex3f(0f, 0f, 0f);
+            glTexCoord2f(1f, 0f);
+            glVertex3f(widthM, 0f, 0f);
+            glTexCoord2f(1f, 1f);
+            glVertex3f(widthM, 0f, heightM);
+            glTexCoord2f(0f, 1f);
             glVertex3f(0f, 0f, heightM);
             glEnd();
             glDisable(GlTexture2D);
@@ -499,7 +625,7 @@ internal sealed partial class Simulator3dForm
 
     private void DrawGpuTerrainGeometry()
     {
-        if (!EnsureGpuTerrainChunkBuildBuffers())
+        if (!EnsureGpuTerrainVertexBuffer())
         {
             DrawGpuTerrainMeshImmediate();
             DrawGpuTerrainFacetsImmediate();
@@ -511,20 +637,45 @@ internal sealed partial class Simulator3dForm
             return;
         }
 
-        GpuTerrainChunkWindow window = ResolveGpuTerrainChunkWindow();
-        for (int row = Math.Max(0, window.CenterRow - 1); row <= Math.Min(_gpuTerrainChunkRows - 1, window.CenterRow + 1); row++)
+        if (_gpuTerrainVertexCount > 0)
         {
-            for (int column = Math.Max(0, window.CenterColumn - 1); column <= Math.Min(_gpuTerrainChunkColumns - 1, window.CenterColumn + 1); column++)
-            {
-                GpuTerrainChunk chunk = _gpuTerrainChunks[row * _gpuTerrainChunkColumns + column];
-                if (!EnsureGpuTerrainChunkUploaded(chunk))
-                {
-                    continue;
-                }
-
-                DrawGpuVertexBuffer(chunk.Buffer, chunk.VertexCount);
-            }
+            DrawGpuVertexBuffer(_gpuTerrainVertexBuffer, _gpuTerrainVertexCount);
         }
+    }
+
+    private bool EnsureGpuTerrainVertexBuffer()
+    {
+        if (!_gpuBufferApiReady || _glGenBuffers is null || _glBindBuffer is null || _glBufferData is null)
+        {
+            return false;
+        }
+
+        if (!ReferenceEquals(_cachedRuntimeGrid, _host.RuntimeGrid))
+        {
+            RebuildTerrainTileCache();
+        }
+
+        if (_gpuTerrainVertexBuffer != 0 && _gpuTerrainBufferVersion == _terrainProjectionCacheVersion)
+        {
+            return true;
+        }
+
+        _gpuTerrainVertexBuildBuffer.Clear();
+        AppendGpuTerrainFaces(_terrainFaces, _gpuTerrainVertexBuildBuffer);
+        AppendGpuTerrainFacets(_gpuTerrainVertexBuildBuffer);
+        _gpuTerrainVertexCount = _gpuTerrainVertexBuildBuffer.Count;
+        if (_gpuTerrainVertexBuffer == 0)
+        {
+            _glGenBuffers(1, out _gpuTerrainVertexBuffer);
+        }
+
+        if (_gpuTerrainVertexCount > 0)
+        {
+            UploadGpuVertexBuffer(_gpuTerrainVertexBuffer, _gpuTerrainVertexBuildBuffer, GlStaticDraw);
+        }
+
+        _gpuTerrainBufferVersion = _terrainProjectionCacheVersion;
+        return true;
     }
 
     private bool EnsureGpuTerrainChunkBuildBuffers()
@@ -1008,6 +1159,7 @@ internal sealed partial class Simulator3dForm
         int smallSlices = projectileCount >= 96 ? 4 : projectileCount >= 48 ? 5 : 6;
         int smallStacks = projectileCount >= 96 ? 2 : 3;
         bool flatProjectileRendering = !_host.SolidProjectileRendering;
+        List<GpuVertex> projectileBuffer = CurrentGpuDynamicBuildBuffer();
         Vector3 cameraRight = Vector3.Zero;
         Vector3 cameraUp = Vector3.Zero;
         if (flatProjectileRendering)
@@ -1060,7 +1212,7 @@ internal sealed partial class Simulator3dForm
             if (!flatProjectileRendering)
             {
                 AppendGpuSphere(
-                    _gpuDynamicVertexBuildBuffer,
+                    projectileBuffer,
                     center,
                     visibleRadius,
                     color,
@@ -1075,7 +1227,7 @@ internal sealed partial class Simulator3dForm
                 Color coreColor = largeRound
                     ? Color.FromArgb(255, 255, 255, 255)
                     : Color.FromArgb(255, 188, 255, 200);
-                AppendGpuProjectileBillboard(_gpuDynamicVertexBuildBuffer, center, visibleRadius, rimColor, coreColor, largeRound ? 10 : 8, cameraRight, cameraUp);
+                AppendGpuProjectileBillboard(projectileBuffer, center, visibleRadius, rimColor, coreColor, largeRound ? 10 : 8, cameraRight, cameraUp);
             }
         }
     }
@@ -1128,39 +1280,51 @@ internal sealed partial class Simulator3dForm
 
     private void DrawGpuEnergyMechanismModel(FacilityRegion region, Color fallbackColor, double? overrideCenterWorldX = null, double? overrideCenterWorldY = null)
     {
+        bool previousEnergyBatch = _gpuEnergyMechanismBatchActive;
+        bool previousDynamicBatch = _gpuBatchingDynamicGeometry;
+        _gpuEnergyMechanismBatchActive = true;
+        _gpuBatchingDynamicGeometry = true;
         RobotAppearanceProfile profile = _host.AppearanceCatalog.ResolveFacilityProfile(region);
         (double centerWorldX, double centerWorldY) = overrideCenterWorldX.HasValue && overrideCenterWorldY.HasValue
             ? (overrideCenterWorldX.Value, overrideCenterWorldY.Value)
             : ResolveFacilityRegionCenter(region);
-        Vector3 center = ToScenePoint(centerWorldX, centerWorldY, 0f);
-        EnergyRenderMesh mesh = EnergyMechanismGeometry.BuildSingle(
-            profile,
-            center,
-            EnergyMechanismGeometry.ResolveAccentColor(region.Team),
-            (float)_host.World.GameTimeSec,
-            ResolveEnergyRotorYawForRender);
-
-        foreach (EnergyRenderPrism prism in mesh.Prisms)
+        try
         {
-            DrawGpuGeneralPrism(prism.Bottom, prism.Top, prism.FillColor);
-        }
+            Vector3 center = ToScenePoint(centerWorldX, centerWorldY, 0f);
+            EnergyRenderMesh mesh = EnergyMechanismGeometry.BuildSingle(
+                profile,
+                center,
+                EnergyMechanismGeometry.ResolveAccentColor(region.Team),
+                (float)_host.World.GameTimeSec,
+                ResolveEnergyRotorYawForRender);
 
-        foreach (EnergyRenderBox box in mesh.Boxes)
+            foreach (EnergyRenderPrism prism in mesh.Prisms)
+            {
+                DrawGpuGeneralPrism(prism.Bottom, prism.Top, prism.FillColor);
+            }
+
+            foreach (EnergyRenderBox box in mesh.Boxes)
+            {
+                DrawGpuOrientedBox(box.Center, box.Forward, box.Right, box.Up, box.Length, box.Width, box.Height, box.FillColor, box.EdgeColor);
+            }
+
+            foreach (EnergyRenderCylinder cylinder in mesh.Cylinders)
+            {
+                DrawGpuDiskTarget(cylinder.Center, cylinder.NormalAxis, cylinder.UpAxis, cylinder.Radius, cylinder.Thickness, cylinder.FillColor, cylinder.Segments);
+            }
+
+            foreach (EnergyRenderAnnulus annulus in mesh.Annuli)
+            {
+                DrawGpuAnnulus(annulus.Center, annulus.NormalAxis, annulus.UpAxis, annulus.InnerRadius, annulus.OuterRadius, annulus.FillColor, annulus.Segments);
+            }
+
+            DrawGpuEnergyMechanismRuleHighlights(region, centerWorldX, centerWorldY);
+        }
+        finally
         {
-            DrawGpuOrientedBox(box.Center, box.Forward, box.Right, box.Up, box.Length, box.Width, box.Height, box.FillColor, box.EdgeColor);
+            _gpuEnergyMechanismBatchActive = previousEnergyBatch;
+            _gpuBatchingDynamicGeometry = previousDynamicBatch;
         }
-
-        foreach (EnergyRenderCylinder cylinder in mesh.Cylinders)
-        {
-            DrawGpuDiskTarget(cylinder.Center, cylinder.NormalAxis, cylinder.UpAxis, cylinder.Radius, cylinder.Thickness, cylinder.FillColor, cylinder.Segments);
-        }
-
-        foreach (EnergyRenderAnnulus annulus in mesh.Annuli)
-        {
-            DrawGpuAnnulus(annulus.Center, annulus.NormalAxis, annulus.UpAxis, annulus.InnerRadius, annulus.OuterRadius, annulus.FillColor, annulus.Segments);
-        }
-
-        DrawGpuEnergyMechanismRuleHighlights(region, centerWorldX, centerWorldY);
     }
 
     private float ResolveEnergyRotorYawForRender(int rotorIndex)
@@ -1212,6 +1376,21 @@ internal sealed partial class Simulator3dForm
             bool showActivated = string.Equals(teamState.EnergyMechanismState, "activated", StringComparison.OrdinalIgnoreCase)
                 && teamState.EnergyBuffTimerSec > 1e-6;
             bool showLastHit = teamState.EnergyLastHitArmIndex >= 0 && teamState.EnergyLastRingScore > 0;
+            bool hasPersistentRings = false;
+            for (int index = 0; index < teamState.EnergyHitRingsByArm.Length; index++)
+            {
+                if (teamState.EnergyHitRingsByArm[index] > 0)
+                {
+                    hasPersistentRings = true;
+                    break;
+                }
+            }
+
+            if (!showActive && !showActivated && !showLastHit && !hasPersistentRings)
+            {
+                continue;
+            }
+
             Color teamColor = ResolveTeamColor(teamState.Team);
             Color activeColor = Color.FromArgb(220, Math.Min(255, teamColor.R + 45), Math.Min(255, teamColor.G + 45), Math.Min(255, teamColor.B + 45));
             Color activatedColor = Color.FromArgb(210, teamColor.R, teamColor.G, teamColor.B);
@@ -1231,7 +1410,7 @@ internal sealed partial class Simulator3dForm
                 {
                     double blinkPhase = (_host.World.GameTimeSec * 3.0) % 1.0;
                     Color blinkColor = blinkPhase < 0.5 ? activeColor : Color.FromArgb(185, activeColor.R, activeColor.G, activeColor.B);
-                    DrawGpuActivationMarkerDoubleSided(center, normal, Vector3.UnitY, diskRadius * 1.02f, blinkColor, true);
+                    DrawGpuPendingEnergyMarkerDoubleSided(center, normal, Vector3.UnitY, diskRadius * 1.02f, blinkColor);
                 }
                 else if (showActivated)
                 {
@@ -1255,11 +1434,11 @@ internal sealed partial class Simulator3dForm
                 {
                     double blinkPhase = (_host.World.GameTimeSec * 8.0) % 1.0;
                     Color flashColor = blinkPhase < 0.5 ? ringHitColor : Color.FromArgb(210, teamColor.R, teamColor.G, teamColor.B);
-                    DrawGpuAnnulusDoubleSided(center, normal, Vector3.UnitY, inner, Math.Max(inner + 0.004f, outer), flashColor, 32, 0.0140f);
+                    DrawGpuAnnulusDoubleSided(center, normal, Vector3.UnitY, inner, Math.Max(inner + 0.004f, outer), flashColor, 24, 0.0140f);
                 }
                 else
                 {
-                    DrawGpuAnnulusDoubleSided(center, normal, Vector3.UnitY, inner, Math.Max(inner + 0.003f, outer), ringSteadyColor, 32, 0.0130f);
+                    DrawGpuAnnulusDoubleSided(center, normal, Vector3.UnitY, inner, Math.Max(inner + 0.003f, outer), ringSteadyColor, 24, 0.0130f);
                 }
             }
         }
@@ -1268,17 +1447,53 @@ internal sealed partial class Simulator3dForm
     private void DrawGpuActivationMarkerDoubleSided(Vector3 center, Vector3 normalAxis, Vector3 upAxis, float diskRadius, Color color, bool drawCross)
     {
         Vector3 normal = normalAxis.LengthSquared() <= 1e-8f ? Vector3.UnitX : Vector3.Normalize(normalAxis);
-        DrawGpuActivationMarker(center + normal * 0.0070f, normal, upAxis, diskRadius, color, drawCross);
-        DrawGpuActivationMarker(center - normal * 0.0070f, -normal, upAxis, diskRadius, color, drawCross);
+        DrawGpuActivationMarker(center + normal * 0.0180f, normal, upAxis, diskRadius, color, drawCross);
+        DrawGpuActivationMarker(center - normal * 0.0180f, -normal, upAxis, diskRadius, color, drawCross);
+    }
+
+    private void DrawGpuPendingEnergyMarkerDoubleSided(Vector3 center, Vector3 normalAxis, Vector3 upAxis, float diskRadius, Color color)
+    {
+        Vector3 normal = normalAxis.LengthSquared() <= 1e-8f ? Vector3.UnitX : Vector3.Normalize(normalAxis);
+        DrawGpuAnnulusDoubleSided(center, normal, upAxis, diskRadius * 0.18f, diskRadius * 0.25f, color, 24, 0.0260f);
+        DrawGpuAnnulusDoubleSided(center, normal, upAxis, diskRadius * 0.61f, diskRadius * 0.71f, color, 24, 0.0270f);
+        DrawGpuPendingEnergyCross(center + normal * 0.0280f, normal, upAxis, diskRadius, color);
+        DrawGpuPendingEnergyCross(center - normal * 0.0280f, -normal, upAxis, diskRadius, color);
+    }
+
+    private void DrawGpuPendingEnergyCross(Vector3 center, Vector3 normalAxis, Vector3 upAxis, float diskRadius, Color color)
+    {
+        Vector3 normal = normalAxis.LengthSquared() <= 1e-8f ? Vector3.UnitX : Vector3.Normalize(normalAxis);
+        Vector3 up = upAxis.LengthSquared() <= 1e-8f ? Vector3.UnitY : Vector3.Normalize(upAxis);
+        if (MathF.Abs(Vector3.Dot(normal, up)) > 0.98f)
+        {
+            up = MathF.Abs(Vector3.Dot(normal, Vector3.UnitY)) > 0.98f ? Vector3.UnitZ : Vector3.UnitY;
+        }
+
+        Vector3 tangent = Vector3.Normalize(up - normal * Vector3.Dot(up, normal));
+        Vector3 bitangent = Vector3.Normalize(Vector3.Cross(normal, tangent));
+        float armHalfLength = diskRadius * 0.86f;
+        float armHalfWidth = Math.Max(0.008f, diskRadius * 0.075f);
+        AppendOrDrawGpuQuad(
+            center - tangent * armHalfLength - bitangent * armHalfWidth,
+            center + tangent * armHalfLength - bitangent * armHalfWidth,
+            center + tangent * armHalfLength + bitangent * armHalfWidth,
+            center - tangent * armHalfLength + bitangent * armHalfWidth,
+            color);
+        AppendOrDrawGpuQuad(
+            center - bitangent * armHalfLength - tangent * armHalfWidth,
+            center + bitangent * armHalfLength - tangent * armHalfWidth,
+            center + bitangent * armHalfLength + tangent * armHalfWidth,
+            center - bitangent * armHalfLength + tangent * armHalfWidth,
+            color);
     }
 
     private void DrawGpuActivationMarker(Vector3 center, Vector3 normalAxis, Vector3 upAxis, float diskRadius, Color color, bool drawCross)
     {
-        DrawGpuAnnulus(center, normalAxis, upAxis, diskRadius * 0.18f, diskRadius * 0.24f, color, 32);
-        DrawGpuAnnulus(center, normalAxis, upAxis, diskRadius * 0.62f, diskRadius * 0.70f, color, 32);
+        DrawGpuAnnulus(center, normalAxis, upAxis, diskRadius * 0.18f, diskRadius * 0.24f, color, 24);
+        DrawGpuAnnulus(center, normalAxis, upAxis, diskRadius * 0.62f, diskRadius * 0.70f, color, 24);
         if (!drawCross)
         {
-            DrawGpuAnnulus(center, normalAxis, upAxis, diskRadius * 0.92f, diskRadius * 1.02f, color, 32);
+            DrawGpuAnnulus(center, normalAxis, upAxis, diskRadius * 0.92f, diskRadius * 1.02f, color, 24);
             return;
         }
 
@@ -1309,7 +1524,7 @@ internal sealed partial class Simulator3dForm
 
     private void DrawGpuIdleEnergyMarker(Vector3 center, Vector3 normalAxis, Vector3 upAxis, float diskRadius, Color color)
     {
-        DrawGpuAnnulus(center, normalAxis, upAxis, diskRadius * 0.78f, diskRadius * 0.86f, color, 32);
+        DrawGpuAnnulus(center, normalAxis, upAxis, diskRadius * 0.78f, diskRadius * 0.86f, color, 24);
     }
 
     private void DrawGpuAnnulusDoubleSided(Vector3 center, Vector3 normalAxis, Vector3 upAxis, float innerRadius, float outerRadius, Color color, int segmentCount, float offset)
@@ -1607,12 +1822,13 @@ internal sealed partial class Simulator3dForm
 
         if (_gpuBatchingDynamicGeometry)
         {
-            AppendGpuQuad(_gpuDynamicVertexBuildBuffer, v100, v101, v110, v111, ScaleGpuColor(fillColor, 0.82f));
-            AppendGpuQuad(_gpuDynamicVertexBuildBuffer, v001, v000, v011, v010, ScaleGpuColor(fillColor, 0.46f));
-            AppendGpuQuad(_gpuDynamicVertexBuildBuffer, v000, v100, v111, v011, ScaleGpuColor(fillColor, 0.58f));
-            AppendGpuQuad(_gpuDynamicVertexBuildBuffer, v101, v001, v010, v110, ScaleGpuColor(fillColor, 0.54f));
-            AppendGpuQuad(_gpuDynamicVertexBuildBuffer, v011, v111, v110, v010, ScaleGpuColor(fillColor, 0.62f));
-            AppendGpuQuad(_gpuDynamicVertexBuildBuffer, v000, v001, v101, v100, ScaleGpuColor(fillColor, 0.50f));
+            List<GpuVertex> target = CurrentGpuDynamicBuildBuffer();
+            AppendGpuQuad(target, v100, v101, v110, v111, ScaleGpuColor(fillColor, 0.82f));
+            AppendGpuQuad(target, v001, v000, v011, v010, ScaleGpuColor(fillColor, 0.46f));
+            AppendGpuQuad(target, v000, v100, v111, v011, ScaleGpuColor(fillColor, 0.58f));
+            AppendGpuQuad(target, v101, v001, v010, v110, ScaleGpuColor(fillColor, 0.54f));
+            AppendGpuQuad(target, v011, v111, v110, v010, ScaleGpuColor(fillColor, 0.62f));
+            AppendGpuQuad(target, v000, v001, v101, v100, ScaleGpuColor(fillColor, 0.50f));
             return;
         }
 
@@ -1666,36 +1882,60 @@ internal sealed partial class Simulator3dForm
 
     private void FlushGpuDynamicVertices()
     {
-        if (_gpuDynamicVertexBuildBuffer.Count == 0)
+        FlushGpuVertexList(
+            _gpuDynamicVertexBuildBuffer,
+            ref _gpuDynamicVertexBuffer,
+            ref _gpuDynamicVertexCapacity);
+    }
+
+    private void FlushGpuEnergyMechanismVertices()
+    {
+        FlushGpuVertexList(
+            _gpuEnergyMechanismVertexBuildBuffer,
+            ref _gpuEnergyMechanismVertexBuffer,
+            ref _gpuEnergyMechanismVertexCapacity);
+    }
+
+    private void FlushGpuProjectileVertices()
+    {
+        FlushGpuVertexList(
+            _gpuProjectileVertexBuildBuffer,
+            ref _gpuProjectileVertexBuffer,
+            ref _gpuProjectileVertexCapacity);
+    }
+
+    private void FlushGpuVertexList(List<GpuVertex> vertices, ref int buffer, ref int capacity)
+    {
+        if (vertices.Count == 0)
         {
             return;
         }
 
         if (!_gpuBufferApiReady || _glGenBuffers is null || _glBindBuffer is null || _glBufferData is null || _glBufferSubData is null)
         {
-            DrawGpuVerticesImmediate(_gpuDynamicVertexBuildBuffer);
-            _gpuDynamicVertexBuildBuffer.Clear();
+            DrawGpuVerticesImmediate(vertices);
+            vertices.Clear();
             return;
         }
 
-        if (_gpuDynamicVertexBuffer == 0)
+        if (buffer == 0)
         {
-            _glGenBuffers(1, out _gpuDynamicVertexBuffer);
+            _glGenBuffers(1, out buffer);
         }
 
-        int bytes = _gpuDynamicVertexBuildBuffer.Count * Marshal.SizeOf<GpuVertex>();
-        _glBindBuffer(GlArrayBuffer, _gpuDynamicVertexBuffer);
-        if (_gpuDynamicVertexCapacity < _gpuDynamicVertexBuildBuffer.Count)
+        int bytes = vertices.Count * Marshal.SizeOf<GpuVertex>();
+        _glBindBuffer(GlArrayBuffer, buffer);
+        if (capacity < vertices.Count)
         {
-            int nextCapacity = Math.Max(_gpuDynamicVertexBuildBuffer.Count, Math.Max(4096, _gpuDynamicVertexCapacity * 2));
+            int nextCapacity = Math.Max(vertices.Count, Math.Max(4096, capacity * 2));
             _glBufferData(GlArrayBuffer, new IntPtr(nextCapacity * Marshal.SizeOf<GpuVertex>()), IntPtr.Zero, GlDynamicDraw);
-            _gpuDynamicVertexCapacity = nextCapacity;
+            capacity = nextCapacity;
         }
 
-        UploadGpuVertexSubData(_gpuDynamicVertexBuildBuffer, bytes);
-        DrawGpuVertexBuffer(_gpuDynamicVertexBuffer, _gpuDynamicVertexBuildBuffer.Count);
+        UploadGpuVertexSubData(vertices, bytes);
+        DrawGpuVertexBuffer(buffer, vertices.Count);
         _glBindBuffer(GlArrayBuffer, 0);
-        _gpuDynamicVertexBuildBuffer.Clear();
+        vertices.Clear();
     }
 
     private void TryInitializeGpuBufferApi()
@@ -1925,7 +2165,7 @@ internal sealed partial class Simulator3dForm
     {
         if (_gpuBatchingDynamicGeometry)
         {
-            AppendGpuTriangle(_gpuDynamicVertexBuildBuffer, a, b, c, color);
+            AppendGpuTriangle(CurrentGpuDynamicBuildBuffer(), a, b, c, color);
             return;
         }
 
@@ -1936,12 +2176,19 @@ internal sealed partial class Simulator3dForm
     {
         if (_gpuBatchingDynamicGeometry)
         {
-            AppendGpuQuad(_gpuDynamicVertexBuildBuffer, a, b, c, d, color);
+            AppendGpuQuad(CurrentGpuDynamicBuildBuffer(), a, b, c, d, color);
             return;
         }
 
         DrawGpuQuad(a, b, c, d, color);
     }
+
+    private List<GpuVertex> CurrentGpuDynamicBuildBuffer()
+        => _gpuEnergyMechanismBatchActive || _gpuCurrentDynamicBatch == GpuDynamicBatchKind.Facility
+            ? _gpuEnergyMechanismVertexBuildBuffer
+            : _gpuCurrentDynamicBatch == GpuDynamicBatchKind.Projectile
+                ? _gpuProjectileVertexBuildBuffer
+                : _gpuDynamicVertexBuildBuffer;
 
     private static void DrawGpuTriangle(Vector3 a, Vector3 b, Vector3 c, Color color)
     {
@@ -1988,10 +2235,11 @@ internal sealed partial class Simulator3dForm
     {
         if (_gpuBatchingDynamicGeometry)
         {
+            List<GpuVertex> target = CurrentGpuDynamicBuildBuffer();
             foreach (SolidFace face in faces)
             {
                 Color shaded = ShadeFaceColor(fillColor, face.Vertices, face.Ambient);
-                AppendGpuPolygon(_gpuDynamicVertexBuildBuffer, face.Vertices, shaded);
+                AppendGpuPolygon(target, face.Vertices, shaded);
             }
 
             return;
@@ -2068,6 +2316,7 @@ internal sealed partial class Simulator3dForm
         _gpuOverlayGraphics = Graphics.FromImage(_gpuOverlayBitmap);
         _gpuOverlayGraphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         _gpuOverlayTextureSize = Size.Empty;
+        _lastGpuOverlayUploadTicks = 0;
     }
 
     private void UploadGpuOverlayBitmap()
@@ -2150,9 +2399,13 @@ internal sealed partial class Simulator3dForm
         }
 
         DeleteGpuBuffer(ref _gpuDynamicVertexBuffer);
+        DeleteGpuBuffer(ref _gpuEnergyMechanismVertexBuffer);
+        DeleteGpuBuffer(ref _gpuProjectileVertexBuffer);
         DeleteGpuVertexArray(ref _gpuSharedVertexArray);
         _gpuTerrainVertexCount = 0;
         _gpuDynamicVertexCapacity = 0;
+        _gpuEnergyMechanismVertexCapacity = 0;
+        _gpuProjectileVertexCapacity = 0;
         _gpuTerrainBufferVersion = -1;
 
         if (_gpuOverlayTexture != 0 && _gpuContextReady)
@@ -2191,6 +2444,7 @@ internal sealed partial class Simulator3dForm
     {
         _gpuTerrainBufferVersion = -1;
         _gpuTerrainVertexCount = 0;
+        _gpuTerrainVertexBuildBuffer.Clear();
         foreach (GpuTerrainChunk chunk in _gpuTerrainChunks)
         {
             chunk.VertexCount = 0;

@@ -7,7 +7,7 @@ namespace Simulator.ThreeD;
 internal sealed partial class Simulator3dForm
 {
     private const int MaxTerrainTopMergeSpan = 36;
-    private const int MaxTerrainWallMergeSpan = 56;
+    private const int MaxTerrainWallMergeSpan = 256;
     private const float TerrainSlopeSmoothThresholdM = 0.048f;
 
     private enum TerrainWallEdge
@@ -241,6 +241,10 @@ internal sealed partial class Simulator3dForm
         float h10 = ResolveTerrainCornerHeight(bottomRight.EndCellX, topLeft.StartCellY, baseHeight);
         float h11 = ResolveTerrainCornerHeight(bottomRight.EndCellX, bottomRight.EndCellY, baseHeight);
         float h01 = ResolveTerrainCornerHeight(topLeft.StartCellX, bottomRight.EndCellY, baseHeight);
+        if (ShouldSkipTerrainTopGridFace(topLeft, bottomRight, h00, h10, h11, h01))
+        {
+            return;
+        }
 
         AddTerrainQuadAsTriangles(
             ToScenePoint(x1World, y1World, h00),
@@ -365,8 +369,7 @@ internal sealed partial class Simulator3dForm
         Color edgeColor,
         List<TerrainFacePatch> target)
     {
-        AddTerrainFacePatch(new[] { a, b, c }, minXWorld, minYWorld, maxXWorld, maxYWorld, fillColor, edgeColor, target);
-        AddTerrainFacePatch(new[] { a, c, d }, minXWorld, minYWorld, maxXWorld, maxYWorld, fillColor, edgeColor, target);
+        AddTerrainFacePatch(new[] { a, b, c, d }, minXWorld, minYWorld, maxXWorld, maxYWorld, fillColor, edgeColor, target);
     }
 
     private void AddTerrainFacePatch(
@@ -409,6 +412,15 @@ internal sealed partial class Simulator3dForm
         out Color edgeColor)
     {
         TerrainTileSeed seed = seeds[row, column];
+        if (IsTerrainSeedCoveredByFacet(seed))
+        {
+            topHeight = 0f;
+            bottomHeight = 0f;
+            fillColor = Color.Empty;
+            edgeColor = Color.Empty;
+            return false;
+        }
+
         float neighborHeight = ResolveNeighborHeight(seeds, row, column, edge);
         topHeight = seed.HeightM;
         bottomHeight = Math.Max(0f, neighborHeight);
@@ -422,6 +434,85 @@ internal sealed partial class Simulator3dForm
         fillColor = ResolveTerrainWallColor(seed.FillColor, topHeight, bottomHeight);
         edgeColor = BlendColor(fillColor, Color.Black, 0.30f);
         return true;
+    }
+
+    private bool ShouldSkipTerrainTopGridFace(
+        TerrainTileSeed topLeft,
+        TerrainTileSeed bottomRight,
+        float h00,
+        float h10,
+        float h11,
+        float h01)
+    {
+        float minHeight = MathF.Min(MathF.Min(h00, h10), MathF.Min(h11, h01));
+        float maxHeight = MathF.Max(MathF.Max(h00, h10), MathF.Max(h11, h01));
+        if (maxHeight <= TerrainSlopeSmoothThresholdM
+            && maxHeight - minHeight <= TerrainSlopeSmoothThresholdM)
+        {
+            return true;
+        }
+
+        return IsTerrainSeedCoveredByFacet(topLeft, bottomRight);
+    }
+
+    private bool IsTerrainSeedCoveredByFacet(TerrainTileSeed seed)
+        => IsTerrainSeedCoveredByFacet(seed, seed);
+
+    private bool IsTerrainSeedCoveredByFacet(TerrainTileSeed topLeft, TerrainTileSeed bottomRight)
+    {
+        if (_cachedRuntimeGrid is null || _cachedRuntimeGrid.Facets.Count == 0)
+        {
+            return false;
+        }
+
+        float centerX = (topLeft.StartCellX + bottomRight.EndCellX) * _cachedRuntimeGrid.CellWidthWorld * 0.5f;
+        float centerY = (topLeft.StartCellY + bottomRight.EndCellY) * _cachedRuntimeGrid.CellHeightWorld * 0.5f;
+        foreach (TerrainFacetRuntime facet in _cachedRuntimeGrid.Facets)
+        {
+            if (centerX < facet.MinX
+                || centerX > facet.MaxX
+                || centerY < facet.MinY
+                || centerY > facet.MaxY)
+            {
+                continue;
+            }
+
+            if (IsPointInsideTerrainFacet(centerX, centerY, facet.PointsWorld))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsPointInsideTerrainFacet(float x, float y, IReadOnlyList<Vector2> polygon)
+    {
+        if (polygon.Count < 3)
+        {
+            return false;
+        }
+
+        bool inside = false;
+        for (int i = 0, j = polygon.Count - 1; i < polygon.Count; j = i++)
+        {
+            Vector2 pi = polygon[i];
+            Vector2 pj = polygon[j];
+            float denominator = pj.Y - pi.Y;
+            if (MathF.Abs(denominator) <= 1e-6f)
+            {
+                continue;
+            }
+
+            bool intersects = ((pi.Y > y) != (pj.Y > y))
+                && x < (pj.X - pi.X) * (y - pi.Y) / denominator + pi.X;
+            if (intersects)
+            {
+                inside = !inside;
+            }
+        }
+
+        return inside;
     }
 
     private Color ResolveTerrainTopFaceColor(int runtimeCellX, int runtimeCellY, byte terrainCode, float heightM)
