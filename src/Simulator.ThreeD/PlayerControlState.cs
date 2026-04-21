@@ -30,7 +30,7 @@ internal sealed record PlayerControlState
 
     public bool HeroDeployToggleRequested { get; init; }
 
-    public bool SuperCapToggleRequested { get; init; }
+    public bool SuperCapActive { get; init; }
 
     public bool SentryStanceToggleRequested { get; init; }
 }

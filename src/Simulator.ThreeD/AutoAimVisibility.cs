@@ -125,10 +125,8 @@ internal static class AutoAimVisibility
             int cellX = Math.Clamp((int)Math.Floor(sampleWorldX / Math.Max(runtimeGrid.CellWidthWorld, 1e-6)), 0, runtimeGrid.WidthCells - 1);
             int cellY = Math.Clamp((int)Math.Floor(sampleWorldY / Math.Max(runtimeGrid.CellHeightWorld, 1e-6)), 0, runtimeGrid.HeightCells - 1);
             int sampleIndex = runtimeGrid.IndexOf(cellX, cellY);
-            float terrainHeight = runtimeGrid.HeightMap[sampleIndex];
-            float visionHeight = runtimeGrid.VisionBlockMap[sampleIndex]
-                ? Math.Max(terrainHeight, runtimeGrid.VisionBlockHeightMap[sampleIndex])
-                : terrainHeight;
+            float terrainHeight = runtimeGrid.SampleOcclusionHeight(sampleWorldX, sampleWorldY);
+            float visionHeight = terrainHeight;
             if ((terrainHeight > 0.025f || runtimeGrid.VisionBlockMap[sampleIndex])
                 && sample.Y <= visionHeight + 0.025f)
             {

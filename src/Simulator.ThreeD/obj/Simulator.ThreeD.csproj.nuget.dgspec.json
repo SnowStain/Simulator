@@ -241,6 +241,16 @@
       "frameworks": {
         "net9.0-windows7.0": {
           "targetAlias": "net9.0-windows",
+          "dependencies": {
+            "BepuPhysics": {
+              "target": "Package",
+              "version": "[2.4.0, )"
+            },
+            "BepuUtilities": {
+              "target": "Package",
+              "version": "[2.4.0, )"
+            }
+          },
           "imports": [
             "net461",
             "net462",

@@ -12,6 +12,7 @@ public sealed class ProjectLayout
     public string ConfigPath => Path.Combine(RootPath, "config.json");
     public string SettingsPath => Path.Combine(RootPath, "settings.json");
     public string AppearancePresetPath => Path.Combine(RootPath, "appearance_presets", "latest_appearance.json");
+    public string AppearanceProfileDirectoryPath => Path.Combine(RootPath, "appearance_presets", "profiles");
 
     public ProjectLayout(string rootPath)
     {

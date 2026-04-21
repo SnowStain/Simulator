@@ -1,0 +1,94 @@
+{
+  "body_length_m": 0.55,
+  "body_width_m": 0.5,
+  "body_height_m": 0.17,
+  "body_clearance_m": 0.1,
+  "wheel_radius_m": 0.08,
+  "gimbal_length_m": 0.3,
+  "gimbal_width_m": 0.15,
+  "gimbal_body_height_m": 0.11,
+  "gimbal_mount_gap_m": 0.1,
+  "gimbal_mount_length_m": 0.1,
+  "gimbal_mount_width_m": 0.1,
+  "gimbal_mount_height_m": 0.04,
+  "barrel_length_m": 0.12,
+  "barrel_radius_m": 0.015,
+  "gimbal_height_m": 0.46499999999999997,
+  "gimbal_offset_x_m": 0.0,
+  "gimbal_offset_y_m": 0.0,
+  "armor_plate_width_m": 0.16,
+  "armor_plate_length_m": 0.16,
+  "armor_plate_height_m": 0.16,
+  "armor_plate_gap_m": 0.005,
+  "armor_light_length_m": 0.02,
+  "armor_light_width_m": 0.005,
+  "armor_light_height_m": 0.09,
+  "barrel_light_length_m": 0.095,
+  "barrel_light_width_m": 0.005,
+  "barrel_light_height_m": 0.03,
+  "body_render_width_scale": 0.75,
+  "wheel_style": "mecanum",
+  "suspension_style": "four_bar",
+  "arm_style": "none",
+  "front_climb_assist_style": "belt_lift",
+  "rear_climb_assist_style": "balance_leg",
+  "role_key": "sentry",
+  "body_color_rgb": [
+    166,
+    174,
+    186
+  ],
+  "turret_color_rgb": [
+    232,
+    232,
+    236
+  ],
+  "armor_color_rgb": [
+    224,
+    229,
+    234
+  ],
+  "wheel_color_rgb": [
+    44,
+    44,
+    44
+  ],
+  "front_climb_assist_top_length_m": 0.05,
+  "front_climb_assist_bottom_length_m": 0.036,
+  "front_climb_assist_plate_width_m": 0.026,
+  "front_climb_assist_plate_height_m": 0.19,
+  "front_climb_assist_forward_offset_m": 0.0,
+  "front_climb_assist_inner_offset_m": 0.045,
+  "rear_climb_assist_upper_length_m": 0.155,
+  "rear_climb_assist_lower_length_m": 0.19,
+  "rear_climb_assist_upper_width_m": 0.018,
+  "rear_climb_assist_upper_height_m": 0.022,
+  "rear_climb_assist_lower_width_m": 0.016,
+  "rear_climb_assist_lower_height_m": 0.02,
+  "rear_climb_assist_mount_offset_x_m": 0.07,
+  "rear_climb_assist_mount_height_m": 0.215,
+  "rear_climb_assist_inner_offset_m": 0.03,
+  "rear_climb_assist_upper_pair_gap_m": 0.06,
+  "rear_climb_assist_hinge_radius_m": 0.016,
+  "rear_climb_assist_knee_min_deg": 42.0,
+  "rear_climb_assist_knee_max_deg": 132.0,
+  "custom_wheel_positions_m": [
+    [
+      -0.215,
+      -0.294
+    ],
+    [
+      0.215,
+      -0.294
+    ],
+    [
+      -0.215,
+      0.294
+    ],
+    [
+      0.215,
+      0.294
+    ]
+  ],
+  "rear_climb_assist_knee_direction": "front"
+}

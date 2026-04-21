@@ -15,7 +15,8 @@ internal static class ProjectileObstacleResolver
         double startHeightM,
         double endX,
         double endY,
-        double endHeightM)
+        double endHeightM,
+        IReadOnlyList<SimulationEntity>? obstacleCandidates = null)
     {
         double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
         Vector3 start = new((float)(startX * metersPerWorldUnit), (float)startHeightM, (float)(startY * metersPerWorldUnit));
@@ -29,9 +30,20 @@ internal static class ProjectileObstacleResolver
             bestHit = terrainHit;
         }
 
-        foreach (SimulationEntity entity in world.Entities)
+        IReadOnlyList<SimulationEntity> candidates = obstacleCandidates ?? (IReadOnlyList<SimulationEntity>)world.Entities;
+        foreach (SimulationEntity entity in candidates)
         {
             if (!ShouldTreatAsObstacle(entity, shooter, projectile))
+            {
+                continue;
+            }
+
+            if (!ProjectileCollisionBroadphase.MayIntersectObstacleBounds(
+                    entity,
+                    metersPerWorldUnit,
+                    projectileRadiusM,
+                    start,
+                    end))
             {
                 continue;
             }
@@ -69,13 +81,11 @@ internal static class ProjectileObstacleResolver
             return true;
         }
 
-        if (!entity.IsAlive)
-        {
-            return false;
-        }
-
-        return string.Equals(entity.EntityType, "robot", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(entity.EntityType, "sentry", StringComparison.OrdinalIgnoreCase);
+        // Robots are damaged exclusively through armor plate intersection in
+        // SimulationCombatMath. Treating the body OBB as an obstacle can consume
+        // the projectile before the plate hit is applied, which produces "hit but
+        // no damage" behavior on normal robots while structures still work.
+        return false;
     }
 
     private static bool TryResolveTerrainHit(
@@ -118,7 +128,7 @@ internal static class ProjectileObstacleResolver
             int cellX = Math.Clamp((int)Math.Floor(sampleWorldX / Math.Max(runtimeGrid.CellWidthWorld, 1e-6)), 0, runtimeGrid.WidthCells - 1);
             int cellY = Math.Clamp((int)Math.Floor(sampleWorldY / Math.Max(runtimeGrid.CellHeightWorld, 1e-6)), 0, runtimeGrid.HeightCells - 1);
             int terrainIndex = runtimeGrid.IndexOf(cellX, cellY);
-            float terrainHeight = runtimeGrid.HeightMap[terrainIndex];
+            float terrainHeight = runtimeGrid.SampleHeightWithFacets(sampleWorldX, sampleWorldY);
             float clearance = (float)Math.Max(0.012, projectileRadiusM * 0.7);
             bool hitsFloor = terrainHeight > 0.01f && sample.Y <= terrainHeight + clearance;
 
@@ -354,6 +364,13 @@ internal static class ProjectileObstacleResolver
 
     private static Vector3 EstimateTerrainNormal(RuntimeGridData runtimeGrid, double metersPerWorldUnit, int cellX, int cellY)
     {
+        double worldX = (cellX + 0.5) * runtimeGrid.CellWidthWorld;
+        double worldY = (cellY + 0.5) * runtimeGrid.CellHeightWorld;
+        if (runtimeGrid.TrySampleFacetSurface(worldX, worldY, out _, out Vector3 facetNormal, out _))
+        {
+            return facetNormal;
+        }
+
         float center = runtimeGrid.HeightMap[runtimeGrid.IndexOf(cellX, cellY)];
         float left = runtimeGrid.HeightMap[runtimeGrid.IndexOf(Math.Max(0, cellX - 1), cellY)];
         float right = runtimeGrid.HeightMap[runtimeGrid.IndexOf(Math.Min(runtimeGrid.WidthCells - 1, cellX + 1), cellY)];

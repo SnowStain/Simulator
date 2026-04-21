@@ -26,6 +26,10 @@ class TargetSpec:
     run_project: Path | None = None
 
 
+def launcher_log_dir(root: Path) -> Path:
+    return root / "build_verify" / "launcher_logs"
+
+
 def repo_root() -> Path:
     return Path(__file__).resolve().parent
 
@@ -44,12 +48,17 @@ def project_targets(root: Path) -> dict[str, TargetSpec]:
     }
 
 
-def run_detached(command: list[str]) -> bool:
+def run_detached(command: list[str], stdout_path: Path | None = None, stderr_path: Path | None = None) -> bool:
     try:
+        if stdout_path is not None:
+            stdout_path.parent.mkdir(parents=True, exist_ok=True)
+        if stderr_path is not None:
+            stderr_path.parent.mkdir(parents=True, exist_ok=True)
+
         kwargs = {
             "stdin": subprocess.DEVNULL,
-            "stdout": subprocess.DEVNULL,
-            "stderr": subprocess.DEVNULL,
+            "stdout": open(stdout_path, "w", encoding="utf-8") if stdout_path else subprocess.DEVNULL,
+            "stderr": open(stderr_path, "w", encoding="utf-8") if stderr_path else subprocess.DEVNULL,
             "cwd": str(repo_root()),
             "close_fds": True,
         }
@@ -62,6 +71,40 @@ def run_detached(command: list[str]) -> bool:
         return True
     except Exception:
         return False
+
+
+def build_with_dotnet(run_project: Path, configuration: str) -> tuple[bool, str]:
+    dotnet = locate_dotnet()
+    if not dotnet:
+        return False, "dotnet CLI not found in PATH."
+
+    command = [
+        dotnet,
+        "build",
+        str(run_project),
+        "-c",
+        configuration,
+        "-nologo",
+    ]
+    result = subprocess.run(
+        command,
+        cwd=str(repo_root()),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    output = (result.stdout or "") + (result.stderr or "")
+    return result.returncode == 0, output.strip()
+
+
+def resolve_built_executable(run_project: Path, configuration: str) -> Path:
+    project_name = run_project.stem
+    target_framework = "net9.0-windows"
+    executable = run_project.parent / "bin" / configuration / target_framework / f"{project_name}.exe"
+    if not executable.is_file():
+        raise FileNotFoundError(f"Built executable not found: {executable}")
+    return executable
 
 
 def locate_dotnet() -> str | None:
@@ -83,26 +126,24 @@ def run_with_dotnet(
         )
         return False
 
-    dotnet = locate_dotnet()
-    if not dotnet:
-        print("dotnet CLI not found in PATH.", file=sys.stderr)
+    if not no_build:
+        build_ok, build_output = build_with_dotnet(run_project, configuration)
+        if not build_ok:
+            print("dotnet build failed.", file=sys.stderr)
+            if build_output:
+                print(build_output, file=sys.stderr)
+            return False
+    try:
+        executable = resolve_built_executable(run_project, configuration)
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
         return False
 
-    command = [
-        dotnet,
-        "run",
-        "--project",
-        str(run_project),
-        "-c",
-        configuration,
-    ]
-    if no_build:
-        command.append("--no-build")
-    if app_args:
-        command.append("--")
-        command.extend(app_args)
-
-    return run_detached(command)
+    command = [str(executable), *app_args]
+    log_dir = launcher_log_dir(repo_root())
+    stdout_path = log_dir / f"{target_name}.stdout.log"
+    stderr_path = log_dir / f"{target_name}.stderr.log"
+    return run_detached(command, stdout_path=stdout_path, stderr_path=stderr_path)
 
 
 def locate_vscode() -> str | None:
@@ -285,7 +326,10 @@ def main() -> int:
             no_build=bool(args.no_build),
             app_args=app_args,
         ):
-            print(f"Started '{target_name}' via dotnet run.")
+            print(
+                f"Started '{target_name}' via built application. "
+                f"Logs: {launcher_log_dir(root)}"
+            )
             return 0
         return 1
 

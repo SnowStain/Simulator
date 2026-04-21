@@ -152,8 +152,50 @@ internal sealed partial class Simulator3dForm
         string sentryPrompt = string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase)
             ? "   X SentryStance"
             : string.Empty;
-        string statusText = $"T AimMode   H Tactical   RMB AutoAim   LMB Fire   Shift Spin   V View   C SuperCap{sentryPrompt}   F7 Telemetry{supplyPrompt}{deployText}";
+        string statusText = $"T AimMode   H Tactical   RMB AutoAim   LMB Fire   Shift Spin   V View   \u6309\u4f4fC\u8d85\u7535   F5 \u952e\u4f4d   F7 Telemetry{sentryPrompt}{supplyPrompt}{deployText}";
         graphics.DrawString(statusText, _tinyHudFont, textBrush, panel.X + 16, panel.Y + 108);
+    }
+
+    private void DrawKeyGuideOverlay(Graphics graphics)
+    {
+        if (!_showKeyGuide || _appState != SimulatorAppState.InMatch)
+        {
+            return;
+        }
+
+        Rectangle panel = new(20, 78, 320, 248);
+        using GraphicsPath path = CreateRoundedRectangle(panel, 10);
+        using var fill = new SolidBrush(Color.FromArgb(228, 12, 18, 24));
+        using var border = new Pen(Color.FromArgb(170, 120, 140, 160), 1f);
+        using var titleBrush = new SolidBrush(Color.FromArgb(238, 244, 248));
+        using var textBrush = new SolidBrush(Color.FromArgb(208, 218, 228));
+        graphics.FillPath(fill, path);
+        graphics.DrawPath(border, path);
+        graphics.DrawString("\u952e\u4f4d\u8bf4\u660e", _hudMidFont, titleBrush, panel.X + 14, panel.Y + 12);
+
+        string[] lines =
+        {
+            "WASD \u79fb\u52a8\u5e95\u76d8",
+            "\u9f20\u6807\u79fb\u52a8 \u4e91\u53f0\u8f6c\u52a8 / \u7b2c\u4e00\u4eba\u79f0\u89c6\u89d2",
+            "\u5de6\u952e \u5f00\u706b",
+            "\u53f3\u952e \u81ea\u7784",
+            "Shift \u5c0f\u9640\u87ba",
+            "\u6309\u4f4f C \u542f\u7528\u8d85\u7ea7\u7535\u5bb9\u52a0\u901f",
+            "B \u8865\u5f39",
+            "Z \u82f1\u96c4\u90e8\u7f72",
+            "X \u54e8\u5175\u5207\u6362\u5f62\u6001",
+            "V \u5207\u6362\u7b2c\u4e00/\u7b2c\u4e09\u4eba\u79f0",
+            "H \u6218\u672f\u6a21\u5f0f",
+            "F7 \u7535\u673a\u529f\u7387/\u8d85\u7535\u66f2\u7ebf",
+            "F5 \u5173\u95ed\u6b64\u5e2e\u52a9",
+        };
+
+        float y = panel.Y + 46;
+        foreach (string line in lines)
+        {
+            graphics.DrawString(line, _smallHudFont, textBrush, panel.X + 16, y);
+            y += 15f;
+        }
     }
 
     private bool IsInFriendlyFacility(SimulationEntity entity, params string[] facilityTypes)
@@ -307,27 +349,15 @@ internal sealed partial class Simulator3dForm
             return;
         }
 
-        if (_firstPersonView)
-        {
-            EnsureProjectedTerrainFaceCache();
-            foreach (ProjectedFace face in _cachedProjectedTerrainFaces)
-            {
-                using var faceBrush = new SolidBrush(face.FillColor);
-                using var facePen = new Pen(face.EdgeColor, 1f);
-                graphics.FillPolygon(faceBrush, face.Points);
-                graphics.DrawPolygon(facePen, face.Points);
-            }
-
-            return;
-        }
-
         EnsureTerrainLayerBitmapCache();
-        if (_cachedTerrainLayerBitmap is null)
+        if (_cachedTerrainLayerBitmap is not null)
         {
+            graphics.DrawImageUnscaled(_cachedTerrainLayerBitmap, 0, 0);
             return;
         }
 
-        graphics.DrawImageUnscaled(_cachedTerrainLayerBitmap, 0, 0);
+        EnsureProjectedTerrainFaceCache();
+        DrawProjectedFaceBatch(graphics, _cachedProjectedTerrainFaces, 1f);
     }
 
     private void EnsureProjectedTerrainFaceCache()
@@ -395,13 +425,16 @@ internal sealed partial class Simulator3dForm
         }
 
         Vector3 currentViewDirection = ResolveTerrainProjectionViewDirection();
+        float positionToleranceSq = _firstPersonView ? 0.040f : 0.016f;
+        float targetToleranceSq = _firstPersonView ? 0.060f : 0.024f;
+        float directionDotTolerance = _firstPersonView ? 0.9988f : 0.9995f;
         bool bitmapStable =
             _cachedTerrainLayerBitmap is not null
             && _terrainLayerBitmapBuiltVersion == _terrainProjectionBuiltVersion
             && _terrainLayerBitmapClientSize == ClientSize
-            && Vector3.DistanceSquared(_terrainLayerBitmapCameraPosition, _cameraPositionM) <= 0.016f
-            && Vector3.DistanceSquared(_terrainLayerBitmapCameraTarget, _cameraTargetM) <= 0.024f
-            && Vector3.Dot(_terrainLayerBitmapViewDirection, currentViewDirection) >= 0.9995f;
+            && Vector3.DistanceSquared(_terrainLayerBitmapCameraPosition, _cameraPositionM) <= positionToleranceSq
+            && Vector3.DistanceSquared(_terrainLayerBitmapCameraTarget, _cameraTargetM) <= targetToleranceSq
+            && Vector3.Dot(_terrainLayerBitmapViewDirection, currentViewDirection) >= directionDotTolerance;
         if (bitmapStable)
         {
             return;
@@ -652,8 +685,9 @@ internal sealed partial class Simulator3dForm
         }
         else
         {
-            rebuildThresholdX = Math.Max(3, radiusCellsX / 3);
-            rebuildThresholdY = Math.Max(3, radiusCellsY / 3);
+            bool relaxedGpuThreshold = UseGpuRenderer && !_firstPersonView;
+            rebuildThresholdX = relaxedGpuThreshold ? Math.Max(6, radiusCellsX / 2) : Math.Max(3, radiusCellsX / 3);
+            rebuildThresholdY = relaxedGpuThreshold ? Math.Max(6, radiusCellsY / 2) : Math.Max(3, radiusCellsY / 3);
         }
 
         if (!force
@@ -679,7 +713,7 @@ internal sealed partial class Simulator3dForm
             && !_firstPersonView
             && _terrainDetailFaces.Count > 0
             && _lastTerrainDetailRebuildTicks > 0
-            && (_frameClock.ElapsedTicks - _lastTerrainDetailRebuildTicks) / (double)Stopwatch.Frequency < 0.18)
+            && (_frameClock.ElapsedTicks - _lastTerrainDetailRebuildTicks) / (double)Stopwatch.Frequency < (UseGpuRenderer ? 0.32 : 0.18))
         {
             return;
         }
@@ -702,6 +736,7 @@ internal sealed partial class Simulator3dForm
         _terrainDetailMaxYWorld = endCellY * _cachedRuntimeGrid.CellHeightWorld;
         int detailStep = ResolveTerrainDetailStepForView(_cachedRuntimeGrid);
         RebuildTerrainTileCacheMerged(detailStep, detailStep, _terrainDetailFaces, startCellX, endCellX, startCellY, endCellY);
+        AppendTerrainFacetFaces(_terrainDetailFaces, _terrainDetailMinXWorld, _terrainDetailMaxXWorld, _terrainDetailMinYWorld, _terrainDetailMaxYWorld);
         _lastTerrainDetailRebuildTicks = _frameClock.ElapsedTicks;
         _terrainProjectionCacheVersion++;
         _terrainProjectionBuiltVersion = -1;

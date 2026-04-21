@@ -13,6 +13,10 @@ internal sealed class Simulator3dOptions
         ["moderngl"] = "moderngl",
         ["pyglet_moderngl"] = "moderngl",
         ["pyglet-moderngl"] = "moderngl",
+        ["gpu"] = "gpu",
+        ["opengl_gpu"] = "gpu",
+        ["wgl"] = "gpu",
+        ["wgl_opengl"] = "gpu",
         ["native_cpp"] = "native_cpp",
         ["cpp"] = "native_cpp",
         ["opengl_cpp"] = "native_cpp",
@@ -181,7 +185,7 @@ internal sealed class Simulator3dOptions
     public static string NormalizeRendererMode(string? selected)
     {
         string mode = (selected ?? string.Empty).Trim().ToLowerInvariant();
-        if (mode is "opengl" or "moderngl" or "native_cpp")
+        if (mode is "opengl" or "moderngl" or "native_cpp" or "gpu")
         {
             return mode;
         }
@@ -191,7 +195,7 @@ internal sealed class Simulator3dOptions
             return normalized;
         }
 
-        return "moderngl";
+        return "gpu";
     }
 
     public static string NormalizeMatchMode(string? selected)

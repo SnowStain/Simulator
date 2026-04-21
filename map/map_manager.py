@@ -830,6 +830,20 @@ class MapManager:
             'blocks_vision': bool(blocks_vision) if blocks_vision is not None else terrain_type == 'wall',
         }
 
+    def _terrain_override_payload_with_surface(self, grid_x, grid_y, terrain_type, height_m, team='neutral', blocks_movement=None, blocks_vision=None, surface_payload=None):
+        payload = self._terrain_override_payload(
+            grid_x,
+            grid_y,
+            terrain_type,
+            height_m,
+            team=team,
+            blocks_movement=blocks_movement,
+            blocks_vision=blocks_vision,
+        )
+        if isinstance(surface_payload, dict):
+            payload.update(deepcopy(surface_payload))
+        return payload
+
     def _set_terrain_override_cell(self, grid_x, grid_y, terrain_type, height_m, team='neutral', blocks_movement=None, blocks_vision=None):
         with self._edit_state_lock:
             key = self._terrain_cell_key(grid_x, grid_y)
@@ -841,6 +855,25 @@ class MapManager:
                 team=team,
                 blocks_movement=blocks_movement,
                 blocks_vision=blocks_vision,
+            )
+            if self.terrain_grid_overrides.get(key) == payload:
+                return False
+            self.terrain_grid_overrides[key] = payload
+        self._mark_terrain_overlay_dirty((key,))
+        return True
+
+    def _set_terrain_override_cell_with_surface(self, grid_x, grid_y, terrain_type, height_m, team='neutral', blocks_movement=None, blocks_vision=None, surface_payload=None):
+        with self._edit_state_lock:
+            key = self._terrain_cell_key(grid_x, grid_y)
+            payload = self._terrain_override_payload_with_surface(
+                grid_x,
+                grid_y,
+                terrain_type,
+                height_m,
+                team=team,
+                blocks_movement=blocks_movement,
+                blocks_vision=blocks_vision,
+                surface_payload=surface_payload,
             )
             if self.terrain_grid_overrides.get(key) == payload:
                 return False
@@ -1027,6 +1060,14 @@ class MapManager:
                     'blocks_movement': bool(cell.get('blocks_movement', False)),
                     'blocks_vision': bool(cell.get('blocks_vision', False)),
                 }
+                if str(cell.get('surface_mode', '')).strip():
+                    normalized['surface_mode'] = str(cell.get('surface_mode')).strip()
+                    if isinstance(cell.get('plane_origin'), (list, tuple)) and len(cell.get('plane_origin')) >= 2:
+                        normalized['plane_origin'] = [round(float(cell['plane_origin'][0]), 3), round(float(cell['plane_origin'][1]), 3)]
+                    if isinstance(cell.get('plane_axis'), (list, tuple)) and len(cell.get('plane_axis')) >= 2:
+                        normalized['plane_axis'] = [round(float(cell['plane_axis'][0]), 3), round(float(cell['plane_axis'][1]), 3)]
+                    if isinstance(cell.get('plane_height_range'), (list, tuple)) and len(cell.get('plane_height_range')) >= 2:
+                        normalized['plane_height_range'] = [round(float(cell['plane_height_range'][0]), 3), round(float(cell['plane_height_range'][1]), 3)]
                 self.terrain_grid_overrides[self._terrain_cell_key(grid_x, grid_y)] = normalized
         self._mark_terrain_overlay_dirty(reset=True)
         self._mark_raster_dirty()
@@ -1455,6 +1496,68 @@ class MapManager:
         self._mark_raster_dirty()
         return {
             'changed': True,
+            'cell_count': len(selected_cells),
+            'min_height': round(min_height, 2),
+            'max_height': round(max_height, 2),
+        }
+
+    def paint_terrain_plane_polygon(self, points, terrain_type, team='neutral', blocks_movement=None, blocks_vision=None, direction_start=None, direction_end=None):
+        normalized_points = self._normalize_points(points)
+        if len(normalized_points) < 3:
+            return {'changed': False, 'cell_count': 0, 'min_height': 0.0, 'max_height': 0.0}
+
+        slope_info = self.analyze_terrain_slope_polygon(normalized_points, direction_start=direction_start, direction_end=direction_end)
+        if not slope_info.get('changed'):
+            return {'changed': False, 'cell_count': 0, 'min_height': 0.0, 'max_height': 0.0}
+
+        selected_cells = slope_info['selected_cells']
+        min_height = float(slope_info['min_height'])
+        max_height = float(slope_info['max_height'])
+        low_center_x, low_center_y = slope_info['low_point']
+        high_center_x, high_center_y = slope_info['high_point']
+        axis_x = float(high_center_x) - float(low_center_x)
+        axis_y = float(high_center_y) - float(low_center_y)
+        axis_length_sq = axis_x * axis_x + axis_y * axis_y
+
+        if axis_length_sq <= 1e-6:
+            axis_payload = [1.0, 0.0]
+        else:
+            axis_length = math.sqrt(axis_length_sq)
+            axis_payload = [round(axis_x / axis_length, 6), round(axis_y / axis_length, 6)]
+
+        surface_payload = {
+            'surface_mode': 'slope_plane',
+            'plane_origin': [round(float(low_center_x), 3), round(float(low_center_y), 3)],
+            'plane_axis': axis_payload,
+            'plane_height_range': [round(min_height, 3), round(max_height, 3)],
+        }
+
+        changed = False
+        for grid_x, grid_y in selected_cells:
+            x1, y1, x2, y2 = self._grid_cell_bounds(grid_x, grid_y)
+            center_x = (x1 + x2) / 2.0
+            center_y = (y1 + y2) / 2.0
+            if axis_length_sq <= 1e-6:
+                blend = 0.0
+            else:
+                blend = ((center_x - low_center_x) * axis_x + (center_y - low_center_y) * axis_y) / axis_length_sq
+                blend = max(0.0, min(1.0, blend))
+            height_value = round(min_height + (max_height - min_height) * blend, 2)
+            changed = self._set_terrain_override_cell_with_surface(
+                grid_x,
+                grid_y,
+                terrain_type,
+                height_value,
+                team=team,
+                blocks_movement=blocks_movement,
+                blocks_vision=blocks_vision,
+                surface_payload=surface_payload,
+            ) or changed
+
+        if changed:
+            self._mark_raster_dirty()
+        return {
+            'changed': changed,
             'cell_count': len(selected_cells),
             'min_height': round(min_height, 2),
             'max_height': round(max_height, 2),
@@ -2053,14 +2156,55 @@ class MapManager:
         override_move_block = bool(cell.get('blocks_movement', False))
         existing_move_block = self.movement_block_map[rows, cols].copy()
         preserve_block_mask = existing_move_block & (not override_move_block)
+        surface_mode = str(cell.get('surface_mode', '') or '').strip()
 
         self.priority_map[rows, cols][~preserve_block_mask] = 0
         self.terrain_type_map[rows, cols][~preserve_block_mask] = self.terrain_code_by_type.get(terrain_type, 0)
-        self.height_map[rows, cols] = np.where(
-            preserve_block_mask,
-            np.maximum(self.height_map[rows, cols], override_height),
-            override_height,
-        )
+        if surface_mode == 'slope_plane':
+            plane_origin = cell.get('plane_origin') if isinstance(cell.get('plane_origin'), (list, tuple)) else None
+            plane_axis = cell.get('plane_axis') if isinstance(cell.get('plane_axis'), (list, tuple)) else None
+            plane_height_range = cell.get('plane_height_range') if isinstance(cell.get('plane_height_range'), (list, tuple)) else None
+            if plane_origin is not None and plane_axis is not None and plane_height_range is not None and len(plane_origin) >= 2 and len(plane_axis) >= 2 and len(plane_height_range) >= 2:
+                origin_x = float(plane_origin[0])
+                origin_y = float(plane_origin[1])
+                axis_x = float(plane_axis[0])
+                axis_y = float(plane_axis[1])
+                min_height = float(plane_height_range[0])
+                max_height = float(plane_height_range[1])
+                corners = (
+                    (x1, y1),
+                    (x2, y1),
+                    (x2, y2),
+                    (x1, y2),
+                )
+                axis_projections = [((corner_x - origin_x) * axis_x + (corner_y - origin_y) * axis_y) for corner_x, corner_y in corners]
+                proj_min = min(axis_projections)
+                proj_max = max(axis_projections)
+                proj_span = max(proj_max - proj_min, 1e-6)
+                runtime_xs = np.arange(runtime_x1, runtime_x2 + 1, dtype=np.float32)
+                runtime_ys = np.arange(runtime_y1, runtime_y2 + 1, dtype=np.float32)
+                world_xs = (runtime_xs + 0.5) * float(self.runtime_cell_width_world)
+                world_ys = (runtime_ys + 0.5) * float(self.runtime_cell_height_world)
+                projection_grid = (world_xs[np.newaxis, :] - origin_x) * axis_x + (world_ys[:, np.newaxis] - origin_y) * axis_y
+                blend_grid = np.clip((projection_grid - proj_min) / proj_span, 0.0, 1.0)
+                height_grid = (min_height + (max_height - min_height) * blend_grid).astype(np.float32, copy=False)
+                self.height_map[rows, cols] = np.where(
+                    preserve_block_mask,
+                    np.maximum(self.height_map[rows, cols], height_grid),
+                    height_grid,
+                )
+            else:
+                self.height_map[rows, cols] = np.where(
+                    preserve_block_mask,
+                    np.maximum(self.height_map[rows, cols], override_height),
+                    override_height,
+                )
+        else:
+            self.height_map[rows, cols] = np.where(
+                preserve_block_mask,
+                np.maximum(self.height_map[rows, cols], override_height),
+                override_height,
+            )
         self.movement_block_map[rows, cols] = existing_move_block | override_move_block
         if bool(cell.get('blocks_vision', False)):
             self.vision_block_map[rows, cols] = True
@@ -2476,7 +2620,8 @@ class MapManager:
         if existing is not None and facility_type == 'dead_zone' and existing.get('type') == facility_type:
             facility_id = self._next_variant_id(facility_id, 'rect')
             existing = None
-        normalized = {
+        normalized = dict(existing) if existing else {}
+        normalized.update({
             'id': facility_id,
             'type': facility_type,
             'team': team,
@@ -2486,7 +2631,7 @@ class MapManager:
             'x2': int(max(x1, x2)),
             'y2': int(max(y1, y2)),
             'height_m': float(existing.get('height_m', 0.0)) if existing else 0.0,
-        }
+        })
 
         with self._edit_state_lock:
             for index, region in enumerate(self.facilities):
@@ -2578,6 +2723,19 @@ class MapManager:
             return None
         with self._edit_state_lock:
             facility['height_m'] = max(0.0, round(float(height_m), 2))
+        self._mark_facility_overlay_dirty()
+        self._mark_raster_dirty()
+        return facility
+
+    def update_facility_property(self, facility_id, property_name, value):
+        facility = self.get_facility_by_id(facility_id)
+        if facility is None or facility.get('type') == 'boundary':
+            return None
+        safe_name = str(property_name or '').strip()
+        if not safe_name:
+            return None
+        with self._edit_state_lock:
+            facility[safe_name] = round(float(value), 3)
         self._mark_facility_overlay_dirty()
         self._mark_raster_dirty()
         return facility

@@ -43,11 +43,28 @@ public sealed class SimulationRunReport
 
 public sealed class RuleSimulationService
 {
+    private const double RespawnRecoveryZoneLockSec = 3.0;
+    private sealed class ProjectileFrameCache
+    {
+        public required Dictionary<string, SimulationEntity> EntityById { get; init; }
+
+        public required IReadOnlyList<SimulationEntity> RedTeamTargets { get; init; }
+
+        public required IReadOnlyList<SimulationEntity> BlueTeamTargets { get; init; }
+
+        public required IReadOnlyList<SimulationEntity> ObstacleCandidates { get; init; }
+
+        public IReadOnlyList<SimulationEntity> GetTargetCandidates(string shooterTeam)
+            => string.Equals(shooterTeam, "red", StringComparison.OrdinalIgnoreCase)
+                ? BlueTeamTargets
+                : RedTeamTargets;
+    }
+
     private readonly RuleSet _rules;
     private readonly ArenaInteractionService _interactionService;
     private readonly bool _enableAutoMovement;
     private readonly Func<SimulationWorldState, SimulationEntity, SimulationEntity, ArmorPlateTarget, bool>? _canSeeAutoAimPlate;
-    private readonly Func<SimulationWorldState, SimulationEntity, SimulationProjectile, double, double, double, double, double, double, ProjectileObstacleHit?>? _resolveProjectileObstacle;
+    private readonly Func<SimulationWorldState, SimulationEntity, SimulationProjectile, double, double, double, double, double, double, IReadOnlyList<SimulationEntity>?, ProjectileObstacleHit?>? _resolveProjectileObstacle;
     private readonly bool _projectileRicochetEnabled;
 
     public RuleSimulationService(
@@ -56,7 +73,7 @@ public sealed class RuleSimulationService
         int? seed = null,
         bool enableAutoMovement = true,
         Func<SimulationWorldState, SimulationEntity, SimulationEntity, ArmorPlateTarget, bool>? canSeeAutoAimPlate = null,
-        Func<SimulationWorldState, SimulationEntity, SimulationProjectile, double, double, double, double, double, double, ProjectileObstacleHit?>? resolveProjectileObstacle = null,
+        Func<SimulationWorldState, SimulationEntity, SimulationProjectile, double, double, double, double, double, double, IReadOnlyList<SimulationEntity>?, ProjectileObstacleHit?>? resolveProjectileObstacle = null,
         bool projectileRicochetEnabled = false)
     {
         _rules = rules;
@@ -221,11 +238,6 @@ public sealed class RuleSimulationService
                 {
                     entity.WeakTimerSec = Math.Max(0.0, entity.WeakTimerSec - dt);
                     entity.RespawnAmmoLockTimerSec = Math.Max(0.0, entity.RespawnAmmoLockTimerSec - dt);
-                }
-                else
-                {
-                    entity.WeakTimerSec = Math.Max(entity.WeakTimerSec, 10.0);
-                    entity.RespawnAmmoLockTimerSec = Math.Max(entity.RespawnAmmoLockTimerSec, 10.0);
                 }
             }
             else
@@ -610,11 +622,11 @@ public sealed class RuleSimulationService
             return;
         }
 
+        ProjectileFrameCache frameCache = BuildProjectileFrameCache(world);
         for (int index = world.Projectiles.Count - 1; index >= 0; index--)
         {
             SimulationProjectile projectile = world.Projectiles[index];
-            SimulationEntity? shooter = world.Entities.FirstOrDefault(entity =>
-                string.Equals(entity.Id, projectile.ShooterId, StringComparison.OrdinalIgnoreCase));
+            SimulationEntity? shooter = frameCache.EntityById.GetValueOrDefault(projectile.ShooterId);
             if (shooter is null || !shooter.IsAlive)
             {
                 world.Projectiles.RemoveAt(index);
@@ -636,6 +648,7 @@ public sealed class RuleSimulationService
                 projectile.X,
                 projectile.Y,
                 projectile.HeightM,
+                frameCache.GetTargetCandidates(shooter.Team),
                 out SimulationEntity? hitTarget,
                 out ArmorPlateTarget hitPlate,
                 out double hitX,
@@ -652,7 +665,8 @@ public sealed class RuleSimulationService
                     startHeightM,
                     projectile.X,
                     projectile.Y,
-                    projectile.HeightM);
+                    projectile.HeightM,
+                    frameCache.ObstacleCandidates);
                 if (ShouldResolveObstacleBeforePlate(obstacleHit, hitSegmentT)
                     && obstacleHit is ProjectileObstacleHit blockingHit)
                 {
@@ -705,7 +719,8 @@ public sealed class RuleSimulationService
                 startHeightM,
                 projectile.X,
                 projectile.Y,
-                projectile.HeightM);
+                projectile.HeightM,
+                frameCache.ObstacleCandidates);
             if (obstacleOnlyHit is ProjectileObstacleHit obstacleImpact)
             {
                 if (TryApplyRicochet(projectile, obstacleImpact, world.MetersPerWorldUnit))
@@ -726,11 +741,11 @@ public sealed class RuleSimulationService
 
     private void TickProjectilesSubstepped(SimulationWorldState world, double dt, SimulationRunReport report)
     {
-        Dictionary<string, SimulationEntity> entityById = BuildEntityLookup(world);
+        ProjectileFrameCache frameCache = BuildProjectileFrameCache(world);
         for (int index = world.Projectiles.Count - 1; index >= 0; index--)
         {
             SimulationProjectile projectile = world.Projectiles[index];
-            if (!entityById.TryGetValue(projectile.ShooterId, out SimulationEntity? shooter) || !shooter.IsAlive)
+            if (!frameCache.EntityById.TryGetValue(projectile.ShooterId, out SimulationEntity? shooter) || !shooter.IsAlive)
             {
                 world.Projectiles.RemoveAt(index);
                 continue;
@@ -759,6 +774,7 @@ public sealed class RuleSimulationService
                     projectile.X,
                     projectile.Y,
                     projectile.HeightM,
+                    frameCache.GetTargetCandidates(shooter.Team),
                     out SimulationEntity? hitTarget,
                     out ArmorPlateTarget hitPlate,
                     out double hitX,
@@ -775,7 +791,8 @@ public sealed class RuleSimulationService
                         startHeightM,
                         projectile.X,
                         projectile.Y,
-                        projectile.HeightM);
+                        projectile.HeightM,
+                        frameCache.ObstacleCandidates);
                     if (ShouldResolveObstacleBeforePlate(obstacleHit, hitSegmentT)
                         && obstacleHit is ProjectileObstacleHit blockingHit)
                     {
@@ -827,7 +844,8 @@ public sealed class RuleSimulationService
                     startHeightM,
                     projectile.X,
                     projectile.Y,
-                    projectile.HeightM);
+                    projectile.HeightM,
+                    frameCache.ObstacleCandidates);
                 if (obstacleOnlyHit is ProjectileObstacleHit obstacleImpact)
                 {
                     if (TryApplyRicochet(projectile, obstacleImpact, metersPerWorldUnit))
@@ -901,7 +919,8 @@ public sealed class RuleSimulationService
         double startHeightM,
         double endX,
         double endY,
-        double endHeightM)
+        double endHeightM,
+        IReadOnlyList<SimulationEntity>? obstacleCandidates)
     {
         if (_resolveProjectileObstacle is null)
         {
@@ -917,7 +936,8 @@ public sealed class RuleSimulationService
             startHeightM,
             endX,
             endY,
-            endHeightM);
+            endHeightM,
+            obstacleCandidates);
     }
 
     private static bool ShouldResolveObstacleBeforePlate(ProjectileObstacleHit? obstacleHit, double hitSegmentT)
@@ -993,8 +1013,21 @@ public sealed class RuleSimulationService
             return false;
         }
 
+        if (string.Equals(obstacleHit.Kind, "armor_plate", StringComparison.OrdinalIgnoreCase))
+        {
+            // Bias the post-hit direction slightly away from the armor so robot armor hits
+            // always produce a visible ricochet instead of immediately re-colliding in place.
+            float reflectedSpeed = reflected.Length();
+            reflected += normal * MathF.Max(0.8f, reflectedSpeed * 0.18f);
+            if (reflected.LengthSquared() > 1e-6f)
+            {
+                reflected = Vector3.Normalize(reflected) * reflectedSpeed;
+            }
+        }
+
         reflected *= 0.70710677f;
-        Vector3 offset = Vector3.Normalize(reflected) * 0.012f;
+        float offsetDistance = string.Equals(obstacleHit.Kind, "armor_plate", StringComparison.OrdinalIgnoreCase) ? 0.020f : 0.012f;
+        Vector3 offset = Vector3.Normalize(reflected) * offsetDistance;
         projectile.X = obstacleHit.X + offset.X / Math.Max(metersPerWorldUnit, 1e-6);
         projectile.Y = obstacleHit.Y + offset.Z / Math.Max(metersPerWorldUnit, 1e-6);
         projectile.HeightM = obstacleHit.HeightM + offset.Y;
@@ -1016,6 +1049,49 @@ public sealed class RuleSimulationService
         }
 
         return lookup;
+    }
+
+    private static ProjectileFrameCache BuildProjectileFrameCache(SimulationWorldState world)
+    {
+        Dictionary<string, SimulationEntity> entityById = BuildEntityLookup(world);
+        var redTargets = new List<SimulationEntity>(world.Entities.Count);
+        var blueTargets = new List<SimulationEntity>(world.Entities.Count);
+        var obstacles = new List<SimulationEntity>(world.Entities.Count);
+        foreach (SimulationEntity entity in world.Entities)
+        {
+            if (!entity.IsSimulationSuppressed)
+            {
+                if (SimulationCombatMath.IsStructure(entity)
+                    || (entity.IsAlive
+                        && (string.Equals(entity.EntityType, "robot", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(entity.EntityType, "sentry", StringComparison.OrdinalIgnoreCase))))
+                {
+                    obstacles.Add(entity);
+                }
+            }
+
+            if (!entity.IsAlive || entity.IsSimulationSuppressed)
+            {
+                continue;
+            }
+
+            if (string.Equals(entity.Team, "red", StringComparison.OrdinalIgnoreCase))
+            {
+                redTargets.Add(entity);
+            }
+            else if (string.Equals(entity.Team, "blue", StringComparison.OrdinalIgnoreCase))
+            {
+                blueTargets.Add(entity);
+            }
+        }
+
+        return new ProjectileFrameCache
+        {
+            EntityById = entityById,
+            RedTeamTargets = redTargets,
+            BlueTeamTargets = blueTargets,
+            ObstacleCandidates = obstacles,
+        };
     }
 
     private static void StoreAutoAimDiagnostics(
@@ -1266,8 +1342,8 @@ public sealed class RuleSimulationService
         entity.IsAlive = true;
         entity.State = "weak";
         entity.Health = Math.Max(1.0, entity.MaxHealth * 0.10);
-        entity.WeakTimerSec = 10.0;
-        entity.RespawnAmmoLockTimerSec = 10.0;
+        entity.WeakTimerSec = RespawnRecoveryZoneLockSec;
+        entity.RespawnAmmoLockTimerSec = RespawnRecoveryZoneLockSec;
         entity.RespawnInvincibleTimerSec = 30.0;
         entity.Heat = 0;
         entity.HeatLockTimerSec = 0;
@@ -1461,6 +1537,8 @@ public sealed class RuleSimulationService
             AirborneHeightM = source.AirborneHeightM,
             VerticalVelocityMps = source.VerticalVelocityMps,
             AngleDeg = source.AngleDeg,
+            ChassisPitchDeg = source.ChassisPitchDeg,
+            ChassisRollDeg = source.ChassisRollDeg,
             TurretYawDeg = source.TurretYawDeg,
             GimbalPitchDeg = source.GimbalPitchDeg,
             AutoAimRequested = source.AutoAimRequested,

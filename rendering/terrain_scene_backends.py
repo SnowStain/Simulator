@@ -23,7 +23,7 @@ except Exception as exc:
     PYGLET_IMPORT_ERROR = str(exc)
 
 
-_NATIVE_CPP_BACKENDS = {'native_cpp', 'cpp', 'opengl_cpp', 'rm26_native'}
+_NATIVE_CPP_BACKENDS = {'native_cpp', 'cpp', 'opengl_cpp', 'rm26_native', 'gpu', 'wgl_opengl', 'opengl_gpu'}
 _EDITOR_OPENGL_BACKENDS = {'editor_opengl', 'opengl_grid', 'terrain_editor_opengl', 'terrain_editor_gl'}
 
 
@@ -113,6 +113,8 @@ def _sample_terrain_scene_data(renderer, map_manager, map_rgb):
         id(map_rgb) if map_rgb is not None else None,
         str(getattr(renderer, 'terrain_editor_tool', 'terrain')),
         bool(getattr(renderer, 'terrain_scene_force_dark_gray', False)),
+        int(getattr(map_manager, 'facility_version', 0)),
+        _terrain_surface_signature(getattr(renderer, 'game_engine', None)),
     )
     if getattr(renderer, 'terrain_scene_sample_cache_key', None) == cache_key:
         cached = getattr(renderer, 'terrain_scene_sample_cache', None)
@@ -286,6 +288,302 @@ def _extrude_cell_box_vertices(vertices, x0, x1, y0, y1, z0, z1, top_color):
     _append_face(vertices, top_se, top_sw, bottom_sw, bottom_se, front_color)
 
 
+def _parse_hex_color(value, fallback=(75, 79, 85)):
+    text = str(value or '').strip()
+    if text.startswith('#'):
+        text = text[1:]
+    if len(text) == 3:
+        text = ''.join(ch * 2 for ch in text)
+    if len(text) < 6:
+        return tuple(int(channel) for channel in fallback)
+    try:
+        return (
+            int(text[0:2], 16),
+            int(text[2:4], 16),
+            int(text[4:6], 16),
+        )
+    except ValueError:
+        return tuple(int(channel) for channel in fallback)
+
+
+def _terrain_surface_config(game_engine):
+    if game_engine is None:
+        return {}
+    getter = getattr(game_engine, 'get_terrain_surface_config', None)
+    if callable(getter):
+        return dict(getter() or {})
+    return dict(game_engine.config.get('map', {}).get('terrain_surface', {}) or {})
+
+
+def _terrain_surface_signature(game_engine):
+    surface_config = _terrain_surface_config(game_engine)
+    primitives = []
+    for primitive in list(surface_config.get('surface_primitives') or []):
+        if not isinstance(primitive, dict):
+            continue
+        primitives.append((
+            str(primitive.get('id') or ''),
+            round(float(primitive.get('x1', 0.0)), 3),
+            round(float(primitive.get('y1', 0.0)), 3),
+            round(float(primitive.get('x2', 0.0)), 3),
+            round(float(primitive.get('y2', 0.0)), 3),
+            round(float(primitive.get('z_bottom_m', 0.0)), 3),
+            round(float(primitive.get('height_m', 0.0)), 3),
+            str(primitive.get('side_color') or ''),
+        ))
+    return tuple(primitives)
+
+
+def _sample_map_rgb_color(map_rgb, world_x, world_y, fallback=(208, 212, 216)):
+    if map_rgb is None or getattr(map_rgb, 'shape', None) is None or len(map_rgb.shape) < 3:
+        return tuple(int(channel) for channel in fallback)
+    sample_x = max(0, min(int(round(float(world_x))), map_rgb.shape[1] - 1))
+    sample_y = max(0, min(int(round(float(world_y))), map_rgb.shape[0] - 1))
+    sample = map_rgb[sample_y, sample_x]
+    return tuple(int(sample[index]) for index in range(3))
+
+
+def _terrain_surface_scene_boxes(renderer, game_engine, data, map_rgb=None):
+    surface_config = _terrain_surface_config(game_engine)
+    scene_step = max(1, int(data.get('scene_step', 1)))
+    sampled_cell_size = _terrain_scene_base_cell_size(game_engine.map_manager) * scene_step
+    center_offset_x = data['grid_width'] / 2.0
+    center_offset_y = data['grid_height'] / 2.0
+    vertical_scale = float(data.get('height_scene_scale', 1.0))
+    fallback_side_color = surface_config.get('primitive_side_color') or surface_config.get('side_color') or '#4B4F55'
+    selected_id = str(getattr(renderer, 'selected_surface_primitive_id', '') or '')
+    boxes = []
+    for primitive in list(surface_config.get('surface_primitives') or []):
+        if not isinstance(primitive, dict):
+            continue
+        x1 = float(primitive.get('x1', 0.0))
+        x2 = float(primitive.get('x2', x1))
+        y1 = float(primitive.get('y1', 0.0))
+        y2 = float(primitive.get('y2', y1))
+        if abs(x2 - x1) < 1e-3 or abs(y2 - y1) < 1e-3:
+            continue
+        z_bottom_m = max(0.0, float(primitive.get('z_bottom_m', 0.0)))
+        height_m = max(0.05, float(primitive.get('height_m', 0.6)))
+        center_world_x = (x1 + x2) * 0.5
+        center_world_y = (y1 + y2) * 0.5
+        top_color = _sample_map_rgb_color(map_rgb, center_world_x, center_world_y)
+        side_color = _parse_hex_color(primitive.get('side_color') or fallback_side_color)
+        if selected_id and str(primitive.get('id') or '') == selected_id:
+            side_color = tuple(min(255, int(channel * 0.72 + 70)) for channel in side_color)
+        boxes.append({
+            'id': str(primitive.get('id') or ''),
+            'x0': min(x1, x2) / sampled_cell_size - center_offset_x,
+            'x1': max(x1, x2) / sampled_cell_size - center_offset_x,
+            'z0': min(y1, y2) / sampled_cell_size - center_offset_y,
+            'z1': max(y1, y2) / sampled_cell_size - center_offset_y,
+            'y0': z_bottom_m * vertical_scale,
+            'y1': (z_bottom_m + height_m) * vertical_scale,
+            'top_color': tuple(channel / 255.0 for channel in top_color),
+            'side_color': tuple(channel / 255.0 for channel in side_color),
+            'top_color_rgb': top_color,
+            'side_color_rgb': side_color,
+        })
+    return boxes
+
+
+def _extrude_surface_box_vertices(vertices, box):
+    side_color = list(box['side_color'])
+    top_color = list(box['top_color'])
+    bottom_color = [channel * 0.55 for channel in side_color]
+    x0 = box['x0']
+    x1 = box['x1']
+    y0 = box['y0']
+    y1 = box['y1']
+    z0 = box['z0']
+    z1 = box['z1']
+
+    top_nw = (x0, y1, z0)
+    top_ne = (x1, y1, z0)
+    top_se = (x1, y1, z1)
+    top_sw = (x0, y1, z1)
+    bottom_nw = (x0, y0, z0)
+    bottom_ne = (x1, y0, z0)
+    bottom_se = (x1, y0, z1)
+    bottom_sw = (x0, y0, z1)
+
+    _append_face(vertices, top_nw, top_ne, top_se, top_sw, top_color)
+    _append_face(vertices, bottom_sw, bottom_se, bottom_ne, bottom_nw, bottom_color)
+    _append_face(vertices, top_sw, top_nw, bottom_nw, bottom_sw, side_color)
+    _append_face(vertices, top_ne, top_se, bottom_se, bottom_ne, side_color)
+    _append_face(vertices, top_nw, top_ne, bottom_ne, bottom_nw, side_color)
+    _append_face(vertices, top_se, top_sw, bottom_sw, bottom_se, side_color)
+
+
+def _facility_scene_default_height(facility_type):
+    if facility_type == 'base':
+        return 1.18
+    if facility_type == 'outpost':
+        return 1.58
+    if facility_type == 'energy_mechanism':
+        return 2.30
+    return 0.60
+
+
+def _facility_scene_color(region):
+    facility_type = str(region.get('type', ''))
+    team = str(region.get('team', 'neutral'))
+    if facility_type == 'base':
+        return (0.78, 0.16, 0.14) if team == 'red' else (0.16, 0.36, 0.82)
+    if facility_type == 'outpost':
+        return (0.82, 0.22, 0.18) if team == 'red' else (0.18, 0.44, 0.92)
+    if facility_type == 'energy_mechanism':
+        return (0.84, 0.70, 0.28)
+    return (0.45, 0.48, 0.52)
+
+
+def _facility_scene_to_local(data, map_manager, world_x, world_y):
+    scene_step = max(1, int(data.get('scene_step', 1)))
+    sampled_cell_size = _terrain_scene_base_cell_size(map_manager) * scene_step
+    center_offset_x = data['grid_width'] / 2.0
+    center_offset_y = data['grid_height'] / 2.0
+    return (
+        float(world_x) / max(sampled_cell_size, 1e-6) - center_offset_x,
+        float(world_y) / max(sampled_cell_size, 1e-6) - center_offset_y,
+        sampled_cell_size,
+    )
+
+
+def _rotated_xz(center_x, center_z, local_x, local_z, yaw):
+    cos_y = math.cos(yaw)
+    sin_y = math.sin(yaw)
+    return (
+        center_x + local_x * cos_y - local_z * sin_y,
+        center_z + local_x * sin_y + local_z * cos_y,
+    )
+
+
+def _append_oriented_box(vertices, center_x, center_y, center_z, size_x, size_y, size_z, color, yaw=0.0):
+    hx = max(0.001, float(size_x) * 0.5)
+    hy = max(0.001, float(size_y) * 0.5)
+    hz = max(0.001, float(size_z) * 0.5)
+    corners = {}
+    for name, lx, ly, lz in (
+        ('tnw', -hx, hy, -hz), ('tne', hx, hy, -hz), ('tse', hx, hy, hz), ('tsw', -hx, hy, hz),
+        ('bnw', -hx, -hy, -hz), ('bne', hx, -hy, -hz), ('bse', hx, -hy, hz), ('bsw', -hx, -hy, hz),
+    ):
+        px, pz = _rotated_xz(center_x, center_z, lx, lz, yaw)
+        corners[name] = (px, center_y + ly, pz)
+    c = list(color)
+    dark = [channel * 0.58 for channel in c]
+    side = [channel * 0.78 for channel in c]
+    _append_face(vertices, corners['tnw'], corners['tne'], corners['tse'], corners['tsw'], c)
+    _append_face(vertices, corners['bsw'], corners['bse'], corners['bne'], corners['bnw'], dark)
+    _append_face(vertices, corners['tsw'], corners['tnw'], corners['bnw'], corners['bsw'], side)
+    _append_face(vertices, corners['tne'], corners['tse'], corners['bse'], corners['bne'], side)
+    _append_face(vertices, corners['tnw'], corners['tne'], corners['bne'], corners['bnw'], side)
+    _append_face(vertices, corners['tse'], corners['tsw'], corners['bsw'], corners['bse'], side)
+
+
+def _append_prism(vertices, center_x, y0, center_z, radius_x, radius_z, height, color, yaw=0.0, sides=6):
+    sides = max(3, int(sides))
+    y1 = y0 + max(0.001, float(height))
+    top = []
+    bottom = []
+    for index in range(sides):
+        angle = math.tau * index / sides + yaw
+        scale = 0.72 if sides == 6 and index % 2 == 0 else 1.0
+        px = center_x + math.cos(angle) * radius_x * scale
+        pz = center_z + math.sin(angle) * radius_z * scale
+        top.append((px, y1, pz))
+        bottom.append((px, y0, pz))
+    c = list(color)
+    side = [channel * 0.76 for channel in c]
+    dark = [channel * 0.52 for channel in c]
+    for index in range(1, sides - 1):
+        vertices.extend((*top[0], *c, *top[index], *c, *top[index + 1], *c))
+        vertices.extend((*bottom[0], *dark, *bottom[index + 1], *dark, *bottom[index], *dark))
+    for index in range(sides):
+        next_index = (index + 1) % sides
+        _append_face(vertices, top[index], top[next_index], bottom[next_index], bottom[index], side)
+
+
+def _facility_region_bounds(region):
+    if region.get('shape') == 'polygon' and region.get('points'):
+        xs = [float(point[0]) for point in region.get('points', [])]
+        ys = [float(point[1]) for point in region.get('points', [])]
+        return min(xs), min(ys), max(xs), max(ys)
+    return (
+        float(region.get('x1', 0.0)),
+        float(region.get('y1', 0.0)),
+        float(region.get('x2', 0.0)),
+        float(region.get('y2', 0.0)),
+    )
+
+
+def _append_facility_scene_vertices(vertices, renderer, game_engine, data, map_rgb=None):
+    if game_engine is None or getattr(game_engine, 'map_manager', None) is None:
+        return
+    map_manager = game_engine.map_manager
+    vertical_scale = float(data.get('height_scene_scale', 1.0))
+    for region in map_manager.get_facility_regions():
+        facility_type = str(region.get('type', ''))
+        if facility_type not in {'base', 'outpost', 'energy_mechanism'}:
+            continue
+        x1, y1, x2, y2 = _facility_region_bounds(region)
+        if abs(x2 - x1) < 1e-3 or abs(y2 - y1) < 1e-3:
+            continue
+        center_x, center_z, sampled_cell_size = _facility_scene_to_local(data, map_manager, (x1 + x2) * 0.5, (y1 + y2) * 0.5)
+        footprint_x = max(abs(x2 - x1) / max(sampled_cell_size, 1e-6), 0.08)
+        footprint_z = max(abs(y2 - y1) / max(sampled_cell_size, 1e-6), 0.08)
+        model_scale = max(0.05, float(region.get('model_scale', 1.0)))
+        height_m = max(0.05, float(region.get('height_m', _facility_scene_default_height(facility_type)))) * model_scale
+        y0 = max(0.0, float(region.get('z_bottom_m', 0.0))) * vertical_scale
+        height = height_m * vertical_scale
+        yaw = math.radians(float(region.get('yaw_deg', 90.0 if facility_type == 'energy_mechanism' else 0.0)))
+        color = _facility_scene_color(region)
+        dark = tuple(max(0.02, channel * 0.42) for channel in color)
+        armor = (0.18, 0.18, 0.18)
+
+        if facility_type == 'base':
+            _append_prism(vertices, center_x, y0, center_z, footprint_x * 0.52, footprint_z * 0.52, height * 0.62, color, yaw=yaw, sides=6)
+            _append_prism(vertices, center_x, y0 + height * 0.58, center_z, footprint_x * 0.42, footprint_z * 0.42, height * 0.22, tuple(min(1.0, c * 1.12) for c in color), yaw=yaw, sides=6)
+            _append_oriented_box(vertices, center_x, y0 + height * 0.88, center_z, footprint_x * 0.55, height * 0.08, footprint_z * 0.12, armor, yaw=yaw)
+            _append_oriented_box(vertices, center_x, y0 + height * 0.72, center_z, footprint_x * 0.12, height * 0.40, footprint_z * 0.12, dark, yaw=yaw)
+        elif facility_type == 'outpost':
+            _append_prism(vertices, center_x, y0, center_z, footprint_x * 0.45, footprint_z * 0.45, height * 0.12, dark, yaw=yaw + math.pi / 4.0, sides=8)
+            _append_prism(vertices, center_x, y0 + height * 0.08, center_z, footprint_x * 0.28, footprint_z * 0.28, height * 0.58, color, yaw=yaw, sides=8)
+            _append_prism(vertices, center_x, y0 + height * 0.64, center_z, footprint_x * 0.22, footprint_z * 0.22, height * 0.16, tuple(min(1.0, c * 1.18) for c in color), yaw=yaw, sides=8)
+            for index in range(4):
+                angle = yaw + math.tau * index / 4.0
+                px = center_x + math.cos(angle) * footprint_x * 0.31
+                pz = center_z + math.sin(angle) * footprint_z * 0.31
+                _append_oriented_box(vertices, px, y0 + height * 0.54, pz, footprint_x * 0.18, height * 0.06, footprint_z * 0.04, armor, yaw=angle)
+        else:
+            base_len = max(float(region.get('structure_base_length_m', 3.40)) / max(sampled_cell_size, 1e-6) * model_scale, footprint_x * 0.92)
+            base_w = max(float(region.get('structure_base_width_m', 3.18)) / max(sampled_cell_size, 1e-6) * model_scale, footprint_z * 0.92)
+            base_h = max(0.06, float(region.get('structure_base_height_m', 0.30)) * vertical_scale * model_scale)
+            top_len = max(0.04, float(region.get('structure_base_top_length_m', 2.10)) / max(sampled_cell_size, 1e-6) * model_scale)
+            top_w = max(0.04, float(region.get('structure_base_top_width_m', 1.08)) / max(sampled_cell_size, 1e-6) * model_scale)
+            top_h = max(0.02, float(region.get('structure_base_top_height_m', 0.12)) * vertical_scale * model_scale)
+            frame_h = max(height, base_h + top_h + 0.30 * vertical_scale)
+            support_offset = max(0.04, float(region.get('structure_support_offset_m', 1.03)) / max(sampled_cell_size, 1e-6) * model_scale)
+            pair_gap = max(0.04, float(region.get('structure_cantilever_pair_gap_m', 0.42)) / max(sampled_cell_size, 1e-6) * model_scale)
+            rotor_radius = 1.40 / max(sampled_cell_size, 1e-6) * model_scale
+            disk_radius = 0.15 / max(sampled_cell_size, 1e-6) * model_scale
+            _append_prism(vertices, center_x, y0, center_z, base_len * 0.50, base_w * 0.50, base_h, dark, yaw=yaw, sides=8)
+            _append_oriented_box(vertices, center_x, y0 + base_h + top_h * 0.5, center_z, top_len, top_h, top_w, color, yaw=yaw)
+            for side in (-1.0, 1.0):
+                col_x, col_z = _rotated_xz(center_x, center_z, side * support_offset, 0.0, yaw)
+                _append_oriented_box(vertices, col_x, y0 + frame_h * 0.52, col_z, 0.08, frame_h, 0.12, dark, yaw=yaw)
+            _append_oriented_box(vertices, center_x, y0 + frame_h, center_z, support_offset * 2.0 + 0.14, 0.08, 0.12, dark, yaw=yaw)
+            for team_side, team_color in ((-1.0, (0.88, 0.16, 0.12)), (1.0, (0.12, 0.36, 0.92))):
+                rotor_cx, rotor_cz = _rotated_xz(center_x, center_z, 0.0, team_side * pair_gap * 0.5, yaw)
+                _append_prism(vertices, rotor_cx, y0 + frame_h * 0.72, rotor_cz, disk_radius * 0.72, disk_radius * 0.72, 0.035 * vertical_scale, team_color, yaw=yaw, sides=16)
+                for arm_index in range(5):
+                    angle = yaw + math.tau * arm_index / 5.0
+                    arm_cx = rotor_cx + math.cos(angle) * rotor_radius * 0.52
+                    arm_cz = rotor_cz + math.sin(angle) * rotor_radius * 0.52
+                    _append_oriented_box(vertices, arm_cx, y0 + frame_h * 0.74, arm_cz, rotor_radius, 0.045 * vertical_scale, 0.045, team_color, yaw=angle)
+                    disk_cx = rotor_cx + math.cos(angle) * rotor_radius
+                    disk_cz = rotor_cz + math.sin(angle) * rotor_radius
+                    _append_prism(vertices, disk_cx, y0 + frame_h * 0.715, disk_cz, disk_radius, disk_radius, 0.06 * vertical_scale, team_color, yaw=angle, sides=18)
+
+
 class SoftwareTerrainSceneBackend:
     name = 'software'
 
@@ -430,6 +728,58 @@ class SoftwareTerrainSceneBackend:
             pygame.draw.polygon(surface, top_color, top)
             pygame.draw.polygon(surface, renderer.colors['panel_border'], top, 1)
 
+        depth_scale = max(3.0, tile_w * 0.95)
+        height_scale = max(6.0, depth_scale) * height_scene_scale
+
+        def project_point(local_x, local_z, height_value):
+            rotated_x = local_x * yaw_cos - local_z * yaw_sin
+            depth = local_x * yaw_sin + local_z * yaw_cos
+            screen_x = rotated_x * tile_w + offset_x
+            screen_y = depth * depth_scale * pitch - height_value * height_scale + offset_y
+            return (round(screen_x), round(screen_y), depth)
+
+        surface_boxes = []
+        for box in _terrain_surface_scene_boxes(renderer, game_engine, data, map_rgb):
+            x0 = box['x0']
+            x1 = box['x1']
+            z0 = box['z0']
+            z1 = box['z1']
+            y0 = box['y0']
+            y1 = box['y1']
+            top = [
+                project_point(x0, z0, y1),
+                project_point(x1, z0, y1),
+                project_point(x1, z1, y1),
+                project_point(x0, z1, y1),
+            ]
+            bottom = [
+                project_point(x0, z0, y0),
+                project_point(x1, z0, y0),
+                project_point(x1, z1, y0),
+                project_point(x0, z1, y0),
+            ]
+            avg_depth = sum(point[2] for point in top) / 4.0
+            surface_boxes.append((avg_depth, box, top, bottom))
+
+        surface_boxes.sort(key=lambda item: item[0])
+        for _, box, top_points, bottom_points in surface_boxes:
+            top = [(point[0], point[1]) for point in top_points]
+            bottom = [(point[0], point[1]) for point in bottom_points]
+            left = [top[3], top[0], bottom[0], bottom[3]]
+            right = [top[1], top[2], bottom[2], bottom[1]]
+            front = [top[2], top[3], bottom[3], bottom[2]]
+            back = [top[0], top[1], bottom[1], bottom[0]]
+            side_color = box['side_color_rgb']
+            top_color = box['top_color_rgb']
+            bottom_color = tuple(max(0, min(255, int(channel * 0.58))) for channel in side_color)
+            pygame.draw.polygon(surface, bottom_color, bottom)
+            pygame.draw.polygon(surface, side_color, back)
+            pygame.draw.polygon(surface, side_color, front)
+            pygame.draw.polygon(surface, side_color, left)
+            pygame.draw.polygon(surface, side_color, right)
+            pygame.draw.polygon(surface, top_color, top)
+            pygame.draw.polygon(surface, renderer.colors['panel_border'], top, 1)
+
         return surface
 
 
@@ -540,6 +890,8 @@ class ModernGLTerrainSceneBackend:
             round(float(data.get('height_scene_scale', 1.0)), 6),
             bool(getattr(renderer, 'terrain_scene_force_dark_gray', False)),
             id(map_rgb) if map_rgb is not None else None,
+            int(getattr(map_manager, 'facility_version', 0)),
+            _terrain_surface_signature(renderer.game_engine),
         )
         if self.geometry_key == geometry_key and self.vao is not None:
             return
@@ -565,6 +917,11 @@ class ModernGLTerrainSceneBackend:
                 z1 = z0 + 1.0
                 _extrude_cell_box_vertices(vertices, x0, x1, bottom_y, top_y, z0, z1, top_color)
 
+        for box in _terrain_surface_scene_boxes(renderer, renderer.game_engine, data, map_rgb):
+            _extrude_surface_box_vertices(vertices, box)
+
+        _append_facility_scene_vertices(vertices, renderer, renderer.game_engine, data, map_rgb)
+
         vertex_array = np.array(vertices, dtype='f4')
         if self.vao is not None:
             self.vao.release()
@@ -575,10 +932,15 @@ class ModernGLTerrainSceneBackend:
             self.program,
             [(self.vbo, '3f 3f', 'in_position', 'in_color')],
         )
+        max_box_height = 0.0
+        surface_boxes = _terrain_surface_scene_boxes(renderer, renderer.game_engine, data, map_rgb)
+        if surface_boxes:
+            max_box_height = max(float(box['y1']) for box in surface_boxes)
+
         self.scene_bounds = (
             max(1.0, float(grid_width)),
             max(1.0, float(grid_height)),
-            max(1.0, float(np.max(sampled_heights) * vertical_scale + base_thickness)),
+            max(1.0, float(np.max(sampled_heights) * vertical_scale + base_thickness), max_box_height + base_thickness),
             int(scene_step),
         )
         self.geometry_key = geometry_key

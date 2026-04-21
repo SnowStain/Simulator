@@ -1,11 +1,27 @@
-using System.Drawing.Drawing2D;
 using System.ComponentModel;
+using System.Drawing.Drawing2D;
+using System.Numerics;
 using Simulator.Assets;
 
 namespace Simulator.ThreeD;
 
 internal sealed class AppearanceProfilePreviewControl : Control
 {
+    private enum PreviewMode
+    {
+        ThreeD,
+        Split,
+        Top,
+        Side,
+    }
+
+    private readonly List<(PreviewMode Mode, Rectangle Rect)> _tabs = new();
+    private PreviewMode _mode = PreviewMode.ThreeD;
+    private float _yawRad = 0.82f;
+    private float _pitchRad = 0.46f;
+    private bool _dragging;
+    private Point _lastMouse;
+
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public string RoleKey { get; set; } = string.Empty;
 
@@ -23,6 +39,48 @@ internal sealed class AppearanceProfilePreviewControl : Control
         ForeColor = Color.White;
     }
 
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        base.OnMouseDown(e);
+        foreach ((PreviewMode mode, Rectangle rect) in _tabs)
+        {
+            if (rect.Contains(e.Location))
+            {
+                _mode = mode;
+                Invalidate();
+                return;
+            }
+        }
+
+        if (e.Button == MouseButtons.Right || (_mode == PreviewMode.ThreeD && e.Button == MouseButtons.Left))
+        {
+            _dragging = true;
+            _lastMouse = e.Location;
+        }
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        base.OnMouseUp(e);
+        _dragging = false;
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        if (!_dragging)
+        {
+            return;
+        }
+
+        int dx = e.X - _lastMouse.X;
+        int dy = e.Y - _lastMouse.Y;
+        _lastMouse = e.Location;
+        _yawRad += dx * 0.012f;
+        _pitchRad = Math.Clamp(_pitchRad - dy * 0.01f, 0.12f, 1.18f);
+        Invalidate();
+    }
+
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
@@ -36,35 +94,195 @@ internal sealed class AppearanceProfilePreviewControl : Control
         }
 
         using var titleBrush = new SolidBrush(Color.FromArgb(226, 232, 240));
+        using var subBrush = new SolidBrush(Color.FromArgb(164, 176, 188));
         string title = string.IsNullOrWhiteSpace(SubtypeKey) ? RoleKey : $"{RoleKey} / {SubtypeKey}";
         e.Graphics.DrawString(title, Font, titleBrush, 12, 10);
+        e.Graphics.DrawString("3D 为主视图，右键拖动旋转。", SystemFonts.DefaultFont, subBrush, 12, 30);
+        DrawTabs(e.Graphics, new Rectangle(12, 50, bounds.Width - 24, 30));
 
         if (Profile is null)
         {
             return;
         }
 
-        Rectangle topView = new(12, 40, bounds.Width - 24, (bounds.Height - 88) / 2);
-        Rectangle sideView = new(12, topView.Bottom + 10, bounds.Width - 24, bounds.Height - topView.Height - 68);
-        DrawPanelFrame(e.Graphics, topView, "Top View");
-        DrawPanelFrame(e.Graphics, sideView, "Side View");
-        DrawTopView(e.Graphics, topView, Profile);
-        DrawSideView(e.Graphics, sideView, Profile);
-        DrawMetrics(e.Graphics, new Rectangle(12, bounds.Bottom - 28, bounds.Width - 24, 20), Profile);
-    }
-
-    private static void DrawPanelFrame(Graphics graphics, Rectangle rect, string title)
-    {
+        Rectangle panel = new(12, 86, bounds.Width - 24, bounds.Height - 116);
         using var fill = new SolidBrush(Color.FromArgb(24, 30, 38));
         using var border = new Pen(Color.FromArgb(72, 84, 98));
-        using var text = new SolidBrush(Color.FromArgb(164, 174, 188));
-        graphics.FillRectangle(fill, rect);
-        graphics.DrawRectangle(border, rect);
-        graphics.DrawString(title, SystemFonts.DefaultFont, text, rect.X + 8, rect.Y + 6);
+        e.Graphics.FillRectangle(fill, panel);
+        e.Graphics.DrawRectangle(border, panel);
+
+        if (_mode == PreviewMode.Top)
+        {
+            DrawTopView(e.Graphics, panel, Profile);
+        }
+        else if (_mode == PreviewMode.Side)
+        {
+            DrawSideView(e.Graphics, panel, Profile);
+        }
+        else if (_mode == PreviewMode.Split)
+        {
+            Rectangle left = new(panel.X + 8, panel.Y + 8, (panel.Width - 24) / 2, panel.Height - 16);
+            Rectangle right = new(left.Right + 8, panel.Y + 8, panel.Width - left.Width - 24, panel.Height - 16);
+            DrawTopView(e.Graphics, left, Profile);
+            DrawSideView(e.Graphics, right, Profile);
+        }
+        else
+        {
+            DrawThreeDView(e.Graphics, panel, Profile);
+        }
+
+        DrawMetrics(e.Graphics, new Rectangle(12, bounds.Bottom - 24, bounds.Width - 24, 20), Profile);
+    }
+
+    private void DrawTabs(Graphics graphics, Rectangle rect)
+    {
+        _tabs.Clear();
+        string[] labels = { "3D", "Split", "Top", "Side" };
+        PreviewMode[] modes = { PreviewMode.ThreeD, PreviewMode.Split, PreviewMode.Top, PreviewMode.Side };
+        int x = rect.X;
+        for (int index = 0; index < labels.Length; index++)
+        {
+            Rectangle tab = new(x, rect.Y, 72, 28);
+            bool active = _mode == modes[index];
+            using var fill = new SolidBrush(active ? Color.FromArgb(72, 126, 214) : Color.FromArgb(36, 42, 50));
+            using var border = new Pen(Color.FromArgb(84, 94, 108));
+            using var text = new SolidBrush(Color.FromArgb(236, 242, 248));
+            graphics.FillRectangle(fill, tab);
+            graphics.DrawRectangle(border, tab);
+            var size = graphics.MeasureString(labels[index], Font);
+            graphics.DrawString(labels[index], Font, text, tab.X + (tab.Width - size.Width) * 0.5f, tab.Y + 5f);
+            _tabs.Add((modes[index], tab));
+            x += tab.Width + 8;
+        }
+    }
+
+    private void DrawThreeDView(Graphics graphics, Rectangle rect, RobotAppearanceProfileDefinition profile)
+    {
+        Rectangle viewport = Rectangle.Inflate(rect, -10, -10);
+        using var fill = new SolidBrush(Color.FromArgb(16, 20, 26));
+        using var border = new Pen(Color.FromArgb(64, 80, 96));
+        graphics.FillRectangle(fill, viewport);
+        graphics.DrawRectangle(border, viewport);
+
+        var faces = new List<Preview3dFace>();
+        BuildRobotPreview(faces, profile);
+        float maxSpan = (float)Math.Max(
+            0.5,
+            Math.Max(profile.BodyLengthM + profile.BarrelLengthM + 0.5, profile.BodyWidthM + 0.5));
+        float maxHeight = (float)Math.Max(
+            0.5,
+            profile.BodyClearanceM + profile.BodyHeightM + Math.Max(profile.GimbalHeightM + profile.GimbalBodyHeightM, profile.StructureTopArmorCenterHeightM) + 0.4);
+        float scale = Math.Min(viewport.Width / Math.Max(0.4f, maxSpan), viewport.Height / Math.Max(0.4f, maxHeight)) * 0.72f;
+        Vector3 center = new(0f, maxHeight * 0.36f, 0f);
+
+        foreach ((PointF[] points, _, Color color) in Preview3dPrimitives.ProjectFaces(faces, viewport, center, _yawRad, _pitchRad, scale))
+        {
+            using var faceBrush = new SolidBrush(color);
+            using var facePen = new Pen(Color.FromArgb(120, 12, 16, 20), 1f);
+            if (points.Length >= 3)
+            {
+                graphics.FillPolygon(faceBrush, points);
+                graphics.DrawPolygon(facePen, points);
+            }
+        }
+
+        using var text = new SolidBrush(Color.FromArgb(176, 188, 200));
+        graphics.DrawString("3D preview uses the same appearance parameters as runtime data.", SystemFonts.DefaultFont, text, viewport.X + 8, viewport.Y + 8);
+    }
+
+    private static void BuildRobotPreview(ICollection<Preview3dFace> faces, RobotAppearanceProfileDefinition profile)
+    {
+        float bodyHalfX = (float)Math.Max(0.05, profile.BodyLengthM * 0.5);
+        float bodyHalfY = (float)Math.Max(0.05, profile.BodyHeightM * 0.5);
+        float bodyHalfZ = (float)Math.Max(0.05, profile.BodyWidthM * Math.Max(0.4, profile.BodyRenderWidthScale) * 0.5);
+        float bodyCenterY = (float)(profile.BodyClearanceM + profile.BodyHeightM * 0.5);
+        Preview3dPrimitives.AddBox(faces, new Vector3(0f, bodyCenterY, 0f), new Vector3(bodyHalfX, bodyHalfY, bodyHalfZ), profile.BodyColor);
+
+        foreach ((double x, double y) in profile.GetWheelOffsetsOrDefaults())
+        {
+            float radius = (float)Math.Max(0.03, Math.Max(profile.WheelRadiusM, profile.RearLegWheelRadiusM));
+            Preview3dPrimitives.AddBox(
+                faces,
+                new Vector3((float)x, radius, (float)y),
+                new Vector3(radius * 0.85f, radius, radius * 0.38f),
+                profile.WheelColor);
+        }
+
+        if (profile.GimbalLengthM > 0.01 && profile.GimbalBodyHeightM > 0.01)
+        {
+            Preview3dPrimitives.AddBox(
+                faces,
+                new Vector3(
+                    (float)profile.GimbalOffsetXM,
+                    (float)(profile.GimbalHeightM + profile.GimbalBodyHeightM * 0.5),
+                    (float)profile.GimbalOffsetYM),
+                new Vector3(
+                    (float)Math.Max(0.03, profile.GimbalLengthM * 0.5),
+                    (float)Math.Max(0.03, profile.GimbalBodyHeightM * 0.5),
+                    (float)Math.Max(0.03, profile.GimbalWidthM * 0.5)),
+                profile.TurretColor);
+
+            Preview3dPrimitives.AddBox(
+                faces,
+                new Vector3(
+                    (float)(profile.GimbalOffsetXM + profile.GimbalLengthM * 0.5 + profile.BarrelLengthM * 0.5),
+                    (float)(profile.GimbalHeightM + profile.GimbalBodyHeightM * 0.55),
+                    (float)profile.GimbalOffsetYM),
+                new Vector3(
+                    (float)Math.Max(0.03, profile.BarrelLengthM * 0.5),
+                    (float)Math.Max(0.01, profile.BarrelRadiusM),
+                    (float)Math.Max(0.01, profile.BarrelRadiusM)),
+                Color.FromArgb(226, 232, 238));
+        }
+
+        IReadOnlyList<double> orbitYaws = profile.ArmorOrbitYawsDeg.Count > 0
+            ? profile.ArmorOrbitYawsDeg
+            : new[] { 0d, 180d, 90d, 270d };
+        foreach (double yawDeg in orbitYaws)
+        {
+            float yaw = (float)(yawDeg * Math.PI / 180.0);
+            Vector3 offset = new(
+                MathF.Cos(yaw) * (bodyHalfX + (float)profile.ArmorPlateGapM + (float)profile.ArmorPlateLengthM * 0.35f),
+                bodyCenterY,
+                MathF.Sin(yaw) * (bodyHalfZ + (float)profile.ArmorPlateGapM + (float)profile.ArmorPlateLengthM * 0.35f));
+            Preview3dPrimitives.AddBox(
+                faces,
+                offset,
+                new Vector3(
+                    (float)Math.Max(0.02, profile.ArmorPlateLengthM * 0.5),
+                    (float)Math.Max(0.02, profile.ArmorPlateHeightM * 0.5),
+                    (float)Math.Max(0.01, profile.ArmorPlateWidthM * 0.12)),
+                profile.ArmorColor,
+                -yaw);
+        }
+
+        if (string.Equals(profile.RoleKey, "outpost", StringComparison.OrdinalIgnoreCase))
+        {
+            Preview3dPrimitives.AddBox(
+                faces,
+                new Vector3(0f, (float)profile.StructureBodyTopHeightM * 0.5f, 0f),
+                new Vector3(
+                    (float)Math.Max(0.08, profile.BodyLengthM * 0.36),
+                    (float)Math.Max(0.08, profile.StructureBodyTopHeightM * 0.5),
+                    (float)Math.Max(0.08, profile.BodyWidthM * 0.36)),
+                profile.BodyColor);
+        }
+        else if (string.Equals(profile.RoleKey, "base", StringComparison.OrdinalIgnoreCase))
+        {
+            Preview3dPrimitives.AddBox(
+                faces,
+                new Vector3(0f, (float)profile.BodyHeightM * 0.5f, 0f),
+                new Vector3(
+                    (float)Math.Max(0.08, profile.BodyLengthM * 0.46),
+                    (float)Math.Max(0.08, profile.BodyHeightM * 0.5),
+                    (float)Math.Max(0.08, profile.BodyWidthM * 0.46)),
+                profile.BodyColor);
+        }
     }
 
     private static void DrawTopView(Graphics graphics, Rectangle rect, RobotAppearanceProfileDefinition profile)
     {
+        DrawPanelFrame(graphics, rect, "Top");
         Rectangle content = Rectangle.Inflate(rect, -10, -28);
         double maxSpan = Math.Max(0.25, Math.Max(profile.BodyLengthM, profile.BodyWidthM) + 0.45);
         float scale = (float)(Math.Min(content.Width, content.Height) / maxSpan);
@@ -146,6 +364,7 @@ internal sealed class AppearanceProfilePreviewControl : Control
 
     private static void DrawSideView(Graphics graphics, Rectangle rect, RobotAppearanceProfileDefinition profile)
     {
+        DrawPanelFrame(graphics, rect, "Side");
         Rectangle content = Rectangle.Inflate(rect, -10, -28);
         float groundY = content.Bottom - 14;
         using var groundPen = new Pen(Color.FromArgb(86, 98, 112), 1f);
@@ -199,32 +418,16 @@ internal sealed class AppearanceProfilePreviewControl : Control
             graphics.DrawRectangle(Pens.Black, Rectangle.Round(turretRect));
             graphics.DrawLine(barrelPen, turretRect.Right, turretRect.Top + turretHeight * 0.45f, turretRect.Right + Math.Max(8f, (float)profile.BarrelLengthM * scale), turretRect.Top + turretHeight * 0.45f);
         }
+    }
 
-        if (string.Equals(profile.RoleKey, "outpost", StringComparison.OrdinalIgnoreCase))
-        {
-            float towerRadius = Math.Max(10f, (float)profile.StructureTowerRadiusM * scale);
-            graphics.FillEllipse(bodyBrush, centerX - towerRadius, groundY - Math.Max(0f, (float)profile.StructureBodyTopHeightM * scale), towerRadius * 2f, Math.Max(20f, (float)profile.StructureBodyTopHeightM * scale));
-        }
-        else if (string.Equals(profile.RoleKey, "base", StringComparison.OrdinalIgnoreCase))
-        {
-            float detectorW = Math.Max(10f, (float)profile.StructureDetectorWidthM * scale);
-            float detectorH = Math.Max(6f, (float)profile.StructureDetectorHeightM * scale);
-            float detectorY = groundY - (float)profile.StructureDetectorBridgeCenterHeightM * scale;
-            graphics.FillRectangle(turretBrush, centerX - detectorW * 0.5f, detectorY, detectorW, detectorH);
-            graphics.DrawRectangle(Pens.Black, Rectangle.Round(new RectangleF(centerX - detectorW * 0.5f, detectorY, detectorW, detectorH)));
-        }
-
-        if (profile.StructureTopArmorCenterHeightM > 0.01)
-        {
-            float plateCenterY = groundY - (float)profile.StructureTopArmorCenterHeightM * scale;
-            float plateLen = Math.Max(8f, (float)profile.ArmorPlateLengthM * scale);
-            float plateHeight = Math.Max(6f, (float)profile.ArmorPlateHeightM * scale);
-            float tiltRad = (float)(profile.StructureTopArmorTiltDeg * Math.PI / 180.0);
-            PointF a = new(centerX - plateLen * 0.5f, plateCenterY + MathF.Sin(tiltRad) * plateHeight * 0.5f);
-            PointF b = new(centerX + plateLen * 0.5f, plateCenterY - MathF.Sin(tiltRad) * plateHeight * 0.5f);
-            using var structurePen = new Pen(profile.ArmorColor, 3f);
-            graphics.DrawLine(structurePen, a, b);
-        }
+    private static void DrawPanelFrame(Graphics graphics, Rectangle rect, string title)
+    {
+        using var fill = new SolidBrush(Color.FromArgb(24, 30, 38));
+        using var border = new Pen(Color.FromArgb(72, 84, 98));
+        using var text = new SolidBrush(Color.FromArgb(164, 174, 188));
+        graphics.FillRectangle(fill, rect);
+        graphics.DrawRectangle(border, rect);
+        graphics.DrawString(title, SystemFonts.DefaultFont, text, rect.X + 8, rect.Y + 6);
     }
 
     private static void DrawMetrics(Graphics graphics, Rectangle rect, RobotAppearanceProfileDefinition profile)

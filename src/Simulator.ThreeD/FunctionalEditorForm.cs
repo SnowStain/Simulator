@@ -40,7 +40,7 @@ internal sealed class FunctionalEditorForm : Form
         AddLabeledCombo(root, 0, "Match Mode", _matchMode, new[] { "full", "single_unit_test" });
         AddLabeledCombo(root, 1, "Single Unit Team", _team, new[] { "red", "blue" });
         AddLabeledCombo(root, 2, "Single Unit Focus", _focusEntity, new[] { "robot_1", "robot_2", "robot_3", "robot_4", "robot_7" });
-        AddLabeledCombo(root, 3, "Renderer Backend", _backend, new[] { "opengl", "moderngl", "native_cpp" });
+        AddLabeledCombo(root, 3, "Renderer Backend", _backend, new[] { "gpu", "opengl", "moderngl", "native_cpp" });
 
         _mapPreset.DropDownStyle = ComboBoxStyle.DropDownList;
         var mapLabel = new Label { Text = "Map Preset", Dock = DockStyle.Fill, TextAlign = System.Drawing.ContentAlignment.MiddleLeft };
@@ -122,7 +122,7 @@ internal sealed class FunctionalEditorForm : Form
         SelectComboValue(_matchMode, simulator["match_mode"]?.ToString() ?? "full");
         SelectComboValue(_team, simulator["single_unit_test_team"]?.ToString() ?? "red");
         SelectComboValue(_focusEntity, simulator["single_unit_test_entity_key"]?.ToString() ?? "robot_1");
-        SelectComboValue(_backend, simulator["sim3d_renderer_backend"]?.ToString() ?? "moderngl");
+        SelectComboValue(_backend, simulator["sim3d_renderer_backend"]?.ToString() ?? "gpu");
         SelectComboValue(_mapPreset, simulator["sim3d_map_preset"]?.ToString() ?? _configService.GetMapPreset(config));
 
         bool ricochet = true;
@@ -157,6 +157,7 @@ internal sealed class FunctionalEditorForm : Form
             simulator["sim3d_renderer_backend"] = backendMode;
             simulator["terrain_scene_backend"] = backendMode switch
             {
+                "gpu" => "wgl_opengl",
                 "opengl" => "editor_opengl",
                 "native_cpp" => "native_cpp",
                 _ => "pyglet_moderngl",

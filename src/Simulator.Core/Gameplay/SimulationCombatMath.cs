@@ -426,6 +426,7 @@ public static class SimulationCombatMath
         double endX,
         double endY,
         double endHeightM,
+        IReadOnlyList<SimulationEntity>? candidateTargets,
         out SimulationEntity? hitTarget,
         out ArmorPlateTarget hitPlate,
         out double hitX,
@@ -445,15 +446,24 @@ public static class SimulationCombatMath
         double bestSegmentT = double.MaxValue;
         Vector3 segmentStart = new((float)(startX * metersPerWorldUnit), (float)startHeightM, (float)(startY * metersPerWorldUnit));
         Vector3 segmentEnd = new((float)(endX * metersPerWorldUnit), (float)endHeightM, (float)(endY * metersPerWorldUnit));
-        Vector3 segment = segmentEnd - segmentStart;
-        double segmentLengthSq = Math.Max(1e-9, segment.LengthSquared());
+        IReadOnlyList<SimulationEntity> candidates = candidateTargets ?? (IReadOnlyList<SimulationEntity>)world.Entities;
 
-        foreach (SimulationEntity candidate in world.Entities)
+        foreach (SimulationEntity candidate in candidates)
         {
             if (!candidate.IsAlive
                 || candidate.IsSimulationSuppressed
                 || string.Equals(candidate.Team, shooter.Team, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(candidate.Id, shooter.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!ProjectileCollisionBroadphase.MayIntersectTargetBounds(
+                    candidate,
+                    metersPerWorldUnit,
+                    projectileRadiusM,
+                    segmentStart,
+                    segmentEnd))
             {
                 continue;
             }

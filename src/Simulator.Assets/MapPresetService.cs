@@ -163,6 +163,12 @@ public sealed class MapPresetService
             channels = ReadStringDictionary(descriptorNode["channels"] as JsonObject);
         }
 
+        IReadOnlyList<TerrainFacetDefinition> facets = ParseTerrainFacets(node["facets"] as JsonArray);
+        if (facets.Count == 0 && descriptorNode is not null)
+        {
+            facets = ParseTerrainFacets(descriptorNode["facets"] as JsonArray);
+        }
+
         return new TerrainSurfaceDefinition
         {
             MapType = ReadString(node, ReadString(descriptorNode, "terrain_surface_map", "map_type"), "map_type"),
@@ -193,7 +199,78 @@ public sealed class MapPresetService
                 1.0,
                 ReadDouble(node, ReadDouble(descriptorNode, 1.0, "height_scale_baked_in"), "height_scale_baked_in")),
             Channels = channels,
+            Facets = facets,
         };
+    }
+
+    private static IReadOnlyList<TerrainFacetDefinition> ParseTerrainFacets(JsonArray? node)
+    {
+        if (node is null || node.Count == 0)
+        {
+            return Array.Empty<TerrainFacetDefinition>();
+        }
+
+        var facets = new List<TerrainFacetDefinition>();
+        foreach (JsonNode? item in node)
+        {
+            if (item is not JsonObject facetNode)
+            {
+                continue;
+            }
+
+            var points = new List<Point2D>();
+            if (facetNode["points"] is JsonArray pointsArray)
+            {
+                foreach (JsonNode? pointNode in pointsArray)
+                {
+                    if (pointNode is not JsonArray pointArray || pointArray.Count < 2)
+                    {
+                        continue;
+                    }
+
+                    if (TryReadDouble(pointArray[0], out double x)
+                        && TryReadDouble(pointArray[1], out double y))
+                    {
+                        points.Add(new Point2D(x, y));
+                    }
+                }
+            }
+
+            var heights = new List<double>();
+            if (facetNode["heights_m"] is JsonArray heightsArray)
+            {
+                foreach (JsonNode? heightNode in heightsArray)
+                {
+                    if (TryReadDouble(heightNode, out double height))
+                    {
+                        heights.Add(height);
+                    }
+                }
+            }
+
+            if (points.Count < 3)
+            {
+                continue;
+            }
+
+            while (heights.Count < points.Count)
+            {
+                heights.Add(heights.Count == 0 ? 0.0 : heights[^1]);
+            }
+
+            facets.Add(new TerrainFacetDefinition
+            {
+                Id = ReadString(facetNode, Guid.NewGuid().ToString("N"), "id"),
+                Type = ReadString(facetNode, "slope", "type"),
+                Team = ReadString(facetNode, "neutral", "team"),
+                TopColorHex = ReadString(facetNode, "#8A9576", "top_color"),
+                SideColorHex = ReadString(facetNode, "#4B4F55", "side_color"),
+                Points = points,
+                HeightsM = heights,
+            });
+        }
+
+        return facets;
     }
 
     private static RuntimeGridDefinition? ParseRuntimeGrid(JsonObject? node, TerrainSurfaceDefinition? terrainSurface)

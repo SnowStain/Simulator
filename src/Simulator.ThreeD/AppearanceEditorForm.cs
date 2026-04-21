@@ -77,11 +77,17 @@ internal sealed class AppearanceEditorForm : Form
         Button validateButton = CreateToolbarButton("Validate", (_, _) => RefreshValidation());
         Button resetButton = CreateToolbarButton("Reset Selected", (_, _) => ResetSelected());
         Button defaultSubtypeButton = CreateToolbarButton("Set Default Subtype", (_, _) => SetDefaultSubtype());
+        Button addSubtypeButton = CreateToolbarButton("Add Subtype", (_, _) => AddSubtype());
+        Button deleteSubtypeButton = CreateToolbarButton("Delete Subtype", (_, _) => DeleteSubtype());
+        Button openPreviewButton = CreateToolbarButton("Open Simulator", (_, _) => OpenSimulatorPreview());
         toolbar.Controls.Add(reloadButton);
         toolbar.Controls.Add(saveButton);
         toolbar.Controls.Add(validateButton);
         toolbar.Controls.Add(resetButton);
         toolbar.Controls.Add(defaultSubtypeButton);
+        toolbar.Controls.Add(addSubtypeButton);
+        toolbar.Controls.Add(deleteSubtypeButton);
+        toolbar.Controls.Add(openPreviewButton);
 
         var editorSplit = new SplitContainer
         {
@@ -369,5 +375,87 @@ internal sealed class AppearanceEditorForm : Form
         _propertyGrid.Refresh();
         RefreshValidation();
         _status.Text = $"Default subtype set to {selection.Value.SubtypeKey}.";
+    }
+
+    private void AddSubtype()
+    {
+        TreeSelection? selection = GetCurrentSelection();
+        string roleKey = selection?.RoleKey ?? "infantry";
+        if (!string.Equals(roleKey, "infantry", StringComparison.OrdinalIgnoreCase))
+        {
+            _status.Text = "Subtype editing is currently for infantry profiles.";
+            return;
+        }
+
+        if (!_document.Profiles.TryGetValue("infantry", out RobotAppearanceProfileDefinition? profile))
+        {
+            return;
+        }
+
+        int suffix = profile.SubtypeProfiles.Count + 1;
+        string newKey;
+        do
+        {
+            newKey = $"custom_subtype_{suffix++}";
+        } while (profile.SubtypeProfiles.ContainsKey(newKey));
+
+        RobotAppearanceProfileDefinition source = selection is TreeSelection current
+            && !string.IsNullOrWhiteSpace(current.SubtypeKey)
+            && profile.SubtypeProfiles.TryGetValue(current.SubtypeKey!, out RobotAppearanceProfileDefinition? subtypeProfile)
+                ? subtypeProfile
+                : profile;
+        RobotAppearanceProfileDefinition clone = source.DeepClone();
+        clone.ChassisSubtype = newKey;
+        clone.RoleKey = "infantry";
+        profile.SubtypeProfiles[newKey] = clone;
+        RebuildTree(new TreeSelection("infantry", newKey));
+        _status.Text = $"Added subtype {newKey}.";
+    }
+
+    private void DeleteSubtype()
+    {
+        TreeSelection? selection = GetCurrentSelection();
+        if (selection is null || string.IsNullOrWhiteSpace(selection.Value.SubtypeKey))
+        {
+            _status.Text = "Select an infantry subtype to delete.";
+            return;
+        }
+
+        if (!_document.Profiles.TryGetValue(selection.Value.RoleKey, out RobotAppearanceProfileDefinition? profile))
+        {
+            return;
+        }
+
+        if (!profile.SubtypeProfiles.Remove(selection.Value.SubtypeKey!))
+        {
+            return;
+        }
+
+        if (string.Equals(profile.DefaultChassisSubtype, selection.Value.SubtypeKey, StringComparison.OrdinalIgnoreCase))
+        {
+            profile.DefaultChassisSubtype = profile.SubtypeProfiles.Keys.OrderBy(key => key, StringComparer.OrdinalIgnoreCase).FirstOrDefault() ?? string.Empty;
+        }
+
+        RebuildTree(new TreeSelection(selection.Value.RoleKey, profile.DefaultChassisSubtype));
+        _status.Text = $"Deleted subtype {selection.Value.SubtypeKey}.";
+    }
+
+    private void OpenSimulatorPreview()
+    {
+        try
+        {
+            SaveDocument();
+            var preview = new Simulator3dForm(new Simulator3dOptions
+            {
+                RendererMode = "gpu",
+                StartInMatch = true,
+            });
+            preview.Show(this);
+            _status.Text = "Opened simulator preview with current appearance data.";
+        }
+        catch (Exception ex)
+        {
+            _status.Text = $"Preview failed: {ex.Message}";
+        }
     }
 }

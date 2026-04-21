@@ -28,6 +28,7 @@ except Exception as exc:
 ROLE_ORDER = (
     ('outpost', '前哨站'),
     ('base', '基地'),
+    ('energy_mechanism', '能量机关'),
     ('hero', '英雄'),
     ('engineer', '工程'),
     ('infantry', '步兵'),
@@ -246,6 +247,7 @@ _BASE_PROFILE_TEMPLATES = {
         'body_length_m': 1.881,
         'body_width_m': 1.609,
         'body_height_m': 1.181,
+        'structure_hex_top_edge_m': 1.089,
         'structure_roof_height_m': 1.03,
         'structure_shoulder_height_m': 0.860,
         'structure_detector_width_m': 0.980,
@@ -293,6 +295,88 @@ _BASE_PROFILE_TEMPLATES = {
         'turret_color_rgb': [196, 200, 206],
         'armor_color_rgb': [206, 212, 218],
         'wheel_color_rgb': [62, 68, 78],
+    },
+    'energy_mechanism': {
+        'body_shape': 'box',
+        'body_length_m': 2.06,
+        'body_width_m': 1.30,
+        'body_height_m': 2.30,
+        'body_clearance_m': 0.0,
+        'structure_ground_clearance_m': 0.0,
+        'structure_base_lift_m': 0.0,
+        'structure_base_height_m': 0.30,
+        'structure_base_length_m': 3.40,
+        'structure_base_width_m': 3.18,
+        'structure_base_top_length_m': 2.10,
+        'structure_base_top_width_m': 1.08,
+        'structure_base_top_height_m': 0.12,
+        'structure_frame_width_m': 2.06,
+        'structure_frame_depth_m': 0.16,
+        'structure_frame_height_m': 2.30,
+        'structure_column_span_m': 2.06,
+        'structure_support_offset_m': 1.03,
+        'structure_frame_column_width_m': 0.10,
+        'structure_frame_beam_height_m': 0.09,
+        'structure_rotor_center_height_m': 1.45,
+        'structure_rotor_phase_deg': 90.0,
+        'structure_rotor_radius_m': 1.40,
+        'structure_rotor_hub_radius_m': 0.09,
+        'structure_rotor_arm_length_m': 1.12,
+        'structure_rotor_arm_width_m': 0.06,
+        'structure_rotor_arm_height_m': 0.04,
+        'structure_lamp_length_m': 0.30,
+        'structure_lamp_width_m': 0.30,
+        'structure_lamp_height_m': 0.08,
+        'structure_lower_module_width_m': 0.20,
+        'structure_lower_module_height_m': 0.24,
+        'structure_lower_module_depth_m': 0.18,
+        'structure_lower_module_offset_x_m': 0.48,
+        'structure_lower_module_center_height_m': 0.94,
+        'structure_hanger_width_m': 0.24,
+        'structure_hanger_height_m': 0.24,
+        'structure_hanger_depth_m': 0.06,
+        'structure_hanger_center_height_m': 1.45,
+        'structure_cantilever_pair_gap_m': 2.34,
+        'structure_cantilever_length_m': 0.28,
+        'structure_cantilever_offset_y_m': -0.02,
+        'structure_cantilever_height_m': 0.08,
+        'structure_cantilever_depth_m': 0.08,
+        'wheel_radius_m': 0.03,
+        'gimbal_length_m': 0.0,
+        'gimbal_width_m': 0.0,
+        'gimbal_body_height_m': 0.0,
+        'gimbal_mount_gap_m': 0.0,
+        'gimbal_mount_length_m': 0.0,
+        'gimbal_mount_width_m': 0.0,
+        'gimbal_mount_height_m': 0.0,
+        'barrel_length_m': 0.0,
+        'barrel_radius_m': 0.0,
+        'gimbal_height_m': 0.0,
+        'gimbal_offset_x_m': 0.0,
+        'gimbal_offset_y_m': 0.0,
+        'armor_plate_width_m': 0.18,
+        'armor_plate_length_m': 0.18,
+        'armor_plate_height_m': 0.10,
+        'armor_plate_gap_m': 0.020,
+        'armor_light_length_m': 0.12,
+        'armor_light_width_m': 0.03,
+        'armor_light_height_m': 0.06,
+        'barrel_light_length_m': 0.0,
+        'barrel_light_width_m': 0.0,
+        'barrel_light_height_m': 0.0,
+        'body_render_width_scale': 1.0,
+        'wheel_style': 'structure',
+        'suspension_style': 'none',
+        'arm_style': 'none',
+        'front_climb_assist_style': 'none',
+        'rear_climb_assist_style': 'none',
+        'custom_wheel_positions_m': [],
+        'armor_orbit_yaws_deg': [],
+        'armor_self_yaws_deg': [],
+        'body_color_rgb': [124, 128, 134],
+        'turret_color_rgb': [170, 174, 180],
+        'armor_color_rgb': [68, 72, 78],
+        'wheel_color_rgb': [64, 132, 255],
     },
 }
 
@@ -406,8 +490,8 @@ def _normalize_profile_constraints(role_key, profile, forced_subtype=None):
     normalized['armor_color_rgb'] = _normalize_rgb_triplet(normalized.get('armor_color_rgb'), _default_color_profile()['armor_color_rgb'])
     normalized['wheel_color_rgb'] = _normalize_rgb_triplet(normalized.get('wheel_color_rgb'), _default_color_profile()['wheel_color_rgb'])
 
-    if role_key in {'outpost', 'base'}:
-        normalized['body_shape'] = 'octagon'
+    if role_key in {'outpost', 'base', 'energy_mechanism'}:
+        normalized['body_shape'] = 'box' if role_key == 'energy_mechanism' else 'octagon'
         normalized['wheel_style'] = 'structure'
         normalized['suspension_style'] = 'none'
         normalized['front_climb_assist_style'] = 'none'
@@ -565,8 +649,12 @@ def _clamp_two_link_target_point(anchor_point, target_point, upper_length, lower
 
 
 def _available_preview_actions(role_key, profile):
-    if role_key in {'outpost', 'base'}:
-        return (('idle', '静态'),)
+    if role_key == 'outpost':
+        return (('idle', '静态'), ('rotate', '装甲旋转'))
+    if role_key == 'base':
+        return (('idle', '静态'), ('open', '开合预览'))
+    if role_key == 'energy_mechanism':
+        return (('idle', '静态'), ('rotate', '转臂旋转'))
     if role_key == 'infantry':
         subtype = normalize_infantry_chassis_subtype(profile.get('chassis_subtype'))
         if subtype == 'balance_legged':
@@ -849,6 +937,75 @@ def _append_preview_trapezoid_plate(vertices, center, top_length, bottom_length,
     _append_preview_prism(vertices, bottom_points, top_points, color_rgb, yaw_rad=yaw_rad)
 
 
+def _append_preview_energy_pod(vertices, center, length, width, height, depth, color_rgb, yaw_rad=0.0):
+    cx, cy, cz = center
+    half_length = max(0.02, float(length) * 0.5)
+    half_width = max(0.02, float(width) * 0.5)
+    half_height = max(0.02, float(height) * 0.5)
+    half_depth = max(0.01, float(depth) * 0.5)
+    nose_x = half_length
+    shoulder_x = half_length * 0.40
+    tail_x = -half_length
+    tail_inner_x = -half_length * 0.60
+    top_cut = half_height * 0.34
+    bottom_cut = half_height * 0.28
+
+    def section(z_value):
+        return [
+            (cx + tail_inner_x, cy - half_height, cz + z_value),
+            (cx + shoulder_x, cy - half_height, cz + z_value),
+            (cx + nose_x, cy - bottom_cut, cz + z_value),
+            (cx + nose_x, cy + bottom_cut, cz + z_value),
+            (cx + shoulder_x, cy + half_height, cz + z_value),
+            (cx + tail_inner_x, cy + half_height, cz + z_value),
+            (cx + tail_x, cy + top_cut, cz + z_value),
+            (cx + tail_x, cy - top_cut, cz + z_value),
+        ]
+
+    _append_preview_prism(vertices, section(-half_depth), section(half_depth), color_rgb, yaw_rad=yaw_rad)
+
+
+def _append_preview_energy_arm(vertices, hub_center, yaw_rad, inner_radius, outer_radius, rail_gap, rail_width, rail_depth, color_rgb):
+    hub_x, hub_y, hub_z = hub_center
+    dir_x = math.cos(yaw_rad)
+    dir_y = math.sin(yaw_rad)
+    side_x = -dir_y
+    side_y = dir_x
+    rail_gap = max(0.012, float(rail_gap))
+    rail_width = max(0.010, float(rail_width))
+    rail_depth = max(0.008, float(rail_depth))
+    inner_radius = max(0.02, float(inner_radius))
+    outer_radius = max(inner_radius + 0.02, float(outer_radius))
+
+    root_center = (hub_x + dir_x * inner_radius, hub_y + dir_y * inner_radius, hub_z)
+    end_center = (hub_x + dir_x * outer_radius, hub_y + dir_y * outer_radius, hub_z)
+    root_a = (root_center[0] + side_x * rail_gap, root_center[1] + side_y * rail_gap, hub_z)
+    root_b = (root_center[0] - side_x * rail_gap, root_center[1] - side_y * rail_gap, hub_z)
+    end_a = (end_center[0] + side_x * rail_gap * 0.72, end_center[1] + side_y * rail_gap * 0.72, hub_z)
+    end_b = (end_center[0] - side_x * rail_gap * 0.72, end_center[1] - side_y * rail_gap * 0.72, hub_z)
+    _append_preview_beam(vertices, root_a, end_a, rail_width, rail_depth, color_rgb)
+    _append_preview_beam(vertices, root_b, end_b, rail_width, rail_depth, color_rgb)
+    _append_preview_beam(vertices, root_a, root_b, rail_width * 0.85, rail_depth, color_rgb)
+    _append_preview_beam(vertices, end_a, end_b, rail_width * 1.10, rail_depth, color_rgb)
+
+
+def _energy_platform_outline_points(length_m, width_m, y, corner_scale=0.28):
+    half_l = max(0.12, float(length_m) * 0.5)
+    half_w = max(0.12, float(width_m) * 0.5)
+    cut_l = max(0.05, half_l * float(corner_scale))
+    cut_w = max(0.05, half_w * float(corner_scale))
+    return [
+        (-half_l + cut_l, y, -half_w),
+        (half_l - cut_l, y, -half_w),
+        (half_l, y, -half_w + cut_w),
+        (half_l, y, half_w - cut_w),
+        (half_l - cut_l, y, half_w),
+        (-half_l + cut_l, y, half_w),
+        (-half_l, y, half_w - cut_w),
+        (-half_l, y, -half_w + cut_w),
+    ]
+
+
 def _append_preview_beam(vertices, start_point, end_point, height, thickness, color_rgb, yaw_rad=0.0):
     start_x, start_y, start_z = start_point
     end_x, end_y, end_z = end_point
@@ -908,6 +1065,21 @@ def _rotate_xz(point_x, point_z, yaw_rad):
         point_x * cos_yaw - point_z * sin_yaw,
         point_x * sin_yaw + point_z * cos_yaw,
     )
+
+
+def _alternating_hex_points(length_m, width_m, y, short_edge_m=None):
+    half_l = max(0.08, float(length_m) * 0.5)
+    half_w = max(0.08, float(width_m) * 0.5)
+    short_edge = max(0.05, min(float(short_edge_m) if short_edge_m is not None else float(length_m) * 0.58, float(length_m) * 0.92))
+    corner_x = short_edge * 0.5
+    return [
+        (-corner_x, y, -half_w),
+        (corner_x, y, -half_w),
+        (half_l, y, 0.0),
+        (corner_x, y, half_w),
+        (-corner_x, y, half_w),
+        (-half_l, y, 0.0),
+    ]
 
 
 def _body_outline_points(profile):
@@ -1068,6 +1240,7 @@ class ModernGLAppearancePreview:
         turret_color = profile['turret_color_rgb']
         armor_color = profile['armor_color_rgb']
         dark_color = profile.get('wheel_color_rgb', [62, 68, 78])
+        armor_spin = float(profile.get('_preview_outpost_armor_yaw_rad', 0.0))
         lift = float(profile.get('structure_base_lift_m', 0.40))
         tower_height = max(0.8, float(profile.get('body_height_m', 1.578)))
         base_width = max(0.30, float(profile.get('body_length_m', 0.65)))
@@ -1104,43 +1277,32 @@ class ModernGLAppearancePreview:
         armor_half = armor_side * 0.5
         armor_thickness = max(0.012, float(profile.get('armor_plate_gap_m', 0.025)))
         radius = tower_radius + 0.055
-        for index, yaw in enumerate([0.0, math.tau / 3.0, math.tau * 2.0 / 3.0]):
+        for index, yaw in enumerate([armor_spin + 0.0, armor_spin + math.tau / 3.0, armor_spin + math.tau * 2.0 / 3.0]):
             height = lift + head_base_height - 0.07 + [0.05, 0.0, -0.05][index]
             center = (math.cos(yaw) * radius, height, math.sin(yaw) * radius)
             _append_preview_box(vertices, center, (armor_thickness * 0.5, armor_half, armor_half), armor_color, yaw_rad=yaw)
         outpost_top_height = float(profile.get('structure_top_armor_center_height_m', lift + tower_height + 0.055))
         outpost_top_tilt_deg = float(profile.get('structure_top_armor_tilt_deg', 45.0))
-        _append_preview_box(vertices, (radius, outpost_top_height, 0.0), (armor_half, armor_half, armor_thickness * 0.5), armor_color, yaw_rad=math.radians(outpost_top_tilt_deg))
+        top_x = math.cos(armor_spin) * radius
+        top_z = math.sin(armor_spin) * radius
+        _append_preview_box(vertices, (top_x, outpost_top_height, top_z), (armor_half, armor_half, armor_thickness * 0.5), armor_color, yaw_rad=armor_spin + math.radians(outpost_top_tilt_deg))
 
     def _append_structure_base_geometry(self, vertices, profile):
         body_color = profile['body_color_rgb']
         armor_color = profile['armor_color_rgb']
         dark_color = profile.get('wheel_color_rgb', [62, 68, 78])
+        open_ratio = max(0.0, min(1.0, float(profile.get('_preview_base_open_ratio', 0.0))))
         length = max(0.8, float(profile.get('body_length_m', 1.881)))
         width = max(0.7, float(profile.get('body_width_m', 1.609))) * max(0.4, float(profile.get('body_render_width_scale', 1.0)))
         height = max(0.5, float(profile.get('body_height_m', 1.181)))
+        top_edge = max(0.12, min(length * 0.92, float(profile.get('structure_hex_top_edge_m', 1.089))))
         roof_height = max(0.3, float(profile.get('structure_roof_height_m', 1.03)))
         slab_h = min(0.20, height * 0.22)
         shoulder_h = min(max(slab_h + 0.12, float(profile.get('structure_shoulder_height_m', height * (0.860 / 1.181)))), roof_height - 0.05)
 
-        def oct_points(length_m, width_m, y):
-            half_l = length_m * 0.5
-            half_w = width_m * 0.5
-            chamfer = min(half_l, half_w) * 0.26
-            return [
-                (-half_l + chamfer, y, -half_w),
-                (half_l - chamfer, y, -half_w),
-                (half_l, y, -half_w + chamfer),
-                (half_l, y, half_w - chamfer),
-                (half_l - chamfer, y, half_w),
-                (-half_l + chamfer, y, half_w),
-                (-half_l, y, half_w - chamfer),
-                (-half_l, y, -half_w + chamfer),
-            ]
-
-        _append_preview_prism(vertices, oct_points(length, width, 0.0), oct_points(length * 0.96, width * 0.94, slab_h), dark_color)
-        _append_preview_prism(vertices, oct_points(length * 0.90, width * 0.88, slab_h), oct_points(length * 0.62, width * 0.56, shoulder_h), body_color)
-        _append_preview_prism(vertices, oct_points(length * 0.62, width * 0.56, shoulder_h), oct_points(length * 0.40, width * 0.34, roof_height), [min(255, int(c * 1.08)) for c in body_color])
+        _append_preview_prism(vertices, _alternating_hex_points(length, width, 0.0, short_edge_m=top_edge), _alternating_hex_points(length * 0.96, width * 0.94, slab_h, short_edge_m=top_edge * 0.98), dark_color)
+        _append_preview_prism(vertices, _alternating_hex_points(length * 0.90, width * 0.88, slab_h, short_edge_m=top_edge * 0.90), _alternating_hex_points(length * 0.62, width * 0.56, shoulder_h, short_edge_m=top_edge * 0.62), body_color)
+        _append_preview_prism(vertices, _alternating_hex_points(length * 0.62, width * 0.56, shoulder_h, short_edge_m=top_edge * 0.62), _alternating_hex_points(length * 0.40, width * 0.34, roof_height, short_edge_m=top_edge * 0.40), [min(255, int(c * 1.08)) for c in body_color])
         _append_preview_box(vertices, (0.0, height * 0.58, 0.0), (0.055, min(height * 0.33, float(profile.get('structure_core_column_height_m', 0.783)) * 0.5), 0.06), [188, 52, 46])
 
         armor_side = max(0.04, float(profile.get('armor_plate_width_m', 0.13)))
@@ -1150,26 +1312,146 @@ class ModernGLAppearancePreview:
         _append_preview_box(vertices, (length * 0.04, base_top_height, 0.0), (armor_half, armor_thickness * 0.5, armor_half), armor_color)
         _append_preview_box(vertices, (length * 0.15, height * 0.70, 0.0), (armor_thickness * 0.5, armor_half, armor_half), armor_color)
         for side in (-1.0, 1.0):
-            _append_preview_box(vertices, (-length * 0.07, height * 0.44, side * width * 0.43), (length * 0.18, height * 0.24, 0.035), armor_color)
-            _append_preview_box(vertices, (-length * 0.06, height * 0.62, side * width * 0.31), (length * 0.13, height * 0.15, 0.010), [255, 40, 40])
+            side_shift = open_ratio * width * 0.14
+            side_raise = open_ratio * 0.06
+            side_yaw = side * open_ratio * 0.38
+            _append_preview_box(vertices, (-length * 0.07, height * 0.44 + side_raise, side * (width * 0.43 + side_shift)), (length * 0.18, height * 0.24, 0.035), armor_color, yaw_rad=side_yaw)
+            _append_preview_box(vertices, (-length * 0.06, height * 0.62 + side_raise * 0.6, side * (width * 0.31 + side_shift * 0.72)), (length * 0.13, height * 0.15, 0.010), [255, 40, 40], yaw_rad=side_yaw)
         _append_preview_box(vertices, (0.02, float(profile.get('structure_detector_bridge_center_height_m', height * (1.093 / 1.181))), 0.0), (0.04, 0.022, min(float(profile.get('structure_detector_width_m', 0.98)) * 0.5, width * 0.30)), dark_color)
         _append_preview_box(vertices, (0.0, float(profile.get('structure_detector_sensor_center_height_m', height * (1.136 / 1.181))), 0.0), (0.03, max(0.030, float(profile.get('structure_detector_height_m', 0.095)) * 0.50), 0.03), [96, 255, 130])
+
+    def _append_structure_energy_mechanism_geometry(self, vertices, profile):
+        body_color = profile['body_color_rgb']
+        frame_color = profile['turret_color_rgb']
+        armor_color = profile['armor_color_rgb']
+        lamp_color = profile.get('wheel_color_rgb', [64, 132, 255])
+        pod_shell_color = [max(28, int(channel * 0.72)) for channel in armor_color]
+        rotor_yaw = float(profile.get('_preview_energy_rotor_yaw_rad', 0.0))
+
+        base_height = max(0.08, float(profile.get('structure_base_height_m', 0.30)))
+        ground_clearance = max(0.0, float(profile.get('structure_ground_clearance_m', 0.0)))
+        frame_width = max(0.80, float(profile.get('structure_frame_width_m', 1.70)))
+        frame_depth = max(0.06, float(profile.get('structure_frame_depth_m', 0.18)))
+        frame_height = max(base_height + 0.60, float(profile.get('structure_frame_height_m', 2.30)))
+        column_span = max(0.20, min(frame_width, float(profile.get('structure_column_span_m', 1.40))))
+        support_offset = max(0.10, float(profile.get('structure_support_offset_m', column_span * 0.5)))
+        column_w = max(0.04, float(profile.get('structure_frame_column_width_m', 0.12)))
+        beam_h = max(0.04, float(profile.get('structure_frame_beam_height_m', 0.10)))
+        rotor_center_h = max(base_height + ground_clearance + 0.40, float(profile.get('structure_rotor_center_height_m', 1.95)))
+        rotor_phase_rad = math.radians(float(profile.get('structure_rotor_phase_deg', 90.0)))
+        rotor_radius = max(0.18, float(profile.get('structure_rotor_radius_m', 0.70)))
+        hub_radius = max(0.05, float(profile.get('structure_rotor_hub_radius_m', 0.09)))
+        arm_width = max(0.04, float(profile.get('structure_rotor_arm_width_m', 0.08)))
+        arm_height = max(0.03, float(profile.get('structure_rotor_arm_height_m', 0.06)))
+        lamp_length = max(0.06, float(profile.get('structure_lamp_length_m', 0.22)))
+        lamp_width = max(0.05, float(profile.get('structure_lamp_width_m', 0.18)))
+        lamp_height = max(0.03, float(profile.get('structure_lamp_height_m', 0.10)))
+        hanger_w = max(0.20, float(profile.get('structure_hanger_width_m', 0.44)))
+        cantilever_length = max(0.08, float(profile.get('structure_cantilever_length_m', 0.36)))
+        cantilever_pair_gap = max(frame_width + cantilever_length, float(profile.get('structure_cantilever_pair_gap_m', frame_width + cantilever_length)))
+        cantilever_offset_y = float(profile.get('structure_cantilever_offset_y_m', 0.0))
+        cantilever_height = max(0.04, float(profile.get('structure_cantilever_height_m', 0.12)))
+        cantilever_depth = max(0.04, float(profile.get('structure_cantilever_depth_m', 0.10)))
+        rail_gap = max(0.026, arm_width * 0.68)
+        arm_outer_radius = max(hub_radius + 0.08, rotor_radius - lamp_length * 0.30)
+        arm_inner_radius = hub_radius * 1.35
+        pod_depth = max(lamp_width * 0.68, frame_depth * 0.55)
+        top_beam_y = ground_clearance + frame_height - beam_h * 0.5
+        rotor_layer_z = max(frame_depth * 0.45, 0.06)
+        base_length = max(0.40, float(profile.get('structure_base_length_m', max(frame_width * 1.65, float(profile.get('body_length_m', 1.55)) * 1.72))))
+        base_width = max(0.40, float(profile.get('structure_base_width_m', max(frame_depth * 6.0, float(profile.get('body_width_m', 0.98)) * 2.45))))
+        base_top_length = max(0.20, float(profile.get('structure_base_top_length_m', base_length * 0.62)))
+        base_top_width = max(0.20, float(profile.get('structure_base_top_width_m', base_width * 0.34)))
+        base_top_height = max(0.02, float(profile.get('structure_base_top_height_m', 0.12)))
+        rotor_centers = [
+            (0.0, rotor_center_h, -rotor_layer_z),
+            (0.0, rotor_center_h, rotor_layer_z),
+        ]
+        rotor_colors = ([228, 76, 76], [58, 112, 232])
+
+        column_x = support_offset
+        _append_preview_prism(
+            vertices,
+            _energy_platform_outline_points(base_length, base_width, ground_clearance, corner_scale=0.22),
+            _energy_platform_outline_points(base_length * 0.96, base_width * 0.94, ground_clearance + base_height, corner_scale=0.24),
+            [max(30, int(channel * 0.88)) for channel in body_color],
+        )
+        _append_preview_prism(
+            vertices,
+            _energy_platform_outline_points(base_top_length, base_top_width, ground_clearance + base_height, corner_scale=0.18),
+            _energy_platform_outline_points(base_top_length * 0.94, base_top_width * 0.92, ground_clearance + base_height + base_top_height, corner_scale=0.16),
+            body_color,
+        )
+
+        _append_preview_box(vertices, (-column_x, ground_clearance + base_height + (frame_height - base_height) * 0.5, 0.0), (column_w * 0.5, (frame_height - base_height) * 0.5, frame_depth * 0.5), [max(24, int(channel * 0.74)) for channel in body_color])
+        _append_preview_box(vertices, (column_x, ground_clearance + base_height + (frame_height - base_height) * 0.5, 0.0), (column_w * 0.5, (frame_height - base_height) * 0.5, frame_depth * 0.5), [max(24, int(channel * 0.74)) for channel in body_color])
+        _append_preview_box(vertices, (0.0, top_beam_y, 0.0), (frame_width * 0.5, beam_h * 0.5, frame_depth * 0.5), [max(28, int(channel * 0.80)) for channel in body_color])
+
+        cantilever_center_y = rotor_center_h + cantilever_offset_y
+        cantilever_center_x = cantilever_pair_gap * 0.5
+        for side in (-1.0, 1.0):
+            brace_top_x = side * column_x
+            brace_top_y = top_beam_y - beam_h * 0.35
+            brace_bottom_x = side * (column_x * 0.72)
+            brace_bottom_y = ground_clearance + base_height + 0.20
+            _append_preview_beam(vertices, (brace_top_x, brace_top_y, -rotor_layer_z), (brace_bottom_x, brace_bottom_y, 0.0), column_w * 0.40, frame_depth * 0.55, frame_color)
+            _append_preview_beam(vertices, (brace_top_x, brace_top_y, rotor_layer_z), (brace_bottom_x, brace_bottom_y, 0.0), column_w * 0.40, frame_depth * 0.55, frame_color)
+
+        for rotor_index, rotor_center in enumerate(rotor_centers):
+            rotor_color = rotor_colors[rotor_index]
+            cx, cy, cz = rotor_center
+            side_sign = -1.0 if rotor_index == 0 else 1.0
+            hanger_center_x = side_sign * cantilever_center_x
+            _append_preview_box(vertices, (hanger_center_x, cantilever_center_y, cz), (cantilever_length * 0.5, cantilever_height * 0.5, cantilever_depth * 0.5), rotor_color)
+            _append_preview_beam(vertices, (side_sign * column_x, cantilever_center_y, cz), (hanger_center_x - side_sign * cantilever_length * 0.5, cantilever_center_y, cz), cantilever_height * 0.62, cantilever_depth * 0.72, frame_color)
+            _append_preview_cylinder(vertices, rotor_center, hub_radius, frame_depth * 0.22, frame_color, segments=18)
+            _append_preview_cylinder(vertices, rotor_center, hub_radius * 0.42, frame_depth * 0.30, rotor_color, segments=18)
+            for index in range(5):
+                yaw = rotor_yaw + rotor_phase_rad + math.radians(72.0 * index)
+                _append_preview_energy_arm(vertices, rotor_center, yaw, arm_inner_radius, arm_outer_radius, rail_gap, arm_width, arm_height, frame_color)
+                arm_end_x = cx + math.cos(yaw) * arm_outer_radius
+                arm_end_y = cy + math.sin(yaw) * arm_outer_radius
+                lamp_x = cx + math.cos(yaw) * rotor_radius
+                lamp_y = cy + math.sin(yaw) * rotor_radius
+                _append_preview_beam(vertices, (arm_end_x, arm_end_y, cz), (lamp_x - math.cos(yaw) * lamp_length * 0.16, lamp_y - math.sin(yaw) * lamp_length * 0.16, cz), arm_width * 0.72, arm_height * 0.86, frame_color)
+                support_gap_x = -math.sin(yaw) * lamp_width * 0.22
+                support_gap_y = math.cos(yaw) * lamp_width * 0.22
+                _append_preview_beam(vertices, (arm_end_x + support_gap_x, arm_end_y + support_gap_y, cz), (lamp_x + support_gap_x * 0.60, lamp_y + support_gap_y * 0.60, cz), arm_width * 0.34, arm_height * 0.64, frame_color)
+                _append_preview_beam(vertices, (arm_end_x - support_gap_x, arm_end_y - support_gap_y, cz), (lamp_x - support_gap_x * 0.60, lamp_y - support_gap_y * 0.60, cz), arm_width * 0.34, arm_height * 0.64, frame_color)
+                disk_color = rotor_color if index == 0 else lamp_color
+                _append_preview_cylinder(vertices, (lamp_x, lamp_y, cz), lamp_length * 0.5, max(0.012, pod_depth * 0.14), [68, 72, 78], segments=20)
+                _append_preview_cylinder(vertices, (lamp_x, lamp_y, cz), lamp_length * 0.46, max(0.006, pod_depth * 0.05), disk_color, segments=20)
+
+    def _structure_bounds_radius(self, profile):
+        role_key = str(profile.get('role_key', '')).lower()
+        if role_key == 'energy_mechanism':
+            return max(
+                2.1,
+                float(profile.get('body_length_m', 1.55)) * 1.45,
+                float(profile.get('body_width_m', 0.98)) * 1.65,
+                float(profile.get('structure_frame_width_m', 1.55)) * 1.20,
+                float(profile.get('body_height_m', 2.30)) * 0.85,
+                float(profile.get('structure_rotor_radius_m', 0.46)) + 0.75,
+            )
+        return max(
+            1.2,
+            float(profile.get('body_length_m', 1.0)) * 1.25,
+            float(profile.get('body_width_m', 1.0)) * 1.25,
+            float(profile.get('body_height_m', 1.0)) + float(profile.get('structure_base_lift_m', 0.0)) + 0.4,
+        )
 
     def _build_structure_geometry(self, profile):
         vertices = []
         role_key = str(profile.get('role_key', '')).lower()
         if role_key == 'outpost':
             self._append_structure_outpost_geometry(vertices, profile)
-        else:
+        elif role_key == 'base':
             self._append_structure_base_geometry(vertices, profile)
+        else:
+            self._append_structure_energy_mechanism_geometry(vertices, profile)
 
         vertex_array = np.array(vertices, dtype='f4')
-        self.bounds_radius = max(
-            1.2,
-            float(profile.get('body_length_m', 1.0)) * 1.25,
-            float(profile.get('body_width_m', 1.0)) * 1.25,
-            float(profile.get('body_height_m', 1.0)) + float(profile.get('structure_base_lift_m', 0.0)) + 0.4,
-        )
+        self.bounds_radius = self._structure_bounds_radius(profile)
         if self.vao is not None:
             self.vao.release()
         if self.vbo is not None:
@@ -1178,7 +1460,7 @@ class ModernGLAppearancePreview:
         self.vao = self.ctx.vertex_array(self.program, [(self.vbo, '3f 3f 3f', 'in_position', 'in_color', 'in_normal')])
 
     def _build_geometry(self, profile):
-        if str(profile.get('role_key', '')).lower() in {'outpost', 'base'}:
+        if str(profile.get('role_key', '')).lower() in {'outpost', 'base', 'energy_mechanism'}:
             self._build_structure_geometry(profile)
             return
 
@@ -1559,6 +1841,8 @@ class AppearanceEditorApp:
         return 0
 
     def _part_supports_component_selection(self, part):
+        if getattr(self, 'current_role', None) in {'outpost', 'base', 'energy_mechanism'}:
+            return False
         return part in {'wheel', 'armor', 'armor_light'}
 
     def _clamp_selected_component_index(self, profile=None):
@@ -1628,6 +1912,64 @@ class AppearanceEditorApp:
             {'part': 'rear_climb', 'label': '铰链内收', 'kind': 'number', 'key': 'rear_climb_assist_inner_offset_m', 'min': 0.00, 'max': 2.00, 'step': 0.005},
         ]
         fields.append({'part': 'body', 'label': '结构整体离地', 'kind': 'number', 'key': 'structure_base_lift_m', 'min': 0.00, 'max': 1.20, 'step': 0.01})
+        fields.extend([
+            {'part': 'body', 'label': '前哨主体顶高', 'kind': 'number', 'key': 'structure_body_top_height_m', 'min': 0.20, 'max': 4.00, 'step': 0.01, 'roles': {'outpost'}},
+            {'part': 'body', 'label': '前哨头部基准高', 'kind': 'number', 'key': 'structure_head_base_height_m', 'min': 0.20, 'max': 4.00, 'step': 0.01, 'roles': {'outpost'}},
+            {'part': 'body', 'label': '前哨下肩高度', 'kind': 'number', 'key': 'structure_lower_shoulder_height_m', 'min': 0.10, 'max': 4.00, 'step': 0.01, 'roles': {'outpost'}},
+            {'part': 'body', 'label': '前哨上肩高度', 'kind': 'number', 'key': 'structure_upper_shoulder_height_m', 'min': 0.20, 'max': 4.00, 'step': 0.01, 'roles': {'outpost'}},
+            {'part': 'body', 'label': '前哨塔身半径', 'kind': 'number', 'key': 'structure_tower_radius_m', 'min': 0.08, 'max': 2.00, 'step': 0.01, 'roles': {'outpost'}},
+            {'part': 'armor', 'label': '顶部装甲中心高', 'kind': 'number', 'key': 'structure_top_armor_center_height_m', 'min': 0.10, 'max': 4.00, 'step': 0.01, 'roles': {'outpost', 'base'}},
+            {'part': 'armor', 'label': '顶部装甲倾角', 'kind': 'number', 'key': 'structure_top_armor_tilt_deg', 'min': -180.0, 'max': 180.0, 'step': 1.0, 'roles': {'outpost', 'base'}},
+            {'part': 'body', 'label': '基地屋顶高度', 'kind': 'number', 'key': 'structure_roof_height_m', 'min': 0.20, 'max': 4.00, 'step': 0.01, 'roles': {'base'}},
+            {'part': 'body', 'label': '基地肩部高度', 'kind': 'number', 'key': 'structure_shoulder_height_m', 'min': 0.20, 'max': 4.00, 'step': 0.01, 'roles': {'base'}},
+            {'part': 'body', 'label': '基地短边长度', 'kind': 'number', 'key': 'structure_hex_top_edge_m', 'min': 0.10, 'max': 3.00, 'step': 0.01, 'roles': {'base'}},
+            {'part': 'mount', 'label': '探测桥宽度', 'kind': 'number', 'key': 'structure_detector_width_m', 'min': 0.10, 'max': 4.00, 'step': 0.01, 'roles': {'base'}},
+            {'part': 'mount', 'label': '探测器高度', 'kind': 'number', 'key': 'structure_detector_height_m', 'min': 0.02, 'max': 2.00, 'step': 0.01, 'roles': {'base'}},
+            {'part': 'mount', 'label': '探测桥中心高', 'kind': 'number', 'key': 'structure_detector_bridge_center_height_m', 'min': 0.10, 'max': 4.00, 'step': 0.01, 'roles': {'base'}},
+            {'part': 'mount', 'label': '探测头中心高', 'kind': 'number', 'key': 'structure_detector_sensor_center_height_m', 'min': 0.10, 'max': 4.00, 'step': 0.01, 'roles': {'base'}},
+            {'part': 'body', 'label': '核心柱高度', 'kind': 'number', 'key': 'structure_core_column_height_m', 'min': 0.10, 'max': 4.00, 'step': 0.01, 'roles': {'base'}},
+            {'part': 'body', 'label': '机关总高', 'kind': 'number', 'key': 'body_height_m', 'min': 0.80, 'max': 4.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'body', 'label': '底座高度', 'kind': 'number', 'key': 'structure_base_height_m', 'min': 0.05, 'max': 2.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'body', 'label': '离地高度', 'kind': 'number', 'key': 'structure_ground_clearance_m', 'min': 0.00, 'max': 3.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'body', 'label': '上框总宽', 'kind': 'number', 'key': 'structure_frame_width_m', 'min': 0.40, 'max': 4.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'body', 'label': '上框纵深', 'kind': 'number', 'key': 'structure_frame_depth_m', 'min': 0.04, 'max': 2.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'body', 'label': '上框高度', 'kind': 'number', 'key': 'structure_frame_height_m', 'min': 0.40, 'max': 4.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'body', 'label': '立柱间距', 'kind': 'number', 'key': 'structure_column_span_m', 'min': 0.20, 'max': 4.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'body', 'label': '支架距中心', 'kind': 'number', 'key': 'structure_support_offset_m', 'min': 0.05, 'max': 3.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'body', 'label': '立柱宽度', 'kind': 'number', 'key': 'structure_frame_column_width_m', 'min': 0.02, 'max': 1.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'body', 'label': '顶梁厚度', 'kind': 'number', 'key': 'structure_frame_beam_height_m', 'min': 0.02, 'max': 1.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'turret', 'label': '转臂中心高度', 'kind': 'number', 'key': 'structure_rotor_center_height_m', 'min': 0.20, 'max': 4.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'turret', 'label': '转盘相位角', 'kind': 'number', 'key': 'structure_rotor_phase_deg', 'min': -180.0, 'max': 180.0, 'step': 1.0, 'roles': {'energy_mechanism'}},
+            {'part': 'turret', 'label': '转臂半径', 'kind': 'number', 'key': 'structure_rotor_radius_m', 'min': 0.10, 'max': 2.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'turret', 'label': '中心轮毂半径', 'kind': 'number', 'key': 'structure_rotor_hub_radius_m', 'min': 0.04, 'max': 1.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'turret', 'label': '转臂长度', 'kind': 'number', 'key': 'structure_rotor_arm_length_m', 'min': 0.05, 'max': 2.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'turret', 'label': '转臂宽度', 'kind': 'number', 'key': 'structure_rotor_arm_width_m', 'min': 0.02, 'max': 1.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'turret', 'label': '转臂厚度', 'kind': 'number', 'key': 'structure_rotor_arm_height_m', 'min': 0.02, 'max': 1.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'armor_light', 'label': '灯臂长度', 'kind': 'number', 'key': 'structure_lamp_length_m', 'min': 0.04, 'max': 1.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'armor_light', 'label': '灯臂宽度', 'kind': 'number', 'key': 'structure_lamp_width_m', 'min': 0.02, 'max': 1.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'armor_light', 'label': '灯臂厚度', 'kind': 'number', 'key': 'structure_lamp_height_m', 'min': 0.02, 'max': 1.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'armor', 'label': '下挂模块宽度', 'kind': 'number', 'key': 'structure_lower_module_width_m', 'min': 0.04, 'max': 2.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'armor', 'label': '下挂模块高度', 'kind': 'number', 'key': 'structure_lower_module_height_m', 'min': 0.04, 'max': 2.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'armor', 'label': '下挂模块厚度', 'kind': 'number', 'key': 'structure_lower_module_depth_m', 'min': 0.04, 'max': 2.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'armor', 'label': '下挂模块横向偏移', 'kind': 'number', 'key': 'structure_lower_module_offset_x_m', 'min': 0.05, 'max': 2.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'armor', 'label': '下挂模块中心高', 'kind': 'number', 'key': 'structure_lower_module_center_height_m', 'min': 0.05, 'max': 3.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'mount', 'label': '中间悬架宽度', 'kind': 'number', 'key': 'structure_hanger_width_m', 'min': 0.04, 'max': 2.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'mount', 'label': '中间悬架高度', 'kind': 'number', 'key': 'structure_hanger_height_m', 'min': 0.04, 'max': 2.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'mount', 'label': '中间悬架厚度', 'kind': 'number', 'key': 'structure_hanger_depth_m', 'min': 0.02, 'max': 1.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'mount', 'label': '中间悬架中心高', 'kind': 'number', 'key': 'structure_hanger_center_height_m', 'min': 0.05, 'max': 3.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'mount', 'label': '两侧悬臂间距', 'kind': 'number', 'key': 'structure_cantilever_pair_gap_m', 'min': 0.10, 'max': 5.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'mount', 'label': '侧悬臂长度', 'kind': 'number', 'key': 'structure_cantilever_length_m', 'min': 0.04, 'max': 2.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'mount', 'label': '侧悬臂高度偏移', 'kind': 'number', 'key': 'structure_cantilever_offset_y_m', 'min': -1.00, 'max': 1.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'mount', 'label': '侧悬臂高度', 'kind': 'number', 'key': 'structure_cantilever_height_m', 'min': 0.02, 'max': 1.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'mount', 'label': '侧悬臂厚度', 'kind': 'number', 'key': 'structure_cantilever_depth_m', 'min': 0.02, 'max': 1.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+        ])
+        fields.extend([
+            {'part': 'body', 'label': '底座长度', 'kind': 'number', 'key': 'structure_base_length_m', 'min': 0.40, 'max': 8.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'body', 'label': '底座宽度', 'kind': 'number', 'key': 'structure_base_width_m', 'min': 0.40, 'max': 8.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'body', 'label': '上层底座长度', 'kind': 'number', 'key': 'structure_base_top_length_m', 'min': 0.20, 'max': 8.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'body', 'label': '上层底座宽度', 'kind': 'number', 'key': 'structure_base_top_width_m', 'min': 0.20, 'max': 8.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'body', 'label': '上层底座高度', 'kind': 'number', 'key': 'structure_base_top_height_m', 'min': 0.02, 'max': 2.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+        ])
         for color_key, part, label in (
             ('body_color_rgb', 'body', '底盘'),
             ('turret_color_rgb', 'turret', '云台'),
@@ -1636,12 +1978,18 @@ class AppearanceEditorApp:
         ):
             for channel_index, channel_label in enumerate(('R', 'G', 'B')):
                 fields.append({'part': part, 'label': f'{label} {channel_label}', 'kind': 'color', 'color_key': color_key, 'channel': channel_index, 'min': 0, 'max': 255, 'step': 1})
+        for channel_index, channel_label in enumerate(('R', 'G', 'B')):
+            fields.append({'part': 'armor_light', 'label': f'灯臂 {channel_label}', 'kind': 'color', 'color_key': 'wheel_color_rgb', 'channel': channel_index, 'min': 0, 'max': 255, 'step': 1, 'roles': {'energy_mechanism'}})
         return fields
 
     def _profile_has_turret(self, profile):
+        if str(profile.get('role_key', '')).lower() == 'energy_mechanism':
+            return True
         return float(profile.get('gimbal_length_m', 0.0)) > 1e-6 and float(profile.get('gimbal_body_height_m', 0.0)) > 1e-6
 
     def _profile_has_mount(self, profile):
+        if str(profile.get('role_key', '')).lower() in {'base', 'energy_mechanism'}:
+            return True
         return self._profile_has_turret(profile) and (float(profile.get('gimbal_mount_height_m', 0.0)) + float(profile.get('gimbal_mount_gap_m', 0.0))) > 1e-6
 
     def _profile_has_barrel(self, profile):
@@ -1669,14 +2017,15 @@ class AppearanceEditorApp:
         if self.selected_part == 'rear_climb' and not self._profile_has_rear_climb(profile):
             return []
         fields = [spec for spec in self.field_specs if spec.get('part') == self.selected_part]
-        if self.current_role not in {'outpost', 'base'}:
+        if self.current_role not in {'outpost', 'base', 'energy_mechanism'}:
             fields = [spec for spec in fields if spec.get('key') != 'structure_base_lift_m']
+        fields = [spec for spec in fields if not spec.get('roles') or self.current_role in spec.get('roles', set())]
         if self.selected_part == 'wheel':
             if self.selected_component_scope == 'single' and profile.get('custom_wheel_positions_m'):
                 fields.append({'part': 'wheel', 'label': f'轮 {self.selected_component_index + 1} X', 'kind': 'wheel_component', 'component_index': self.selected_component_index, 'axis': 0, 'min': -0.80, 'max': 2.00, 'step': 0.01})
                 fields.append({'part': 'wheel', 'label': f'轮 {self.selected_component_index + 1} Y', 'kind': 'wheel_component', 'component_index': self.selected_component_index, 'axis': 1, 'min': -0.80, 'max': 2.00, 'step': 0.01})
         orbit_key, self_key = self._current_component_angle_keys()
-        if orbit_key is not None:
+        if orbit_key is not None and self.current_role not in {'outpost', 'base', 'energy_mechanism'}:
             orbit_label = '相对机器人轴心 Yaw'
             self_label = '相对自身轴心 Yaw'
             if self.selected_part == 'wheel':
@@ -1942,8 +2291,19 @@ class AppearanceEditorApp:
             'front_raise_m': 0.0,
             'rear_foot_raise_m': 0.0,
             'rear_foot_reach_m': 0.0,
+            'outpost_armor_yaw_rad': 0.0,
+            'base_open_ratio': 0.0,
+            'energy_rotor_yaw_rad': 0.0,
         }
-        if self.preview_action_mode == 'step':
+        if self.preview_action_mode == 'rotate':
+            spin = progress * math.tau * 1.6
+            if self.current_role == 'outpost':
+                state['outpost_armor_yaw_rad'] = spin
+            elif self.current_role == 'energy_mechanism':
+                state['energy_rotor_yaw_rad'] = spin
+        elif self.preview_action_mode == 'open':
+            state['base_open_ratio'] = progress
+        elif self.preview_action_mode == 'step':
             if self.current_role in {'hero', 'engineer', 'sentry'}:
                 state['rear_foot_raise_m'] = -0.40 * progress
                 state['rear_foot_reach_m'] = 0.0
@@ -1984,6 +2344,9 @@ class AppearanceEditorApp:
         profile['_preview_front_raise_m'] = motion['front_raise_m']
         profile['_preview_rear_foot_raise_m'] = motion['rear_foot_raise_m']
         profile['_preview_rear_foot_reach_m'] = motion['rear_foot_reach_m']
+        profile['_preview_outpost_armor_yaw_rad'] = motion['outpost_armor_yaw_rad']
+        profile['_preview_base_open_ratio'] = motion['base_open_ratio']
+        profile['_preview_energy_rotor_yaw_rad'] = motion['energy_rotor_yaw_rad']
         return profile
 
     def _set_preview_action_progress_from_x(self, x_pos):
@@ -2001,7 +2364,7 @@ class AppearanceEditorApp:
 
     def _iter_3d_preview_primitives(self, profile):
         role_key = str(profile.get('role_key', '')).lower()
-        if role_key in {'outpost', 'base'}:
+        if role_key in {'outpost', 'base', 'energy_mechanism'}:
             yield from self._iter_structure_3d_preview_primitives(profile, role_key)
             return
 
@@ -2123,13 +2486,56 @@ class AppearanceEditorApp:
             armor_thickness = max(0.012, float(profile.get('armor_plate_gap_m', 0.025)))
             radius = tower_radius + 0.055
             head_base_height = tower_height * (1.318 / 1.578)
+            armor_spin = float(profile.get('_preview_outpost_armor_yaw_rad', 0.0))
             yield ('body', (0.0, lift + tower_height * 0.48, 0.0), (base_width * 0.45, tower_height * 0.52, base_width * 0.45))
             yield ('body', (0.03, lift + tower_height - 0.05, 0.0), (0.105, 0.06, 0.09))
-            yield ('armor', (radius, lift + tower_height - 0.055, 0.0), (armor_side * 0.5, armor_side * 0.5, armor_thickness * 0.5))
+            yield ('armor', (math.cos(armor_spin) * radius, lift + tower_height - 0.055, math.sin(armor_spin) * radius), (armor_side * 0.5, armor_side * 0.5, armor_thickness * 0.5))
             for index, yaw in enumerate([0.0, math.tau / 3.0, math.tau * 2.0 / 3.0]):
                 height = lift + head_base_height - 0.07 + [0.05, 0.0, -0.05][index]
-                yield ('armor', (math.cos(yaw) * radius, height, math.sin(yaw) * radius), (armor_thickness * 0.5, armor_side * 0.5, armor_side * 0.5))
+                yield ('armor', (math.cos(yaw + armor_spin) * radius, height, math.sin(yaw + armor_spin) * radius), (armor_thickness * 0.5, armor_side * 0.5, armor_side * 0.5))
             yield ('armor_light', (radius * 0.68, lift + tower_height * 0.48, 0.0), (0.020, tower_height * 0.22, 0.080))
+            return
+
+        if role_key == 'energy_mechanism':
+            frame_width = max(0.80, float(profile.get('structure_frame_width_m', 1.55)))
+            frame_depth = max(0.06, float(profile.get('structure_frame_depth_m', 0.26)))
+            base_height = max(0.08, float(profile.get('structure_base_height_m', 0.30)))
+            ground_clearance = max(0.0, float(profile.get('structure_ground_clearance_m', 0.0)))
+            frame_height = max(0.80, float(profile.get('structure_frame_height_m', 1.72)))
+            column_span = max(0.20, min(frame_width, float(profile.get('structure_column_span_m', 1.40))))
+            support_offset = max(0.10, float(profile.get('structure_support_offset_m', column_span * 0.5)))
+            column_w = max(0.04, float(profile.get('structure_frame_column_width_m', 0.12)))
+            rotor_center_h = max(base_height + ground_clearance + 0.20, float(profile.get('structure_rotor_center_height_m', 1.23)))
+            rotor_phase_rad = math.radians(float(profile.get('structure_rotor_phase_deg', 90.0)))
+            rotor_radius = max(0.18, float(profile.get('structure_rotor_radius_m', 0.46)))
+            lamp_length = max(0.06, float(profile.get('structure_lamp_length_m', 0.16)))
+            lamp_height = max(0.03, float(profile.get('structure_lamp_height_m', 0.08)))
+            lamp_width = max(0.03, float(profile.get('structure_lamp_width_m', 0.07)))
+            hanger_w = max(0.18, float(profile.get('structure_hanger_width_m', 0.62)))
+            hanger_h = max(0.10, float(profile.get('structure_hanger_height_m', 0.38)))
+            hanger_center_h = max(hanger_h * 0.5, float(profile.get('structure_hanger_center_height_m', 1.18)))
+            cantilever_pair_gap = max(frame_width + max(0.08, float(profile.get('structure_cantilever_length_m', 0.36))), float(profile.get('structure_cantilever_pair_gap_m', frame_width + 0.36)))
+            cantilever_length = max(0.08, float(profile.get('structure_cantilever_length_m', 0.36)))
+            cantilever_offset_y = float(profile.get('structure_cantilever_offset_y_m', 0.0))
+            cantilever_height = max(0.04, float(profile.get('structure_cantilever_height_m', 0.12)))
+            cantilever_depth = max(0.04, float(profile.get('structure_cantilever_depth_m', 0.10)))
+            rotor_yaw = float(profile.get('_preview_energy_rotor_yaw_rad', 0.0))
+            body_length = max(0.40, float(profile.get('structure_base_length_m', max(frame_width * 1.65, float(profile.get('body_length_m', 1.55)) * 1.72))))
+            body_width = max(0.40, float(profile.get('structure_base_width_m', max(frame_depth * 6.0, float(profile.get('body_width_m', 0.98)) * 2.45))))
+            yield ('body', (0.0, ground_clearance + base_height * 0.5, 0.0), (body_length * 0.5, base_height * 0.5, body_width * 0.5))
+            yield ('body', (0.0, ground_clearance + base_height + 0.10, 0.0), (body_length * 0.31, 0.10, body_width * 0.17))
+            yield ('body', (-support_offset, ground_clearance + base_height + (frame_height - base_height) * 0.5, 0.0), (column_w * 0.5, (frame_height - base_height) * 0.5, frame_depth * 0.5))
+            yield ('body', (support_offset, ground_clearance + base_height + (frame_height - base_height) * 0.5, 0.0), (column_w * 0.5, (frame_height - base_height) * 0.5, frame_depth * 0.5))
+            yield ('body', (0.0, ground_clearance + frame_height - max(0.04, float(profile.get('structure_frame_beam_height_m', 0.10))) * 0.5, 0.0), (frame_width * 0.5, max(0.04, float(profile.get('structure_frame_beam_height_m', 0.10))) * 0.5, frame_depth * 0.5))
+            yield ('mount', (0.0, hanger_center_h, 0.0), (hanger_w * 0.5, hanger_h * 0.5, frame_depth * 0.25))
+            yield ('turret', (0.0, rotor_center_h, 0.0), (rotor_radius, rotor_radius, max(frame_depth * 0.55, 0.06)))
+            rotor_layer = max(frame_depth * 0.45, 0.06)
+            for rotor_index, rotor_z in enumerate((-rotor_layer, rotor_layer)):
+                side_sign = -1.0 if rotor_index == 0 else 1.0
+                yield ('mount', (side_sign * cantilever_pair_gap * 0.5, rotor_center_h + cantilever_offset_y, rotor_z), (cantilever_length * 0.5, cantilever_height * 0.5, cantilever_depth * 0.5))
+                for index in range(5):
+                    yaw = rotor_yaw + rotor_phase_rad + index * math.tau / 5.0
+                    yield ('armor_light', (math.cos(yaw) * rotor_radius, rotor_center_h + math.sin(yaw) * rotor_radius, rotor_z), (lamp_length * 0.50, lamp_height * 0.55, lamp_width * 0.30))
             return
 
         length = max(0.8, float(profile.get('body_length_m', 1.881)))
@@ -2137,13 +2543,16 @@ class AppearanceEditorApp:
         height = max(0.5, float(profile.get('body_height_m', 1.181)))
         armor_side = max(0.04, float(profile.get('armor_plate_width_m', 0.13)))
         armor_thickness = max(0.012, float(profile.get('armor_plate_gap_m', 0.025)))
+        open_ratio = max(0.0, min(1.0, float(profile.get('_preview_base_open_ratio', 0.0))))
         yield ('body', (0.0, height * 0.47, 0.0), (length * 0.50, height * 0.50, width * 0.50))
         yield ('body', (0.0, height * 0.58, 0.0), (0.055, min(height * 0.33, 0.3915), 0.06))
         yield ('armor', (length * 0.04, height * (1.150 / 1.181), 0.0), (armor_side * 0.5, armor_thickness * 0.5, armor_side * 0.5))
         yield ('armor', (length * 0.15, height * 0.70, 0.0), (armor_thickness * 0.5, armor_side * 0.5, armor_side * 0.5))
         for side in (-1.0, 1.0):
-            yield ('armor', (-length * 0.07, height * 0.44, side * width * 0.43), (length * 0.18, height * 0.24, 0.035))
-            yield ('armor_light', (-length * 0.07, height * 0.50, side * width * 0.47), (length * 0.12, height * 0.14, 0.012))
+            side_shift = open_ratio * width * 0.14
+            side_raise = open_ratio * 0.06
+            yield ('armor', (-length * 0.07, height * 0.44 + side_raise, side * (width * 0.43 + side_shift)), (length * 0.18, height * 0.24, 0.035))
+            yield ('armor_light', (-length * 0.07, height * 0.50 + side_raise, side * (width * 0.47 + side_shift)), (length * 0.12, height * 0.14, 0.012))
         yield ('body', (0.02, height * (1.093 / 1.181), 0.0), (0.04, 0.022, min(0.49, width * 0.30)))
         yield ('body', (0.0, height * (1.136 / 1.181), 0.0), (0.03, max(0.030, height * (0.095 / 1.181) * 0.50), 0.03))
 
@@ -2166,7 +2575,7 @@ class AppearanceEditorApp:
         if width <= 1 or height <= 1:
             return
         role_key = str(profile.get('role_key', '')).lower()
-        structure_lift = float(profile.get('structure_base_lift_m', 0.0)) if role_key in {'outpost', 'base'} else 0.0
+        structure_lift = float(profile.get('structure_base_lift_m', 0.0)) if role_key in {'outpost', 'base', 'energy_mechanism'} else 0.0
         target = np.array([0.0, structure_lift + float(profile['body_clearance_m']) + float(profile['body_height_m']) * 0.45, 0.0], dtype='f4')
         bounds_radius = max(
             0.6,
@@ -2176,6 +2585,9 @@ class AppearanceEditorApp:
             structure_lift + _profile_turret_center_height(profile) + 0.25,
             structure_lift + float(profile.get('body_height_m', 0.0)) + 0.25,
         )
+        if role_key == 'energy_mechanism':
+            target = np.array([0.0, float(profile.get('structure_rotor_center_height_m', 1.23)), 0.0], dtype='f4')
+            bounds_radius = max(bounds_radius, self.preview_renderer_3d._structure_bounds_radius(profile) if self.preview_renderer_3d is not None else 1.5)
         distance = max(1.4, bounds_radius * 2.9)
         yaw = self.preview_3d_yaw if yaw is None else float(yaw)
         pitch = self.preview_3d_pitch if pitch is None else float(pitch)

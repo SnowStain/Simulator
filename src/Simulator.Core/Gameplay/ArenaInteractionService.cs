@@ -511,6 +511,12 @@ public sealed class ArenaInteractionService
         ISet<string> energyActiveTeams,
         ICollection<FacilityInteractionEvent> events)
     {
+        if (!string.Equals(facility.Team, "neutral", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(facility.Team, entity.Team, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
         if (!CanActivateEnergy(entity))
         {
             return;

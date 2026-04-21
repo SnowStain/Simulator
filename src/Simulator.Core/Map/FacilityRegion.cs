@@ -4,6 +4,23 @@ namespace Simulator.Core.Map;
 
 public readonly record struct Point2D(double X, double Y);
 
+public sealed class TerrainFacetDefinition
+{
+    public string Id { get; init; } = string.Empty;
+
+    public string Type { get; init; } = "slope";
+
+    public string Team { get; init; } = "neutral";
+
+    public string TopColorHex { get; init; } = "#8A9576";
+
+    public string SideColorHex { get; init; } = "#4B4F55";
+
+    public IReadOnlyList<Point2D> Points { get; init; } = Array.Empty<Point2D>();
+
+    public IReadOnlyList<double> HeightsM { get; init; } = Array.Empty<double>();
+}
+
 public sealed class FacilityRegion
 {
     public string Id { get; init; } = string.Empty;
@@ -176,6 +193,8 @@ public sealed class TerrainSurfaceDefinition
 
     public IReadOnlyDictionary<string, string> Channels { get; init; } =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+    public IReadOnlyList<TerrainFacetDefinition> Facets { get; init; } = Array.Empty<TerrainFacetDefinition>();
 }
 
 public sealed class RuntimeGridDefinition

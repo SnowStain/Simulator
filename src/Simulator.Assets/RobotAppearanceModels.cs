@@ -476,6 +476,138 @@ public sealed class RobotAppearanceProfileDefinition
     [Category("Structure")]
     public double StructureBaseLiftM { get; set; }
 
+    [JsonPropertyName("structure_ground_clearance_m")]
+    [Category("Structure")]
+    public double StructureGroundClearanceM { get; set; }
+
+    [JsonPropertyName("structure_base_height_m")]
+    [Category("Structure")]
+    public double StructureBaseHeightM { get; set; }
+
+    [JsonPropertyName("structure_base_length_m")]
+    [Category("Structure")]
+    public double StructureBaseLengthM { get; set; }
+
+    [JsonPropertyName("structure_base_width_m")]
+    [Category("Structure")]
+    public double StructureBaseWidthM { get; set; }
+
+    [JsonPropertyName("structure_base_top_length_m")]
+    [Category("Structure")]
+    public double StructureBaseTopLengthM { get; set; }
+
+    [JsonPropertyName("structure_base_top_width_m")]
+    [Category("Structure")]
+    public double StructureBaseTopWidthM { get; set; }
+
+    [JsonPropertyName("structure_base_top_height_m")]
+    [Category("Structure")]
+    public double StructureBaseTopHeightM { get; set; }
+
+    [JsonPropertyName("structure_frame_width_m")]
+    [Category("Structure")]
+    public double StructureFrameWidthM { get; set; }
+
+    [JsonPropertyName("structure_frame_depth_m")]
+    [Category("Structure")]
+    public double StructureFrameDepthM { get; set; }
+
+    [JsonPropertyName("structure_frame_height_m")]
+    [Category("Structure")]
+    public double StructureFrameHeightM { get; set; }
+
+    [JsonPropertyName("structure_column_span_m")]
+    [Category("Structure")]
+    public double StructureColumnSpanM { get; set; }
+
+    [JsonPropertyName("structure_support_offset_m")]
+    [Category("Structure")]
+    public double StructureSupportOffsetM { get; set; }
+
+    [JsonPropertyName("structure_frame_column_width_m")]
+    [Category("Structure")]
+    public double StructureFrameColumnWidthM { get; set; }
+
+    [JsonPropertyName("structure_frame_beam_height_m")]
+    [Category("Structure")]
+    public double StructureFrameBeamHeightM { get; set; }
+
+    [JsonPropertyName("structure_rotor_center_height_m")]
+    [Category("Structure")]
+    public double StructureRotorCenterHeightM { get; set; }
+
+    [JsonPropertyName("structure_rotor_phase_deg")]
+    [Category("Structure")]
+    public double StructureRotorPhaseDeg { get; set; }
+
+    [JsonPropertyName("structure_rotor_radius_m")]
+    [Category("Structure")]
+    public double StructureRotorRadiusM { get; set; }
+
+    [JsonPropertyName("structure_rotor_hub_radius_m")]
+    [Category("Structure")]
+    public double StructureRotorHubRadiusM { get; set; }
+
+    [JsonPropertyName("structure_rotor_arm_length_m")]
+    [Category("Structure")]
+    public double StructureRotorArmLengthM { get; set; }
+
+    [JsonPropertyName("structure_rotor_arm_width_m")]
+    [Category("Structure")]
+    public double StructureRotorArmWidthM { get; set; }
+
+    [JsonPropertyName("structure_rotor_arm_height_m")]
+    [Category("Structure")]
+    public double StructureRotorArmHeightM { get; set; }
+
+    [JsonPropertyName("structure_lamp_length_m")]
+    [Category("Structure")]
+    public double StructureLampLengthM { get; set; }
+
+    [JsonPropertyName("structure_lamp_width_m")]
+    [Category("Structure")]
+    public double StructureLampWidthM { get; set; }
+
+    [JsonPropertyName("structure_lamp_height_m")]
+    [Category("Structure")]
+    public double StructureLampHeightM { get; set; }
+
+    [JsonPropertyName("structure_hanger_width_m")]
+    [Category("Structure")]
+    public double StructureHangerWidthM { get; set; }
+
+    [JsonPropertyName("structure_hanger_height_m")]
+    [Category("Structure")]
+    public double StructureHangerHeightM { get; set; }
+
+    [JsonPropertyName("structure_hanger_depth_m")]
+    [Category("Structure")]
+    public double StructureHangerDepthM { get; set; }
+
+    [JsonPropertyName("structure_hanger_center_height_m")]
+    [Category("Structure")]
+    public double StructureHangerCenterHeightM { get; set; }
+
+    [JsonPropertyName("structure_cantilever_pair_gap_m")]
+    [Category("Structure")]
+    public double StructureCantileverPairGapM { get; set; }
+
+    [JsonPropertyName("structure_cantilever_length_m")]
+    [Category("Structure")]
+    public double StructureCantileverLengthM { get; set; }
+
+    [JsonPropertyName("structure_cantilever_offset_y_m")]
+    [Category("Structure")]
+    public double StructureCantileverOffsetYM { get; set; }
+
+    [JsonPropertyName("structure_cantilever_height_m")]
+    [Category("Structure")]
+    public double StructureCantileverHeightM { get; set; }
+
+    [JsonPropertyName("structure_cantilever_depth_m")]
+    [Category("Structure")]
+    public double StructureCantileverDepthM { get; set; }
+
     [JsonPropertyName("structure_roof_height_m")]
     [Category("Structure")]
     public double StructureRoofHeightM { get; set; }
@@ -681,13 +813,14 @@ public static class RobotAppearanceJsonSerializer
 
     public static RobotAppearanceRoot LoadFromFile(string path)
     {
-        if (!File.Exists(path))
+        RobotAppearanceRoot root = CreateDefault();
+        if (File.Exists(path))
         {
-            return CreateDefault();
+            string json = File.ReadAllText(path, Encoding.UTF8);
+            root = Deserialize(json);
         }
 
-        string json = File.ReadAllText(path, Encoding.UTF8);
-        RobotAppearanceRoot root = Deserialize(json);
+        LoadSplitProfiles(root, GetSplitProfileDirectory(path));
         root.EnsureInitialized();
         return root;
     }
@@ -697,6 +830,7 @@ public static class RobotAppearanceJsonSerializer
         root.EnsureInitialized();
         Directory.CreateDirectory(Path.GetDirectoryName(path) ?? Directory.GetCurrentDirectory());
         File.WriteAllText(path, Serialize(root), Encoding.UTF8);
+        SaveSplitProfiles(root, GetSplitProfileDirectory(path));
     }
 
     public static RobotAppearanceRoot Deserialize(string json)
@@ -726,6 +860,63 @@ public static class RobotAppearanceJsonSerializer
         var root = new RobotAppearanceRoot();
         root.EnsureInitialized();
         return root;
+    }
+
+    private static string GetSplitProfileDirectory(string path)
+        => Path.Combine(Path.GetDirectoryName(path) ?? Directory.GetCurrentDirectory(), "profiles");
+
+    private static void LoadSplitProfiles(RobotAppearanceRoot root, string directoryPath)
+    {
+        if (!Directory.Exists(directoryPath))
+        {
+            return;
+        }
+
+        foreach (string filePath in Directory.EnumerateFiles(directoryPath, "*.json", SearchOption.TopDirectoryOnly))
+        {
+            try
+            {
+                string json = File.ReadAllText(filePath, Encoding.UTF8);
+                RobotAppearanceProfileDefinition? profile = JsonSerializer.Deserialize<RobotAppearanceProfileDefinition>(json, SerializerOptions);
+                if (profile is null)
+                {
+                    continue;
+                }
+
+                profile.EnsureInitialized();
+                string roleKey = !string.IsNullOrWhiteSpace(profile.RoleKey)
+                    ? profile.RoleKey
+                    : Path.GetFileNameWithoutExtension(filePath);
+                profile.RoleKey = roleKey;
+                root.Profiles[roleKey] = profile;
+            }
+            catch
+            {
+                // Ignore malformed split profile files and keep the aggregate/surviving data.
+            }
+        }
+    }
+
+    private static void SaveSplitProfiles(RobotAppearanceRoot root, string directoryPath)
+    {
+        Directory.CreateDirectory(directoryPath);
+        var activeFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach ((string roleKey, RobotAppearanceProfileDefinition profile) in root.Profiles)
+        {
+            RobotAppearanceProfileDefinition clone = Clone(profile);
+            clone.RoleKey = string.IsNullOrWhiteSpace(clone.RoleKey) ? roleKey : clone.RoleKey;
+            string filePath = Path.Combine(directoryPath, $"{roleKey}.json");
+            File.WriteAllText(filePath, JsonSerializer.Serialize(clone, SerializerOptions), Encoding.UTF8);
+            activeFiles.Add(Path.GetFullPath(filePath));
+        }
+
+        foreach (string staleFile in Directory.EnumerateFiles(directoryPath, "*.json", SearchOption.TopDirectoryOnly))
+        {
+            if (!activeFiles.Contains(Path.GetFullPath(staleFile)))
+            {
+                File.Delete(staleFile);
+            }
+        }
     }
 }
 

@@ -8,6 +8,7 @@ from simulator3d.native_bridge import get_native_runtime_status
 
 
 _RENDERER_BACKEND_BY_MODE = {
+    'gpu': 'native_cpp',
     'opengl': 'editor_opengl',
     'moderngl': 'pyglet_moderngl',
     'native_cpp': 'native_cpp',
@@ -20,6 +21,9 @@ _MODE_BY_RENDERER_BACKEND = {
     'moderngl': 'moderngl',
     'pyglet_moderngl': 'moderngl',
     'pyglet-moderngl': 'moderngl',
+    'gpu': 'gpu',
+    'wgl_opengl': 'gpu',
+    'opengl_gpu': 'gpu',
     'native_cpp': 'native_cpp',
     'cpp': 'native_cpp',
     'opengl_cpp': 'native_cpp',

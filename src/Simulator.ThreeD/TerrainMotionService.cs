@@ -1,5 +1,6 @@
 using System.Numerics;
 using Simulator.Core.Gameplay;
+using Simulator.Core.Map;
 
 namespace Simulator.ThreeD;
 
@@ -15,12 +16,17 @@ internal sealed class TerrainMotionService
     private const int NavigationMaxLookAheadWaypoints = 4;
     private readonly RuleSet _rules;
     private readonly DecisionDeploymentConfig _decisionDeployment;
+    private readonly IReadOnlyList<FacilityRegion> _facilities;
     private readonly Dictionary<string, NavigationPathState> _navigationStates = new(StringComparer.OrdinalIgnoreCase);
 
-    public TerrainMotionService(RuleSet rules, DecisionDeploymentConfig? decisionDeployment = null)
+    public TerrainMotionService(
+        RuleSet rules,
+        DecisionDeploymentConfig? decisionDeployment = null,
+        IReadOnlyList<FacilityRegion>? facilities = null)
     {
         _rules = rules;
         _decisionDeployment = decisionDeployment ?? DecisionDeploymentConfig.CreateDefault();
+        _facilities = facilities ?? Array.Empty<FacilityRegion>();
     }
 
     public void Step(SimulationWorldState world, RuntimeGridData? runtimeGrid, double deltaTimeSec)
@@ -105,6 +111,8 @@ internal sealed class TerrainMotionService
         entity.VelocityXWorldPerSec = 0;
         entity.VelocityYWorldPerSec = 0;
         entity.AngularVelocityDegPerSec = 0;
+        entity.ChassisPitchDeg = 0;
+        entity.ChassisRollDeg = 0;
         entity.ChassisPowerDrawW = 0;
         entity.EffectiveDrivePowerLimitW = ResolveEffectiveDrivePowerLimitW(entity);
         entity.ChassisTargetYawDeg = entity.AngleDeg;
@@ -183,6 +191,12 @@ internal sealed class TerrainMotionService
         SimulationEntity? enemy,
         double dt)
     {
+        if (TryApplyRespawnRecoveryNavigation(world, runtimeGrid, entity, dt))
+        {
+            UpdateTurretAim(world, runtimeGrid, entity, dt, playerControlled: false);
+            return;
+        }
+
         bool hasNonAttackTacticalCommand = string.Equals(entity.TacticalCommand, "defend", StringComparison.OrdinalIgnoreCase)
             || string.Equals(entity.TacticalCommand, "patrol", StringComparison.OrdinalIgnoreCase);
         if (enemy is null && !hasNonAttackTacticalCommand)
@@ -1066,7 +1080,9 @@ internal sealed class TerrainMotionService
                     return false;
                 }
 
-                if (runtimeGrid.HeightMap[sampleIndex] - referenceHeight > allowedRiseM + 1e-6)
+                double sampleWorldX = (sampleX + 0.5) * runtimeGrid.CellWidthWorld;
+                double sampleWorldY = (sampleY + 0.5) * runtimeGrid.CellHeightWorld;
+                if (SampleTerrainHeight(runtimeGrid, sampleWorldX, sampleWorldY) - referenceHeight > allowedRiseM + 1e-6)
                 {
                     return false;
                 }
@@ -1305,10 +1321,11 @@ internal sealed class TerrainMotionService
         bool reversingCommand = currentSpeedMps > 0.12
             && desiredSpeedMps > 0.05
             && directionDot < -0.18;
-        bool brakingHard = (moveMagnitude <= 0.03 || reversingCommand) && currentSpeedMps > 0.08;
+        bool brakingToStop = moveMagnitude <= 0.015 && currentSpeedMps > 0.06;
+        bool brakingHard = (brakingToStop || reversingCommand) && currentSpeedMps > 0.08;
         if (brakingHard)
         {
-            double brakeAccelLimit = accelLimit * (reversingCommand ? 1.95 : 1.65);
+            double brakeAccelLimit = accelLimit * (reversingCommand ? 2.15 : brakingToStop ? 2.35 : 1.75);
             double brakeDeltaSpeed = Math.Min(currentSpeedMps, brakeAccelLimit * dt);
             if (currentSpeedMps > 1e-6)
             {
@@ -1316,15 +1333,18 @@ internal sealed class TerrainMotionService
                 double brakeDirY = currentVyMps / currentSpeedMps;
                 desiredVxMps = currentVxMps - brakeDirX * brakeDeltaSpeed;
                 desiredVyMps = currentVyMps - brakeDirY * brakeDeltaSpeed;
-                if (reversingCommand)
+                if (reversingCommand || brakingToStop)
                 {
-                    desiredVxMps += (desiredVxMps >= 0.0 ? -1.0 : 1.0) * Math.Min(Math.Abs(desiredVxMps) * 0.18, speedLimitMps * 0.12);
-                    desiredVyMps += (desiredVyMps >= 0.0 ? -1.0 : 1.0) * Math.Min(Math.Abs(desiredVyMps) * 0.18, speedLimitMps * 0.12);
+                    double reverseBias = brakingToStop ? 0.26 : 0.18;
+                    desiredVxMps += (desiredVxMps >= 0.0 ? -1.0 : 1.0) * Math.Min(Math.Abs(desiredVxMps) * reverseBias, speedLimitMps * 0.14);
+                    desiredVyMps += (desiredVyMps >= 0.0 ? -1.0 : 1.0) * Math.Min(Math.Abs(desiredVyMps) * reverseBias, speedLimitMps * 0.14);
                 }
             }
         }
 
-        double wheelResponseTimeSec = ResolveWheelResponseTimeSec(entity, moveMagnitude);
+        double wheelResponseTimeSec = brakingToStop
+            ? Math.Min(ResolveWheelResponseTimeSec(entity, moveMagnitude), 0.055)
+            : ResolveWheelResponseTimeSec(entity, moveMagnitude);
         double response = 1.0 - Math.Exp(-dt / Math.Max(0.035, wheelResponseTimeSec));
         double responseVxMps = currentVxMps + (desiredVxMps - currentVxMps) * response;
         double responseVyMps = currentVyMps + (desiredVyMps - currentVyMps) * response;
@@ -1345,16 +1365,17 @@ internal sealed class TerrainMotionService
         double dragPerSec = moveMagnitude <= 0.05
             ? ResolveBrakeDragPerSec(entity)
             : ResolveRollingDragPerSec(entity);
-        if (reversingCommand)
+        if (reversingCommand || brakingToStop)
         {
-            dragPerSec = Math.Max(dragPerSec, ResolveBrakeDragPerSec(entity) * 1.18);
+            double brakeMultiplier = brakingToStop ? 2.35 : 1.38;
+            dragPerSec = Math.Max(dragPerSec, ResolveBrakeDragPerSec(entity) * brakeMultiplier);
         }
 
         double dragScale = Math.Exp(-dragPerSec * dt);
         newVxMps *= dragScale;
         newVyMps *= dragScale;
         double newSpeedMps = Math.Sqrt(newVxMps * newVxMps + newVyMps * newVyMps);
-        if (brakingHard && newSpeedMps <= 0.08)
+        if (brakingHard && newSpeedMps <= (brakingToStop ? 0.12 : 0.08))
         {
             newVxMps = 0.0;
             newVyMps = 0.0;
@@ -1433,54 +1454,54 @@ internal sealed class TerrainMotionService
         bool reversingCommand)
     {
         DriveMotorModel model = ResolveDriveMotorModel(entity);
-        double wheelRadiusM = Math.Clamp(entity.WheelRadiusM <= 1e-6 ? 0.08 : entity.WheelRadiusM, 0.055, 0.11);
-        double wheelCount = model.WheelCount;
+        double wheelRadiusM = Math.Clamp(entity.WheelRadiusM <= 1e-6 ? 0.08 : entity.WheelRadiusM, 0.055, 0.12);
+        double wheelCount = Math.Max(1.0, model.WheelCount);
         double massKg = Math.Clamp(entity.MassKg <= 1e-6 ? 20.0 : entity.MassKg, 15.0, 25.0);
-        double aeroDragCoeff = string.Equals(entity.WheelStyle, "mecanum", StringComparison.OrdinalIgnoreCase) ? 0.42 : 0.34;
         double rollingResistanceN = ResolveRollingResistanceForceN(entity);
-        double requestedForceN = massKg * appliedAccelMps2 + rollingResistanceN + aeroDragCoeff * speedMps * speedMps;
-        double torquePerWheelNm = requestedForceN * wheelRadiusM / Math.Max(1.0, wheelCount);
-        double torqueSlewNm = Math.Abs(speedMps - currentSpeedMps) / Math.Max(1e-6, dt) * model.MechanicalTimeConstantSec * massKg * wheelRadiusM / Math.Max(1.0, wheelCount);
-        torquePerWheelNm += torqueSlewNm;
+        double currentOmega = currentSpeedMps / Math.Max(0.01, wheelRadiusM);
+        double targetOmega = speedMps / Math.Max(0.01, wheelRadiusM);
+        double accelForceN = massKg * appliedAccelMps2;
+        double requestedForceN = accelForceN + (moveMagnitude > 0.03 ? rollingResistanceN : rollingResistanceN * 0.15);
+        double torquePerWheelNm = Math.Abs(requestedForceN) * wheelRadiusM / wheelCount;
+        double brakingOmegaError = brakingHard ? Math.Abs(currentOmega - targetOmega) : 0.0;
+        if (brakingHard)
+        {
+            double brakingTorqueNm = Math.Min(
+                model.PeakTorqueNm,
+                Math.Max(model.ContinuousTorqueNm, brakingOmegaError * model.MechanicalTimeConstantSec * 0.18));
+            torquePerWheelNm = Math.Max(torquePerWheelNm, brakingTorqueNm);
+        }
+
         double torqueLimitNm = moveMagnitude > 0.08 ? model.PeakTorqueNm : model.ContinuousTorqueNm;
+        if (brakingHard)
+        {
+            torqueLimitNm = model.PeakTorqueNm;
+        }
+
         torquePerWheelNm = Math.Clamp(torquePerWheelNm, 0.0, torqueLimitNm);
 
-        double wheelOmegaRadPerSec = speedMps / Math.Max(0.01, wheelRadiusM);
-        double motorRpm = Math.Abs(wheelOmegaRadPerSec) * 9.5493;
-        double currentA = model.NoLoadCurrentA + torquePerWheelNm / Math.Max(1e-6, model.TorqueConstantNmPerA);
+        // Keep the chassis motor power model aligned with the supplied PowerCtrl.hpp:
+        // I_cmd = torqueSet / 6 * 20, then P = k1*w*I + R*I^2 + k2*w^2 + static_power.
         double commandedCurrentA = torquePerWheelNm / 6.0 * 20.0;
         if (brakingHard)
         {
             commandedCurrentA *= reversingCommand ? 1.55 : 1.30;
-            currentA *= reversingCommand ? 1.40 : 1.22;
         }
 
-        double item1 = wheelCount * wheelOmegaRadPerSec * commandedCurrentA;
+        double omegaForPower = brakingHard ? currentOmega : Math.Max(currentOmega, targetOmega * 0.72);
+        double item1 = wheelCount * omegaForPower * commandedCurrentA;
         double item2 = wheelCount * model.PhaseResistanceOhm * commandedCurrentA * commandedCurrentA;
-        double item3 = wheelCount * model.DampingCoeff * wheelOmegaRadPerSec * wheelOmegaRadPerSec;
-        double copperLossW = wheelCount * currentA * currentA * model.PhaseResistanceOhm;
-        double ironLossCoeff = (model.NominalVoltageV * model.NoLoadCurrentA) / Math.Max(1.0, model.RatedSpeedRpm * model.RatedSpeedRpm);
-        double ironLossW = wheelCount * ironLossCoeff * motorRpm * motorRpm;
-        double mechanicalPowerW = wheelCount * torquePerWheelNm * Math.Abs(wheelOmegaRadPerSec);
-        double inverterLossW = wheelCount * model.NominalVoltageV * 0.012 * Math.Clamp(currentA / 10.0, 0.0, 1.6);
-        double disturbanceRatio = 1.0 + 0.025 * Math.Sin((entity.X + entity.Y + speedMps) * 3.17) + 0.012 * Math.Cos(entity.AngleDeg * Math.PI / 180.0 * 2.0);
-        double transientPowerW = Math.Max(0.0, massKg * appliedAccelMps2 * Math.Max(speedMps, 0.35)) * 0.12;
-        if (moveMagnitude <= 0.03 && currentSpeedMps > speedMps + 0.05)
-        {
-            transientPowerW += massKg * Math.Abs(currentSpeedMps - speedMps) * 0.95;
-        }
-
-        if (brakingHard)
-        {
-            transientPowerW += reversingCommand
-                ? Math.Max(18.0, currentSpeedMps * 28.0 + appliedAccelMps2 * massKg * 0.95)
-                : Math.Max(10.0, currentSpeedMps * 18.0 + appliedAccelMps2 * massKg * 0.60);
-        }
-
+        double item3 = wheelCount * model.DampingCoeff * omegaForPower * omegaForPower;
         double powerCtrlPredictW = model.K1 * item1 + item2 + item3 + model.StaticPowerW;
-        return Math.Max(
-            model.StaticPowerW,
-            Math.Max(powerCtrlPredictW, (mechanicalPowerW + copperLossW + ironLossW + inverterLossW + transientPowerW) * disturbanceRatio));
+        if (moveMagnitude <= 0.03 && currentSpeedMps <= 0.025 && !brakingHard)
+        {
+            return model.StaticPowerW;
+        }
+
+        double physicalFloorW = model.StaticPowerW
+            + Math.Max(0.0, massKg * appliedAccelMps2 * Math.Max(speedMps, 0.18) * 0.06)
+            + (brakingHard ? Math.Min(70.0, 8.0 + brakingOmegaError * wheelCount * 0.10) : 0.0);
+        return Math.Max(model.StaticPowerW, Math.Max(powerCtrlPredictW, physicalFloorW));
     }
 
     private static (double PowerDrawW, double BufferUseW, double SuperCapUseW) ResolveDrivePowerAllocation(
@@ -1492,6 +1513,14 @@ internal sealed class TerrainMotionService
         double clampedRequestedW = Math.Max(0.0, requestedPowerW);
         double overPowerW = Math.Max(0.0, clampedRequestedW - drivePowerLimitW);
         DriveMotorModel model = ResolveDriveMotorModel(entity);
+        double superCapUseW = 0.0;
+        if (overPowerW > 1e-6 && entity.SuperCapEnabled)
+        {
+            double capEnergyLimitW = Math.Min(model.SuperCapDischargeLimitW, entity.SuperCapEnergyJ / Math.Max(dt, 1e-6));
+            superCapUseW = Math.Min(overPowerW, capEnergyLimitW);
+            overPowerW -= superCapUseW;
+        }
+
         double bufferUseW = 0.0;
         if (overPowerW > 1e-6)
         {
@@ -1499,17 +1528,6 @@ internal sealed class TerrainMotionService
             double bufferBoostW = Math.Max(0.0, usableBufferJ) * model.BufferAssistGain;
             bufferUseW = Math.Min(overPowerW, Math.Min(bufferBoostW, usableBufferJ / Math.Max(dt, 1e-6)));
             overPowerW -= bufferUseW;
-        }
-
-        double superCapUseW = 0.0;
-        if (overPowerW > 1e-6)
-        {
-            double capEnergyLimitW = Math.Min(model.SuperCapDischargeLimitW, entity.SuperCapEnergyJ / Math.Max(dt, 1e-6));
-            double passiveHeadroomW = Math.Min(35.0, capEnergyLimitW * 0.35);
-            double activeHeadroomW = entity.SuperCapEnabled
-                ? capEnergyLimitW * Math.Clamp(0.25 + entity.SuperCapEnergyJ / Math.Max(1.0, model.CapReserveJ), 0.25, 1.0)
-                : 0.0;
-            superCapUseW = Math.Min(overPowerW, Math.Max(passiveHeadroomW, activeHeadroomW));
         }
 
         return (Math.Min(clampedRequestedW, drivePowerLimitW + bufferUseW + superCapUseW), bufferUseW, superCapUseW);
@@ -1805,6 +1823,8 @@ internal sealed class TerrainMotionService
                 break;
             }
         }
+
+        UpdateChassisTerrainPose(runtimeGrid, entity);
     }
 
     private bool ApplyTranslationSubstep(
@@ -1995,6 +2015,272 @@ internal sealed class TerrainMotionService
     private static double ResolveCollisionHalfWidthM(SimulationEntity entity)
     {
         return Math.Max(0.08, entity.BodyWidthM * entity.BodyRenderWidthScale * 0.5) + 0.010;
+    }
+
+    private bool TryApplyRespawnRecoveryNavigation(
+        SimulationWorldState world,
+        RuntimeGridData runtimeGrid,
+        SimulationEntity entity,
+        double dt)
+    {
+        bool needsRecovery =
+            entity.WeakTimerSec > 1e-6
+            || entity.RespawnAmmoLockTimerSec > 1e-6
+            || (entity.MaxHealth > 1e-6 && entity.Health / entity.MaxHealth < 0.35);
+        if (!needsRecovery)
+        {
+            return false;
+        }
+
+        if (IsInFriendlyRecoveryZone(entity))
+        {
+            entity.TraversalDirectionDeg = entity.AngleDeg;
+            entity.ChassisTargetYawDeg = entity.AngleDeg;
+            ApplyDriveControl(world, entity, 0.0, 0.0, dt, entity.AngleDeg);
+            entity.BuyAmmoRequested = false;
+            entity.AiDecisionSelected = "recover";
+            entity.AiDecision = "回家恢复";
+            return true;
+        }
+
+        if (!TryResolveRecoveryAnchor(entity, out double targetX, out double targetY))
+        {
+            return false;
+        }
+
+        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
+        if (TryApplyPlannedNavigation(
+            world,
+            runtimeGrid,
+            entity,
+            targetX,
+            targetY,
+            0.75,
+            0.92,
+            dt,
+            metersPerWorldUnit,
+            $"recover:{entity.Team}",
+            null))
+        {
+            entity.AiDecisionSelected = "recover";
+            entity.AiDecision = "回家恢复";
+            entity.BuyAmmoRequested = false;
+            return true;
+        }
+
+        double dx = targetX - entity.X;
+        double dy = targetY - entity.Y;
+        entity.TraversalDirectionDeg = SimulationCombatMath.NormalizeDeg(RadiansToDegrees(Math.Atan2(dy, dx)));
+        entity.ChassisTargetYawDeg = entity.TraversalDirectionDeg;
+        ApplyDriveControl(world, entity, 0.88, 0.0, dt, entity.TraversalDirectionDeg);
+        entity.AiDecisionSelected = "recover";
+        entity.AiDecision = "回家恢复";
+        entity.BuyAmmoRequested = false;
+        return true;
+    }
+
+    private bool IsInFriendlyRecoveryZone(SimulationEntity entity)
+    {
+        return _facilities.Any(region =>
+            (string.Equals(region.Type, "supply", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(region.Type, "buff_supply", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(region.Type, "buff_base", StringComparison.OrdinalIgnoreCase))
+            && string.Equals(region.Team, entity.Team, StringComparison.OrdinalIgnoreCase)
+            && region.Contains(entity.X, entity.Y));
+    }
+
+    private bool TryResolveRecoveryAnchor(SimulationEntity entity, out double targetX, out double targetY)
+    {
+        FacilityRegion? facility = _facilities
+            .Where(region =>
+                (string.Equals(region.Type, "supply", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(region.Type, "buff_supply", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(region.Type, "buff_base", StringComparison.OrdinalIgnoreCase))
+                && string.Equals(region.Team, entity.Team, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(region =>
+            {
+                (double centerX, double centerY) = ResolveRegionCenter(region);
+                return DistanceSquared(entity.X, entity.Y, centerX, centerY);
+            })
+            .FirstOrDefault();
+        if (facility is not null)
+        {
+            (targetX, targetY) = ResolveRegionCenter(facility);
+            return true;
+        }
+
+        targetX = entity.X;
+        targetY = entity.Y;
+        return false;
+    }
+
+    private static (double X, double Y) ResolveRegionCenter(FacilityRegion region)
+    {
+        if (region.Points.Count > 0)
+        {
+            double sumX = 0.0;
+            double sumY = 0.0;
+            foreach (Point2D point in region.Points)
+            {
+                sumX += point.X;
+                sumY += point.Y;
+            }
+
+            double inv = 1.0 / region.Points.Count;
+            return (sumX * inv, sumY * inv);
+        }
+
+        return ((region.X1 + region.X2) * 0.5, (region.Y1 + region.Y2) * 0.5);
+    }
+
+    private static double DistanceSquared(double ax, double ay, double bx, double by)
+    {
+        double dx = ax - bx;
+        double dy = ay - by;
+        return dx * dx + dy * dy;
+    }
+
+    private static void UpdateChassisTerrainPose(RuntimeGridData runtimeGrid, SimulationEntity entity)
+    {
+        double yawRad = DegreesToRadians(entity.AngleDeg);
+        double halfLength = Math.Max(0.10, entity.BodyLengthM * 0.5);
+        double halfWidth = Math.Max(0.09, entity.BodyWidthM * entity.BodyRenderWidthScale * 0.5);
+        double forwardX = Math.Cos(yawRad);
+        double forwardY = Math.Sin(yawRad);
+        double rightX = -forwardY;
+        double rightY = forwardX;
+
+        if (!entity.TraversalActive && entity.AirborneHeightM <= 1e-4)
+        {
+            bool hasContactPlane = TryResolveWheelContactPlane(
+                runtimeGrid,
+                entity,
+                forwardX,
+                forwardY,
+                rightX,
+                rightY,
+                halfLength,
+                halfWidth,
+                out double planeHeightM,
+                out double forwardSlope,
+                out double rightSlope);
+            if (hasContactPlane)
+            {
+                // Keep the chassis origin on the wheel contact plane. Rendering uses wheel
+                // center height = wheel radius, so this keeps every wheel grounded except
+                // while the explicit step traversal animation owns the pose.
+                entity.GroundHeightM += (planeHeightM - entity.GroundHeightM) * 0.82;
+                double targetPitchFromWheels = Math.Atan2(forwardSlope, 1.0) * 180.0 / Math.PI;
+                double targetRollFromWheels = Math.Atan2(rightSlope, 1.0) * 180.0 / Math.PI;
+                entity.ChassisPitchDeg += (Math.Clamp(targetPitchFromWheels, -26.0, 26.0) - entity.ChassisPitchDeg) * 0.56;
+                entity.ChassisRollDeg += (Math.Clamp(targetRollFromWheels, -22.0, 22.0) - entity.ChassisRollDeg) * 0.56;
+                return;
+            }
+        }
+
+        Vector3 normal = Vector3.UnitY;
+        if (runtimeGrid.TrySampleFacetSurface(entity.X, entity.Y, out _, out Vector3 facetNormal, out _))
+        {
+            normal = facetNormal;
+        }
+
+        double frontHeight = SampleTerrainHeight(runtimeGrid, entity.X + forwardX * halfLength, entity.Y + forwardY * halfLength);
+        double rearHeight = SampleTerrainHeight(runtimeGrid, entity.X - forwardX * halfLength, entity.Y - forwardY * halfLength);
+        double rightHeight = SampleTerrainHeight(runtimeGrid, entity.X + rightX * halfWidth, entity.Y + rightY * halfWidth);
+        double leftHeight = SampleTerrainHeight(runtimeGrid, entity.X - rightX * halfWidth, entity.Y - rightY * halfWidth);
+
+        double pitchFromHeights = Math.Atan2(frontHeight - rearHeight, Math.Max(halfLength * 2.0, 1e-3)) * 180.0 / Math.PI;
+        double rollFromHeights = Math.Atan2(rightHeight - leftHeight, Math.Max(halfWidth * 2.0, 1e-3)) * 180.0 / Math.PI;
+        double normalPitch = Math.Atan2(-normal.Z, Math.Max(0.15f, normal.Y)) * 180.0 / Math.PI;
+        double normalRoll = Math.Atan2(normal.X, Math.Max(0.15f, normal.Y)) * 180.0 / Math.PI;
+
+        double targetPitchDeg = Math.Clamp(pitchFromHeights * 0.72 + normalPitch * 0.28, -22.0, 22.0);
+        double targetRollDeg = Math.Clamp(rollFromHeights * 0.72 + normalRoll * 0.28, -18.0, 18.0);
+        entity.ChassisPitchDeg += (targetPitchDeg - entity.ChassisPitchDeg) * 0.34;
+        entity.ChassisRollDeg += (targetRollDeg - entity.ChassisRollDeg) * 0.34;
+    }
+
+    private static bool TryResolveWheelContactPlane(
+        RuntimeGridData runtimeGrid,
+        SimulationEntity entity,
+        double forwardX,
+        double forwardY,
+        double rightX,
+        double rightY,
+        double halfLength,
+        double halfWidth,
+        out double planeHeightM,
+        out double forwardSlope,
+        out double rightSlope)
+    {
+        planeHeightM = entity.GroundHeightM;
+        forwardSlope = 0.0;
+        rightSlope = 0.0;
+
+        IReadOnlyList<(double X, double Y)> wheelOffsets = entity.WheelOffsetsM;
+        int count = wheelOffsets.Count > 0 ? wheelOffsets.Count : 4;
+        if (count < 2)
+        {
+            return false;
+        }
+
+        double sumX = 0.0;
+        double sumY = 0.0;
+        double sumH = 0.0;
+        double sumXX = 0.0;
+        double sumYY = 0.0;
+        double sumXY = 0.0;
+        double sumXH = 0.0;
+        double sumYH = 0.0;
+
+        for (int index = 0; index < count; index++)
+        {
+            double localX;
+            double localY;
+            if (wheelOffsets.Count > 0)
+            {
+                (localX, localY) = wheelOffsets[index];
+                localY *= Math.Max(0.35, entity.BodyRenderWidthScale);
+            }
+            else
+            {
+                localX = (index < 2 ? 1.0 : -1.0) * halfLength * 0.78;
+                localY = (index % 2 == 0 ? -1.0 : 1.0) * halfWidth * 0.86;
+            }
+
+            double sampleX = entity.X + forwardX * localX + rightX * localY;
+            double sampleY = entity.Y + forwardY * localX + rightY * localY;
+            double height = SampleTerrainHeight(runtimeGrid, sampleX, sampleY);
+            sumX += localX;
+            sumY += localY;
+            sumH += height;
+            sumXX += localX * localX;
+            sumYY += localY * localY;
+            sumXY += localX * localY;
+            sumXH += localX * height;
+            sumYH += localY * height;
+        }
+
+        double invCount = 1.0 / count;
+        double meanX = sumX * invCount;
+        double meanY = sumY * invCount;
+        double meanH = sumH * invCount;
+        double centeredXX = sumXX - sumX * meanX;
+        double centeredYY = sumYY - sumY * meanY;
+        double centeredXY = sumXY - sumX * meanY;
+        double centeredXH = sumXH - sumX * meanH;
+        double centeredYH = sumYH - sumY * meanH;
+        double det = centeredXX * centeredYY - centeredXY * centeredXY;
+        if (Math.Abs(det) <= 1e-8)
+        {
+            planeHeightM = meanH;
+            return true;
+        }
+
+        forwardSlope = (centeredXH * centeredYY - centeredYH * centeredXY) / det;
+        rightSlope = (centeredYH * centeredXX - centeredXH * centeredXY) / det;
+        planeHeightM = meanH - forwardSlope * meanX - rightSlope * meanY;
+        return true;
     }
 
     private static int ResolveTranslationSubsteps(
@@ -2239,7 +2525,7 @@ internal sealed class TerrainMotionService
             baseSample = runtimeGrid.HeightMap[runtimeGrid.IndexOf(
                 WorldToCellX(runtimeGrid, worldX),
                 WorldToCellY(runtimeGrid, worldY))];
-            return ApplyTerrainSecondarySmoothing(runtimeGrid, normalizedX, normalizedY, baseSample);
+            return ApplyFacetHeightOverlay(runtimeGrid, worldX, worldY, ApplyTerrainSecondarySmoothing(runtimeGrid, normalizedX, normalizedY, baseSample));
         }
 
         double tx = Math.Clamp(normalizedX - cellX0, 0.0, 1.0);
@@ -2247,7 +2533,14 @@ internal sealed class TerrainMotionService
         double top = Lerp(h00, h10, tx);
         double bottom = Lerp(h01, h11, tx);
         baseSample = Lerp(top, bottom, ty);
-        return ApplyTerrainSecondarySmoothing(runtimeGrid, normalizedX, normalizedY, baseSample);
+        return ApplyFacetHeightOverlay(runtimeGrid, worldX, worldY, ApplyTerrainSecondarySmoothing(runtimeGrid, normalizedX, normalizedY, baseSample));
+    }
+
+    private static double ApplyFacetHeightOverlay(RuntimeGridData runtimeGrid, double worldX, double worldY, double baseHeight)
+    {
+        return runtimeGrid.TrySampleFacetSurface(worldX, worldY, out float facetHeight, out _, out _)
+            ? Math.Max(baseHeight, facetHeight)
+            : baseHeight;
     }
 
     private static bool ShouldSmoothTerrainQuad(double h00, double h10, double h01, double h11)
@@ -2471,18 +2764,12 @@ internal sealed class TerrainMotionService
         }
 
         DriveMotorModel model = ResolveDriveMotorModel(entity);
-        double passiveTargetPeakW = drivePowerLimitW + 25.0;
-        double activeTargetPeakW = entity.SuperCapEnabled
-            ? Math.Min(model.SuperCapDischargeLimitW, Math.Max(entity.ChassisBoostPowerCapW, drivePowerLimitW + 120.0))
-            : passiveTargetPeakW;
-        double targetPeakW = Math.Max(passiveTargetPeakW, activeTargetPeakW);
-        double extraHeadroomW = Math.Max(0.0, targetPeakW - drivePowerLimitW);
-        if (extraHeadroomW <= 1e-6)
+        if (!entity.SuperCapEnabled)
         {
             return 0.0;
         }
 
-        return Math.Min(Math.Min(extraHeadroomW, model.SuperCapDischargeLimitW), entity.SuperCapEnergyJ / dt);
+        return Math.Min(model.SuperCapDischargeLimitW, entity.SuperCapEnergyJ / dt);
     }
 
     private static double ResolveBufferAssistLimitW(SimulationEntity entity, double dt)
@@ -2545,7 +2832,7 @@ internal sealed class TerrainMotionService
                 24.0,
                 300.0,
                 30.0,
-                200.0,
+                300.0,
                 5.0)
             : new DriveMotorModel(
                 ResolveDriveWheelCount(entity),
@@ -2562,7 +2849,7 @@ internal sealed class TerrainMotionService
                 24.0,
                 300.0,
                 30.0,
-                200.0,
+                300.0,
                 5.0);
     }
 

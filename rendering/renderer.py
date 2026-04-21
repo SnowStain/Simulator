@@ -86,6 +86,10 @@ class Renderer(TerrainOverviewMixin, RendererSidebarMixin, RendererHudMixin, Ren
             {'id': 'red_rugged_road', 'type': 'rugged_road', 'team': 'red', 'label': '红方起伏路段'},
             {'id': 'blue_rugged_road', 'type': 'rugged_road', 'team': 'blue', 'label': '蓝方起伏路段'},
         ]
+        self.facility_options.extend([
+            {'id': 'red_energy_mechanism', 'type': 'energy_mechanism', 'team': 'red', 'label': '红方能量机关'},
+            {'id': 'blue_energy_mechanism', 'type': 'energy_mechanism', 'team': 'blue', 'label': '蓝方能量机关'},
+        ])
         self.buff_options = [
             {'id': 'buff_base_red', 'type': 'buff_base', 'team': 'red', 'label': '红方基地增益点'},
             {'id': 'buff_base_blue', 'type': 'buff_base', 'team': 'blue', 'label': '蓝方基地增益点'},
@@ -424,6 +428,54 @@ class Renderer(TerrainOverviewMixin, RendererSidebarMixin, RendererHudMixin, Ren
     def _set_region_palette(self, palette):
         self.region_palette = 'buff' if palette == 'buff' else 'facility'
         self._set_selected_region_index(self.region_option_indices.get(self.region_palette, 0))
+
+    def _facility_model_param_default(self, facility, field_name):
+        facility_type = str((facility or {}).get('type', ''))
+        defaults = {
+            'yaw_deg': 0.0,
+            'z_bottom_m': 0.0,
+            'model_scale': 1.0,
+            'height_m': 0.0,
+        }
+        if facility_type == 'base':
+            defaults.update({'height_m': 1.18})
+        elif facility_type == 'outpost':
+            defaults.update({'height_m': 1.58})
+        elif facility_type == 'energy_mechanism':
+            defaults.update({
+                'height_m': 2.30,
+                'yaw_deg': 90.0,
+                'structure_ground_clearance_m': 0.0,
+                'structure_support_offset_m': 1.03,
+                'structure_cantilever_pair_gap_m': 0.42,
+                'structure_base_length_m': 3.40,
+                'structure_base_width_m': 3.18,
+                'structure_base_top_length_m': 2.10,
+                'structure_base_top_width_m': 1.08,
+                'structure_base_top_height_m': 0.12,
+            })
+        return defaults.get(str(field_name), 0.0)
+
+    def _apply_facility_model_defaults(self, facility):
+        if not isinstance(facility, dict):
+            return facility
+        if facility.get('type') not in {'base', 'outpost', 'energy_mechanism'}:
+            return facility
+        for field_name in ('height_m', 'yaw_deg', 'z_bottom_m', 'model_scale'):
+            facility.setdefault(field_name, self._facility_model_param_default(facility, field_name))
+        if facility.get('type') == 'energy_mechanism':
+            for field_name in (
+                'structure_ground_clearance_m',
+                'structure_support_offset_m',
+                'structure_cantilever_pair_gap_m',
+                'structure_base_length_m',
+                'structure_base_width_m',
+                'structure_base_top_length_m',
+                'structure_base_top_width_m',
+                'structure_base_top_height_m',
+            ):
+                facility.setdefault(field_name, self._facility_model_param_default(facility, field_name))
+        return facility
 
     def _selected_terrain_brush_def(self):
         return self.terrain_brush
@@ -2702,6 +2754,12 @@ class Renderer(TerrainOverviewMixin, RendererSidebarMixin, RendererHudMixin, Ren
             if announce:
                 game_engine.add_log(f'地形笔刷高度已设置为 {value:.2f}m', 'system')
             return True
+        elif str(input_type).startswith('facility_param.'):
+            field_name = str(input_type).split('.', 1)[1]
+            self._record_undo_snapshot(game_engine, f'设施参数 {facility_id}.{field_name}')
+            facility = game_engine.map_manager.update_facility_property(facility_id, field_name, stored_value)
+            self.selected_terrain_id = facility_id
+            label = field_name
         else:
             facility = game_engine.map_manager.update_facility_height(facility_id, stored_value)
             self.selected_terrain_id = facility_id
@@ -3514,8 +3572,8 @@ class Renderer(TerrainOverviewMixin, RendererSidebarMixin, RendererHudMixin, Ren
     def render_drag_preview(self):
         if self.viewport is None or (not self._facility_edit_active() and not self._terrain_brush_active()):
             return
-        slope_preview_points = self._slope_preview_polygon_points() if self.terrain_shape_mode == 'slope' else []
-        if self._terrain_shape_tool_active() and self.terrain_shape_mode == 'slope' and slope_preview_points:
+        slope_preview_points = self._slope_preview_polygon_points() if self.terrain_shape_mode in {'slope', 'slope_plane'} else []
+        if self._terrain_shape_tool_active() and self.terrain_shape_mode in {'slope', 'slope_plane'} and slope_preview_points:
             preview_points = [self.world_to_screen(point[0], point[1]) for point in slope_preview_points]
             if not self._slope_direction_mode_active() and self.mouse_world is not None:
                 preview_target = self._current_terrain_target(self.mouse_world)
@@ -4313,7 +4371,7 @@ class Renderer(TerrainOverviewMixin, RendererSidebarMixin, RendererHudMixin, Ren
             self._apply_terrain_erase(game_engine, world_pos)
             return
         self._clear_terrain_selection()
-        if self.terrain_shape_mode == 'slope' and self._slope_direction_mode_active():
+        if self.terrain_shape_mode in {'slope', 'slope_plane'} and self._slope_direction_mode_active():
             slope_target = world_pos
             if self.slope_direction_start is None:
                 self.slope_direction_start = slope_target
@@ -4325,10 +4383,10 @@ class Renderer(TerrainOverviewMixin, RendererSidebarMixin, RendererHudMixin, Ren
                 self.drag_current = slope_target
                 self._commit_terrain_slope_polygon(game_engine)
             return
-        if self.terrain_shape_mode in {'polygon', 'slope', 'smooth_polygon'}:
+        if self.terrain_shape_mode in {'polygon', 'slope', 'slope_plane', 'smooth_polygon'}:
             world_pos = self._current_terrain_target(world_pos)
             if self.polygon_points and len(self.polygon_points) >= 3 and math.hypot(world_pos[0] - self.polygon_points[0][0], world_pos[1] - self.polygon_points[0][1]) <= 18:
-                if self.terrain_shape_mode == 'slope':
+                if self.terrain_shape_mode in {'slope', 'slope_plane'}:
                     self._begin_terrain_slope_direction(game_engine)
                 elif self.terrain_shape_mode == 'smooth_polygon':
                     self._commit_terrain_smooth_polygon(game_engine)
@@ -4337,7 +4395,7 @@ class Renderer(TerrainOverviewMixin, RendererSidebarMixin, RendererHudMixin, Ren
             else:
                 self.polygon_points.append(world_pos)
                 self.drag_current = world_pos
-                log_prefix = '斜坡区域' if self.terrain_shape_mode == 'slope' else ('平滑多边形' if self.terrain_shape_mode == 'smooth_polygon' else '地形多边形')
+                log_prefix = '斜面区域' if self.terrain_shape_mode == 'slope_plane' else ('斜坡区域' if self.terrain_shape_mode == 'slope' else ('平滑多边形' if self.terrain_shape_mode == 'smooth_polygon' else '地形多边形'))
                 game_engine.add_log(f'{log_prefix}已添加顶点 ({world_pos[0]}, {world_pos[1]})', 'system')
             return
         terrain_target = self._current_terrain_target(world_pos)
@@ -4350,15 +4408,15 @@ class Renderer(TerrainOverviewMixin, RendererSidebarMixin, RendererHudMixin, Ren
             self.terrain_paint_dirty = True
 
     def _handle_terrain_right_press(self, game_engine, world_pos):
-        if self.terrain_shape_mode == 'slope' and self._slope_direction_mode_active():
+        if self.terrain_shape_mode in {'slope', 'slope_plane'} and self._slope_direction_mode_active():
             self._reset_slope_state()
             self.drag_start = None
             self.drag_current = None
-            game_engine.add_log('已取消当前斜坡绘制', 'system')
+            game_engine.add_log('已取消当前斜坡/斜面绘制', 'system')
             return
-        if self.terrain_shape_mode in {'polygon', 'slope', 'smooth_polygon'} and self.polygon_points:
+        if self.terrain_shape_mode in {'polygon', 'slope', 'slope_plane', 'smooth_polygon'} and self.polygon_points:
             if len(self.polygon_points) >= 3:
-                if self.terrain_shape_mode == 'slope':
+                if self.terrain_shape_mode in {'slope', 'slope_plane'}:
                     self._begin_terrain_slope_direction(game_engine)
                 elif self.terrain_shape_mode == 'smooth_polygon':
                     self._commit_terrain_smooth_polygon(game_engine)
@@ -4496,7 +4554,7 @@ class Renderer(TerrainOverviewMixin, RendererSidebarMixin, RendererHudMixin, Ren
         mods = pygame.key.get_mods()
         if self.terrain_shape_mode == 'line' and self.drag_start is not None and mods & pygame.KMOD_SHIFT:
             return self._snap_wall_target(self.drag_start, world_pos)
-        if self.terrain_shape_mode in {'polygon', 'slope', 'smooth_polygon'} and self.polygon_points:
+        if self.terrain_shape_mode in {'polygon', 'slope', 'slope_plane', 'smooth_polygon'} and self.polygon_points:
             return self._current_polygon_target(self.polygon_points, world_pos)
         return world_pos
 
@@ -4507,7 +4565,7 @@ class Renderer(TerrainOverviewMixin, RendererSidebarMixin, RendererHudMixin, Ren
         self.slope_direction_end = None
 
     def _slope_direction_mode_active(self):
-        return self._terrain_shape_tool_active() and self.terrain_shape_mode == 'slope' and len(self.slope_region_points) >= 3
+        return self._terrain_shape_tool_active() and self.terrain_shape_mode in {'slope', 'slope_plane'} and len(self.slope_region_points) >= 3
 
     def _slope_preview_polygon_points(self):
         if self._slope_direction_mode_active():
@@ -4528,7 +4586,8 @@ class Renderer(TerrainOverviewMixin, RendererSidebarMixin, RendererHudMixin, Ren
         self.slope_direction_end = None
         self.drag_start = None
         self.drag_current = None
-        game_engine.add_log('斜坡区域已确认，请左键依次设置箭头起点和终点', 'system')
+        mode_label = '斜面' if self.terrain_shape_mode == 'slope_plane' else '斜坡'
+        game_engine.add_log(f'{mode_label}区域已确认，请左键依次设置箭头起点和终点', 'system')
 
     def _clear_terrain_selection(self):
         self.selected_terrain_cell_key = None
@@ -4660,23 +4719,36 @@ class Renderer(TerrainOverviewMixin, RendererSidebarMixin, RendererHudMixin, Ren
             game_engine.add_log('请先完成斜坡箭头方向设置', 'system')
             return
         brush = self._selected_terrain_brush_def()
-        self._record_undo_snapshot(game_engine, '斜坡')
-        result = game_engine.map_manager.paint_terrain_slope_polygon(
-            points,
-            brush['type'],
-            team=brush.get('team', 'neutral'),
-            blocks_movement=brush.get('blocks_movement'),
-            blocks_vision=brush.get('blocks_vision'),
-            direction_start=direction_start,
-            direction_end=direction_end,
-        )
+        is_plane_mode = self.terrain_shape_mode == 'slope_plane'
+        self._record_undo_snapshot(game_engine, '斜面' if is_plane_mode else '斜坡')
+        if is_plane_mode:
+            result = game_engine.map_manager.paint_terrain_plane_polygon(
+                points,
+                brush['type'],
+                team=brush.get('team', 'neutral'),
+                blocks_movement=brush.get('blocks_movement'),
+                blocks_vision=brush.get('blocks_vision'),
+                direction_start=direction_start,
+                direction_end=direction_end,
+            )
+        else:
+            result = game_engine.map_manager.paint_terrain_slope_polygon(
+                points,
+                brush['type'],
+                team=brush.get('team', 'neutral'),
+                blocks_movement=brush.get('blocks_movement'),
+                blocks_vision=brush.get('blocks_vision'),
+                direction_start=direction_start,
+                direction_end=direction_end,
+            )
         self._reset_slope_state()
         self.drag_current = None
         self.drag_start = None
         if result.get('changed'):
             self._sync_terrain_grid_config(game_engine)
+            mode_label = '斜面' if is_plane_mode else '斜坡'
             game_engine.add_log(
-                f'已按箭头方向生成斜坡，影响 {result.get("cell_count", 0)} 个格栅，高度 {result.get("min_height", 0.0):.2f}m -> {result.get("max_height", 0.0):.2f}m',
+                f'已按箭头方向生成{mode_label}，影响 {result.get("cell_count", 0)} 个格栅，高度 {result.get("min_height", 0.0):.2f}m -> {result.get("max_height", 0.0):.2f}m',
                 'system',
             )
 
@@ -4889,7 +4961,7 @@ class Renderer(TerrainOverviewMixin, RendererSidebarMixin, RendererHudMixin, Ren
                     if len(self.polygon_points) >= 3:
                         self._commit_terrain_smooth_polygon(game_engine)
                     return True
-                if self._terrain_brush_active() and self.terrain_shape_mode == 'slope':
+                if self._terrain_brush_active() and self.terrain_shape_mode in {'slope', 'slope_plane'}:
                     if self._slope_direction_mode_active():
                         self._commit_terrain_slope_polygon(game_engine)
                     elif len(self.polygon_points) >= 3:
@@ -5561,7 +5633,11 @@ class Renderer(TerrainOverviewMixin, RendererSidebarMixin, RendererHudMixin, Ren
                 facility = game_engine.map_manager.get_facility_by_id(facility_id)
                 if facility is None:
                     return
-                current_value = self._terrain_editor_display_height(facility.get('height_m', 1.0 if input_type == 'wall' else 0.0))
+                if str(input_type).startswith('facility_param.'):
+                    field_name = str(input_type).split('.', 1)[1]
+                    current_value = float(facility.get(field_name, self._facility_model_param_default(facility, field_name)))
+                else:
+                    current_value = self._terrain_editor_display_height(facility.get('height_m', 1.0 if input_type == 'wall' else 0.0))
             self._begin_numeric_input(input_type, facility_id, current_value)
             return
         if action == 'noop':
@@ -5636,6 +5712,7 @@ class Renderer(TerrainOverviewMixin, RendererSidebarMixin, RendererHudMixin, Ren
                 team=facility['team'],
                 base_id=facility['id'],
             )
+            self._apply_facility_model_defaults(region)
             self.selected_terrain_id = region['id'] if region is not None else None
         else:
             region = game_engine.map_manager.upsert_facility_region(
@@ -5647,6 +5724,7 @@ class Renderer(TerrainOverviewMixin, RendererSidebarMixin, RendererHudMixin, Ren
                 end[1],
                 team=facility['team'],
             )
+            self._apply_facility_model_defaults(region)
             self.selected_terrain_id = region['id']
         game_engine.config.setdefault('map', {})['facilities'] = game_engine.map_manager.export_facilities_config()
         game_engine.add_log(f"已更新设施: {region['id']}", 'system')
@@ -5668,6 +5746,7 @@ class Renderer(TerrainOverviewMixin, RendererSidebarMixin, RendererHudMixin, Ren
         self.drag_current = None
         if region is None:
             return
+        self._apply_facility_model_defaults(region)
         self.selected_terrain_id = region['id']
         game_engine.config.setdefault('map', {})['facilities'] = game_engine.map_manager.export_facilities_config()
         game_engine.add_log(f"已新增多边形设施: {region['id']}", 'system')

@@ -343,7 +343,7 @@ class TerrainOverviewMixin:
         )
 
     def _preview_slope_polygon_points(self):
-        if not (self._terrain_shape_tool_active() and self.terrain_shape_mode == 'slope'):
+        if not (self._terrain_shape_tool_active() and self.terrain_shape_mode in {'slope', 'slope_plane'}):
             return []
         points = self._slope_preview_polygon_points()
         if not points:
@@ -645,7 +645,7 @@ class TerrainOverviewMixin:
                 'erase': '橡皮擦',
                 'shape': '高级形状',
             }.get(getattr(self, 'terrain_workflow_mode', 'brush'), getattr(self, 'terrain_workflow_mode', 'brush'))
-            shape_label = {'circle': '圆形', 'rect': '矩形', 'polygon': '多边形', 'line': '直线', 'slope': '斜坡', 'smooth': 'Smooth', 'smooth_polygon': 'Smooth多边形'}.get(self.terrain_shape_mode, self.terrain_shape_mode)
+            shape_label = {'circle': '圆形', 'rect': '矩形', 'polygon': '多边形', 'line': '直线', 'slope': '斜坡', 'slope_plane': '斜面', 'smooth': 'Smooth', 'smooth_polygon': 'Smooth多边形'}.get(self.terrain_shape_mode, self.terrain_shape_mode)
             selected_label = f'工具 {workflow_label}  高度 {self.terrain_brush["height_m"]:.2f}m'
             if self.terrain_workflow_mode == 'shape':
                 selected_label += f'  形状 {shape_label}'
@@ -685,13 +685,15 @@ class TerrainOverviewMixin:
                 polygon_button = pygame.Rect(130, row3_y, 58, 28)
                 line_button = pygame.Rect(194, row3_y, 50, 28)
                 slope_button = pygame.Rect(250, row3_y, 58, 28)
-                smooth_button = pygame.Rect(314, row3_y, 74, 28)
-                smooth_polygon_button = pygame.Rect(394, row3_y, 102, 28)
+                slope_plane_button = pygame.Rect(314, row3_y, 58, 28)
+                smooth_button = pygame.Rect(378, row3_y, 74, 28)
+                smooth_polygon_button = pygame.Rect(458, row3_y, 102, 28)
                 self._draw_surface_button(surface, circle_button, '圆形', self.terrain_shape_mode == 'circle')
                 self._draw_surface_button(surface, rect_button, '矩形', self.terrain_shape_mode == 'rect')
                 self._draw_surface_button(surface, polygon_button, '多边形', self.terrain_shape_mode == 'polygon')
                 self._draw_surface_button(surface, line_button, '直线', self.terrain_shape_mode == 'line')
                 self._draw_surface_button(surface, slope_button, '斜坡', self.terrain_shape_mode == 'slope')
+                self._draw_surface_button(surface, slope_plane_button, '斜面', self.terrain_shape_mode == 'slope_plane')
                 self._draw_surface_button(surface, smooth_button, 'Smooth', self.terrain_shape_mode == 'smooth')
                 self._draw_surface_button(surface, smooth_polygon_button, '平滑多边形', self.terrain_shape_mode == 'smooth_polygon')
                 self.terrain_overview_ui['buttons'].extend([
@@ -700,6 +702,7 @@ class TerrainOverviewMixin:
                     (polygon_button, 'terrain_shape:polygon'),
                     (line_button, 'terrain_shape:line'),
                     (slope_button, 'terrain_shape:slope'),
+                    (slope_plane_button, 'terrain_shape:slope_plane'),
                     (smooth_button, 'terrain_shape:smooth'),
                     (smooth_polygon_button, 'terrain_shape:smooth_polygon'),
                 ])
@@ -872,7 +875,7 @@ class TerrainOverviewMixin:
             if self.mouse_world is not None:
                 if self._terrain_shape_tool_active() and self.terrain_shape_mode in {'polygon', 'smooth_polygon'}:
                     preview_world = self._current_terrain_target(self.mouse_world)
-                elif self._terrain_shape_tool_active() and self.terrain_shape_mode == 'slope' and not self._slope_direction_mode_active():
+                elif self._terrain_shape_tool_active() and self.terrain_shape_mode in {'slope', 'slope_plane'} and not self._slope_direction_mode_active():
                     preview_world = self._current_terrain_target(self.mouse_world)
                 elif self._facility_edit_active() and self.facility_draw_shape == 'polygon':
                     preview_world = self._current_facility_target(self.mouse_world)
@@ -907,8 +910,8 @@ class TerrainOverviewMixin:
                 '地形建模工具',
                 '1/2/3/4: 框选 / 刷子 / 橡皮擦 / 高级',
                 '滚轮改半径，Shift+滚轮改高度',
-                '高级模式保留圆形、矩形、多边形、直线、斜坡、平滑多边形',
-                '斜坡: 先闭合区域，再左键两次设置坡向箭头',
+                '高级模式保留圆形、矩形、多边形、直线、斜坡、斜面、平滑多边形',
+                '斜坡/斜面: 先闭合区域，再左键两次设置坡向箭头',
                 '平滑: 先框选或画平滑多边形，再在工具栏设置 0-3，最后点确定',
             ]
             for index, line in enumerate(lines):
@@ -1078,7 +1081,7 @@ class TerrainOverviewMixin:
             '地形建模工具',
             '框选: 左键拖框选择已编辑格栅',
             '刷子/橡皮擦: 左键连续涂抹；高级保留形状工具',
-            '斜坡: 先闭合区域，再左键两次设置箭头方向',
+            '斜坡/斜面: 先闭合区域，再左键两次设置箭头方向',
             '平滑: 先框选区域，再在工具栏设置 0-3，其中 0 为关闭',
         ]):
             font = self.small_font if index == 0 else self.tiny_font
@@ -1528,7 +1531,7 @@ class TerrainOverviewMixin:
                     points.append((map_rect.x + int(preview_world[0] * scale_x), map_rect.y + int(preview_world[1] * scale_y)))
                     if len(points) >= 2:
                         pygame.draw.lines(surface, self.colors['yellow'], False, points, 2)
-                elif self._terrain_shape_tool_active() and self.terrain_shape_mode == 'slope' and self._slope_preview_polygon_points():
+                elif self._terrain_shape_tool_active() and self.terrain_shape_mode in {'slope', 'slope_plane'} and self._slope_preview_polygon_points():
                     points = [(map_rect.x + int(point[0] * scale_x), map_rect.y + int(point[1] * scale_y)) for point in self._slope_preview_polygon_points()]
                     if not self._slope_direction_mode_active():
                         preview_world = self._current_terrain_target(self.mouse_world)

@@ -84,6 +84,10 @@ public sealed class SimulationEntity
 
     public double AngleDeg { get; set; }
 
+    public double ChassisPitchDeg { get; set; }
+
+    public double ChassisRollDeg { get; set; }
+
     public double TurretYawDeg { get; set; }
 
     public double GimbalPitchDeg { get; set; }

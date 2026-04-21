@@ -56,6 +56,7 @@ internal sealed class Simulator3dHost
     private readonly RuleSetLoader _ruleSetLoader;
     private readonly SimulationBootstrapService _bootstrapService;
     private readonly RuntimeGridLoader _runtimeGridLoader;
+    private readonly BepuProjectileObstacleBackend _bepuProjectileObstacleBackend = new();
     private readonly string _primaryConfigPath;
     private readonly JsonObject _config;
     private DateTime _lastDecisionConfigProbeUtc;
@@ -76,6 +77,8 @@ internal sealed class Simulator3dHost
     private string _sentryControlMode = "full_auto";
     private string _sentryStance = "attack";
     private double _autoAimAccuracyScale = 1.0;
+    private bool _solidProjectileRendering = true;
+    private string _projectilePhysicsBackend = "native";
     private string _singleUnitTestTeam = "red";
     private string _singleUnitTestEntityKey = "robot_1";
 
@@ -95,7 +98,9 @@ internal sealed class Simulator3dHost
         _decisionDeploymentConfig = DecisionDeploymentConfig.LoadFromConfig(_config);
 
         AvailableMapPresets = DiscoverMapPresets(_layout);
-        ActiveRendererMode = ResolveRendererMode(_config, options.RendererMode ?? "moderngl");
+        ActiveRendererMode = string.IsNullOrWhiteSpace(options.RendererMode)
+            ? ResolveRendererMode(_config, "gpu")
+            : Simulator3dOptions.NormalizeRendererMode(options.RendererMode);
         _matchMode = string.IsNullOrWhiteSpace(options.MatchMode)
             ? "full"
             : Simulator3dOptions.NormalizeMatchMode(options.MatchMode);
@@ -106,6 +111,8 @@ internal sealed class Simulator3dHost
         _sentryControlMode = RuleSet.NormalizeSentryControlMode(simulatorConfig["sim3d_sentry_control_mode"]?.ToString());
         _sentryStance = RuleSet.NormalizeSentryStance(simulatorConfig["sim3d_sentry_stance"]?.ToString());
         _autoAimAccuracyScale = Math.Clamp(ReadDouble(simulatorConfig["sim3d_autoaim_accuracy_scale"], 1.0), 0.05, 1.0);
+        _solidProjectileRendering = ReadBoolean(simulatorConfig["sim3d_projectile_entity_rendering"], fallback: true);
+        _projectilePhysicsBackend = NormalizeProjectilePhysicsBackend(simulatorConfig["sim3d_projectile_physics_backend"]?.ToString());
         _singleUnitTestTeam = Simulator3dOptions.NormalizeTeam(options.SingleUnitTestTeam ?? simulatorConfig["single_unit_test_team"]?.ToString());
         _singleUnitTestEntityKey = Simulator3dOptions.NormalizeSingleUnitEntityKey(options.SingleUnitTestEntityKey ?? simulatorConfig["single_unit_test_entity_key"]?.ToString());
         ActiveMapPreset = ResolvePreset(options.MapPreset);
@@ -119,8 +126,8 @@ internal sealed class Simulator3dHost
 
         _rules = _ruleSetLoader.LoadFromConfig(_config);
         _simulationService = BuildSimulationService(_rules);
-        _terrainMotionService = new TerrainMotionService(_rules, _decisionDeploymentConfig);
         MapPreset = _mapPresetService.LoadPreset(_layout, ActiveMapPreset);
+        _terrainMotionService = new TerrainMotionService(_rules, _decisionDeploymentConfig, MapPreset.Facilities);
         _appearanceCatalog = AppearanceProfileCatalog.Load(_layout.AppearancePresetPath);
         _runtimeGrid = _runtimeGridLoader.TryLoad(MapPreset, out _runtimeGridWarning);
         World = _bootstrapService.BuildInitialWorld(_config, _rules, MapPreset);
@@ -163,6 +170,10 @@ internal sealed class Simulator3dHost
     public string SentryStance => _sentryStance;
 
     public double AutoAimAccuracyScale => _autoAimAccuracyScale;
+
+    public bool SolidProjectileRendering => _solidProjectileRendering;
+
+    public string ProjectilePhysicsBackend => _projectilePhysicsBackend;
 
     public bool IsSingleUnitTestMode => string.Equals(_matchMode, "single_unit_test", StringComparison.OrdinalIgnoreCase);
 
@@ -473,6 +484,32 @@ internal sealed class Simulator3dHost
         return true;
     }
 
+    public bool SetSolidProjectileRendering(bool enabled)
+    {
+        if (_solidProjectileRendering == enabled)
+        {
+            return false;
+        }
+
+        _solidProjectileRendering = enabled;
+        PersistSimulatorSettings();
+        return true;
+    }
+
+    public bool SetProjectilePhysicsBackend(string backend)
+    {
+        string normalized = NormalizeProjectilePhysicsBackend(backend);
+        if (string.Equals(_projectilePhysicsBackend, normalized, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        _projectilePhysicsBackend = normalized;
+        _simulationService = BuildSimulationService(_rules);
+        PersistSimulatorSettings();
+        return true;
+    }
+
     public bool SetSingleUnitTestFocus(string? team = null, string? entityKey = null)
     {
         bool changed = false;
@@ -708,7 +745,7 @@ internal sealed class Simulator3dHost
     {
         JsonObject latest = _configurationService.LoadConfig(_primaryConfigPath);
         _decisionDeploymentConfig = DecisionDeploymentConfig.LoadFromConfig(latest);
-        _terrainMotionService = new TerrainMotionService(_rules, _decisionDeploymentConfig);
+        _terrainMotionService = new TerrainMotionService(_rules, _decisionDeploymentConfig, MapPreset.Facilities);
         _decisionConfigLastWriteUtc = ReadLastWriteTimeUtc(_primaryConfigPath);
         _lastDecisionConfigProbeUtc = DateTime.UtcNow;
     }
@@ -778,7 +815,7 @@ internal sealed class Simulator3dHost
         _rules = _ruleSetLoader.LoadFromConfig(_config);
         _decisionDeploymentConfig = DecisionDeploymentConfig.LoadFromConfig(_config);
         _simulationService = BuildSimulationService(_rules);
-        _terrainMotionService = new TerrainMotionService(_rules, _decisionDeploymentConfig);
+        _terrainMotionService = new TerrainMotionService(_rules, _decisionDeploymentConfig, MapPreset.Facilities);
         World = _bootstrapService.BuildInitialWorld(_config, _rules, MapPreset);
         ApplyConfiguredRoleProfilesToWorld(resetHealth: true);
         ApplyAppearanceProfilesToWorld();
@@ -800,10 +837,9 @@ internal sealed class Simulator3dHost
             enableAutoMovement: false,
             canSeeAutoAimPlate: (world, shooter, target, plate) =>
                 AutoAimVisibility.CanSeePlate(world, _runtimeGrid, shooter, target, plate),
-            resolveProjectileObstacle: (world, shooter, projectile, startX, startY, startHeightM, endX, endY, endHeightM) =>
-                ProjectileObstacleResolver.ResolveHit(
+            resolveProjectileObstacle: (world, shooter, projectile, startX, startY, startHeightM, endX, endY, endHeightM, obstacleCandidates) =>
+                ResolveProjectileObstacle(
                     world,
-                    _runtimeGrid,
                     shooter,
                     projectile,
                     startX,
@@ -811,8 +847,51 @@ internal sealed class Simulator3dHost
                     startHeightM,
                     endX,
                     endY,
-                    endHeightM),
+                    endHeightM,
+                    obstacleCandidates),
             projectileRicochetEnabled: RicochetEnabled);
+    }
+
+    private ProjectileObstacleHit? ResolveProjectileObstacle(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        SimulationProjectile projectile,
+        double startX,
+        double startY,
+        double startHeightM,
+        double endX,
+        double endY,
+        double endHeightM,
+        IReadOnlyList<SimulationEntity>? obstacleCandidates)
+    {
+        if (string.Equals(_projectilePhysicsBackend, "bepu", StringComparison.OrdinalIgnoreCase))
+        {
+            return _bepuProjectileObstacleBackend.ResolveHit(
+                world,
+                _runtimeGrid,
+                shooter,
+                projectile,
+                startX,
+                startY,
+                startHeightM,
+                endX,
+                endY,
+                endHeightM,
+                obstacleCandidates);
+        }
+
+        return ProjectileObstacleResolver.ResolveHit(
+            world,
+            _runtimeGrid,
+            shooter,
+            projectile,
+            startX,
+            startY,
+            startHeightM,
+            endX,
+            endY,
+            endHeightM,
+            obstacleCandidates);
     }
 
     private void ApplyPlayerControlState(PlayerControlState? state)
@@ -883,10 +962,7 @@ internal sealed class Simulator3dHost
             }
         }
 
-        if (state.SuperCapToggleRequested)
-        {
-            entityToControl.SuperCapEnabled = !entityToControl.SuperCapEnabled;
-        }
+        entityToControl.SuperCapEnabled = state.SuperCapActive;
 
         if (state.SentryStanceToggleRequested
             && string.Equals(entityToControl.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase))
@@ -1171,6 +1247,8 @@ internal sealed class Simulator3dHost
         simulator["sim3d_sentry_control_mode"] = _sentryControlMode;
         simulator["sim3d_sentry_stance"] = _sentryStance;
         simulator["sim3d_autoaim_accuracy_scale"] = _autoAimAccuracyScale;
+        simulator["sim3d_projectile_entity_rendering"] = _solidProjectileRendering;
+        simulator["sim3d_projectile_physics_backend"] = _projectilePhysicsBackend;
         simulator["single_unit_test_team"] = _singleUnitTestTeam;
         simulator["single_unit_test_entity_key"] = _singleUnitTestEntityKey;
         simulator["sim3d_selected_team"] = SelectedTeam;
@@ -1200,6 +1278,8 @@ internal sealed class Simulator3dHost
             currentSimulator["sim3d_sentry_control_mode"] = _sentryControlMode;
             currentSimulator["sim3d_sentry_stance"] = _sentryStance;
             currentSimulator["sim3d_autoaim_accuracy_scale"] = _autoAimAccuracyScale;
+            currentSimulator["sim3d_projectile_entity_rendering"] = _solidProjectileRendering;
+            currentSimulator["sim3d_projectile_physics_backend"] = _projectilePhysicsBackend;
             currentSimulator["single_unit_test_team"] = _singleUnitTestTeam;
             currentSimulator["single_unit_test_entity_key"] = _singleUnitTestEntityKey;
             currentSimulator["sim3d_selected_team"] = SelectedTeam;
@@ -1229,7 +1309,7 @@ internal sealed class Simulator3dHost
 
         JsonObject latest = _configurationService.LoadConfig(_primaryConfigPath);
         _decisionDeploymentConfig = DecisionDeploymentConfig.LoadFromConfig(latest);
-        _terrainMotionService = new TerrainMotionService(_rules, _decisionDeploymentConfig);
+        _terrainMotionService = new TerrainMotionService(_rules, _decisionDeploymentConfig, MapPreset.Facilities);
         _decisionConfigLastWriteUtc = latestWriteUtc;
     }
 
@@ -1313,6 +1393,7 @@ internal sealed class Simulator3dHost
     {
         return Simulator3dOptions.NormalizeRendererMode(mode) switch
         {
+            "gpu" => "wgl_opengl",
             "opengl" => "editor_opengl",
             "native_cpp" => "native_cpp",
             _ => "pyglet_moderngl",
@@ -1460,5 +1541,10 @@ internal sealed class Simulator3dHost
             "balance" or "balance_legged" => "balance",
             _ => "full",
         };
+    }
+
+    private static string NormalizeProjectilePhysicsBackend(string? backend)
+    {
+        return string.Equals(backend, "bepu", StringComparison.OrdinalIgnoreCase) ? "bepu" : "native";
     }
 }

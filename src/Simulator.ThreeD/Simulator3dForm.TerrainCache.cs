@@ -446,7 +446,7 @@ internal sealed partial class Simulator3dForm
         }
 
         float verticalRange = Math.Clamp((topHeight - bottomHeight) / 0.60f, 0f, 1f);
-        return BlendColor(Color.FromArgb(72, 76, 82), Color.White, 0.06f * verticalRange);
+        return BlendColor(Color.FromArgb(56, 60, 66), Color.FromArgb(92, 96, 104), 0.08f * verticalRange);
     }
 
     private bool UsesOrthographicPngTopSurface()
@@ -463,7 +463,7 @@ internal sealed partial class Simulator3dForm
     {
         return TerrainSurfaceMapSupport.ResolveTerrainWallSolidColor(
             _host.MapPreset.TerrainSurface,
-            Color.FromArgb(75, 79, 85));
+            Color.FromArgb(58, 62, 68));
     }
 
     private float ResolveNeighborHeight(TerrainTileSeed[,] seeds, int row, int column, TerrainWallEdge edge)
@@ -713,5 +713,94 @@ internal sealed partial class Simulator3dForm
 
         smoothedHeight = sum / samples.Count;
         return true;
+    }
+
+    private void AppendTerrainFacetFaces(
+        List<TerrainFacePatch> target,
+        float minXWorld = float.NegativeInfinity,
+        float maxXWorld = float.PositiveInfinity,
+        float minYWorld = float.NegativeInfinity,
+        float maxYWorld = float.PositiveInfinity)
+    {
+        if (_cachedRuntimeGrid is null || _cachedRuntimeGrid.Facets.Count == 0)
+        {
+            return;
+        }
+
+        foreach (TerrainFacetRuntime facet in _cachedRuntimeGrid.Facets)
+        {
+            if (facet.MaxX < minXWorld || facet.MinX > maxXWorld || facet.MaxY < minYWorld || facet.MinY > maxYWorld)
+            {
+                continue;
+            }
+
+            AddTerrainFacetPatch(facet, target);
+        }
+    }
+
+    private void AddTerrainFacetPatch(TerrainFacetRuntime facet, List<TerrainFacePatch> target)
+    {
+        if (facet.PointsWorld.Count < 3 || facet.HeightsM.Count < 3)
+        {
+            return;
+        }
+
+        Color topColor = facet.TopColor;
+        Color sideColor = facet.SideColor;
+        float minX = facet.MinX;
+        float maxX = facet.MaxX;
+        float minY = facet.MinY;
+        float maxY = facet.MaxY;
+
+        Vector2 anchor2 = facet.PointsWorld[0];
+        float anchorHeight = facet.HeightsM[0];
+        Vector3 anchor3 = ToScenePoint(anchor2.X, anchor2.Y, anchorHeight);
+        for (int index = 1; index < facet.PointsWorld.Count - 1; index++)
+        {
+            Vector2 b2 = facet.PointsWorld[index];
+            Vector2 c2 = facet.PointsWorld[index + 1];
+            float hb = index < facet.HeightsM.Count ? facet.HeightsM[index] : facet.HeightsM[^1];
+            float hc = index + 1 < facet.HeightsM.Count ? facet.HeightsM[index + 1] : facet.HeightsM[^1];
+            AddTerrainFacePatch(
+                new[]
+                {
+                    anchor3,
+                    ToScenePoint(b2.X, b2.Y, hb),
+                    ToScenePoint(c2.X, c2.Y, hc),
+                },
+                minX,
+                minY,
+                maxX,
+                maxY,
+                topColor,
+                BlendColor(topColor, Color.Black, 0.24f),
+                target);
+        }
+
+        for (int index = 0; index < facet.PointsWorld.Count; index++)
+        {
+            int next = (index + 1) % facet.PointsWorld.Count;
+            Vector2 a2 = facet.PointsWorld[index];
+            Vector2 b2 = facet.PointsWorld[next];
+            float ha = index < facet.HeightsM.Count ? facet.HeightsM[index] : facet.HeightsM[^1];
+            float hb = next < facet.HeightsM.Count ? facet.HeightsM[next] : facet.HeightsM[^1];
+            if (Math.Max(ha, hb) <= 0.02f)
+            {
+                continue;
+            }
+
+            AddTerrainQuadAsTriangles(
+                ToScenePoint(a2.X, a2.Y, 0f),
+                ToScenePoint(b2.X, b2.Y, 0f),
+                ToScenePoint(b2.X, b2.Y, hb),
+                ToScenePoint(a2.X, a2.Y, ha),
+                minX,
+                minY,
+                maxX,
+                maxY,
+                sideColor,
+                BlendColor(sideColor, Color.Black, 0.32f),
+                target);
+        }
     }
 }

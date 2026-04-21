@@ -693,7 +693,7 @@ class RendererSidebarMixin:
 
     def render_terrain_panel(self, game_engine, rect, selected_facility):
         pygame.draw.rect(self.screen, self.colors['panel_row'], rect, border_radius=6)
-        height_editable_types = {'base', 'outpost', 'fly_slope', 'undulating_road', 'rugged_road', 'first_step', 'second_step', 'dog_hole', 'supply', 'fort'}
+        height_editable_types = {'base', 'outpost', 'energy_mechanism', 'fly_slope', 'undulating_road', 'rugged_road', 'first_step', 'second_step', 'dog_hole', 'supply', 'fort'}
         show_height_editor = selected_facility.get('type') in height_editable_types
         title = self.small_font.render('区域详情' if not show_height_editor else '地形高度', True, self.colors['panel_text'])
         self.screen.blit(title, (rect.x + 8, rect.y + 8))
@@ -763,7 +763,36 @@ class RendererSidebarMixin:
             team_text = self.tiny_font.render(f"队伍: {region.get('team', 'neutral')}", True, self.colors['panel_text'])
             self.screen.blit(team_text, (rect.x + 8, details_y + 22))
 
-        delete_rect = pygame.Rect(rect.right - 116, delete_y, 104, 24)
+        model_param_y = delete_y
+        if region.get('type') in {'base', 'outpost', 'energy_mechanism'}:
+            model_param_y = delete_y + 28
+            model_specs = [
+                ('yaw_deg', '朝向角', -180.0, 180.0),
+                ('z_bottom_m', '离地', 0.0, 5.0),
+                ('model_scale', '模型缩放', 0.1, 5.0),
+            ]
+            if region.get('type') == 'energy_mechanism':
+                model_specs.extend([
+                    ('structure_base_length_m', '底座长', 0.2, 8.0),
+                    ('structure_base_width_m', '底座宽', 0.2, 8.0),
+                    ('structure_support_offset_m', '支架距中心', 0.05, 4.0),
+                    ('structure_cantilever_pair_gap_m', '双臂间距', 0.05, 5.0),
+                ])
+            for field_name, label_text, _min_value, _max_value in model_specs:
+                if model_param_y + 22 > rect.bottom - 34:
+                    break
+                value = float(region.get(field_name, self._facility_model_param_default(region, field_name)))
+                label = self.tiny_font.render(f'{label_text}: {value:.2f}', True, self.colors['panel_text'])
+                self.screen.blit(label, (rect.x + 8, model_param_y + 4))
+                input_rect = pygame.Rect(rect.right - 90, model_param_y, 76, 22)
+                input_type = f'facility_param.{field_name}'
+                active = self._is_numeric_input_active(input_type, region['id'])
+                input_text = self.active_numeric_input['text'] if active and self.active_numeric_input is not None else f'{value:.2f}'
+                self._draw_input_box(input_rect, input_text, active)
+                self.panel_actions.append((input_rect, f'height_input:{input_type}:{region["id"]}'))
+                model_param_y += 24
+
+        delete_rect = pygame.Rect(rect.right - 116, min(model_param_y, rect.bottom - 28), 104, 24)
         pygame.draw.rect(self.screen, self.colors['red'], delete_rect, border_radius=5)
         delete_text = self.tiny_font.render('删除该区域', True, self.colors['white'])
         self.screen.blit(delete_text, delete_text.get_rect(center=delete_rect.center))
