@@ -471,6 +471,7 @@ class TerrainEditorRenderer(Renderer):
         pygame.display.set_caption('RoboMaster 地图编辑器')
         self.edit_mode = 'terrain'
         self.terrain_editor_tool = 'terrain'
+        self.show_facilities = True
         self.terrain_overview_window_open = True
         self.terrain_overview_embedded = True
         self.active_text_input = None

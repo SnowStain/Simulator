@@ -140,6 +140,36 @@ internal sealed partial class Simulator3dForm : Form
         public float AgeSec { get; set; }
     }
 
+    private sealed class CenterBuffToast
+    {
+        public CenterBuffToast(string title, string detail, Color color, float lifetimeSec = 3.0f)
+        {
+            Title = title;
+            Detail = detail;
+            Color = color;
+            LifetimeSec = Math.Max(0.5f, lifetimeSec);
+        }
+
+        public string Title { get; }
+
+        public string Detail { get; }
+
+        public Color Color { get; }
+
+        public float LifetimeSec { get; }
+
+        public float AgeSec { get; set; }
+    }
+
+    private readonly record struct BuffProgressEntry(
+        string Key,
+        string Name,
+        string Effect,
+        double RemainingSec,
+        double DurationSec,
+        Color Color,
+        bool Timed);
+
     private const int MaxSimulationCatchUpSteps = 8;
 
     private readonly Simulator3dHost _host;
@@ -210,6 +240,9 @@ internal sealed partial class Simulator3dForm : Form
     private readonly Dictionary<int, Pen> _projectedFacePenCache = new();
     private readonly List<FloatingCombatMarker> _combatMarkers = new();
     private readonly List<MatchEventFeedItem> _matchEventFeed = new();
+    private readonly List<CenterBuffToast> _centerBuffToasts = new();
+    private readonly Dictionary<string, double> _selectedBuffSnapshot = new(StringComparer.OrdinalIgnoreCase);
+    private string? _selectedBuffSnapshotEntityId;
     private DriveTelemetryForm? _driveTelemetryForm;
     private Bitmap? _cachedTerrainLayerBitmap;
     private Bitmap? _cachedStaticStructureLayerBitmap;
@@ -265,6 +298,10 @@ internal sealed partial class Simulator3dForm : Form
     private bool _collectProjectedFacesOnly;
     private bool? _gpuControlStylesActive;
     private bool _gpuGeometryPass;
+    private readonly bool _previewOnly;
+    private readonly string? _previewStructure;
+    private readonly string? _previewTeam;
+    private string? _previewFocusEntityId;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct NativeMessage
@@ -283,6 +320,9 @@ internal sealed partial class Simulator3dForm : Form
     public Simulator3dForm(Simulator3dOptions options)
     {
         _host = new Simulator3dHost(options);
+        _previewOnly = options.PreviewOnly;
+        _previewStructure = Simulator3dOptions.NormalizePreviewStructure(options.PreviewStructure);
+        _previewTeam = Simulator3dOptions.NormalizePreviewTeam(options.PreviewTeam);
 
         Text = "RM26 C# 3D Simulator";
         StartPosition = FormStartPosition.CenterScreen;
@@ -304,6 +344,10 @@ internal sealed partial class Simulator3dForm : Form
         ApplyRendererControlStyles();
 
         ResetCameraForMap();
+        if (_previewOnly)
+        {
+            ConfigurePreviewMode();
+        }
 
         _timer = new System.Windows.Forms.Timer
         {
@@ -426,12 +470,21 @@ internal sealed partial class Simulator3dForm : Form
         DrawFloor(graphics);
         DrawFacilities(graphics);
         DrawEntities(graphics);
-        DrawProjectiles(graphics);
-        DrawCombatMarkers(graphics);
+        if (!_previewOnly)
+        {
+            DrawProjectiles(graphics);
+            DrawCombatMarkers(graphics);
+        }
     }
 
     private void DrawInMatchOverlay(Graphics graphics)
     {
+        if (_previewOnly)
+        {
+            DrawPreviewOnlyOverlay(graphics);
+            return;
+        }
+
         DrawWeaponLockOverlay(graphics);
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
         DrawCrosshair(graphics);
@@ -440,6 +493,8 @@ internal sealed partial class Simulator3dForm : Form
         DrawMatchToolbar(graphics);
         DrawHud(graphics);
         DrawPlayerStatusPanelV2(graphics);
+        DrawBuffProgressOverlay(graphics);
+        DrawCenterBuffToasts(graphics);
         DrawKeyGuideOverlay(graphics);
         DrawOrientationWidget(graphics);
         DrawTacticalOverlay(graphics);
@@ -474,6 +529,10 @@ internal sealed partial class Simulator3dForm : Form
         else
         {
             _simulationAccumulatorSec = 0.0;
+            if (_previewOnly)
+            {
+                _host.World.GameTimeSec += secondsSincePresent;
+            }
         }
 
         _lastPresentedFrameTicks = presentNowTicks;
@@ -545,12 +604,14 @@ internal sealed partial class Simulator3dForm : Form
         {
             _host.Step(simulatedSteps == 0 ? firstState : repeatedState);
             CaptureCombatMarkersFromLatestReport();
+            UpdateSelectedBuffNotifications();
             _simulationAccumulatorSec -= fixedDt;
             simulatedSteps++;
         }
 
         AdvanceCombatMarkers((float)elapsedSec);
         AdvanceMatchEventFeed((float)elapsedSec);
+        AdvanceBuffToasts((float)elapsedSec);
     }
 
     private void OnMouseDownInternal(object? sender, MouseEventArgs eventArgs)
@@ -943,7 +1004,8 @@ internal sealed partial class Simulator3dForm : Form
         graphics.DrawString(title, _menuTitleFont, Brushes.White, (ClientSize.Width - titleSize.Width) * 0.5f, 68f);
         graphics.DrawString(subtitle, _menuSubtitleFont, Brushes.Gainsboro, (ClientSize.Width - 250) * 0.5f, 118f);
 
-        Rectangle panel = new((ClientSize.Width - 620) / 2, 190, 620, 280);
+        int panelWidth = Math.Clamp(ClientSize.Width - 86, 620, 760);
+        Rectangle panel = new((ClientSize.Width - panelWidth) / 2, 170, panelWidth, 340);
         DrawPanel(graphics, panel);
 
         graphics.DrawString("Map Preset", _menuSubtitleFont, Brushes.Gainsboro, panel.X + 32, panel.Y + 30);
@@ -961,20 +1023,18 @@ internal sealed partial class Simulator3dForm : Form
         StringFormat centered = new() { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
         graphics.DrawString(_host.ActiveMapPreset, _menuSubtitleFont, Brushes.WhiteSmoke, mapLabel, centered);
 
-        string[] lines =
+        RectangleF helpRect = new(panel.X + 32, panel.Y + 130, panel.Width - 64, 72);
+        using (var helpBrush = new SolidBrush(Color.FromArgb(214, 222, 230)))
         {
-            "C# editors are now the default path for map / unit editing and runtime preview.",
-            "In match: D1 GPU OpenGL, D2 editor OpenGL, D3 ModernGL label, D4 fast fallback.",
-        };
-        float textY = panel.Y + 136;
-        foreach (string line in lines)
-        {
-            graphics.DrawString(line, _menuSubtitleFont, Brushes.LightGray, panel.X + 32, textY);
-            textY += 24;
+            graphics.DrawString(
+                "C# editors are the default path for map/unit editing and runtime preview.\nIn match: D1 GPU OpenGL, D2 editor OpenGL, D3 ModernGL label, D4 fast fallback.",
+                _smallHudFont,
+                helpBrush,
+                helpRect);
         }
 
-        Rectangle terrainEditor = new(panel.X + 32, panel.Bottom - 112, 176, 34);
-        Rectangle appearanceEditor = new(panel.X + 220, panel.Bottom - 112, 176, 34);
+        Rectangle terrainEditor = new(panel.X + 32, panel.Bottom - 120, 176, 34);
+        Rectangle appearanceEditor = new(panel.X + 220, panel.Bottom - 120, 176, 34);
         Rectangle openLobby = new(panel.X + 32, panel.Bottom - 62, panel.Width - 64, 42);
         DrawButton(graphics, terrainEditor, "Map Editor", "menu_open_terrain_editor", false, Color.FromArgb(80, 136, 198));
         DrawButton(graphics, appearanceEditor, "Unit Editor", "menu_open_appearance_editor", false, Color.FromArgb(108, 120, 204));
@@ -1607,6 +1667,7 @@ internal sealed partial class Simulator3dForm : Form
         graphics.DrawLine(crossPen, x, y - 12, x, y - 4);
         graphics.DrawLine(crossPen, x, y + 4, x, y + 12);
         graphics.FillEllipse(Brushes.WhiteSmoke, x - 1.5f, y - 1.5f, 3f, 3f);
+        DrawTrackedArmorPlateHighlight(graphics);
         DrawAutoAimGuidanceMarker(graphics);
     }
 
@@ -1710,6 +1771,66 @@ internal sealed partial class Simulator3dForm : Form
         graphics.DrawLine(guidePen, point.X, point.Y + 7f, point.X, point.Y + 18f);
         using var brush = new SolidBrush(Color.FromArgb(240, 255, 228, 90));
         graphics.DrawString($"PRE {entity.AutoAimAccuracy:P0}", _tinyHudFont, brush, point.X + 16f, point.Y - 10f);
+    }
+
+    private void DrawTrackedArmorPlateHighlight(Graphics graphics)
+    {
+        if (!_firstPersonView || _paused)
+        {
+            return;
+        }
+
+        SimulationEntity? shooter = _host.SelectedEntity;
+        if (shooter is null
+            || !shooter.AutoAimLocked
+            || string.IsNullOrWhiteSpace(shooter.AutoAimTargetId)
+            || string.IsNullOrWhiteSpace(shooter.AutoAimPlateId))
+        {
+            return;
+        }
+
+        SimulationEntity? target = _host.World.Entities.FirstOrDefault(candidate =>
+            string.Equals(candidate.Id, shooter.AutoAimTargetId, StringComparison.OrdinalIgnoreCase));
+        if (target is null)
+        {
+            return;
+        }
+
+        if (!TryResolveVisualArmorPlatePose(target, shooter.AutoAimPlateId, out VisualArmorPlatePose visualPlate))
+        {
+            return;
+        }
+
+        Vector3 p1 = visualPlate.Center + visualPlate.Right * visualPlate.HalfSide + visualPlate.Up * visualPlate.HalfSide;
+        Vector3 p2 = visualPlate.Center - visualPlate.Right * visualPlate.HalfSide + visualPlate.Up * visualPlate.HalfSide;
+        Vector3 p3 = visualPlate.Center - visualPlate.Right * visualPlate.HalfSide - visualPlate.Up * visualPlate.HalfSide;
+        Vector3 p4 = visualPlate.Center + visualPlate.Right * visualPlate.HalfSide - visualPlate.Up * visualPlate.HalfSide;
+        if (!TryProject(p1, out PointF s1, out _)
+            || !TryProject(p2, out PointF s2, out _)
+            || !TryProject(p3, out PointF s3, out _)
+            || !TryProject(p4, out PointF s4, out _))
+        {
+            return;
+        }
+
+        PointF[] polygon = { s1, s2, s3, s4 };
+        using var glowBrush = new SolidBrush(Color.FromArgb(40, 255, 224, 96));
+        using var glowPen = new Pen(Color.FromArgb(210, 255, 216, 92), 3.2f) { LineJoin = System.Drawing.Drawing2D.LineJoin.Round };
+        using var outlinePen = new Pen(Color.FromArgb(255, 255, 245, 196), 1.3f) { DashStyle = DashStyle.Dash, LineJoin = System.Drawing.Drawing2D.LineJoin.Round };
+        graphics.FillPolygon(glowBrush, polygon);
+        graphics.DrawPolygon(glowPen, polygon);
+        graphics.DrawPolygon(outlinePen, polygon);
+
+        PointF label = new(
+            (s1.X + s2.X + s3.X + s4.X) * 0.25f,
+            Math.Min(Math.Min(s1.Y, s2.Y), Math.Min(s3.Y, s4.Y)) - 16f);
+        using var shadowBrush = new SolidBrush(Color.FromArgb(180, 0, 0, 0));
+        using var textBrush = new SolidBrush(Color.FromArgb(255, 255, 236, 150));
+        string direction = string.IsNullOrWhiteSpace(shooter.AutoAimPlateDirection)
+            ? visualPlate.Label
+            : shooter.AutoAimPlateDirection;
+        graphics.DrawString($"\u9501\u5b9a {direction}", _tinyHudFont, shadowBrush, label.X + 1f, label.Y + 1f);
+        graphics.DrawString($"\u9501\u5b9a {direction}", _tinyHudFont, textBrush, label);
     }
 
     private void DrawPlayerStatusPanel(Graphics graphics)
@@ -2925,10 +3046,13 @@ internal sealed partial class Simulator3dForm : Form
 
         float focusHeight = (float)Math.Max(0.0, selected.GroundHeightM + selected.AirborneHeightM + 0.55);
         _cameraTargetM = ToScenePoint(selected.X, selected.Y, focusHeight);
-        _cameraYawRad = ResolveEntityYaw(selected) + MathF.PI;
+        _cameraYawRad = ResolveThirdPersonCameraYaw(selected);
         _cameraPitchRad = 0.38f;
         _cameraDistanceM = 9.5f;
     }
+
+    private static float ResolveThirdPersonCameraYaw(SimulationEntity selected)
+        => ResolveEntityYaw(selected) + MathF.PI;
 
     private Vector3 ComputeMapCenterMeters()
     {
@@ -2981,6 +3105,10 @@ internal sealed partial class Simulator3dForm : Form
 
                 float chaseDistance = Math.Clamp(8.5f + (float)Math.Max(selected.GroundHeightM, 0.0) * 0.22f, 6.0f, 14.0f);
                 _cameraDistanceM = MathHelperLerp(_cameraDistanceM, chaseDistance, 0.06f);
+                if (!_mouseCaptureActive)
+                {
+                    _cameraYawRad = SmoothAngleRadians(_cameraYawRad, ResolveThirdPersonCameraYaw(selected), 0.12f);
+                }
             }
         }
 
@@ -3216,6 +3344,11 @@ internal sealed partial class Simulator3dForm : Form
         bool energyMechanismDrawn = false;
         foreach (FacilityRegion region in _host.MapPreset.Facilities.OrderByDescending(FacilitySortDepth))
         {
+            if (!ShouldRenderFacility(region))
+            {
+                continue;
+            }
+
             bool energyMechanism = string.Equals(region.Type, "energy_mechanism", StringComparison.OrdinalIgnoreCase);
             if (!_showDebugSidebars && !energyMechanism)
             {
@@ -3235,8 +3368,15 @@ internal sealed partial class Simulator3dForm : Form
                     continue;
                 }
 
-                DrawEnergyMechanismModel(graphics, region);
                 energyMechanismDrawn = true;
+                if (TryResolveEnergyMechanismRenderCenter(out FacilityRegion representative, out double energyCenterX, out double energyCenterY))
+                {
+                    DrawEnergyMechanismModel(graphics, representative, energyCenterX, energyCenterY);
+                }
+                else
+                {
+                    DrawEnergyMechanismModel(graphics, region);
+                }
                 continue;
             }
 
@@ -3285,14 +3425,22 @@ internal sealed partial class Simulator3dForm : Form
         _projectedEntityFaceBuffer.Clear();
         foreach (SimulationEntity entity in _host.World.Entities)
         {
+            if (!ShouldRenderEntity(entity))
+            {
+                continue;
+            }
+
             _entityDrawBuffer.Add(entity);
         }
 
-        _entityDrawBuffer.Sort((left, right) =>
-            Vector3.DistanceSquared(ToScenePoint(right.X, right.Y, 0), _cameraPositionM)
-                .CompareTo(Vector3.DistanceSquared(ToScenePoint(left.X, left.Y, 0), _cameraPositionM)));
-
         bool gpuGeometryOnly = _gpuGeometryPass && UseGpuRenderer;
+        if (!gpuGeometryOnly)
+        {
+            _entityDrawBuffer.Sort((left, right) =>
+                Vector3.DistanceSquared(ToScenePoint(right.X, right.Y, 0), _cameraPositionM)
+                    .CompareTo(Vector3.DistanceSquared(ToScenePoint(left.X, left.Y, 0), _cameraPositionM)));
+        }
+
         _collectProjectedFacesOnly = !gpuGeometryOnly;
         foreach (SimulationEntity entity in _entityDrawBuffer)
         {
@@ -3329,6 +3477,15 @@ internal sealed partial class Simulator3dForm : Form
                     DrawEntityCollisionBox(graphics, entity, center, profile);
                 }
             }
+            else if (entity.EntityType.Equals("energy_mechanism", StringComparison.OrdinalIgnoreCase))
+            {
+                height = Math.Max(
+                    1.0f,
+                    profile.StructureGroundClearanceM
+                    + profile.StructureBaseHeightM
+                    + profile.StructureFrameHeightM
+                    + profile.StructureRotorRadiusM);
+            }
             else
             {
                 height = ShouldUseSimplifiedEntityRender(entity, distanceM)
@@ -3349,6 +3506,11 @@ internal sealed partial class Simulator3dForm : Form
 
     private void DrawEntityOverlayBars(Graphics graphics)
     {
+        if (_previewOnly)
+        {
+            return;
+        }
+
         foreach (EntityRenderOverlay overlay in _entityOverlayBuffer)
         {
             if (IsAnyKeyHeld(Keys.F3))
@@ -3380,6 +3542,203 @@ internal sealed partial class Simulator3dForm : Form
         return false;
     }
 
+    private void ConfigurePreviewMode()
+    {
+        _appState = SimulatorAppState.InMatch;
+        _paused = true;
+        _showDebugSidebars = true;
+        _showProjectileTrails = false;
+        _followSelection = false;
+        _firstPersonView = false;
+        _tacticalMode = false;
+        _previewFocusEntityId = ResolvePreviewFocusEntityId();
+        SnapCameraToPreviewFocus();
+    }
+
+    private string? ResolvePreviewFocusEntityId()
+    {
+        if (string.IsNullOrWhiteSpace(_previewStructure))
+        {
+            return null;
+        }
+
+        IEnumerable<SimulationEntity> candidates = _host.World.Entities.Where(entity =>
+            string.Equals(entity.EntityType, _previewStructure, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(_previewTeam))
+        {
+            candidates = candidates.Where(entity => string.Equals(entity.Team, _previewTeam, StringComparison.OrdinalIgnoreCase));
+        }
+
+        return candidates
+            .OrderBy(entity => entity.Team, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(entity => entity.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(entity => entity.Id)
+            .FirstOrDefault();
+    }
+
+    private bool ShouldRenderFacility(FacilityRegion region)
+    {
+        if (!_previewOnly)
+        {
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(_previewStructure))
+        {
+            return false;
+        }
+
+        return string.Equals(region.Type, _previewStructure, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool ShouldRenderEntity(SimulationEntity entity)
+    {
+        if (!_previewOnly)
+        {
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(_previewStructure))
+        {
+            return false;
+        }
+
+        if (!string.Equals(entity.EntityType, _previewStructure, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_previewFocusEntityId))
+        {
+            return string.Equals(entity.Id, _previewFocusEntityId, StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (!string.IsNullOrWhiteSpace(_previewTeam))
+        {
+            return string.Equals(entity.Team, _previewTeam, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return true;
+    }
+
+    private void SnapCameraToPreviewFocus()
+    {
+        Vector3 target = ComputeMapCenterMeters();
+        float extent = 8.0f;
+
+        if (string.Equals(_previewStructure, "energy_mechanism", StringComparison.OrdinalIgnoreCase)
+            && TryResolveEnergyMechanismRenderCenter(out FacilityRegion energyRegion, out double energyCenterX, out double energyCenterY))
+        {
+            RobotAppearanceProfile profile = _host.AppearanceCatalog.ResolveFacilityProfile(energyRegion);
+            float focusHeight = (float)Math.Max(
+                profile.StructureGroundClearanceM + profile.StructureBaseHeightM + profile.StructureFrameHeightM * 0.45f,
+                1.4);
+            target = ToScenePoint(energyCenterX, energyCenterY, focusHeight);
+            extent = Math.Max(
+                5.5f,
+                Math.Max(profile.StructureBaseLengthM, profile.StructureBaseWidthM) * 1.55f);
+        }
+        else
+        {
+            SimulationEntity? focus = !string.IsNullOrWhiteSpace(_previewFocusEntityId)
+                ? _host.World.Entities.FirstOrDefault(entity => string.Equals(entity.Id, _previewFocusEntityId, StringComparison.OrdinalIgnoreCase))
+                : null;
+            if (focus is not null)
+            {
+                RobotAppearanceProfile profile = _host.ResolveAppearanceProfile(focus);
+                float focusHeight = (float)Math.Max(
+                    profile.BodyHeightM + profile.StructureTopArmorCenterHeightM + profile.StructureFrameHeightM,
+                    1.4);
+                target = ToScenePoint(focus.X, focus.Y, focusHeight * 0.32f);
+                extent = Math.Max(
+                    4.0f,
+                    (float)Math.Max(
+                        profile.StructureBaseLengthM,
+                        Math.Max(profile.StructureBaseWidthM, Math.Max(profile.BodyLengthM, profile.BodyWidthM))) * 2.1f);
+            }
+        }
+
+        _cameraTargetM = target;
+        _cameraYawRad = -MathF.PI * 0.52f;
+        _cameraPitchRad = 1.04f;
+        _cameraDistanceM = Math.Clamp(extent, 5.5f, 28f);
+    }
+
+    private bool TryResolveEnergyMechanismRenderCenter(out FacilityRegion representative, out double centerWorldX, out double centerWorldY)
+    {
+        representative = default;
+        centerWorldX = 0.0;
+        centerWorldY = 0.0;
+        FacilityRegion[] energyRegions = _host.MapPreset.Facilities
+            .Where(region => string.Equals(region.Type, "energy_mechanism", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (energyRegions.Length == 0)
+        {
+            return false;
+        }
+
+        representative = energyRegions[0];
+        double sumX = 0.0;
+        double sumY = 0.0;
+        foreach (FacilityRegion region in energyRegions)
+        {
+            (double regionCenterX, double regionCenterY) = ResolveFacilityRegionCenter(region);
+            sumX += regionCenterX;
+            sumY += regionCenterY;
+        }
+
+        centerWorldX = sumX / energyRegions.Length;
+        centerWorldY = sumY / energyRegions.Length;
+        return true;
+    }
+
+    private static (double X, double Y) ResolveFacilityRegionCenter(FacilityRegion region)
+    {
+        if (region.Points.Count > 0)
+        {
+            double sumX = 0.0;
+            double sumY = 0.0;
+            foreach (Point2D point in region.Points)
+            {
+                sumX += point.X;
+                sumY += point.Y;
+            }
+
+            return (sumX / region.Points.Count, sumY / region.Points.Count);
+        }
+
+        return ((region.X1 + region.X2) * 0.5, (region.Y1 + region.Y2) * 0.5);
+    }
+
+    private void DrawPreviewOnlyOverlay(Graphics graphics)
+    {
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        string title = _previewStructure switch
+        {
+            "base" => "局内预览：基地",
+            "outpost" => "局内预览：前哨站",
+            "energy_mechanism" => "局内预览：能量机关",
+            _ => "局内预览",
+        };
+        string teamLabel = _previewTeam switch
+        {
+            "red" => "红方",
+            "blue" => "蓝方",
+            "neutral" => "中立",
+            _ => "默认队伍",
+        };
+
+        Rectangle panel = new(18, 18, 320, 72);
+        using SolidBrush background = new(Color.FromArgb(168, 12, 18, 24));
+        using Pen border = new(Color.FromArgb(220, 84, 100, 118));
+        using SolidBrush textBrush = new(Color.WhiteSmoke);
+        using SolidBrush subBrush = new(Color.FromArgb(220, 182, 192, 204));
+        graphics.FillRectangle(background, panel);
+        graphics.DrawRectangle(border, panel);
+        graphics.DrawString(title, _hudMidFont, textBrush, panel.X + 14, panel.Y + 12);
+        graphics.DrawString($"真实 C# 对局模型预览 | {teamLabel} | 鼠标滚轮缩放，右键拖动旋转", _tinyHudFont, subBrush, panel.X + 14, panel.Y + 40);
+    }
+
     private void DrawStaticStructureBodies(Graphics graphics)
     {
         _entityDrawBuffer.Clear();
@@ -3388,6 +3747,11 @@ internal sealed partial class Simulator3dForm : Form
             if (entity.EntityType.Equals("outpost", StringComparison.OrdinalIgnoreCase)
                 || entity.EntityType.Equals("base", StringComparison.OrdinalIgnoreCase))
             {
+                if (!ShouldRenderEntity(entity))
+                {
+                    continue;
+                }
+
                 _entityDrawBuffer.Add(entity);
             }
         }
@@ -3782,6 +4146,26 @@ internal sealed partial class Simulator3dForm : Form
         };
     }
 
+    private static IReadOnlyList<Vector3> BuildOrientedRectFootprint(
+        Vector3 center,
+        float length,
+        float width,
+        Vector3 forward,
+        Vector3 right)
+    {
+        Vector3 safeForward = forward.LengthSquared() <= 1e-8f ? Vector3.UnitX : Vector3.Normalize(forward);
+        Vector3 safeRight = right.LengthSquared() <= 1e-8f ? Vector3.UnitZ : Vector3.Normalize(right);
+        float halfLength = length * 0.5f;
+        float halfWidth = width * 0.5f;
+        return new[]
+        {
+            center - safeForward * halfLength - safeRight * halfWidth,
+            center + safeForward * halfLength - safeRight * halfWidth,
+            center + safeForward * halfLength + safeRight * halfWidth,
+            center - safeForward * halfLength + safeRight * halfWidth,
+        };
+    }
+
     private IReadOnlyList<Vector3> BuildOrientedEllipseFootprint(
         Vector3 center,
         float length,
@@ -3815,6 +4199,18 @@ internal sealed partial class Simulator3dForm : Form
         return new Vector3(center.X + offset.X, center.Y + height, center.Z + offset.Y);
     }
 
+    private static Vector3 OffsetScenePosition(
+        Vector3 center,
+        float localForward,
+        float localLateral,
+        float localUp,
+        Vector3 forward,
+        Vector3 right,
+        Vector3 up)
+    {
+        return center + forward * localForward + right * localLateral + up * localUp;
+    }
+
     private static float ResolveEntityYaw(SimulationEntity entity)
     {
         return (float)(entity.AngleDeg * Math.PI / 180.0);
@@ -3822,18 +4218,8 @@ internal sealed partial class Simulator3dForm : Form
 
     private static Color TintProfileColor(Color source, Color teamTint, float tintAmount, bool alive)
     {
-        float tint = Math.Clamp(tintAmount, 0f, 1f);
-        Color mixed = BlendColor(source, teamTint, tint);
-        if (alive)
-        {
-            return mixed;
-        }
-
-        int gray = (int)MathF.Round((mixed.R + mixed.G + mixed.B) / 3f);
-        return Color.FromArgb(
-            Math.Clamp((int)(gray * 0.86f), 0, 255),
-            Math.Clamp((int)(gray * 0.86f), 0, 255),
-            Math.Clamp((int)(gray * 0.90f), 0, 255));
+        _ = teamTint;
+        return ResolveDeepGrayMaterial(source, alive, Math.Clamp(tintAmount, 0f, 1f) * 0.08f - 0.02f);
     }
 
     private void DrawEntityBar(Graphics graphics, SimulationEntity entity, Vector3 center, float height)
@@ -3946,7 +4332,7 @@ internal sealed partial class Simulator3dForm : Form
             : Math.Clamp(screenRadius, largeRound ? 2.8f : 1.8f, largeRound ? 12.5f : 7.4f);
 
         Color core = solid
-            ? (largeRound ? Color.FromArgb(255, 246, 251, 255) : Color.FromArgb(255, 112, 255, 128))
+            ? (largeRound ? Color.FromArgb(255, 255, 255, 255) : Color.FromArgb(255, 164, 255, 172))
             : BlendColor(
                 string.Equals(projectile.Team, "red", StringComparison.OrdinalIgnoreCase)
                     ? Color.FromArgb(236, 255, 124, 102)
@@ -3954,19 +4340,19 @@ internal sealed partial class Simulator3dForm : Form
                 Color.White,
                 0.26f);
         Color mid = solid
-            ? (largeRound ? Color.FromArgb(255, 226, 234, 244) : Color.FromArgb(255, 40, 236, 82))
+            ? (largeRound ? Color.FromArgb(255, 146, 214, 255) : Color.FromArgb(255, 52, 255, 84))
             : (string.Equals(projectile.Team, "red", StringComparison.OrdinalIgnoreCase)
                 ? Color.FromArgb(236, 255, 124, 102)
                 : Color.FromArgb(236, 110, 178, 255));
         Color rim = solid
-            ? (largeRound ? Color.FromArgb(255, 188, 196, 212) : Color.FromArgb(255, 10, 164, 36))
+            ? (largeRound ? Color.FromArgb(255, 72, 176, 255) : Color.FromArgb(255, 12, 184, 44))
             : Color.FromArgb(220, BlendColor(mid, Color.Black, 0.18f));
         Color glow = solid
-            ? (largeRound ? Color.FromArgb(72, 255, 255, 255) : Color.FromArgb(84, 72, 255, 116))
+            ? (largeRound ? Color.FromArgb(82, 96, 198, 255) : Color.FromArgb(88, 52, 255, 96))
             : Color.FromArgb(74, mid);
-        Color trailColor = string.Equals(projectile.Team, "red", StringComparison.OrdinalIgnoreCase)
-            ? Color.FromArgb(112, 255, 138, 116)
-            : Color.FromArgb(112, 124, 198, 255);
+        Color trailColor = largeRound
+            ? Color.FromArgb(138, 86, 188, 255)
+            : Color.FromArgb(132, 72, 255, 108);
 
         RectangleF flatBody = new(
             screenCenter.X - screenRadius,
@@ -4303,9 +4689,10 @@ internal sealed partial class Simulator3dForm : Form
             return;
         }
 
-        Color tint = string.Equals(projectile.Team, "red", StringComparison.OrdinalIgnoreCase)
-            ? Color.FromArgb(112, 255, 138, 116)
-            : Color.FromArgb(112, 124, 198, 255);
+        bool largeRound = string.Equals(projectile.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase);
+        Color tint = largeRound
+            ? Color.FromArgb(138, 86, 188, 255)
+            : Color.FromArgb(132, 72, 255, 108);
         using var pen = new Pen(tint, 1.2f);
         graphics.DrawLines(pen, points.ToArray());
     }

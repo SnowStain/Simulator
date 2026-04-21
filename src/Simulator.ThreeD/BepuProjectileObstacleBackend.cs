@@ -19,6 +19,8 @@ internal sealed class BepuProjectileObstacleBackend : IDisposable
     private readonly List<ColliderMetadata> _metadataStore = new();
     private readonly Dictionary<string, ColliderEntry> _entries = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<string> _staleEntityIds = new();
+    private SimulationWorldState? _lastSyncedWorld;
+    private double _lastSyncedGameTimeSec = double.NaN;
 
     public BepuProjectileObstacleBackend()
     {
@@ -43,7 +45,8 @@ internal sealed class BepuProjectileObstacleBackend : IDisposable
         double endX,
         double endY,
         double endHeightM,
-        IReadOnlyList<SimulationEntity>? obstacleCandidates)
+        IReadOnlyList<SimulationEntity>? obstacleCandidates,
+        Func<SimulationEntity, RobotAppearanceProfile>? profileResolver = null)
     {
         ProjectileObstacleHit? terrainHit = ProjectileObstacleResolver.ResolveHit(
             world,
@@ -56,10 +59,31 @@ internal sealed class BepuProjectileObstacleBackend : IDisposable
             endX,
             endY,
             endHeightM,
-            Array.Empty<SimulationEntity>());
+            Array.Empty<SimulationEntity>(),
+            profileResolver);
+
+        ProjectileObstacleHit? modelHit = ProjectileObstacleResolver.ResolveHit(
+            world,
+            null,
+            shooter,
+            projectile,
+            startX,
+            startY,
+            startHeightM,
+            endX,
+            endY,
+            endHeightM,
+            obstacleCandidates,
+            profileResolver);
 
         IReadOnlyList<SimulationEntity> candidates = obstacleCandidates ?? (IReadOnlyList<SimulationEntity>)world.Entities;
-        SyncEntities(world, candidates);
+        if (!ReferenceEquals(_lastSyncedWorld, world)
+            || Math.Abs(_lastSyncedGameTimeSec - world.GameTimeSec) > 1e-6)
+        {
+            SyncEntities(world, candidates);
+            _lastSyncedWorld = world;
+            _lastSyncedGameTimeSec = world.GameTimeSec;
+        }
 
         double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
         Vector3 start = new((float)(startX * metersPerWorldUnit), (float)startHeightM, (float)(startY * metersPerWorldUnit));
@@ -93,6 +117,11 @@ internal sealed class BepuProjectileObstacleBackend : IDisposable
                 segmentT,
                 SupportsRicochet: true,
                 Kind: hitHandler.HitMetadata.EntityType);
+        }
+
+        if (modelHit is not null && (terrainHit is null || modelHit.Value.SegmentT < terrainHit.Value.SegmentT))
+        {
+            return modelHit;
         }
 
         if (terrainHit is null)
@@ -205,7 +234,7 @@ internal sealed class BepuProjectileObstacleBackend : IDisposable
 
         if (SimulationCombatMath.IsStructure(entity))
         {
-            return true;
+            return false;
         }
 
         // Keep robot damage authoritative in the armor-plate solver. If BEPU
@@ -245,6 +274,8 @@ internal sealed class BepuProjectileObstacleBackend : IDisposable
         _collidableMetadata.Dispose();
         _simulation.Dispose();
         _bufferPool.Clear();
+        _lastSyncedWorld = null;
+        _lastSyncedGameTimeSec = double.NaN;
     }
 
     private readonly record struct ColliderMetadata(
@@ -319,6 +350,7 @@ internal sealed class BepuProjectileObstacleBackend : IDisposable
             }
 
             if (metadata.IsStructure
+                && !string.Equals(metadata.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase)
                 && !string.IsNullOrWhiteSpace(_preferredTargetId)
                 && string.Equals(metadata.EntityId, _preferredTargetId, StringComparison.OrdinalIgnoreCase))
             {

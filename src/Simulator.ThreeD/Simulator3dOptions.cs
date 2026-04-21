@@ -57,6 +57,14 @@ internal sealed class Simulator3dOptions
 
     public string? OpenEditor { get; init; }
 
+    public string? AppearancePath { get; init; }
+
+    public bool PreviewOnly { get; init; }
+
+    public string? PreviewStructure { get; init; }
+
+    public string? PreviewTeam { get; init; }
+
     public static IReadOnlyList<string> SingleUnitEntityKeyOrder => OrderedSingleUnitEntityKeys;
 
     public static Simulator3dOptions Parse(string[] args)
@@ -72,6 +80,10 @@ internal sealed class Simulator3dOptions
         bool? ricochetEnabled = null;
         bool startInMatch = false;
         string? openEditor = null;
+        string? appearancePath = null;
+        bool previewOnly = false;
+        string? previewStructure = null;
+        string? previewTeam = null;
 
         for (int index = 0; index < args.Length; index++)
         {
@@ -163,6 +175,37 @@ internal sealed class Simulator3dOptions
                 && index + 1 < args.Length)
             {
                 openEditor = NormalizeEditorName(args[++index]);
+                continue;
+            }
+
+            if ((current.Equals("--appearance-path", StringComparison.OrdinalIgnoreCase)
+                    || current.Equals("--appearance", StringComparison.OrdinalIgnoreCase))
+                && index + 1 < args.Length)
+            {
+                appearancePath = args[++index];
+                continue;
+            }
+
+            if (current.Equals("--preview-only", StringComparison.OrdinalIgnoreCase))
+            {
+                previewOnly = true;
+                continue;
+            }
+
+            if ((current.Equals("--preview-structure", StringComparison.OrdinalIgnoreCase)
+                    || current.Equals("--structure-preview", StringComparison.OrdinalIgnoreCase))
+                && index + 1 < args.Length)
+            {
+                previewStructure = NormalizePreviewStructure(args[++index]);
+                continue;
+            }
+
+            if ((current.Equals("--preview-team", StringComparison.OrdinalIgnoreCase)
+                    || current.Equals("--structure-team", StringComparison.OrdinalIgnoreCase))
+                && index + 1 < args.Length)
+            {
+                previewTeam = NormalizePreviewTeam(args[++index]);
+                continue;
             }
         }
 
@@ -179,6 +222,10 @@ internal sealed class Simulator3dOptions
             RicochetEnabled = ricochetEnabled,
             StartInMatch = startInMatch,
             OpenEditor = openEditor,
+            AppearancePath = string.IsNullOrWhiteSpace(appearancePath) ? null : appearancePath,
+            PreviewOnly = previewOnly,
+            PreviewStructure = previewStructure,
+            PreviewTeam = previewTeam,
         };
     }
 
@@ -268,6 +315,40 @@ internal sealed class Simulator3dOptions
             "rules" or "rule" or "rule_editor" => "rules",
             "behavior" or "behaviour" or "behavior_editor" => "behavior",
             "functional" or "functional_editor" => "functional",
+            _ => null,
+        };
+    }
+
+    public static string? NormalizePreviewStructure(string? raw)
+    {
+        string value = (raw ?? string.Empty).Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value switch
+        {
+            "base" => "base",
+            "outpost" => "outpost",
+            "energy" or "energy_mechanism" or "mechanism" => "energy_mechanism",
+            _ => null,
+        };
+    }
+
+    public static string? NormalizePreviewTeam(string? raw)
+    {
+        string value = (raw ?? string.Empty).Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value switch
+        {
+            "red" => "red",
+            "blue" => "blue",
+            "neutral" => "neutral",
             _ => null,
         };
     }

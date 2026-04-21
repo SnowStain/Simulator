@@ -1,0 +1,12 @@
+<Project>
+  <PropertyGroup>
+    <DefaultItemExcludes>$(DefaultItemExcludes);**\build_verify\**;**/build_verify/**</DefaultItemExcludes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="**\build_verify\**\*.cs;**/build_verify/**/*.cs" />
+    <EmbeddedResource Remove="**\build_verify\**\*;**/build_verify/**/*" />
+    <None Remove="**\build_verify\**\*;**/build_verify/**/*" />
+    <Content Remove="**\build_verify\**\*;**/build_verify/**/*" />
+  </ItemGroup>
+</Project>

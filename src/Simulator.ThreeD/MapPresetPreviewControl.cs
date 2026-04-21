@@ -19,8 +19,8 @@ internal sealed class MapPresetPreviewControl : Control
     private string? _loadedBitmapPath;
     private Bitmap? _mapBitmap;
     private PreviewMode _mode = PreviewMode.ThreeD;
-    private float _yawRad = 0.78f;
-    private float _pitchRad = 0.92f;
+    private float _yawRad = 0.18f;
+    private float _pitchRad = 1.34f;
     private float _zoomScale = 1.0f;
     private bool _dragging;
     private Point _lastMouse;
@@ -232,16 +232,17 @@ internal sealed class MapPresetPreviewControl : Control
         float width = Math.Max(1f, (float)Math.Max(1.0, Document!.FieldLengthM));
         float height = Math.Max(1f, (float)Math.Max(1.0, Document.FieldWidthM));
         float maxDim = Math.Max(width, height);
-        float baseThickness = Math.Clamp(maxDim * 0.018f, 0.12f, 0.60f);
-        Preview3dPrimitives.AddBox(
-            faces,
-            new Vector3(width * 0.5f, -baseThickness * 0.5f, height * 0.5f),
-            new Vector3(width * 0.5f, baseThickness * 0.5f, height * 0.5f),
-            Color.FromArgb(70, 78, 88));
+        float baseThickness = 0.02f;
+        AddTerrainTopPlane(faces, width, height);
         int baseFaceCount = faces.Count;
 
         foreach (FacilityRegionEditorModel facility in Document.Facilities)
         {
+            if (!ShouldRenderFacilityInThreeD(facility))
+            {
+                continue;
+            }
+
             AddFacilityPreview(faces, facility);
         }
 
@@ -264,6 +265,19 @@ internal sealed class MapPresetPreviewControl : Control
 
         using var labelBrush = new SolidBrush(Color.FromArgb(184, 198, 208));
         graphics.DrawString("3D terrain / facilities / slope facets", SystemFonts.DefaultFont, labelBrush, viewport.X + 8, viewport.Y + 8);
+    }
+
+    private static void AddTerrainTopPlane(ICollection<Preview3dFace> faces, float width, float height)
+    {
+        faces.Add(new Preview3dFace(
+            new[]
+            {
+                new Vector3(0f, 0f, 0f),
+                new Vector3(width, 0f, 0f),
+                new Vector3(width, 0f, height),
+                new Vector3(0f, 0f, height),
+            },
+            Color.FromArgb(42, 48, 56)));
     }
 
     private void DrawPreviewFaces(
@@ -309,10 +323,10 @@ internal sealed class MapPresetPreviewControl : Control
         PointF[] projected = Preview3dPrimitives.ProjectPoints(
             new[]
             {
-                new Vector3(0f, 0.012f, 0f),
-                new Vector3(width, 0.012f, 0f),
-                new Vector3(0f, 0.012f, height),
-                new Vector3(width, 0.012f, height),
+                new Vector3(0f, 0.018f, 0f),
+                new Vector3(width, 0.018f, 0f),
+                new Vector3(0f, 0.018f, height),
+                new Vector3(width, 0.018f, height),
             },
             viewport,
             center,
@@ -371,6 +385,28 @@ internal sealed class MapPresetPreviewControl : Control
             .Select(point => new Vector3(MapXToPreviewMeters(point.X), extrude, MapYToPreviewMeters(point.Y)))
             .ToList();
         Preview3dPrimitives.AddPrism(faces, bottom, topVertices, color);
+    }
+
+    private static bool ShouldRenderFacilityInThreeD(FacilityRegionEditorModel facility)
+    {
+        if (string.Equals(facility.Type, "boundary", StringComparison.OrdinalIgnoreCase)
+            || facility.Type.StartsWith("buff_", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(facility.Type, "supply", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(facility.Type, "mining_area", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(facility.Type, "mineral_exchange", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(facility.Type, "dog_hole", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (facility.HeightM > 0.02)
+        {
+            return true;
+        }
+
+        return string.Equals(facility.Type, "base", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(facility.Type, "outpost", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(facility.Type, "energy_mechanism", StringComparison.OrdinalIgnoreCase);
     }
 
     private void AddFacetPreview(ICollection<Preview3dFace> faces, TerrainFacetEditorModel facet)

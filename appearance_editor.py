@@ -4,6 +4,7 @@
 import json
 import math
 import os
+import subprocess
 import sys
 from copy import deepcopy
 from typing import Any, cast
@@ -41,6 +42,7 @@ PART_LABELS = {
     'front_climb': '前上台阶机构',
     'rear_climb': '后腿机构',
     'mount': '连接件',
+    'assembly': '装配机构',
     'turret': '云台',
     'barrel': '枪管',
     'armor': '装甲',
@@ -54,7 +56,7 @@ _BASE_PROFILE_TEMPLATES = {
         'body_width_m': 0.55,
         'body_height_m': 0.19,
         'body_clearance_m': 0.07,
-        'wheel_radius_m': 0.085,
+        'wheel_radius_m': 0.005,
         'gimbal_length_m': 0.34,
         'gimbal_width_m': 0.20,
         'gimbal_body_height_m': 0.14,
@@ -73,7 +75,7 @@ _BASE_PROFILE_TEMPLATES = {
         'armor_plate_gap_m': 0.005,
         'armor_light_length_m': 0.04,
         'armor_light_width_m': 0.005,
-        'armor_light_height_m': 0.08,
+        'armor_light_height_m': 0.00,
         'barrel_light_length_m': 0.13,
         'barrel_light_width_m': 0.015,
         'barrel_light_height_m': 0.05,
@@ -89,7 +91,7 @@ _BASE_PROFILE_TEMPLATES = {
         'body_width_m': 0.50,
         'body_height_m': 0.16,
         'body_clearance_m': 0.11,
-        'wheel_radius_m': 0.08,
+        'wheel_radius_m': 0.00,
         'gimbal_length_m': 0.0,
         'gimbal_width_m': 0.0,
         'gimbal_body_height_m': 0.0,
@@ -108,7 +110,7 @@ _BASE_PROFILE_TEMPLATES = {
         'armor_plate_gap_m': 0.005,
         'armor_light_length_m': 0.04,
         'armor_light_width_m': 0.005,
-        'armor_light_height_m': 0.08,
+        'armor_light_height_m': 0.00,
         'barrel_light_length_m': 0.10,
         'barrel_light_width_m': 0.02,
         'barrel_light_height_m': 0.02,
@@ -145,7 +147,7 @@ _BASE_PROFILE_TEMPLATES = {
         'armor_plate_gap_m': 0.005,
         'armor_light_length_m': 0.04,
         'armor_light_width_m': 0.005,
-        'armor_light_height_m': 0.08,
+        'armor_light_height_m': 0.00,
         'barrel_light_length_m': 0.095,
         'barrel_light_width_m': 0.005,
         'barrel_light_height_m': 0.03,
@@ -161,7 +163,7 @@ _BASE_PROFILE_TEMPLATES = {
         'body_width_m': 0.50,
         'body_height_m': 0.18,
         'body_clearance_m': 0.07,
-        'wheel_radius_m': 0.08,
+        'wheel_radius_m': 0.00,
         'gimbal_length_m': 0.30,
         'gimbal_width_m': 0.15,
         'gimbal_body_height_m': 0.11,
@@ -180,7 +182,7 @@ _BASE_PROFILE_TEMPLATES = {
         'armor_plate_gap_m': 0.005,
         'armor_light_length_m': 0.04,
         'armor_light_width_m': 0.005,
-        'armor_light_height_m': 0.08,
+        'armor_light_height_m': 0.00,
         'barrel_light_length_m': 0.095,
         'barrel_light_width_m': 0.005,
         'barrel_light_height_m': 0.03,
@@ -202,6 +204,8 @@ _BASE_PROFILE_TEMPLATES = {
         'structure_upper_shoulder_height_m': 1.446,
         'structure_tower_radius_m': 0.20,
         'structure_top_armor_center_height_m': 1.633,
+        'structure_top_armor_offset_x_m': 0.0,
+        'structure_top_armor_offset_z_m': 0.255,
         'structure_top_armor_tilt_deg': 45.0,
         'body_clearance_m': 0.0,
         'structure_base_lift_m': 0.40,
@@ -224,7 +228,7 @@ _BASE_PROFILE_TEMPLATES = {
         'armor_plate_gap_m': 0.035,
         'armor_light_length_m': 0.04,
         'armor_light_width_m': 0.005,
-        'armor_light_height_m': 0.08,
+        'armor_light_height_m': 0.00,
         'barrel_light_length_m': 0.0,
         'barrel_light_width_m': 0.0,
         'barrel_light_height_m': 0.0,
@@ -255,7 +259,11 @@ _BASE_PROFILE_TEMPLATES = {
         'structure_detector_bridge_center_height_m': 1.093,
         'structure_detector_sensor_center_height_m': 1.136,
         'structure_top_armor_center_height_m': 1.150,
+        'structure_top_armor_offset_x_m': 0.0,
+        'structure_top_armor_offset_z_m': 0.0,
         'structure_top_armor_tilt_deg': 27.5,
+        'structure_side_armor_open_angle_deg': 27.5,
+        'structure_side_armor_outward_offset_m': 0.12,
         'structure_core_column_height_m': 0.783,
         'body_clearance_m': 0.0,
         'structure_base_lift_m': 0.0,
@@ -278,7 +286,7 @@ _BASE_PROFILE_TEMPLATES = {
         'armor_plate_gap_m': 0.035,
         'armor_light_length_m': 0.04,
         'armor_light_width_m': 0.005,
-        'armor_light_height_m': 0.08,
+        'armor_light_height_m': 0.00,
         'barrel_light_length_m': 0.0,
         'barrel_light_width_m': 0.0,
         'barrel_light_height_m': 0.0,
@@ -326,7 +334,7 @@ _BASE_PROFILE_TEMPLATES = {
         'structure_rotor_arm_height_m': 0.04,
         'structure_lamp_length_m': 0.30,
         'structure_lamp_width_m': 0.30,
-        'structure_lamp_height_m': 0.08,
+        'structure_lamp_height_m': 0.00,
         'structure_lower_module_width_m': 0.20,
         'structure_lower_module_height_m': 0.24,
         'structure_lower_module_depth_m': 0.18,
@@ -339,8 +347,8 @@ _BASE_PROFILE_TEMPLATES = {
         'structure_cantilever_pair_gap_m': 2.34,
         'structure_cantilever_length_m': 0.28,
         'structure_cantilever_offset_y_m': -0.02,
-        'structure_cantilever_height_m': 0.08,
-        'structure_cantilever_depth_m': 0.08,
+        'structure_cantilever_height_m': 0.00,
+        'structure_cantilever_depth_m': 0.00,
         'wheel_radius_m': 0.03,
         'gimbal_length_m': 0.0,
         'gimbal_width_m': 0.0,
@@ -399,7 +407,7 @@ def _climb_assist_defaults():
         'front_climb_assist_forward_offset_m': 0.04,
         'front_climb_assist_inner_offset_m': 0.06,
         'rear_climb_assist_upper_length_m': 0.09,
-        'rear_climb_assist_lower_length_m': 0.08,
+        'rear_climb_assist_lower_length_m': 0.00,
         'rear_climb_assist_upper_width_m': 0.016,
         'rear_climb_assist_upper_height_m': 0.016,
         'rear_climb_assist_lower_width_m': 0.016,
@@ -739,7 +747,7 @@ def _rear_climb_points(profile, render_width_scale=1.0):
     foot_x = rear_wheel_x
     foot_y = wheel_radius
     upper_length = float(profile.get('rear_climb_assist_upper_length_m', 0.09))
-    lower_length = float(profile.get('rear_climb_assist_lower_length_m', 0.08))
+    lower_length = float(profile.get('rear_climb_assist_lower_length_m', 0.00))
     joint_x, joint_y = _resolve_two_link_joint((mount_x, mount_y), (foot_x, foot_y), upper_length, lower_length)
     return {
         'mount': (mount_x, mount_y),
@@ -775,7 +783,7 @@ def _balance_leg_geometry(profile, render_width_scale=1.0):
         (upper_anchor_x, upper_anchor_y),
         (foot_x, foot_y),
         float(profile.get('rear_climb_assist_upper_length_m', 0.09)),
-        float(profile.get('rear_climb_assist_lower_length_m', 0.08)),
+        float(profile.get('rear_climb_assist_lower_length_m', 0.00)),
         profile.get('rear_climb_assist_knee_min_deg', 42.0),
         profile.get('rear_climb_assist_knee_max_deg', 132.0),
     )
@@ -783,7 +791,7 @@ def _balance_leg_geometry(profile, render_width_scale=1.0):
         (upper_anchor_x, upper_anchor_y),
         (foot_x, foot_y),
         float(profile.get('rear_climb_assist_upper_length_m', 0.09)),
-        float(profile.get('rear_climb_assist_lower_length_m', 0.08)),
+        float(profile.get('rear_climb_assist_lower_length_m', 0.00)),
         profile.get('rear_climb_assist_knee_direction', 'rear'),
     )
     upper_pair_gap = max(0.02, float(profile.get('rear_climb_assist_upper_pair_gap_m', 0.06)))
@@ -965,7 +973,7 @@ def _append_preview_energy_pod(vertices, center, length, width, height, depth, c
     _append_preview_prism(vertices, section(-half_depth), section(half_depth), color_rgb, yaw_rad=yaw_rad)
 
 
-def _append_preview_energy_arm(vertices, hub_center, yaw_rad, inner_radius, outer_radius, rail_gap, rail_width, rail_depth, color_rgb):
+def _append_preview_energy_arm(vertices, hub_center, yaw_rad, inner_radius, outer_radius, rail_gap, rail_width, rail_depth, color_rgb, base_yaw_rad=0.0):
     hub_x, hub_y, hub_z = hub_center
     dir_x = math.cos(yaw_rad)
     dir_y = math.sin(yaw_rad)
@@ -983,10 +991,10 @@ def _append_preview_energy_arm(vertices, hub_center, yaw_rad, inner_radius, oute
     root_b = (root_center[0] - side_x * rail_gap, root_center[1] - side_y * rail_gap, hub_z)
     end_a = (end_center[0] + side_x * rail_gap * 0.72, end_center[1] + side_y * rail_gap * 0.72, hub_z)
     end_b = (end_center[0] - side_x * rail_gap * 0.72, end_center[1] - side_y * rail_gap * 0.72, hub_z)
-    _append_preview_beam(vertices, root_a, end_a, rail_width, rail_depth, color_rgb)
-    _append_preview_beam(vertices, root_b, end_b, rail_width, rail_depth, color_rgb)
-    _append_preview_beam(vertices, root_a, root_b, rail_width * 0.85, rail_depth, color_rgb)
-    _append_preview_beam(vertices, end_a, end_b, rail_width * 1.10, rail_depth, color_rgb)
+    _append_preview_beam(vertices, root_a, end_a, rail_width, rail_depth, color_rgb, yaw_rad=base_yaw_rad)
+    _append_preview_beam(vertices, root_b, end_b, rail_width, rail_depth, color_rgb, yaw_rad=base_yaw_rad)
+    _append_preview_beam(vertices, root_a, root_b, rail_width * 0.85, rail_depth, color_rgb, yaw_rad=base_yaw_rad)
+    _append_preview_beam(vertices, end_a, end_b, rail_width * 1.10, rail_depth, color_rgb, yaw_rad=base_yaw_rad)
 
 
 def _energy_platform_outline_points(length_m, width_m, y, corner_scale=0.28):
@@ -1033,19 +1041,40 @@ def _append_preview_beam(vertices, start_point, end_point, height, thickness, co
     _append_preview_prism(vertices, bottom_points, top_points, color_rgb, yaw_rad=yaw_rad)
 
 
-def _append_preview_cylinder(vertices, center, radius, half_width, color_rgb, segments=12):
+def _append_preview_cylinder(vertices, center, radius, half_width, color_rgb, segments=12, yaw_rad=0.0):
     cx, cy, cz = center
     color = tuple(float(channel) / 255.0 for channel in color_rgb)
+    cos_yaw = math.cos(yaw_rad)
+    sin_yaw = math.sin(yaw_rad)
+
+    def rotate_point(point):
+        point_x, point_y, point_z = point
+        return (
+            point_x * cos_yaw - point_z * sin_yaw,
+            point_y,
+            point_x * sin_yaw + point_z * cos_yaw,
+        )
+
+    def rotate_normal(normal):
+        normal_x, normal_y, normal_z = normal
+        return (
+            normal_x * cos_yaw - normal_z * sin_yaw,
+            normal_y,
+            normal_x * sin_yaw + normal_z * cos_yaw,
+        )
+
     front_ring = []
     back_ring = []
     for index in range(segments):
         angle = (math.pi * 2.0 * index) / max(segments, 3)
         ring_x = math.cos(angle) * radius
         ring_y = math.sin(angle) * radius
-        front_ring.append((cx + ring_x, cy + ring_y, cz - half_width))
-        back_ring.append((cx + ring_x, cy + ring_y, cz + half_width))
-    front_center = (cx, cy, cz - half_width)
-    back_center = (cx, cy, cz + half_width)
+        front_ring.append(rotate_point((cx + ring_x, cy + ring_y, cz - half_width)))
+        back_ring.append(rotate_point((cx + ring_x, cy + ring_y, cz + half_width)))
+    front_center = rotate_point((cx, cy, cz - half_width))
+    back_center = rotate_point((cx, cy, cz + half_width))
+    front_normal = rotate_normal((0.0, 0.0, -1.0))
+    back_normal = rotate_normal((0.0, 0.0, 1.0))
     for index in range(segments):
         next_index = (index + 1) % segments
         normal_a = np.array(front_ring[index]) - np.array(front_center)
@@ -1054,8 +1083,24 @@ def _append_preview_cylinder(vertices, center, radius, half_width, color_rgb, se
         norm = np.linalg.norm(average)
         side_normal = tuple((average / norm).tolist()) if norm > 1e-6 else (1.0, 0.0, 0.0)
         _append_preview_face(vertices, front_ring[index], front_ring[next_index], back_ring[next_index], back_ring[index], color, side_normal)
-        _append_preview_face(vertices, front_center, front_ring[next_index], front_ring[index], front_center, tuple(max(0.0, channel * 0.84) for channel in color), (0.0, 0.0, -1.0))
-        _append_preview_face(vertices, back_center, back_ring[index], back_ring[next_index], back_center, tuple(max(0.0, channel * 0.94) for channel in color), (0.0, 0.0, 1.0))
+        _append_preview_face(vertices, front_center, front_ring[next_index], front_ring[index], front_center, tuple(max(0.0, channel * 0.84) for channel in color), front_normal)
+        _append_preview_face(vertices, back_center, back_ring[index], back_ring[next_index], back_center, tuple(max(0.0, channel * 0.94) for channel in color), back_normal)
+
+
+def _append_preview_ringed_disk(vertices, center, radius, half_width, accent_rgb, ring_count=10, segments=20, yaw_rad=0.0):
+    radius = max(0.02, float(radius))
+    half_width = max(0.003, float(half_width))
+    outer_gray = [86, 90, 96]
+    inner_gray = [108, 112, 118]
+    disk_segments = max(12, int(segments))
+    _append_preview_cylinder(vertices, center, radius * 1.05, half_width * 0.55, accent_rgb, segments=disk_segments, yaw_rad=yaw_rad)
+    for ring_index in range(max(2, int(ring_count))):
+        t = ring_index / max(1, ring_count - 1)
+        ring_radius = max(radius * 0.08, radius * (1.0 - t * 0.88))
+        ring_half_width = max(0.0025, half_width * (0.90 - t * 0.42))
+        ring_color = accent_rgb if ring_index == 0 else (outer_gray if ring_index % 2 == 0 else inner_gray)
+        _append_preview_cylinder(vertices, center, ring_radius, ring_half_width, ring_color, segments=disk_segments, yaw_rad=yaw_rad)
+    _append_preview_cylinder(vertices, center, max(radius * 0.08, radius * 0.11), half_width * 0.95, [58, 62, 68], segments=disk_segments, yaw_rad=yaw_rad)
 
 
 def _rotate_xz(point_x, point_z, yaw_rad):
@@ -1068,8 +1113,8 @@ def _rotate_xz(point_x, point_z, yaw_rad):
 
 
 def _alternating_hex_points(length_m, width_m, y, short_edge_m=None):
-    half_l = max(0.08, float(length_m) * 0.5)
-    half_w = max(0.08, float(width_m) * 0.5)
+    half_l = max(0.00, float(length_m) * 0.5)
+    half_w = max(0.00, float(width_m) * 0.5)
     short_edge = max(0.05, min(float(short_edge_m) if short_edge_m is not None else float(length_m) * 0.58, float(length_m) * 0.92))
     corner_x = short_edge * 0.5
     return [
@@ -1140,27 +1185,38 @@ def _resolved_armor_components(profile):
     body_half_x = float(profile['body_length_m']) * 0.5
     body_half_z = float(profile['body_width_m']) * 0.5 * render_width_scale
     armor_gap = float(profile.get('armor_plate_gap_m', 0.005))
-    armor_thickness = max(0.012, armor_gap * 0.75)
-    armor_center_y = float(profile['body_clearance_m']) + float(profile['body_height_m']) * 0.55
-    radius_x = body_half_x + armor_gap + armor_thickness * 1.35
-    radius_z = body_half_z + armor_gap + armor_thickness * 1.35
+    armor_thickness = max(0.012, armor_gap * 0.75, float(profile.get('armor_plate_width_m', 0.16)) * 0.24)
+    armor_center_y = float(profile['body_clearance_m']) + float(profile['body_height_m']) * 0.5
+    radius_x = body_half_x + armor_gap + armor_thickness * 0.5
+    radius_z = body_half_z + armor_gap + armor_thickness * 0.5
     orbit_values = list(profile.get('armor_orbit_yaws_deg', [0.0, 180.0, 90.0, 270.0]))
     self_values = list(profile.get('armor_self_yaws_deg', orbit_values))
     components = []
     for index in range(4):
         orbit_deg = float(orbit_values[index]) if index < len(orbit_values) else 0.0
-        self_deg = float(self_values[index]) if index < len(self_values) else orbit_deg
         orbit_rad = math.radians(orbit_deg)
+        outward_x = math.cos(orbit_rad)
+        outward_z = math.sin(orbit_rad)
+        if abs(outward_x) >= abs(outward_z):
+            sign = 1.0 if outward_x >= 0.0 else -1.0
+            center = (radius_x * sign, armor_center_y, 0.0)
+            default_yaw = 0.0 if sign > 0.0 else math.pi
+        else:
+            sign = 1.0 if outward_z >= 0.0 else -1.0
+            center = (0.0, armor_center_y, radius_z * sign)
+            default_yaw = math.pi * 0.5 if sign > 0.0 else -math.pi * 0.5
+        self_deg = float(self_values[index]) if index < len(self_values) else orbit_deg
+        yaw_rad = math.radians(self_deg) if profile.get('armor_self_yaws_deg') else default_yaw
         components.append({
-            'center': (math.cos(orbit_rad) * radius_x, armor_center_y, math.sin(orbit_rad) * radius_z),
-            'yaw_rad': math.radians(self_deg),
+            'center': center,
+            'yaw_rad': yaw_rad,
         })
     return components
 
 
 def _resolved_armor_light_components(profile):
     armor_components = _resolved_armor_components(profile)
-    armor_half_width = float(profile.get('armor_plate_width_m', 0.16)) * 0.5
+    armor_half_width = float(profile.get('armor_plate_length_m', 0.16)) * 0.5
     light_half_width = max(0.005, float(profile.get('armor_light_width_m', 0.02)) * 0.5)
     light_offset = armor_half_width + light_half_width + max(0.004, float(profile.get('armor_plate_gap_m', 0.005)) * 0.15)
     light_components = []
@@ -1261,13 +1317,13 @@ class ModernGLAppearancePreview:
             _append_preview_prism(vertices, polygon(bottom_radius, bottom_h, yaw=yaw), polygon(top_radius, top_h, yaw=yaw), color)
 
         _append_preview_box(vertices, (0.0, lift + 0.042, 0.0), (base_width * 0.50, 0.042, base_width * 0.50), body_color, yaw_rad=math.pi * 0.25)
-        tapered(base_width * 0.46, 0.255, 0.085, lower_height, body_color)
+        tapered(base_width * 0.46, 0.255, 0.005, lower_height, body_color)
         tapered(0.205, 0.175, lower_height, body_top_height, dark_color, yaw=math.pi / 8.0)
         tapered(0.220, 0.165, body_top_height, upper_height, turret_color)
         tapered(0.165, 0.120, upper_height, head_base_height, [min(255, int(c * 1.06)) for c in turret_color], yaw=math.pi / 8.0)
-        tapered(tower_radius + 0.055, tower_radius + 0.055, head_base_height - 0.085, head_base_height - 0.055, [min(255, int(c * 1.10)) for c in body_color])
+        tapered(tower_radius + 0.055, tower_radius + 0.055, head_base_height - 0.005, head_base_height - 0.055, [min(255, int(c * 1.10)) for c in body_color])
 
-        _append_preview_box(vertices, (0.0, lift + head_base_height + 0.05, 0.0), (0.08, 0.05, 0.07), dark_color)
+        _append_preview_box(vertices, (0.0, lift + head_base_height + 0.05, 0.0), (0.00, 0.05, 0.07), dark_color)
         _append_preview_box(vertices, (0.03, lift + tower_height - 0.05, 0.0), (0.105, 0.06, 0.09), [min(255, int(c * 1.04)) for c in turret_color])
         for side_sign in (-1.0, 1.0):
             _append_preview_box(vertices, (0.0, lift + head_base_height + 0.03, side_sign * 0.25), (0.05, 0.11, 0.008), dark_color, yaw_rad=0.0)
@@ -1282,9 +1338,11 @@ class ModernGLAppearancePreview:
             center = (math.cos(yaw) * radius, height, math.sin(yaw) * radius)
             _append_preview_box(vertices, center, (armor_thickness * 0.5, armor_half, armor_half), armor_color, yaw_rad=yaw)
         outpost_top_height = float(profile.get('structure_top_armor_center_height_m', lift + tower_height + 0.055))
+        outpost_top_offset_x = float(profile.get('structure_top_armor_offset_x_m', 0.0))
+        outpost_top_offset_z = float(profile.get('structure_top_armor_offset_z_m', radius))
         outpost_top_tilt_deg = float(profile.get('structure_top_armor_tilt_deg', 45.0))
-        top_x = math.cos(armor_spin) * radius
-        top_z = math.sin(armor_spin) * radius
+        top_x = math.cos(armor_spin) * outpost_top_offset_z - math.sin(armor_spin) * outpost_top_offset_x
+        top_z = math.sin(armor_spin) * outpost_top_offset_z + math.cos(armor_spin) * outpost_top_offset_x
         _append_preview_box(vertices, (top_x, outpost_top_height, top_z), (armor_half, armor_half, armor_thickness * 0.5), armor_color, yaw_rad=armor_spin + math.radians(outpost_top_tilt_deg))
 
     def _append_structure_base_geometry(self, vertices, profile):
@@ -1309,12 +1367,16 @@ class ModernGLAppearancePreview:
         armor_half = armor_side * 0.5
         armor_thickness = max(0.012, float(profile.get('armor_plate_gap_m', 0.025)))
         base_top_height = float(profile.get('structure_top_armor_center_height_m', height * (1.150 / 1.181)))
-        _append_preview_box(vertices, (length * 0.04, base_top_height, 0.0), (armor_half, armor_thickness * 0.5, armor_half), armor_color)
+        base_top_offset_x = float(profile.get('structure_top_armor_offset_x_m', 0.0))
+        base_top_offset_z = float(profile.get('structure_top_armor_offset_z_m', 0.0))
+        _append_preview_box(vertices, (length * 0.04 + base_top_offset_x, base_top_height, base_top_offset_z), (armor_half, armor_thickness * 0.5, armor_half), armor_color)
         _append_preview_box(vertices, (length * 0.15, height * 0.70, 0.0), (armor_thickness * 0.5, armor_half, armor_half), armor_color)
+        side_open_angle = math.radians(float(profile.get('structure_side_armor_open_angle_deg', 27.5)))
+        side_outward_offset = float(profile.get('structure_side_armor_outward_offset_m', 0.12))
         for side in (-1.0, 1.0):
-            side_shift = open_ratio * width * 0.14
+            side_shift = open_ratio * (width * 0.14 + side_outward_offset)
             side_raise = open_ratio * 0.06
-            side_yaw = side * open_ratio * 0.38
+            side_yaw = side * open_ratio * side_open_angle
             _append_preview_box(vertices, (-length * 0.07, height * 0.44 + side_raise, side * (width * 0.43 + side_shift)), (length * 0.18, height * 0.24, 0.035), armor_color, yaw_rad=side_yaw)
             _append_preview_box(vertices, (-length * 0.06, height * 0.62 + side_raise * 0.6, side * (width * 0.31 + side_shift * 0.72)), (length * 0.13, height * 0.15, 0.010), [255, 40, 40], yaw_rad=side_yaw)
         _append_preview_box(vertices, (0.02, float(profile.get('structure_detector_bridge_center_height_m', height * (1.093 / 1.181))), 0.0), (0.04, 0.022, min(float(profile.get('structure_detector_width_m', 0.98)) * 0.5, width * 0.30)), dark_color)
@@ -1323,104 +1385,126 @@ class ModernGLAppearancePreview:
     def _append_structure_energy_mechanism_geometry(self, vertices, profile):
         body_color = profile['body_color_rgb']
         frame_color = profile['turret_color_rgb']
-        armor_color = profile['armor_color_rgb']
-        lamp_color = profile.get('wheel_color_rgb', [64, 132, 255])
-        pod_shell_color = [max(28, int(channel * 0.72)) for channel in armor_color]
+        assembly_color = profile['armor_color_rgb']
         rotor_yaw = float(profile.get('_preview_energy_rotor_yaw_rad', 0.0))
+        mechanism_yaw = -math.pi * 0.25
 
-        base_height = max(0.08, float(profile.get('structure_base_height_m', 0.30)))
+        base_height = max(0.00, float(profile.get('structure_base_height_m', 0.30)))
         ground_clearance = max(0.0, float(profile.get('structure_ground_clearance_m', 0.0)))
-        frame_width = max(0.80, float(profile.get('structure_frame_width_m', 1.70)))
-        frame_depth = max(0.06, float(profile.get('structure_frame_depth_m', 0.18)))
+        frame_width = max(0.80, float(profile.get('structure_frame_width_m', 2.06)))
+        frame_depth = max(0.06, float(profile.get('structure_frame_depth_m', 0.16)))
         frame_height = max(base_height + 0.60, float(profile.get('structure_frame_height_m', 2.30)))
-        column_span = max(0.20, min(frame_width, float(profile.get('structure_column_span_m', 1.40))))
-        support_offset = max(0.10, float(profile.get('structure_support_offset_m', column_span * 0.5)))
-        column_w = max(0.04, float(profile.get('structure_frame_column_width_m', 0.12)))
-        beam_h = max(0.04, float(profile.get('structure_frame_beam_height_m', 0.10)))
-        rotor_center_h = max(base_height + ground_clearance + 0.40, float(profile.get('structure_rotor_center_height_m', 1.95)))
+        support_offset = max(0.10, float(profile.get('structure_support_offset_m', frame_width * 0.5)))
+        column_w = max(0.04, float(profile.get('structure_frame_column_width_m', 0.10)))
+        beam_h = max(0.04, float(profile.get('structure_frame_beam_height_m', 0.09)))
+        rotor_center_h = max(base_height + ground_clearance + 0.40, float(profile.get('structure_rotor_center_height_m', 1.45)))
         rotor_phase_rad = math.radians(float(profile.get('structure_rotor_phase_deg', 90.0)))
-        rotor_radius = max(0.18, float(profile.get('structure_rotor_radius_m', 0.70)))
+        rotor_radius = max(0.18, float(profile.get('structure_rotor_radius_m', 1.40)))
         hub_radius = max(0.05, float(profile.get('structure_rotor_hub_radius_m', 0.09)))
-        arm_width = max(0.04, float(profile.get('structure_rotor_arm_width_m', 0.08)))
-        arm_height = max(0.03, float(profile.get('structure_rotor_arm_height_m', 0.06)))
-        lamp_length = max(0.06, float(profile.get('structure_lamp_length_m', 0.22)))
-        lamp_width = max(0.05, float(profile.get('structure_lamp_width_m', 0.18)))
-        lamp_height = max(0.03, float(profile.get('structure_lamp_height_m', 0.10)))
-        hanger_w = max(0.20, float(profile.get('structure_hanger_width_m', 0.44)))
-        cantilever_length = max(0.08, float(profile.get('structure_cantilever_length_m', 0.36)))
+        arm_width = max(0.04, float(profile.get('structure_rotor_arm_width_m', 0.06)))
+        arm_height = max(0.03, float(profile.get('structure_rotor_arm_height_m', 0.04)))
+        lamp_length = max(0.06, float(profile.get('structure_lamp_length_m', 0.30)))
+        lamp_width = max(0.05, float(profile.get('structure_lamp_width_m', 0.30)))
+        lamp_height = max(0.03, float(profile.get('structure_lamp_height_m', 0.00)))
+        hanger_w = max(0.20, float(profile.get('structure_hanger_width_m', 0.24)))
+        hanger_h = max(0.12, float(profile.get('structure_hanger_height_m', 0.24)))
+        hanger_d = max(0.04, float(profile.get('structure_hanger_depth_m', 0.06)))
+        hanger_center_h = max(base_height + 0.20, float(profile.get('structure_hanger_center_height_m', 1.45)))
+        lower_module_w = max(0.04, float(profile.get('structure_lower_module_width_m', 0.20)))
+        lower_module_h = max(0.04, float(profile.get('structure_lower_module_height_m', 0.24)))
+        lower_module_d = max(0.04, float(profile.get('structure_lower_module_depth_m', 0.18)))
+        lower_module_offset = max(0.05, float(profile.get('structure_lower_module_offset_x_m', 0.48)))
+        lower_module_center_h = max(base_height + lower_module_h * 0.5, float(profile.get('structure_lower_module_center_height_m', 0.94)))
+        cantilever_length = max(0.00, float(profile.get('structure_cantilever_length_m', 0.28)))
         cantilever_pair_gap = max(frame_width + cantilever_length, float(profile.get('structure_cantilever_pair_gap_m', frame_width + cantilever_length)))
         cantilever_offset_y = float(profile.get('structure_cantilever_offset_y_m', 0.0))
-        cantilever_height = max(0.04, float(profile.get('structure_cantilever_height_m', 0.12)))
-        cantilever_depth = max(0.04, float(profile.get('structure_cantilever_depth_m', 0.10)))
+        cantilever_height = max(0.04, float(profile.get('structure_cantilever_height_m', 0.00)))
+        cantilever_depth = max(0.04, float(profile.get('structure_cantilever_depth_m', 0.00)))
         rail_gap = max(0.026, arm_width * 0.68)
-        arm_outer_radius = max(hub_radius + 0.08, rotor_radius - lamp_length * 0.30)
-        arm_inner_radius = hub_radius * 1.35
-        pod_depth = max(lamp_width * 0.68, frame_depth * 0.55)
+        arm_inner_radius = max(hub_radius * 1.35, 0.12)
+        arm_length = max(0.10, float(profile.get('structure_rotor_arm_length_m', 1.12)))
+        arm_outer_radius = max(arm_inner_radius + 0.04, min(arm_inner_radius + arm_length, rotor_radius - lamp_length * 0.15))
+        pod_depth = max(lamp_width * 0.18, frame_depth * 0.55)
         top_beam_y = ground_clearance + frame_height - beam_h * 0.5
-        rotor_layer_z = max(frame_depth * 0.45, 0.06)
-        base_length = max(0.40, float(profile.get('structure_base_length_m', max(frame_width * 1.65, float(profile.get('body_length_m', 1.55)) * 1.72))))
-        base_width = max(0.40, float(profile.get('structure_base_width_m', max(frame_depth * 6.0, float(profile.get('body_width_m', 0.98)) * 2.45))))
-        base_top_length = max(0.20, float(profile.get('structure_base_top_length_m', base_length * 0.62)))
-        base_top_width = max(0.20, float(profile.get('structure_base_top_width_m', base_width * 0.34)))
-        base_top_height = max(0.02, float(profile.get('structure_base_top_height_m', 0.12)))
+        base_length = max(0.40, float(profile.get('structure_base_length_m', max(frame_width * 1.65, float(profile.get('body_length_m', 2.06)) * 1.72))))
+        base_width = max(0.40, float(profile.get('structure_base_width_m', max(frame_depth * 6.0, float(profile.get('body_width_m', 1.30)) * 2.45))))
+        post_height = max(1.90, frame_height - base_height)
+        top_beam_width = max(support_offset * 2.0, frame_width)
+        connector_center_y = hanger_center_h
+        rotor_center_y = rotor_center_h + cantilever_offset_y
+        rotor_axis_gap = max(
+            frame_depth * 1.8,
+            hub_radius * 2.6,
+            min(cantilever_pair_gap, frame_width) * 0.42 + cantilever_length * 0.30,
+        )
         rotor_centers = [
-            (0.0, rotor_center_h, -rotor_layer_z),
-            (0.0, rotor_center_h, rotor_layer_z),
+            (0.0, rotor_center_y, -rotor_axis_gap * 0.5),
+            (0.0, rotor_center_y, rotor_axis_gap * 0.5),
         ]
         rotor_colors = ([228, 76, 76], [58, 112, 232])
+        base_pad_length = max(0.20, float(profile.get('structure_base_top_length_m', base_length * 0.34)))
+        base_pad_width = max(0.16, float(profile.get('structure_base_top_width_m', base_width * 0.24)))
+        stem_height = max(0.12, top_beam_y - connector_center_y - beam_h * 0.5)
+        hanger_block_w = max(0.08, hanger_w * 0.32)
+        hanger_block_h = max(0.08, hanger_h * 0.22)
+        hanger_block_d = max(0.06, hanger_d)
+        assembly_rod_span = max(0.05, lower_module_offset)
+
+        def rotate_xz(x, z):
+            cos_y = math.cos(mechanism_yaw)
+            sin_y = math.sin(mechanism_yaw)
+            return (x * cos_y - z * sin_y, x * sin_y + z * cos_y)
+
+        def p(x, y, z):
+            rx, rz = rotate_xz(x, z)
+            return (rx, y, rz)
 
         column_x = support_offset
-        _append_preview_prism(
-            vertices,
-            _energy_platform_outline_points(base_length, base_width, ground_clearance, corner_scale=0.22),
-            _energy_platform_outline_points(base_length * 0.96, base_width * 0.94, ground_clearance + base_height, corner_scale=0.24),
-            [max(30, int(channel * 0.88)) for channel in body_color],
-        )
-        _append_preview_prism(
-            vertices,
-            _energy_platform_outline_points(base_top_length, base_top_width, ground_clearance + base_height, corner_scale=0.18),
-            _energy_platform_outline_points(base_top_length * 0.94, base_top_width * 0.92, ground_clearance + base_height + base_top_height, corner_scale=0.16),
-            body_color,
-        )
-
-        _append_preview_box(vertices, (-column_x, ground_clearance + base_height + (frame_height - base_height) * 0.5, 0.0), (column_w * 0.5, (frame_height - base_height) * 0.5, frame_depth * 0.5), [max(24, int(channel * 0.74)) for channel in body_color])
-        _append_preview_box(vertices, (column_x, ground_clearance + base_height + (frame_height - base_height) * 0.5, 0.0), (column_w * 0.5, (frame_height - base_height) * 0.5, frame_depth * 0.5), [max(24, int(channel * 0.74)) for channel in body_color])
-        _append_preview_box(vertices, (0.0, top_beam_y, 0.0), (frame_width * 0.5, beam_h * 0.5, frame_depth * 0.5), [max(28, int(channel * 0.80)) for channel in body_color])
-
-        cantilever_center_y = rotor_center_h + cantilever_offset_y
-        cantilever_center_x = cantilever_pair_gap * 0.5
         for side in (-1.0, 1.0):
-            brace_top_x = side * column_x
-            brace_top_y = top_beam_y - beam_h * 0.35
-            brace_bottom_x = side * (column_x * 0.72)
-            brace_bottom_y = ground_clearance + base_height + 0.20
-            _append_preview_beam(vertices, (brace_top_x, brace_top_y, -rotor_layer_z), (brace_bottom_x, brace_bottom_y, 0.0), column_w * 0.40, frame_depth * 0.55, frame_color)
-            _append_preview_beam(vertices, (brace_top_x, brace_top_y, rotor_layer_z), (brace_bottom_x, brace_bottom_y, 0.0), column_w * 0.40, frame_depth * 0.55, frame_color)
+            _append_preview_box(
+                vertices,
+                p(side * column_x, ground_clearance + base_height * 0.5, 0.0),
+                (base_pad_length * 0.5, base_height * 0.5, base_pad_width * 0.5),
+                body_color,
+                yaw_rad=mechanism_yaw,
+            )
+        _append_preview_box(vertices, p(-column_x, ground_clearance + base_height + post_height * 0.5, 0.0), (column_w * 0.5, post_height * 0.5, frame_depth * 0.5), frame_color, yaw_rad=mechanism_yaw)
+        _append_preview_box(vertices, p(column_x, ground_clearance + base_height + post_height * 0.5, 0.0), (column_w * 0.5, post_height * 0.5, frame_depth * 0.5), frame_color, yaw_rad=mechanism_yaw)
+        _append_preview_box(vertices, p(0.0, top_beam_y, 0.0), (top_beam_width * 0.5, beam_h * 0.5, column_w * 0.5), frame_color, yaw_rad=mechanism_yaw)
+        _append_preview_box(vertices, p(0.0, connector_center_y + stem_height * 0.5, 0.0), (column_w * 0.30, stem_height * 0.5, hanger_block_d * 0.35), frame_color, yaw_rad=mechanism_yaw)
+        _append_preview_box(vertices, p(0.0, connector_center_y, 0.0), (hanger_block_w * 0.5, hanger_block_h * 0.5, hanger_block_d * 0.5), frame_color, yaw_rad=mechanism_yaw)
 
         for rotor_index, rotor_center in enumerate(rotor_centers):
             rotor_color = rotor_colors[rotor_index]
             cx, cy, cz = rotor_center
-            side_sign = -1.0 if rotor_index == 0 else 1.0
-            hanger_center_x = side_sign * cantilever_center_x
-            _append_preview_box(vertices, (hanger_center_x, cantilever_center_y, cz), (cantilever_length * 0.5, cantilever_height * 0.5, cantilever_depth * 0.5), rotor_color)
-            _append_preview_beam(vertices, (side_sign * column_x, cantilever_center_y, cz), (hanger_center_x - side_sign * cantilever_length * 0.5, cantilever_center_y, cz), cantilever_height * 0.62, cantilever_depth * 0.72, frame_color)
-            _append_preview_cylinder(vertices, rotor_center, hub_radius, frame_depth * 0.22, frame_color, segments=18)
-            _append_preview_cylinder(vertices, rotor_center, hub_radius * 0.42, frame_depth * 0.30, rotor_color, segments=18)
+            _append_preview_beam(vertices, (0.0, connector_center_y, 0.0), (cx, cy, cz), cantilever_height * 0.72, cantilever_depth, frame_color, yaw_rad=mechanism_yaw)
+            _append_preview_energy_pod(
+                vertices,
+                (cx, cy, cz),
+                hub_radius * 3.1,
+                hub_radius * 2.8,
+                hub_radius * 2.8,
+                max(frame_depth * 0.58, 0.045),
+                [74, 78, 84],
+                yaw_rad=mechanism_yaw + math.pi * 0.25,
+            )
+            _append_preview_ringed_disk(vertices, (cx, cy, cz), hub_radius * 0.98, max(frame_depth * 0.12, 0.012), rotor_color, ring_count=6, segments=24, yaw_rad=mechanism_yaw)
             for index in range(5):
                 yaw = rotor_yaw + rotor_phase_rad + math.radians(72.0 * index)
-                _append_preview_energy_arm(vertices, rotor_center, yaw, arm_inner_radius, arm_outer_radius, rail_gap, arm_width, arm_height, frame_color)
-                arm_end_x = cx + math.cos(yaw) * arm_outer_radius
-                arm_end_y = cy + math.sin(yaw) * arm_outer_radius
+                _append_preview_energy_arm(vertices, (cx, cy, cz), yaw, arm_inner_radius, arm_outer_radius, rail_gap, arm_width, arm_height, frame_color, base_yaw_rad=mechanism_yaw)
                 lamp_x = cx + math.cos(yaw) * rotor_radius
                 lamp_y = cy + math.sin(yaw) * rotor_radius
-                _append_preview_beam(vertices, (arm_end_x, arm_end_y, cz), (lamp_x - math.cos(yaw) * lamp_length * 0.16, lamp_y - math.sin(yaw) * lamp_length * 0.16, cz), arm_width * 0.72, arm_height * 0.86, frame_color)
-                support_gap_x = -math.sin(yaw) * lamp_width * 0.22
-                support_gap_y = math.cos(yaw) * lamp_width * 0.22
-                _append_preview_beam(vertices, (arm_end_x + support_gap_x, arm_end_y + support_gap_y, cz), (lamp_x + support_gap_x * 0.60, lamp_y + support_gap_y * 0.60, cz), arm_width * 0.34, arm_height * 0.64, frame_color)
-                _append_preview_beam(vertices, (arm_end_x - support_gap_x, arm_end_y - support_gap_y, cz), (lamp_x - support_gap_x * 0.60, lamp_y - support_gap_y * 0.60, cz), arm_width * 0.34, arm_height * 0.64, frame_color)
-                disk_color = rotor_color if index == 0 else lamp_color
-                _append_preview_cylinder(vertices, (lamp_x, lamp_y, cz), lamp_length * 0.5, max(0.012, pod_depth * 0.14), [68, 72, 78], segments=20)
-                _append_preview_cylinder(vertices, (lamp_x, lamp_y, cz), lamp_length * 0.46, max(0.006, pod_depth * 0.05), disk_color, segments=20)
+                _append_preview_ringed_disk(vertices, (lamp_x, lamp_y, cz), lamp_length * 0.43, max(0.005, pod_depth * 0.18), rotor_color, ring_count=10, segments=14, yaw_rad=mechanism_yaw)
+
+        rod_top_y = connector_center_y - hanger_block_h * 0.65
+        rod_bottom_y = lower_module_center_h + lower_module_h * 0.42
+        module_side_offset = max(lower_module_w * 0.72, lower_module_offset)
+        for side, accent in ((-1.0, [58, 112, 232]), (1.0, [228, 76, 76])):
+            module_center_x = side * module_side_offset
+            rod_x = side * assembly_rod_span
+            _append_preview_beam(vertices, (rod_x, rod_top_y, 0.0), (module_center_x, rod_bottom_y, 0.0), 0.022, 0.020, frame_color, yaw_rad=mechanism_yaw)
+            _append_preview_energy_pod(vertices, (module_center_x, lower_module_center_h, 0.0), lower_module_w, lower_module_h, lower_module_h, lower_module_d, assembly_color, yaw_rad=mechanism_yaw + (0.0 if side < 0.0 else math.pi))
+            _append_preview_box(vertices, p(module_center_x, lower_module_center_h, 0.0), (lower_module_w * 0.10, lower_module_h * 0.28, lower_module_d * 0.10), accent, yaw_rad=mechanism_yaw)
 
     def _structure_bounds_radius(self, profile):
         role_key = str(profile.get('role_key', '')).lower()
@@ -1589,8 +1673,8 @@ class ModernGLAppearancePreview:
 
         armor_half_h = float(profile['armor_plate_height_m']) * 0.5
         armor_color = profile['armor_color_rgb']
-        armor_thickness = max(0.012, float(profile.get('armor_plate_gap_m', 0.005)) * 0.75)
-        armor_half_width = float(profile['armor_plate_width_m']) * 0.5
+        armor_thickness = max(0.012, float(profile.get('armor_plate_gap_m', 0.005)) * 0.75, float(profile.get('armor_plate_width_m', 0.16)) * 0.24)
+        armor_half_width = float(profile['armor_plate_length_m']) * 0.5
         for component in _resolved_armor_components(profile):
             _append_preview_box(
                 vertices,
@@ -1691,7 +1775,7 @@ class ModernGLAppearancePreview:
         mvp = projection @ view
 
         framebuffer.use()
-        framebuffer.clear(0.08, 0.10, 0.13, 1.0)
+        framebuffer.clear(0.00, 0.10, 0.13, 1.0)
         ctx.enable(mgl.DEPTH_TEST)
         ctx.disable(mgl.CULL_FACE)
         program['u_mvp'].write(mvp.T.astype('f4').tobytes())
@@ -1725,6 +1809,7 @@ class AppearanceEditorApp:
         self.preview_action_progress = 0.5
         self.preview_3d_yaw = 0.72
         self.preview_3d_pitch = 0.42
+        self._apply_role_preview_defaults(self.current_role)
         self.field_scroll = 0
         self.field_scroll_drag_active = False
         self.preview_drag_active = False
@@ -1742,6 +1827,9 @@ class AppearanceEditorApp:
         self.preview_panel_rect = None
         self.preview_content_rect = None
         self.active_numeric_input = None
+        self.runtime_preview_buttons = []
+        self.runtime_preview_process = None
+        self.runtime_preview_temp_path = None
 
         pygame.init()
         pygame.key.set_repeat(240, 40)
@@ -1777,21 +1865,56 @@ class AppearanceEditorApp:
             return configured_path
         return os.path.join(os.path.dirname(os.path.abspath(self.config_path)), configured_path)
 
+    def _profiles_dir(self):
+        return os.path.join(os.path.dirname(self.preset_path), 'profiles')
+
+    @staticmethod
+    def _read_json_file(path, fallback=None):
+        try:
+            with open(path, 'r', encoding='utf-8-sig') as file:
+                return json.load(file)
+        except Exception:
+            return fallback
+
+    @staticmethod
+    def _write_json_file(path, payload):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w', encoding='utf-8') as file:
+            json.dump(payload, file, ensure_ascii=False, indent=2)
+
+    def _profile_file_path(self, role_key):
+        safe_name = ''.join(ch if ch.isalnum() or ch in {'_', '-'} else '_' for ch in str(role_key).strip().lower())
+        return os.path.join(self._profiles_dir(), f'{safe_name}.json')
+
+    def _migrate_latest_profiles_to_files(self):
+        payload = self._read_json_file(self.preset_path, fallback={})
+        stored_profiles = payload.get('profiles', {}) if isinstance(payload, dict) else {}
+        if not isinstance(stored_profiles, dict):
+            return {}
+
+        os.makedirs(self._profiles_dir(), exist_ok=True)
+        latest_mtime = os.path.getmtime(self.preset_path) if os.path.exists(self.preset_path) else 0.0
+        migrated = {}
+        for role_key, profile in stored_profiles.items():
+            if not isinstance(profile, dict):
+                continue
+            profile_path = self._profile_file_path(role_key)
+            if not os.path.exists(profile_path) or os.path.getmtime(profile_path) <= latest_mtime + 1e-6:
+                self._write_json_file(profile_path, profile)
+            migrated[role_key] = deepcopy(profile)
+        return migrated
+
     def _load_profiles(self):
         profiles = {role_key: _default_profile(role_key) for role_key, _ in ROLE_ORDER}
-        if os.path.exists(self.preset_path):
-            try:
-                with open(self.preset_path, 'r', encoding='utf-8') as file:
-                    payload = json.load(file)
-            except Exception:
-                payload = {}
-            stored_profiles = payload.get('profiles', {}) if isinstance(payload, dict) else {}
-            if isinstance(stored_profiles, dict):
-                for role_key in profiles:
-                    override = stored_profiles.get(role_key, {})
-                    if isinstance(override, dict):
-                        profiles[role_key].update(deepcopy(override))
-                    profiles[role_key] = _normalize_profile_constraints(role_key, profiles[role_key])
+        latest_profiles = self._migrate_latest_profiles_to_files() if os.path.exists(self.preset_path) else {}
+        for role_key in profiles:
+            profile_path = self._profile_file_path(role_key)
+            override = self._read_json_file(profile_path, fallback=None)
+            if not isinstance(override, dict):
+                override = latest_profiles.get(role_key, {})
+            if isinstance(override, dict):
+                profiles[role_key].update(deepcopy(override))
+            profiles[role_key] = _normalize_profile_constraints(role_key, profiles[role_key])
         return profiles
 
     def _save_profiles(self):
@@ -1805,10 +1928,120 @@ class AppearanceEditorApp:
                 normalized = _normalize_profile_constraints(role_key, self.profiles[role_key])
                 payload_profiles[role_key] = normalized
                 self.profiles[role_key] = deepcopy(normalized)
-        os.makedirs(os.path.dirname(self.preset_path), exist_ok=True)
-        with open(self.preset_path, 'w', encoding='utf-8') as file:
-            json.dump({'profiles': payload_profiles}, file, ensure_ascii=False, indent=2)
-        self.status_text = f'已保存到 {self.preset_path}'
+            self._write_json_file(self._profile_file_path(role_key), payload_profiles[role_key])
+        self._write_json_file(self.preset_path, {'profiles': payload_profiles})
+        self.status_text = f'已保存到 {self._profiles_dir()} 并同步 {self.preset_path}'
+
+    def _build_profiles_payload(self):
+        payload_profiles = {}
+        for role_key in list(self.profiles.keys()):
+            if role_key == 'infantry':
+                store = self._ensure_infantry_profile_store()
+                payload_profiles[role_key] = build_infantry_profile_payload(store.get('subtype_profiles', {}), self.current_infantry_subtype)
+            else:
+                payload_profiles[role_key] = _normalize_profile_constraints(role_key, self.profiles[role_key])
+        return {'profiles': payload_profiles}
+
+    def _runtime_preview_role(self):
+        if self.current_role in {'base', 'outpost', 'energy_mechanism'}:
+            return self.current_role
+        return 'outpost'
+
+    def _apply_role_preview_defaults(self, role_key):
+        if role_key == 'energy_mechanism':
+            self.preview_3d_yaw = -0.90
+            self.preview_3d_pitch = 0.28
+        elif role_key in {'base', 'outpost'}:
+            self.preview_3d_yaw = 0.56
+            self.preview_3d_pitch = 0.34
+        else:
+            self.preview_3d_yaw = 0.72
+            self.preview_3d_pitch = 0.42
+
+    def _runtime_preview_team(self):
+        if self._runtime_preview_role() == 'energy_mechanism':
+            return None
+        simulator_config = self.config.get('simulator', {}) if isinstance(self.config, dict) else {}
+        team = str(simulator_config.get('sim3d_selected_team', 'blue')).strip().lower()
+        return team if team in {'red', 'blue'} else 'blue'
+
+    def _runtime_preview_temp_file(self):
+        if self.runtime_preview_temp_path:
+            return self.runtime_preview_temp_path
+        workspace_root = os.path.dirname(os.path.abspath(__file__))
+        preview_dir = os.path.join(workspace_root, 'appearance_presets', '__runtime_preview__')
+        os.makedirs(preview_dir, exist_ok=True)
+        self.runtime_preview_temp_path = os.path.join(preview_dir, 'latest_appearance.runtime_preview.json')
+        return self.runtime_preview_temp_path
+
+    def _write_runtime_preview_file(self):
+        preview_path = self._runtime_preview_temp_file()
+        with open(preview_path, 'w', encoding='utf-8') as file:
+            json.dump(self._build_profiles_payload(), file, ensure_ascii=False, indent=2)
+        return preview_path
+
+    def _runtime_preview_button_rects(self):
+        preview_width = 116
+        refresh_width = 116
+        top = 22
+        gap = 10
+        refresh_rect = pygame.Rect(self.window_width - 28 - refresh_width, top, refresh_width, 34)
+        preview_rect = pygame.Rect(refresh_rect.x - gap - preview_width, top, preview_width, 34)
+        return (
+            ('launch', '局内预览', preview_rect),
+            ('refresh', '刷新预览', refresh_rect),
+        )
+
+    def _cleanup_runtime_preview_process(self):
+        process = self.runtime_preview_process
+        if process is None:
+            return
+        try:
+            if process.poll() is None:
+                process.terminate()
+        except Exception:
+            pass
+        self.runtime_preview_process = None
+
+    def _launch_runtime_preview(self, refresh=False):
+        role_key = self._runtime_preview_role()
+        preview_path = self._write_runtime_preview_file()
+        if refresh:
+            self._cleanup_runtime_preview_process()
+        elif self.runtime_preview_process is not None and self.runtime_preview_process.poll() is None:
+            self.status_text = 'C# 局内预览已在运行，可直接点击刷新预览'
+            return
+
+        workspace_root = os.path.dirname(os.path.abspath(__file__))
+        project_path = os.path.join(workspace_root, 'src', 'Simulator.ThreeD', 'Simulator.ThreeD.csproj')
+        command = [
+            'dotnet',
+            'run',
+            '--project',
+            project_path,
+            '--',
+            '--renderer',
+            'gpu',
+            '--start-match',
+            '--preview-only',
+            '--appearance-path',
+            preview_path,
+            '--preview-structure',
+            role_key,
+        ]
+        preview_team = self._runtime_preview_team()
+        if preview_team:
+            command.extend(['--preview-team', preview_team])
+
+        creationflags = 0
+        if os.name == 'nt':
+            creationflags = getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0)
+        try:
+            self.runtime_preview_process = subprocess.Popen(command, cwd=workspace_root, creationflags=creationflags)
+            self.status_text = f'C# 局内预览已启动：{role_key}'
+        except Exception as exc:
+            self.runtime_preview_process = None
+            self.status_text = f'C# 局内预览启动失败：{exc}'
 
     def _ensure_infantry_profile_store(self):
         container = self.profiles.setdefault('infantry', _default_profile('infantry'))
@@ -1880,11 +2113,11 @@ class AppearanceEditorApp:
             {'part': 'mount', 'label': '连接件长度', 'kind': 'number', 'key': 'gimbal_mount_length_m', 'min': 0.04, 'max': 2.00, 'step': 0.01},
             {'part': 'mount', 'label': '连接件宽度', 'kind': 'number', 'key': 'gimbal_mount_width_m', 'min': 0.04, 'max': 2.00, 'step': 0.01},
             {'part': 'mount', 'label': '连接件高度', 'kind': 'number', 'key': 'gimbal_mount_height_m', 'min': 0.04, 'max': 2.00, 'step': 0.01},
-            {'part': 'barrel', 'label': '枪管长度', 'kind': 'number', 'key': 'barrel_length_m', 'min': 0.08, 'max': 2.00, 'step': 0.01},
+            {'part': 'barrel', 'label': '枪管长度', 'kind': 'number', 'key': 'barrel_length_m', 'min': 0.00, 'max': 2.00, 'step': 0.01},
             {'part': 'barrel', 'label': '枪管半径', 'kind': 'number', 'key': 'barrel_radius_m', 'min': 0.005, 'max': 2.00, 'step': 0.001},
-            {'part': 'armor', 'label': '装甲宽度', 'kind': 'number', 'key': 'armor_plate_width_m', 'min': 0.08, 'max': 2.00, 'step': 0.01},
-            {'part': 'armor', 'label': '装甲长度', 'kind': 'number', 'key': 'armor_plate_length_m', 'min': 0.08, 'max': 2.00, 'step': 0.01},
-            {'part': 'armor', 'label': '装甲高度', 'kind': 'number', 'key': 'armor_plate_height_m', 'min': 0.08, 'max': 2.00, 'step': 0.01},
+            {'part': 'armor', 'label': '装甲宽度', 'kind': 'number', 'key': 'armor_plate_width_m', 'min': 0.00, 'max': 2.00, 'step': 0.01},
+            {'part': 'armor', 'label': '装甲长度', 'kind': 'number', 'key': 'armor_plate_length_m', 'min': 0.00, 'max': 2.00, 'step': 0.01},
+            {'part': 'armor', 'label': '装甲高度', 'kind': 'number', 'key': 'armor_plate_height_m', 'min': 0.00, 'max': 2.00, 'step': 0.01},
             {'part': 'armor', 'label': '装甲间距', 'kind': 'number', 'key': 'armor_plate_gap_m', 'min': 0.002, 'max': 2.00, 'step': 0.002},
             {'part': 'armor_light', 'label': '灯条长度', 'kind': 'number', 'key': 'armor_light_length_m', 'min': 0.001, 'max': 2.00, 'step': 0.001},
             {'part': 'armor_light', 'label': '灯条宽度', 'kind': 'number', 'key': 'armor_light_width_m', 'min': 0.005, 'max': 2.00, 'step': 0.005},
@@ -1917,9 +2150,13 @@ class AppearanceEditorApp:
             {'part': 'body', 'label': '前哨头部基准高', 'kind': 'number', 'key': 'structure_head_base_height_m', 'min': 0.20, 'max': 4.00, 'step': 0.01, 'roles': {'outpost'}},
             {'part': 'body', 'label': '前哨下肩高度', 'kind': 'number', 'key': 'structure_lower_shoulder_height_m', 'min': 0.10, 'max': 4.00, 'step': 0.01, 'roles': {'outpost'}},
             {'part': 'body', 'label': '前哨上肩高度', 'kind': 'number', 'key': 'structure_upper_shoulder_height_m', 'min': 0.20, 'max': 4.00, 'step': 0.01, 'roles': {'outpost'}},
-            {'part': 'body', 'label': '前哨塔身半径', 'kind': 'number', 'key': 'structure_tower_radius_m', 'min': 0.08, 'max': 2.00, 'step': 0.01, 'roles': {'outpost'}},
+            {'part': 'body', 'label': '前哨塔身半径', 'kind': 'number', 'key': 'structure_tower_radius_m', 'min': 0.00, 'max': 2.00, 'step': 0.01, 'roles': {'outpost'}},
             {'part': 'armor', 'label': '顶部装甲中心高', 'kind': 'number', 'key': 'structure_top_armor_center_height_m', 'min': 0.10, 'max': 4.00, 'step': 0.01, 'roles': {'outpost', 'base'}},
+            {'part': 'armor', 'label': '顶部装甲前后偏移', 'kind': 'number', 'key': 'structure_top_armor_offset_x_m', 'min': -2.00, 'max': 2.00, 'step': 0.01, 'roles': {'outpost', 'base'}},
+            {'part': 'armor', 'label': '顶部装甲左右偏移', 'kind': 'number', 'key': 'structure_top_armor_offset_z_m', 'min': -2.00, 'max': 2.00, 'step': 0.01, 'roles': {'outpost', 'base'}},
             {'part': 'armor', 'label': '顶部装甲倾角', 'kind': 'number', 'key': 'structure_top_armor_tilt_deg', 'min': -180.0, 'max': 180.0, 'step': 1.0, 'roles': {'outpost', 'base'}},
+            {'part': 'armor', 'label': '基地侧甲展开角', 'kind': 'number', 'key': 'structure_side_armor_open_angle_deg', 'min': 0.0, 'max': 120.0, 'step': 1.0, 'roles': {'base'}},
+            {'part': 'armor', 'label': '基地侧甲外伸', 'kind': 'number', 'key': 'structure_side_armor_outward_offset_m', 'min': 0.00, 'max': 1.50, 'step': 0.01, 'roles': {'base'}},
             {'part': 'body', 'label': '基地屋顶高度', 'kind': 'number', 'key': 'structure_roof_height_m', 'min': 0.20, 'max': 4.00, 'step': 0.01, 'roles': {'base'}},
             {'part': 'body', 'label': '基地肩部高度', 'kind': 'number', 'key': 'structure_shoulder_height_m', 'min': 0.20, 'max': 4.00, 'step': 0.01, 'roles': {'base'}},
             {'part': 'body', 'label': '基地短边长度', 'kind': 'number', 'key': 'structure_hex_top_edge_m', 'min': 0.10, 'max': 3.00, 'step': 0.01, 'roles': {'base'}},
@@ -1962,6 +2199,20 @@ class AppearanceEditorApp:
             {'part': 'mount', 'label': '侧悬臂高度偏移', 'kind': 'number', 'key': 'structure_cantilever_offset_y_m', 'min': -1.00, 'max': 1.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
             {'part': 'mount', 'label': '侧悬臂高度', 'kind': 'number', 'key': 'structure_cantilever_height_m', 'min': 0.02, 'max': 1.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
             {'part': 'mount', 'label': '侧悬臂厚度', 'kind': 'number', 'key': 'structure_cantilever_depth_m', 'min': 0.02, 'max': 1.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'assembly', 'label': '下挂模块宽度', 'kind': 'number', 'key': 'structure_lower_module_width_m', 'min': 0.04, 'max': 2.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'assembly', 'label': '下挂模块高度', 'kind': 'number', 'key': 'structure_lower_module_height_m', 'min': 0.04, 'max': 2.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'assembly', 'label': '下挂模块厚度', 'kind': 'number', 'key': 'structure_lower_module_depth_m', 'min': 0.04, 'max': 2.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'assembly', 'label': '下挂模块横向偏移', 'kind': 'number', 'key': 'structure_lower_module_offset_x_m', 'min': 0.05, 'max': 2.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'assembly', 'label': '下挂模块中心高', 'kind': 'number', 'key': 'structure_lower_module_center_height_m', 'min': 0.05, 'max': 3.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'assembly', 'label': '中间悬架宽度', 'kind': 'number', 'key': 'structure_hanger_width_m', 'min': 0.04, 'max': 2.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'assembly', 'label': '中间悬架高度', 'kind': 'number', 'key': 'structure_hanger_height_m', 'min': 0.04, 'max': 2.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'assembly', 'label': '中间悬架厚度', 'kind': 'number', 'key': 'structure_hanger_depth_m', 'min': 0.02, 'max': 1.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'assembly', 'label': '中间悬架中心高', 'kind': 'number', 'key': 'structure_hanger_center_height_m', 'min': 0.05, 'max': 3.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'assembly', 'label': '两侧悬臂间距', 'kind': 'number', 'key': 'structure_cantilever_pair_gap_m', 'min': 0.10, 'max': 5.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'assembly', 'label': '侧悬臂长度', 'kind': 'number', 'key': 'structure_cantilever_length_m', 'min': 0.04, 'max': 2.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'assembly', 'label': '侧悬臂高度偏移', 'kind': 'number', 'key': 'structure_cantilever_offset_y_m', 'min': -1.00, 'max': 1.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'assembly', 'label': '侧悬臂高度', 'kind': 'number', 'key': 'structure_cantilever_height_m', 'min': 0.02, 'max': 1.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
+            {'part': 'assembly', 'label': '侧悬臂厚度', 'kind': 'number', 'key': 'structure_cantilever_depth_m', 'min': 0.02, 'max': 1.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
         ])
         fields.extend([
             {'part': 'body', 'label': '底座长度', 'kind': 'number', 'key': 'structure_base_length_m', 'min': 0.40, 'max': 8.00, 'step': 0.01, 'roles': {'energy_mechanism'}},
@@ -2316,15 +2567,15 @@ class AppearanceEditorApp:
                     state['rear_foot_reach_m'] = -0.05 * ratio
                 elif progress < 0.7:
                     state['front_drop_m'] = 0.18
-                    state['front_raise_m'] = 0.08
-                    state['rear_foot_raise_m'] = -0.08
-                    state['rear_foot_reach_m'] = -0.08
+                    state['front_raise_m'] = 0.00
+                    state['rear_foot_raise_m'] = -0.00
+                    state['rear_foot_reach_m'] = -0.00
                 else:
                     ratio = (progress - 0.7) / 0.3
                     state['front_drop_m'] = 0.18 - 0.10 * ratio
-                    state['front_raise_m'] = 0.08 - 0.04 * ratio
-                    state['rear_foot_raise_m'] = -0.08 * (1.0 - ratio)
-                    state['rear_foot_reach_m'] = -0.08 * (1.0 - ratio)
+                    state['front_raise_m'] = 0.00 - 0.04 * ratio
+                    state['rear_foot_raise_m'] = -0.00 * (1.0 - ratio)
+                    state['rear_foot_reach_m'] = -0.00 * (1.0 - ratio)
         elif self.preview_action_mode == 'jump':
             arc_ratio = math.sin(progress * math.pi)
             state['body_lift_m'] = 0.40 * max(0.0, arc_ratio)
@@ -2401,8 +2652,8 @@ class AppearanceEditorApp:
                 yield ('front_climb', (body_half_x * 0.78, body_y + float(profile['body_height_m']) * 0.22, plate_center_z * side_sign), (plate_top_length * 0.28, max(0.012, plate_height * 0.18), plate_width * 0.6))
 
         armor_half_h = float(profile['armor_plate_height_m']) * 0.5
-        armor_thickness = max(0.012, float(profile.get('armor_plate_gap_m', 0.005)) * 0.75)
-        armor_half_width = float(profile['armor_plate_width_m']) * 0.5
+        armor_thickness = max(0.012, float(profile.get('armor_plate_gap_m', 0.005)) * 0.75, float(profile.get('armor_plate_width_m', 0.16)) * 0.24)
+        armor_half_width = float(profile['armor_plate_length_m']) * 0.5
         for component in _resolved_armor_components(profile):
             yield ('armor', component['center'], (armor_thickness * 0.5, armor_half_h, armor_half_width))
 
@@ -2425,7 +2676,7 @@ class AppearanceEditorApp:
                     side_z = float(leg_geometry['side_offset']) * side_sign
                     yield ('rear_climb', ((leg_geometry['upper_front'][0] + leg_geometry['knee_front'][0]) * 0.5, (leg_geometry['upper_front'][1] + leg_geometry['knee_front'][1]) * 0.5, side_z), (float(profile.get('rear_climb_assist_upper_length_m', 0.09)) * 0.5, upper_height * 0.5, upper_width * 0.5))
                     yield ('rear_climb', ((leg_geometry['upper_rear'][0] + leg_geometry['knee_rear'][0]) * 0.5, (leg_geometry['upper_rear'][1] + leg_geometry['knee_rear'][1]) * 0.5, side_z), (float(profile.get('rear_climb_assist_upper_length_m', 0.09)) * 0.5, upper_height * 0.5, upper_width * 0.5))
-                    yield ('rear_climb', ((leg_geometry['knee_center'][0] + leg_geometry['foot'][0]) * 0.5, (leg_geometry['knee_center'][1] + leg_geometry['foot'][1]) * 0.5, side_z), (float(profile.get('rear_climb_assist_lower_length_m', 0.08)) * 0.5, lower_height * 0.5, lower_width * 0.5))
+                    yield ('rear_climb', ((leg_geometry['knee_center'][0] + leg_geometry['foot'][0]) * 0.5, (leg_geometry['knee_center'][1] + leg_geometry['foot'][1]) * 0.5, side_z), (float(profile.get('rear_climb_assist_lower_length_m', 0.00)) * 0.5, lower_height * 0.5, lower_width * 0.5))
                     yield ('rear_climb', (leg_geometry['upper_front'][0], leg_geometry['upper_front'][1], side_z), (hinge_radius, hinge_radius, hinge_radius))
                     yield ('rear_climb', (leg_geometry['upper_rear'][0], leg_geometry['upper_rear'][1], side_z), (hinge_radius, hinge_radius, hinge_radius))
                     yield ('rear_climb', (leg_geometry['knee_front'][0], leg_geometry['knee_front'][1], side_z), (hinge_radius, hinge_radius, hinge_radius))
@@ -2439,7 +2690,7 @@ class AppearanceEditorApp:
                 for side_sign in (-1.0, 1.0):
                     side_z = float(rear_points['side_offset']) * side_sign
                     yield ('rear_climb', ((rear_points['mount'][0] + rear_points['joint'][0]) * 0.5, (rear_points['mount'][1] + rear_points['joint'][1]) * 0.5, side_z), (float(profile.get('rear_climb_assist_upper_length_m', 0.09)) * 0.5, upper_height * 0.5, upper_width * 0.5))
-                    yield ('rear_climb', ((rear_points['joint'][0] + rear_points['foot'][0]) * 0.5, (rear_points['joint'][1] + rear_points['foot'][1]) * 0.5, side_z), (float(profile.get('rear_climb_assist_lower_length_m', 0.08)) * 0.5, lower_height * 0.5, lower_width * 0.5))
+                    yield ('rear_climb', ((rear_points['joint'][0] + rear_points['foot'][0]) * 0.5, (rear_points['joint'][1] + rear_points['foot'][1]) * 0.5, side_z), (float(profile.get('rear_climb_assist_lower_length_m', 0.00)) * 0.5, lower_height * 0.5, lower_width * 0.5))
                     yield ('rear_climb', (rear_points['joint'][0], rear_points['joint'][1], side_z), (max(upper_height, lower_height) * 0.75, max(upper_height, lower_height) * 0.75, max(upper_width, lower_width) * 0.55))
 
         if has_mount or has_turret:
@@ -2493,13 +2744,13 @@ class AppearanceEditorApp:
             for index, yaw in enumerate([0.0, math.tau / 3.0, math.tau * 2.0 / 3.0]):
                 height = lift + head_base_height - 0.07 + [0.05, 0.0, -0.05][index]
                 yield ('armor', (math.cos(yaw + armor_spin) * radius, height, math.sin(yaw + armor_spin) * radius), (armor_thickness * 0.5, armor_side * 0.5, armor_side * 0.5))
-            yield ('armor_light', (radius * 0.68, lift + tower_height * 0.48, 0.0), (0.020, tower_height * 0.22, 0.080))
+            yield ('armor_light', (radius * 0.68, lift + tower_height * 0.48, 0.0), (0.020, tower_height * 0.22, 0.000))
             return
 
         if role_key == 'energy_mechanism':
             frame_width = max(0.80, float(profile.get('structure_frame_width_m', 1.55)))
             frame_depth = max(0.06, float(profile.get('structure_frame_depth_m', 0.26)))
-            base_height = max(0.08, float(profile.get('structure_base_height_m', 0.30)))
+            base_height = max(0.00, float(profile.get('structure_base_height_m', 0.30)))
             ground_clearance = max(0.0, float(profile.get('structure_ground_clearance_m', 0.0)))
             frame_height = max(0.80, float(profile.get('structure_frame_height_m', 1.72)))
             column_span = max(0.20, min(frame_width, float(profile.get('structure_column_span_m', 1.40))))
@@ -2509,33 +2760,54 @@ class AppearanceEditorApp:
             rotor_phase_rad = math.radians(float(profile.get('structure_rotor_phase_deg', 90.0)))
             rotor_radius = max(0.18, float(profile.get('structure_rotor_radius_m', 0.46)))
             lamp_length = max(0.06, float(profile.get('structure_lamp_length_m', 0.16)))
-            lamp_height = max(0.03, float(profile.get('structure_lamp_height_m', 0.08)))
+            lamp_height = max(0.03, float(profile.get('structure_lamp_height_m', 0.00)))
             lamp_width = max(0.03, float(profile.get('structure_lamp_width_m', 0.07)))
             hanger_w = max(0.18, float(profile.get('structure_hanger_width_m', 0.62)))
             hanger_h = max(0.10, float(profile.get('structure_hanger_height_m', 0.38)))
+            hanger_d = max(0.04, float(profile.get('structure_hanger_depth_m', 0.10)))
             hanger_center_h = max(hanger_h * 0.5, float(profile.get('structure_hanger_center_height_m', 1.18)))
-            cantilever_pair_gap = max(frame_width + max(0.08, float(profile.get('structure_cantilever_length_m', 0.36))), float(profile.get('structure_cantilever_pair_gap_m', frame_width + 0.36)))
-            cantilever_length = max(0.08, float(profile.get('structure_cantilever_length_m', 0.36)))
+            cantilever_pair_gap = max(frame_width + max(0.00, float(profile.get('structure_cantilever_length_m', 0.36))), float(profile.get('structure_cantilever_pair_gap_m', frame_width + 0.36)))
+            cantilever_length = max(0.00, float(profile.get('structure_cantilever_length_m', 0.36)))
             cantilever_offset_y = float(profile.get('structure_cantilever_offset_y_m', 0.0))
             cantilever_height = max(0.04, float(profile.get('structure_cantilever_height_m', 0.12)))
             cantilever_depth = max(0.04, float(profile.get('structure_cantilever_depth_m', 0.10)))
             rotor_yaw = float(profile.get('_preview_energy_rotor_yaw_rad', 0.0))
             body_length = max(0.40, float(profile.get('structure_base_length_m', max(frame_width * 1.65, float(profile.get('body_length_m', 1.55)) * 1.72))))
             body_width = max(0.40, float(profile.get('structure_base_width_m', max(frame_depth * 6.0, float(profile.get('body_width_m', 0.98)) * 2.45))))
-            yield ('body', (0.0, ground_clearance + base_height * 0.5, 0.0), (body_length * 0.5, base_height * 0.5, body_width * 0.5))
-            yield ('body', (0.0, ground_clearance + base_height + 0.10, 0.0), (body_length * 0.31, 0.10, body_width * 0.17))
-            yield ('body', (-support_offset, ground_clearance + base_height + (frame_height - base_height) * 0.5, 0.0), (column_w * 0.5, (frame_height - base_height) * 0.5, frame_depth * 0.5))
-            yield ('body', (support_offset, ground_clearance + base_height + (frame_height - base_height) * 0.5, 0.0), (column_w * 0.5, (frame_height - base_height) * 0.5, frame_depth * 0.5))
-            yield ('body', (0.0, ground_clearance + frame_height - max(0.04, float(profile.get('structure_frame_beam_height_m', 0.10))) * 0.5, 0.0), (frame_width * 0.5, max(0.04, float(profile.get('structure_frame_beam_height_m', 0.10))) * 0.5, frame_depth * 0.5))
-            yield ('mount', (0.0, hanger_center_h, 0.0), (hanger_w * 0.5, hanger_h * 0.5, frame_depth * 0.25))
-            yield ('turret', (0.0, rotor_center_h, 0.0), (rotor_radius, rotor_radius, max(frame_depth * 0.55, 0.06)))
-            rotor_layer = max(frame_depth * 0.45, 0.06)
-            for rotor_index, rotor_z in enumerate((-rotor_layer, rotor_layer)):
-                side_sign = -1.0 if rotor_index == 0 else 1.0
-                yield ('mount', (side_sign * cantilever_pair_gap * 0.5, rotor_center_h + cantilever_offset_y, rotor_z), (cantilever_length * 0.5, cantilever_height * 0.5, cantilever_depth * 0.5))
+            base_pad_length = max(0.20, float(profile.get('structure_base_top_length_m', body_length * 0.34)))
+            base_pad_width = max(0.16, float(profile.get('structure_base_top_width_m', body_width * 0.24)))
+            post_height = max(0.80, frame_height - base_height)
+            beam_h = max(0.04, float(profile.get('structure_frame_beam_height_m', 0.10)))
+            top_beam_y = ground_clearance + frame_height - beam_h * 0.5
+            for side_sign in (-1.0, 1.0):
+                yield ('body', (side_sign * support_offset, ground_clearance + base_height * 0.5, 0.0), (base_pad_length * 0.5, base_height * 0.5, base_pad_width * 0.5))
+                yield ('body', (side_sign * support_offset, ground_clearance + base_height + post_height * 0.5, 0.0), (column_w * 0.5, post_height * 0.5, frame_depth * 0.5))
+            yield ('mount', (0.0, top_beam_y, 0.0), (max(frame_width, support_offset * 2.0) * 0.5, beam_h * 0.5, column_w * 0.6))
+            lower_module_w = max(0.04, float(profile.get('structure_lower_module_width_m', 0.20)))
+            lower_module_h = max(0.04, float(profile.get('structure_lower_module_height_m', 0.24)))
+            lower_module_d = max(0.04, float(profile.get('structure_lower_module_depth_m', 0.18)))
+            lower_module_offset = max(0.05, float(profile.get('structure_lower_module_offset_x_m', 0.48)))
+            lower_module_center_h = max(base_height + lower_module_h * 0.5, float(profile.get('structure_lower_module_center_height_m', 0.94)))
+            rotor_axis_gap = max(
+                frame_depth * 1.8,
+                max(0.05, float(profile.get('structure_rotor_hub_radius_m', 0.09))) * 2.6,
+                min(cantilever_pair_gap, frame_width) * 0.42 + cantilever_length * 0.30,
+            )
+            for rotor_index, rotor_z in enumerate((-rotor_axis_gap * 0.5, rotor_axis_gap * 0.5)):
+                rotor_center_x = 0.0
+                rotor_center_y = rotor_center_h + cantilever_offset_y
+                connector_center_y = hanger_center_h
+                yield ('mount', (0.0, (connector_center_y + rotor_center_y) * 0.5, rotor_z * 0.5), (max(hanger_w * 0.5, 0.08), max(abs(rotor_center_y - connector_center_y) * 0.5, cantilever_height), max(abs(rotor_z) * 0.5, cantilever_depth * 0.5)))
+                yield ('turret', (rotor_center_x, rotor_center_y, rotor_z), (rotor_radius, rotor_radius, max(frame_depth * 0.55, 0.06)))
                 for index in range(5):
                     yaw = rotor_yaw + rotor_phase_rad + index * math.tau / 5.0
-                    yield ('armor_light', (math.cos(yaw) * rotor_radius, rotor_center_h + math.sin(yaw) * rotor_radius, rotor_z), (lamp_length * 0.50, lamp_height * 0.55, lamp_width * 0.30))
+                    yield ('armor_light', (rotor_center_x + math.cos(yaw) * rotor_radius, rotor_center_y + math.sin(yaw) * rotor_radius, rotor_z), (lamp_length * 0.50, lamp_height * 0.55, lamp_width * 0.30))
+            module_side_offset = max(lower_module_w * 0.72, lower_module_offset)
+            assembly_center_y = (hanger_center_h + lower_module_center_h) * 0.5
+            assembly_half_y = max(0.06, abs(hanger_center_h - lower_module_center_h) * 0.5 + lower_module_h * 0.6)
+            yield ('assembly', (0.0, assembly_center_y, 0.0), (module_side_offset + lower_module_w * 0.6, assembly_half_y, max(lower_module_d * 0.8, hanger_d * 0.5)))
+            for side_sign in (-1.0, 1.0):
+                yield ('assembly', (side_sign * module_side_offset, lower_module_center_h, 0.0), (lower_module_w * 0.6, lower_module_h * 0.5, lower_module_d * 0.6))
             return
 
         length = max(0.8, float(profile.get('body_length_m', 1.881)))
@@ -2777,7 +3049,7 @@ class AppearanceEditorApp:
         if has_rear_climb:
             rear_points = _rear_climb_points(profile, render_width_scale)
             upper_length = max(8, int(profile.get('rear_climb_assist_upper_length_m', 0.09) * scale))
-            lower_length = max(8, int(profile.get('rear_climb_assist_lower_length_m', 0.08) * scale))
+            lower_length = max(8, int(profile.get('rear_climb_assist_lower_length_m', 0.00) * scale))
             bar_width = max(6, int(max(profile.get('rear_climb_assist_upper_width_m', 0.016), profile.get('rear_climb_assist_lower_width_m', 0.016)) * scale * 2.0))
             for side_sign in (-1.0, 1.0):
                 side_y = rear_points['side_offset'] * side_sign
@@ -3043,7 +3315,7 @@ class AppearanceEditorApp:
         if self.selected_part is None:
             hint_lines = [
                 '右侧预览中点击部件后，这里才会出现对应的长宽高与颜色参数。',
-                '当前可选：底盘、车轮、前爬升板、后腿机构、云台、枪管、连接件、装甲板、装甲灯条、枪管灯条。',
+                '当前可选：底盘、车轮、前爬升板、后腿机构、云台、枪管、连接件、装甲板、装甲灯条、枪管灯条；能量机关额外支持装配机构。',
             ]
             for index, line in enumerate(hint_lines):
                 self._draw_text(line, self.small_font, self.colors['muted'], (content_rect.x + 16, content_rect.y + 18 + index * 26))
@@ -3088,6 +3360,15 @@ class AppearanceEditorApp:
     def _draw_header(self):
         self._draw_text('车辆外貌编辑器', self.title_font, self.colors['text'], (28, 22))
         self._draw_text('保存后的预设会在后续创建单位时自动应用', self.small_font, self.colors['muted'], (30, 52))
+        self.runtime_preview_buttons = self._runtime_preview_button_rects()
+        for action, label, rect in self.runtime_preview_buttons:
+            enabled = action == 'launch' or self.current_role in {'base', 'outpost', 'energy_mechanism'}
+            fill = self.colors['accent'] if action == 'launch' and enabled else (self.colors['panel_alt'] if enabled else (42, 46, 52))
+            pygame.draw.rect(self.screen, fill, rect, border_radius=8)
+            pygame.draw.rect(self.screen, self.colors['panel_border'], rect, 1, border_radius=8)
+            text_color = (20, 22, 24) if action == 'launch' and enabled else (self.colors['text'] if enabled else self.colors['muted'])
+            text_surface = self.small_font.render(label, True, text_color)
+            self.screen.blit(text_surface, text_surface.get_rect(center=rect.center))
         for role_key, label, rect in self._role_tabs():
             active = role_key == self.current_role
             pygame.draw.rect(self.screen, self.colors['accent'] if active else self.colors['panel_alt'], rect, border_radius=8)
@@ -3107,6 +3388,11 @@ class AppearanceEditorApp:
         self._draw_text(self.status_text, self.small_font, self.colors['muted'], footer_rect.topleft)
 
     def _handle_click(self, pos):
+        for action, _, rect in self.runtime_preview_buttons:
+            if rect.collidepoint(pos):
+                self._launch_runtime_preview(refresh=action == 'refresh')
+                self.active_numeric_input = None
+                return
         for mode_key, _, rect in self.preview_mode_tabs:
             if rect.collidepoint(pos):
                 self.preview_mode = mode_key
@@ -3127,6 +3413,7 @@ class AppearanceEditorApp:
         for role_key, _, rect in self._role_tabs():
             if rect.collidepoint(pos):
                 self.current_role = role_key
+                self._apply_role_preview_defaults(role_key)
                 self.active_numeric_input = None
                 return
         for subtype, _, rect in self.infantry_subtype_tabs:
@@ -3244,6 +3531,7 @@ class AppearanceEditorApp:
             role_keys = [role_key for role_key, _ in ROLE_ORDER]
             current_index = role_keys.index(self.current_role)
             self.current_role = role_keys[(current_index + 1) % len(role_keys)]
+            self._apply_role_preview_defaults(self.current_role)
             self.selected_part = None
             self.selected_field_index = 0
             self.active_numeric_input = None
@@ -3295,6 +3583,7 @@ class AppearanceEditorApp:
             role_index = int(event.unicode) - 1 if event.unicode in {'1', '2', '3', '4'} else None
             if role_index is not None and 0 <= role_index < len(ROLE_ORDER):
                 self.current_role = ROLE_ORDER[role_index][0]
+                self._apply_role_preview_defaults(self.current_role)
 
     def render(self):
         self.screen.fill(self.colors['bg'])
@@ -3311,6 +3600,7 @@ class AppearanceEditorApp:
                 self.handle_event(event)
             self.render()
             self.clock.tick(60)
+        self._cleanup_runtime_preview_process()
         pygame.quit()
 
 

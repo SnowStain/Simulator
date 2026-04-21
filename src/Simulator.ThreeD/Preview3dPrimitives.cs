@@ -6,6 +6,40 @@ internal readonly record struct Preview3dFace(Vector3[] Vertices, Color BaseColo
 
 internal static class Preview3dPrimitives
 {
+    public static void AddOrientedBox(
+        ICollection<Preview3dFace> faces,
+        Vector3 center,
+        Vector3 forward,
+        Vector3 right,
+        Vector3 up,
+        float length,
+        float width,
+        float height,
+        Color color)
+    {
+        Vector3 halfForward = Vector3.Normalize(forward) * (length * 0.5f);
+        Vector3 halfRight = Vector3.Normalize(right) * (width * 0.5f);
+        Vector3 halfUp = Vector3.Normalize(up) * (height * 0.5f);
+        Vector3[] corners =
+        {
+            center - halfForward - halfRight - halfUp,
+            center + halfForward - halfRight - halfUp,
+            center + halfForward + halfRight - halfUp,
+            center - halfForward + halfRight - halfUp,
+            center - halfForward - halfRight + halfUp,
+            center + halfForward - halfRight + halfUp,
+            center + halfForward + halfRight + halfUp,
+            center - halfForward + halfRight + halfUp,
+        };
+
+        AddQuad(faces, corners[0], corners[1], corners[2], corners[3], color);
+        AddQuad(faces, corners[4], corners[5], corners[6], corners[7], color);
+        AddQuad(faces, corners[0], corners[1], corners[5], corners[4], color);
+        AddQuad(faces, corners[1], corners[2], corners[6], corners[5], color);
+        AddQuad(faces, corners[2], corners[3], corners[7], corners[6], color);
+        AddQuad(faces, corners[3], corners[0], corners[4], corners[7], color);
+    }
+
     public static void AddBox(ICollection<Preview3dFace> faces, Vector3 center, Vector3 halfExtents, Color color, float yawRad = 0f)
     {
         Vector3[] corners =
@@ -45,6 +79,56 @@ internal static class Preview3dPrimitives
         {
             int next = (index + 1) % bottom.Count;
             AddQuad(faces, bottom[index], bottom[next], top[next], top[index], Darken(color, 0.92f));
+        }
+    }
+
+    public static void AddCylinder(
+        ICollection<Preview3dFace> faces,
+        Vector3 center,
+        Vector3 normalAxis,
+        Vector3 upAxis,
+        float radius,
+        float thickness,
+        Color color,
+        int segments = 18)
+    {
+        Vector3 normal = normalAxis.LengthSquared() <= 1e-8f ? Vector3.UnitX : Vector3.Normalize(normalAxis);
+        Vector3 up = upAxis.LengthSquared() <= 1e-8f ? Vector3.UnitY : Vector3.Normalize(upAxis);
+        if (MathF.Abs(Vector3.Dot(normal, up)) > 0.98f)
+        {
+            up = Vector3.UnitY;
+            if (MathF.Abs(Vector3.Dot(normal, up)) > 0.98f)
+            {
+                up = Vector3.UnitZ;
+            }
+        }
+
+        Vector3 tangent = Vector3.Normalize(up - normal * Vector3.Dot(up, normal));
+        Vector3 bitangent = Vector3.Normalize(Vector3.Cross(normal, tangent));
+        float halfThickness = Math.Max(0.001f, thickness * 0.5f);
+        segments = Math.Max(8, segments);
+        Vector3 frontCenter = center - normal * halfThickness;
+        Vector3 backCenter = center + normal * halfThickness;
+        var front = new Vector3[segments];
+        var back = new Vector3[segments];
+        for (int index = 0; index < segments; index++)
+        {
+            float angle = MathF.Tau * index / segments;
+            Vector3 offset = tangent * (MathF.Cos(angle) * radius) + bitangent * (MathF.Sin(angle) * radius);
+            front[index] = frontCenter + offset;
+            back[index] = backCenter + offset;
+        }
+
+        for (int index = 1; index < segments - 1; index++)
+        {
+            AddTriangle(faces, front[0], front[index], front[index + 1], color);
+            AddTriangle(faces, back[0], back[index + 1], back[index], Darken(color, 0.88f));
+        }
+
+        for (int index = 0; index < segments; index++)
+        {
+            int next = (index + 1) % segments;
+            AddQuad(faces, front[index], front[next], back[next], back[index], Darken(color, 0.82f));
         }
     }
 

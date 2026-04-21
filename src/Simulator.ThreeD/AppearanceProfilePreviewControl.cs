@@ -166,12 +166,21 @@ internal sealed class AppearanceProfilePreviewControl : Control
 
         var faces = new List<Preview3dFace>();
         BuildRobotPreview(faces, profile);
-        float maxSpan = (float)Math.Max(
-            0.5,
-            Math.Max(profile.BodyLengthM + profile.BarrelLengthM + 0.5, profile.BodyWidthM + 0.5));
-        float maxHeight = (float)Math.Max(
-            0.5,
-            profile.BodyClearanceM + profile.BodyHeightM + Math.Max(profile.GimbalHeightM + profile.GimbalBodyHeightM, profile.StructureTopArmorCenterHeightM) + 0.4);
+        bool energyMechanism = string.Equals(profile.RoleKey, "energy_mechanism", StringComparison.OrdinalIgnoreCase);
+        float maxSpan = energyMechanism
+            ? (float)Math.Max(
+                3.0f,
+                Math.Max(profile.StructureBaseLengthM, profile.StructureCantileverPairGapM + profile.StructureBaseLengthM) + 1.0f)
+            : (float)Math.Max(
+                0.5,
+                Math.Max(profile.BodyLengthM + profile.BarrelLengthM + 0.5, profile.BodyWidthM + 0.5));
+        float maxHeight = energyMechanism
+            ? (float)Math.Max(
+                1.8f,
+                profile.StructureGroundClearanceM + profile.StructureBaseHeightM + profile.StructureFrameHeightM + profile.StructureRotorRadiusM + profile.StructureLampHeightM + 0.6f)
+            : (float)Math.Max(
+                0.5,
+                profile.BodyClearanceM + profile.BodyHeightM + Math.Max(profile.GimbalHeightM + profile.GimbalBodyHeightM, profile.StructureTopArmorCenterHeightM) + 0.4);
         float scale = Math.Min(viewport.Width / Math.Max(0.4f, maxSpan), viewport.Height / Math.Max(0.4f, maxHeight)) * 0.72f;
         Vector3 center = new(0f, maxHeight * 0.36f, 0f);
 
@@ -192,6 +201,28 @@ internal sealed class AppearanceProfilePreviewControl : Control
 
     private static void BuildRobotPreview(ICollection<Preview3dFace> faces, RobotAppearanceProfileDefinition profile)
     {
+        if (string.Equals(profile.RoleKey, "energy_mechanism", StringComparison.OrdinalIgnoreCase))
+        {
+            RobotAppearanceProfile runtimeProfile = AppearanceProfileCatalog.ResolvePreviewProfile(profile);
+            EnergyRenderMesh mesh = EnergyMechanismGeometry.BuildPreviewPair(runtimeProfile, 0.0f);
+            foreach (EnergyRenderPrism prism in mesh.Prisms)
+            {
+                Preview3dPrimitives.AddPrism(faces, prism.Bottom, prism.Top, prism.FillColor);
+            }
+
+            foreach (EnergyRenderBox box in mesh.Boxes)
+            {
+                Preview3dPrimitives.AddOrientedBox(faces, box.Center, box.Forward, box.Right, box.Up, box.Length, box.Width, box.Height, box.FillColor);
+            }
+
+            foreach (EnergyRenderCylinder cylinder in mesh.Cylinders)
+            {
+                Preview3dPrimitives.AddCylinder(faces, cylinder.Center, cylinder.NormalAxis, cylinder.UpAxis, cylinder.Radius, cylinder.Thickness, cylinder.FillColor, cylinder.Segments);
+            }
+
+            return;
+        }
+
         float bodyHalfX = (float)Math.Max(0.05, profile.BodyLengthM * 0.5);
         float bodyHalfY = (float)Math.Max(0.05, profile.BodyHeightM * 0.5);
         float bodyHalfZ = (float)Math.Max(0.05, profile.BodyWidthM * Math.Max(0.4, profile.BodyRenderWidthScale) * 0.5);

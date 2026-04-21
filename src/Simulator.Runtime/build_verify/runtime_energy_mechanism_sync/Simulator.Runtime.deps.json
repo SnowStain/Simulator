@@ -1,0 +1,74 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v9.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v9.0": {
+      "Simulator.Runtime/1.0.0": {
+        "dependencies": {
+          "Simulator.Assets": "1.0.0",
+          "Simulator.Core": "1.0.0",
+          "Simulator.Editors": "1.0.0"
+        },
+        "runtime": {
+          "Simulator.Runtime.dll": {}
+        }
+      },
+      "Simulator.Assets/1.0.0": {
+        "dependencies": {
+          "Simulator.Core": "1.0.0"
+        },
+        "runtime": {
+          "Simulator.Assets.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "Simulator.Core/1.0.0": {
+        "runtime": {
+          "Simulator.Core.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "Simulator.Editors/1.0.0": {
+        "dependencies": {
+          "Simulator.Assets": "1.0.0",
+          "Simulator.Core": "1.0.0"
+        },
+        "runtime": {
+          "Simulator.Editors.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "Simulator.Runtime/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Simulator.Assets/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Simulator.Core/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Simulator.Editors/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

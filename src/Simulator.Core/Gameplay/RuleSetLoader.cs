@@ -23,6 +23,15 @@ public sealed class RuleSetLoader
         ruleSet.Combat.AutoAimMaxDistanceM = GetDouble(rules, ruleSet.Combat.AutoAimMaxDistanceM, "shooting", "auto_aim_max_distance_m");
         ruleSet.Combat.FastSpinHitMultiplier = GetDouble(rules, ruleSet.Combat.FastSpinHitMultiplier, "shooting", "fast_spin_hit_multiplier");
         ruleSet.Combat.FireRateHz = GetDouble(rules, ruleSet.Combat.FireRateHz, "shooting", "fire_rate_hz");
+        ruleSet.Combat.Damage17ToRobot = GetDouble(rules, ruleSet.Combat.Damage17ToRobot, "damage", "robot", "bullet_17mm");
+        ruleSet.Combat.Damage42ToRobot = GetDouble(rules, ruleSet.Combat.Damage42ToRobot, "damage", "robot", "bullet_42mm");
+        ruleSet.Combat.Damage17ToStructure = GetDouble(rules, ruleSet.Combat.Damage17ToStructure, "damage", "base", "bullet_17mm");
+        ruleSet.Combat.Damage42ToStructure = GetDouble(rules, ruleSet.Combat.Damage42ToStructure, "damage", "base", "bullet_42mm");
+        ruleSet.Combat.Damage17ToBaseFrontUpperArmor = GetDouble(rules, ruleSet.Combat.Damage17ToBaseFrontUpperArmor, "damage", "base", "bullet_17mm_front_upper");
+        ruleSet.Combat.Damage17ToBaseOtherArmor = GetDouble(rules, ruleSet.Combat.Damage17ToBaseOtherArmor, "damage", "base", "bullet_17mm");
+        ruleSet.Combat.Damage17ToOutpostArmor = GetDouble(rules, ruleSet.Combat.Damage17ToOutpostArmor, "damage", "outpost", "bullet_17mm");
+        ruleSet.Combat.Damage42ToOutpostArmor = GetDouble(rules, ruleSet.Combat.Damage42ToOutpostArmor, "damage", "outpost", "bullet_42mm");
+        ruleSet.Combat.CollisionDamageToRobot = GetDouble(rules, ruleSet.Combat.CollisionDamageToRobot, "damage", "robot", "collision");
 
         ruleSet.Heat.HeatDetectionHz = GetDouble(rules, ruleSet.Heat.HeatDetectionHz, "shooting", "heat_detection_hz");
         ruleSet.Heat.HeatGain17 = GetDouble(rules, ruleSet.Heat.HeatGain17, "shooting", "heat_gain_17mm");

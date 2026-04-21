@@ -8,7 +8,7 @@ internal sealed partial class Simulator3dForm
 {
     private const int MaxTerrainTopMergeSpan = 36;
     private const int MaxTerrainWallMergeSpan = 56;
-    private const float TerrainSlopeSmoothThresholdM = 0.045f;
+    private const float TerrainSlopeSmoothThresholdM = 0.049f;
 
     private enum TerrainWallEdge
     {

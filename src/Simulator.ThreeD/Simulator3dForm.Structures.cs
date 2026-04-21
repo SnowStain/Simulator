@@ -56,13 +56,10 @@ internal sealed partial class Simulator3dForm
         center += Vector3.UnitY * baseLiftM;
         float yaw = (float)(entity.AngleDeg * Math.PI / 180.0);
         Color teamColor = ResolveTeamColor(entity.Team);
-        Color mapGroundColor = ResolveStructureGroundBlendColor(entity);
-        Color bodyColor = entity.IsAlive
-            ? TintProfileColor(profile.BodyColor, teamColor, 0.16f, true)
-            : BlendColor(mapGroundColor, Color.FromArgb(84, 94, 108), 0.25f);
+        Color bodyColor = ResolveDeepGrayMaterial(profile.BodyColor, entity.IsAlive, 0.00f);
         Color edgeColor = Color.FromArgb(entity.IsAlive ? 252 : 216, BlendColor(bodyColor, Color.Black, 0.16f));
-        Color darkBody = BlendColor(mapGroundColor, teamColor, entity.IsAlive ? 0.10f : 0.02f);
-        Color capColor = TintProfileColor(profile.TurretColor, teamColor, entity.IsAlive ? 0.18f : 0.02f, entity.IsAlive);
+        Color darkBody = ResolveDeepGrayMaterial(profile.BodyColor, entity.IsAlive, -0.06f);
+        Color capColor = ResolveDeepGrayMaterial(profile.TurretColor, entity.IsAlive, 0.04f);
         float towerHeight = Math.Clamp(profile.BodyHeightM, 1.00f, 2.40f);
         float bodyTopHeight = Math.Clamp(profile.StructureBodyTopHeightM, 0.12f, towerHeight);
         float lowerShoulderHeight = Math.Clamp(profile.StructureLowerShoulderHeightM, 0.08f, bodyTopHeight);
@@ -270,14 +267,9 @@ internal sealed partial class Simulator3dForm
         Vector3 forward = new(MathF.Cos(yaw), 0f, MathF.Sin(yaw));
         Vector3 right = new(-forward.Z, 0f, forward.X);
         Color teamColor = ResolveTeamColor(entity.Team);
-        Color mapGroundColor = ResolveStructureGroundBlendColor(entity);
-        Color bodyColor = entity.IsAlive
-            ? BlendColor(TintProfileColor(profile.BodyColor, teamColor, 0.12f, true), mapGroundColor, 0.28f)
-            : BlendColor(mapGroundColor, Color.FromArgb(84, 94, 108), 0.25f);
-        Color armorColor = entity.IsAlive
-            ? TintProfileColor(profile.ArmorColor, teamColor, 0.20f, true)
-            : Color.FromArgb(92, 98, 108);
-        Color darkColor = BlendColor(mapGroundColor, Color.FromArgb(36, 40, 46), 0.28f);
+        Color bodyColor = ResolveDeepGrayMaterial(profile.BodyColor, entity.IsAlive, 0.00f);
+        Color armorColor = ResolveDeepGrayMaterial(profile.ArmorColor, entity.IsAlive, 0.02f);
+        Color darkColor = ResolveDeepGrayMaterial(profile.BodyColor, entity.IsAlive, -0.09f);
         Color edgeColor = Color.FromArgb(entity.IsAlive ? 252 : 216, BlendColor(bodyColor, Color.Black, 0.18f));
 
         float baseLength = Math.Clamp(profile.BodyLengthM > 1e-4f ? profile.BodyLengthM : BaseDiagramLengthM, 1.10f, 2.35f);
@@ -295,6 +287,7 @@ internal sealed partial class Simulator3dForm
             DrawTaperedBaseSection(
                 graphics,
                 center,
+                profile,
                 yaw,
                 baseLength,
                 baseWidth,
@@ -308,6 +301,7 @@ internal sealed partial class Simulator3dForm
             DrawTaperedBaseSection(
                 graphics,
                 center,
+                profile,
                 yaw,
                 baseLength * 0.90f,
                 baseWidth * 0.88f,
@@ -321,6 +315,7 @@ internal sealed partial class Simulator3dForm
             DrawTaperedBaseSection(
                 graphics,
                 center,
+                profile,
                 yaw,
                 baseLength * 0.62f,
                 baseWidth * 0.56f,
@@ -342,7 +337,7 @@ internal sealed partial class Simulator3dForm
                 0.11f,
                 0.12f,
                 Math.Min(baseHeight * 0.66f, profile.StructureCoreColumnHeightM > 1e-4f ? profile.StructureCoreColumnHeightM : BaseCoreColumnHeightM),
-                Color.FromArgb(255, BlendColor(ResolveTeamColor(entity.Team), Color.FromArgb(198, 32, 26), 0.58f)),
+                Color.FromArgb(255, ResolveDeepGrayMaterial(profile.BodyColor, entity.IsAlive, -0.02f)),
                 Color.FromArgb(248, BlendColor(edgeColor, Color.Black, 0.18f)),
                 null);
 
@@ -354,8 +349,8 @@ internal sealed partial class Simulator3dForm
             string? lockedPlateId = ResolveLockedPlateIdFor(entity);
             float slideM = 0f;
             Vector3 topPlateCenter = center
-                + forward * (baseLength * 0.04f)
-                + right * slideM
+                + forward * (baseLength * 0.04f + profile.StructureTopArmorOffsetXM)
+                + right * (slideM + profile.StructureTopArmorOffsetZM)
                 + Vector3.UnitY * (profile.StructureTopArmorCenterHeightM > 1e-4f ? profile.StructureTopArmorCenterHeightM : baseHeight * (BaseTopArmorCenterHeightM / BaseDiagramHeightM));
             if (!IsTerrainOccludingPoint(topPlateCenter))
             {
@@ -544,7 +539,8 @@ internal sealed partial class Simulator3dForm
     {
         Vector3 forward = new(MathF.Cos(yaw), 0f, MathF.Sin(yaw));
         Vector3 right = new(-forward.Z, 0f, forward.X);
-        float openAngle = 27.5f * MathF.PI / 180f;
+        float openAngle = (profile.StructureSideArmorOpenAngleDeg > 1e-4f ? profile.StructureSideArmorOpenAngleDeg : 27.5f) * MathF.PI / 180f;
+        float outwardOffset = profile.StructureSideArmorOutwardOffsetM > 1e-4f ? profile.StructureSideArmorOutwardOffsetM : 0.12f;
         for (int sideIndex = 0; sideIndex < 2; sideIndex++)
         {
             float sideSign = sideIndex == 0 ? -1f : 1f;
@@ -557,7 +553,7 @@ internal sealed partial class Simulator3dForm
             }
 
             Vector3 panelCenter = center
-                + sideDirection * (baseWidth * 0.33f + 0.12f)
+                + sideDirection * (baseWidth * 0.33f + outwardOffset)
                 + forward * (-baseLength * 0.05f)
                 + Vector3.UnitY * (baseHeight * 0.58f);
             DrawOrientedBoxSolid(
@@ -762,6 +758,7 @@ internal sealed partial class Simulator3dForm
     private void DrawTaperedBaseSection(
         Graphics graphics,
         Vector3 center,
+        RobotAppearanceProfile profile,
         float yaw,
         float bottomLength,
         float bottomWidth,
@@ -772,8 +769,8 @@ internal sealed partial class Simulator3dForm
         Color fillColor,
         Color edgeColor)
     {
-        IReadOnlyList<Vector3> bottom = BuildBaseOctagonalFootprint(center, bottomLength, bottomWidth, bottomHeight, yaw);
-        IReadOnlyList<Vector3> top = BuildBaseOctagonalFootprint(center, topLength, topWidth, topHeight, yaw);
+        IReadOnlyList<Vector3> bottom = BuildBaseHexagonalFootprint(center, profile, bottomLength, bottomWidth, bottomHeight, yaw);
+        IReadOnlyList<Vector3> top = BuildBaseHexagonalFootprint(center, profile, topLength, topWidth, topHeight, yaw);
         DrawGeneralPrism(graphics, bottom, top, fillColor, edgeColor, null);
     }
 
@@ -786,8 +783,9 @@ internal sealed partial class Simulator3dForm
     private static float ResolveStructureArmorPlateThicknessM(SimulationEntity entity)
         => Math.Clamp((float)Math.Max(entity.ArmorPlateGapM, StructureArmorPlateThicknessM), 0.012f, 0.10f);
 
-    private static IReadOnlyList<Vector3> BuildBaseOctagonalFootprint(
+    private static IReadOnlyList<Vector3> BuildBaseHexagonalFootprint(
         Vector3 center,
+        RobotAppearanceProfile profile,
         float length,
         float width,
         float height,
@@ -795,17 +793,19 @@ internal sealed partial class Simulator3dForm
     {
         float halfLength = Math.Max(0.05f, length * 0.5f);
         float halfWidth = Math.Max(0.05f, width * 0.5f);
-        float chamfer = MathF.Min(halfLength, halfWidth) * 0.26f;
+        float shortEdge = Math.Clamp(
+            profile.StructureHexTopEdgeM > 1e-4f ? profile.StructureHexTopEdgeM : length * 0.58f,
+            0.05f,
+            length * 0.92f);
+        float cornerX = MathF.Min(halfLength * 0.92f, shortEdge * 0.5f);
         Vector2[] local =
         {
-            new(-halfLength + chamfer, -halfWidth),
-            new(halfLength - chamfer, -halfWidth),
-            new(halfLength, -halfWidth + chamfer),
-            new(halfLength, halfWidth - chamfer),
-            new(halfLength - chamfer, halfWidth),
-            new(-halfLength + chamfer, halfWidth),
-            new(-halfLength, halfWidth - chamfer),
-            new(-halfLength, -halfWidth + chamfer),
+            new(-cornerX, -halfWidth),
+            new(cornerX, -halfWidth),
+            new(halfLength, 0f),
+            new(cornerX, halfWidth),
+            new(-cornerX, halfWidth),
+            new(-halfLength, 0f),
         };
 
         Vector2 forward = new(MathF.Cos(yaw), MathF.Sin(yaw));
@@ -881,215 +881,56 @@ internal sealed partial class Simulator3dForm
             null);
     }
 
-    private float DrawEnergyMechanismModel(Graphics graphics, FacilityRegion region)
+    private float DrawEnergyMechanismModel(Graphics graphics, FacilityRegion region, double? overrideCenterWorldX = null, double? overrideCenterWorldY = null)
     {
-        RobotAppearanceProfile profile = _host.AppearanceCatalog.Resolve("energy_mechanism");
-        double centerWorldX = (region.X1 + region.X2) * 0.5;
-        double centerWorldY = (region.Y1 + region.Y2) * 0.5;
+        RobotAppearanceProfile profile = _host.AppearanceCatalog.ResolveFacilityProfile(region);
+        (double centerWorldX, double centerWorldY) = overrideCenterWorldX.HasValue && overrideCenterWorldY.HasValue
+            ? (overrideCenterWorldX.Value, overrideCenterWorldY.Value)
+            : ResolveFacilityRegionCenter(region);
         Vector3 center = ToScenePoint(centerWorldX, centerWorldY, 0f);
-        float metersPerWorldUnit = (float)Math.Max(_host.World.MetersPerWorldUnit, 1e-6);
-        float footprintWidthM = (float)Math.Abs(region.X2 - region.X1) * metersPerWorldUnit;
-        float footprintDepthM = (float)Math.Abs(region.Y2 - region.Y1) * metersPerWorldUnit;
-        float referenceLength = Math.Max(0.10f, profile.BodyLengthM);
-        float referenceWidth = Math.Max(0.10f, profile.BodyWidthM);
-        float modelScale = Math.Clamp(Math.Max(footprintWidthM / referenceLength, footprintDepthM / referenceWidth), 0.75f, 1.35f);
+        EnergyRenderMesh mesh = EnergyMechanismGeometry.BuildSingle(
+            profile,
+            center,
+            EnergyMechanismGeometry.ResolveAccentColor(region.Team),
+            (float)_host.World.GameTimeSec);
 
-        const float mechanismYawRad = -MathF.PI * 0.25f;
-        Vector3 groundForward = new(MathF.Cos(mechanismYawRad), 0f, MathF.Sin(mechanismYawRad));
-        Vector3 groundRight = new(-groundForward.Z, 0f, groundForward.X);
-        Vector3 worldUp = Vector3.UnitY;
-        Color baseColor = profile.BodyColor;
-        Color frameColor = profile.TurretColor;
-        Color lampColor = profile.WheelColor;
-        Color edgeColor = Color.FromArgb(255, 18, 22, 26);
-
-        float groundClearance = Math.Max(0f, profile.StructureGroundClearanceM) * modelScale;
-        center += worldUp * groundClearance;
-        float baseLength = Math.Max(profile.StructureBaseLengthM * modelScale, footprintWidthM * 1.02f);
-        float baseDepth = Math.Max(profile.StructureBaseWidthM * modelScale, footprintDepthM * 1.02f);
-        float baseHeight = Math.Max(0.05f, profile.StructureBaseHeightM) * modelScale;
-        float upperDeckLength = Math.Max(0.20f, profile.StructureBaseTopLengthM) * modelScale;
-        float upperDeckDepth = Math.Max(0.20f, profile.StructureBaseTopWidthM) * modelScale;
-        float upperDeckHeight = Math.Max(0.02f, profile.StructureBaseTopHeightM) * modelScale;
-        float troughLength = upperDeckLength * 0.78f;
-        float troughDepth = upperDeckDepth * 0.54f;
-        float frameHeight = Math.Max(baseHeight + 0.40f, profile.StructureFrameHeightM * modelScale);
-        float postHeight = Math.Max(1.90f * modelScale, frameHeight - baseHeight);
-        float postWidth = Math.Max(0.02f, profile.StructureFrameColumnWidthM) * modelScale;
-        float postOffsetZ = Math.Max(postWidth, profile.StructureSupportOffsetM * modelScale);
-        float topBeamWidth = Math.Max(postOffsetZ * 2f, profile.StructureFrameWidthM * modelScale);
-        float topBeamHeight = Math.Max(0.02f, profile.StructureFrameBeamHeightM) * modelScale;
-        float rotorRadius = Math.Max(0.10f, profile.StructureRotorRadiusM) * modelScale;
-        float rotorCenterHeight = Math.Max(baseHeight + 0.30f, profile.StructureRotorCenterHeightM * modelScale);
-        float rotorLayerOffset = Math.Max(profile.StructureFrameDepthM * 0.45f * modelScale, 0.06f * modelScale);
-        float cantileverLength = Math.Max(0.04f, profile.StructureCantileverLengthM) * modelScale;
-        float cantileverHeight = Math.Max(0.01f, profile.StructureCantileverHeightM) * modelScale;
-        float cantileverDepth = Math.Max(0.01f, profile.StructureCantileverDepthM) * modelScale;
-        float cantileverCenterHeight = rotorCenterHeight + profile.StructureCantileverOffsetYM * modelScale;
-        float cantileverPairGap = Math.Max(topBeamWidth + cantileverLength, profile.StructureCantileverPairGapM * modelScale);
-        float hubOuterRadius = Math.Max(0.04f, profile.StructureRotorHubRadiusM) * modelScale;
-        float hubInnerRadius = Math.Max(0.02f, profile.StructureRotorHubRadiusM * 0.44f) * modelScale;
-        float armInnerOffset = Math.Max(hubOuterRadius * 1.35f, 0.12f * modelScale);
-        float armLength = Math.Max(0.10f, profile.StructureRotorArmLengthM) * modelScale;
-        float armOuterRadius = Math.Max(armInnerOffset + armLength, rotorRadius - profile.StructureLampLengthM * 0.15f * modelScale);
-        float armWidth = Math.Max(0.01f, profile.StructureRotorArmWidthM) * modelScale;
-        float armHeight = Math.Max(0.01f, profile.StructureRotorArmHeightM) * modelScale;
-        float lampRadius = Math.Max(0.06f, profile.StructureLampLengthM * 0.5f) * modelScale;
-        float lampThickness = Math.Max(0.008f, profile.StructureLampHeightM * 0.18f) * modelScale;
-
-        DrawPrismWireframe(
-            graphics,
-            BuildEnergyPlatformFootprint(center, groundForward, groundRight, 0f, baseLength, baseDepth, 0.22f),
-            baseHeight,
-            baseColor,
-            edgeColor,
-            null);
-        DrawPrismWireframe(
-            graphics,
-            BuildEnergyPlatformFootprint(center + worldUp * baseHeight, groundForward, groundRight, 0f, upperDeckLength, upperDeckDepth, 0.18f),
-            upperDeckHeight,
-            BlendColor(baseColor, Color.White, 0.06f),
-            edgeColor,
-            null);
-        DrawPrismWireframe(
-            graphics,
-            BuildEnergyPlatformFootprint(center + worldUp * (baseHeight + upperDeckHeight), groundForward, groundRight, 0f, troughLength, troughDepth, 0.12f),
-            0.08f * modelScale,
-            frameColor,
-            edgeColor,
-            null);
-
-        foreach ((float along, float side, Color stripColor) in new[]
+        foreach (EnergyRenderPrism prism in mesh.Prisms)
         {
-            (upperDeckLength * 0.38f, -upperDeckDepth * 0.42f, Color.FromArgb(255, 228, 76, 76)),
-            (-upperDeckLength * 0.38f, upperDeckDepth * 0.42f, Color.FromArgb(255, 58, 112, 232)),
-        })
-        {
-            Vector3 stripCenter = center
-                + worldUp * (baseHeight + 0.16f * modelScale)
-                + groundForward * along
-                + groundRight * side;
-            DrawOrientedBoxSolid(
-                graphics,
-                stripCenter,
-                groundForward,
-                groundRight,
-                worldUp,
-                upperDeckLength * 0.36f,
-                0.018f * modelScale,
-                0.012f * modelScale,
-                stripColor,
-                Color.FromArgb(255, BlendColor(stripColor, Color.Black, 0.25f)),
-                null);
+            DrawGeneralPrism(graphics, prism.Bottom, prism.Top, prism.FillColor, prism.EdgeColor, null);
         }
 
-        foreach (float side in new[] { -1f, 1f })
+        foreach (EnergyRenderBox box in mesh.Boxes)
         {
             DrawOrientedBoxSolid(
                 graphics,
-                center + groundForward * (postOffsetZ * side) + worldUp * (baseHeight + postHeight * 0.5f),
-                groundForward,
-                groundRight,
-                worldUp,
-                postWidth,
-                postWidth,
-                postHeight,
-                frameColor,
-                edgeColor,
+                box.Center,
+                box.Forward,
+                box.Right,
+                box.Up,
+                box.Length,
+                box.Width,
+                box.Height,
+                box.FillColor,
+                box.EdgeColor,
                 null);
         }
 
-        DrawOrientedBoxSolid(
-            graphics,
-            center + worldUp * (baseHeight + postHeight + topBeamHeight * 0.5f),
-            groundForward,
-            groundRight,
-            worldUp,
-            topBeamWidth,
-            postWidth,
-            topBeamHeight,
-            frameColor,
-            edgeColor,
-            null);
-
-        float rotorOrientationOffset = MathF.PI * 0.5f;
-        float rotorYaw = rotorOrientationOffset + (float)_host.World.GameTimeSec * MathF.PI * 0.56f;
-
-        foreach (float side in new[] { -1f, 1f })
+        foreach (EnergyRenderCylinder cylinder in mesh.Cylinders)
         {
-            float braceTop = side * postOffsetZ;
-            float braceBottom = side * (postOffsetZ * 0.72f);
-            DrawEnergyMechanismBrace(
+            DrawCylinderSolid(
                 graphics,
-                center + groundForward * braceTop + groundRight * (-rotorLayerOffset) + worldUp * (baseHeight + postHeight - topBeamHeight * 0.35f),
-                center + groundForward * braceBottom + worldUp * (baseHeight + 0.20f * modelScale),
-                0.040f * modelScale,
-                0.040f * modelScale,
-                frameColor,
-                edgeColor);
-            DrawEnergyMechanismBrace(
-                graphics,
-                center + groundForward * braceTop + groundRight * rotorLayerOffset + worldUp * (baseHeight + postHeight - topBeamHeight * 0.35f),
-                center + groundForward * braceBottom + worldUp * (baseHeight + 0.20f * modelScale),
-                0.040f * modelScale,
-                0.040f * modelScale,
-                frameColor,
-                edgeColor);
+                cylinder.Center,
+                cylinder.NormalAxis,
+                cylinder.UpAxis,
+                cylinder.Radius,
+                cylinder.Thickness,
+                0f,
+                cylinder.FillColor,
+                cylinder.EdgeColor,
+                cylinder.Segments);
         }
 
-        foreach ((float layerOffset, float sideSign, Color rotorColor) in new[]
-        {
-            (-rotorLayerOffset, -1f, Color.FromArgb(255, 228, 76, 76)),
-            (rotorLayerOffset, 1f, Color.FromArgb(255, 58, 112, 232)),
-        })
-        {
-            Vector3 cantileverCenter = center
-                + groundRight * layerOffset
-                + groundForward * (sideSign * cantileverPairGap * 0.5f)
-                + worldUp * cantileverCenterHeight;
-            DrawEnergyMechanismHanger(
-                graphics,
-                cantileverCenter,
-                groundRight,
-                groundForward,
-                worldUp,
-                cantileverLength,
-                cantileverHeight,
-                cantileverDepth,
-                rotorColor,
-                edgeColor);
-            DrawEnergyMechanismBrace(
-                graphics,
-                center + groundRight * layerOffset + groundForward * (sideSign * postOffsetZ) + worldUp * cantileverCenterHeight,
-                cantileverCenter - groundForward * (sideSign * cantileverLength * 0.5f),
-                cantileverHeight * 0.62f,
-                cantileverDepth * 0.72f,
-                frameColor,
-                edgeColor);
-
-            Vector3 rotorCenter = center + groundRight * layerOffset + worldUp * rotorCenterHeight;
-            DrawCylinderSolid(graphics, rotorCenter, groundRight, worldUp, hubOuterRadius, 0.016f * modelScale, rotorYaw, Color.FromArgb(255, 54, 60, 68), edgeColor, 18);
-            DrawCylinderSolid(graphics, rotorCenter, groundRight, worldUp, hubInnerRadius, 0.012f * modelScale, rotorYaw, rotorColor, edgeColor, 16);
-
-            for (int index = 0; index < 5; index++)
-            {
-                float angle = rotorYaw + profile.StructureRotorPhaseDeg * MathF.PI / 180f + index * MathF.Tau / 5f;
-                Vector3 armAxis = Vector3.Normalize(groundForward * MathF.Cos(angle) + worldUp * MathF.Sin(angle));
-                Vector3 armUp = Vector3.Normalize(Vector3.Cross(groundRight, armAxis));
-                Color currentLampColor = index == 0 ? BlendColor(rotorColor, Color.White, 0.25f) : lampColor;
-
-                DrawEnergyMechanismArm(graphics, rotorCenter, armAxis, groundRight, armUp, armInnerOffset, armOuterRadius - armInnerOffset, armWidth, armHeight, frameColor, edgeColor);
-
-                Vector3 podCenter = rotorCenter + armAxis * rotorRadius;
-                Vector3 podAnchor = rotorCenter + armAxis * Math.Max(armOuterRadius, rotorRadius - lampRadius * 0.58f);
-                DrawEnergyMechanismBrace(graphics, podAnchor + armUp * (0.05f * modelScale), podCenter + armUp * (0.03f * modelScale), 0.022f * modelScale, 0.022f * modelScale, frameColor, edgeColor);
-                DrawEnergyMechanismBrace(graphics, podAnchor - armUp * (0.05f * modelScale), podCenter - armUp * (0.03f * modelScale), 0.022f * modelScale, 0.022f * modelScale, frameColor, edgeColor);
-                DrawCylinderSolid(graphics, podCenter, groundRight, worldUp, lampRadius, 0.010f * modelScale, 0f, Color.FromArgb(255, 68, 72, 78), edgeColor, 24);
-                DrawCylinderSolid(graphics, podCenter, groundRight, worldUp, lampRadius * 0.94f, Math.Max(0.004f * modelScale, lampThickness * 0.45f), 0f, currentLampColor, edgeColor, 24);
-            }
-        }
-
-        return baseHeight + postHeight + rotorRadius + 0.34f * modelScale;
+        return mesh.MaxHeight;
     }
 
     private void DrawEnergyMechanismHanger(

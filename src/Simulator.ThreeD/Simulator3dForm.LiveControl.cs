@@ -56,6 +56,7 @@ internal sealed partial class Simulator3dForm
         if (!_firstPersonView)
         {
             _cameraDistanceM = Math.Clamp(_cameraDistanceM, 6.5f, 18f);
+            SnapCameraToSelectedEntity();
         }
 
         UpdateMouseCaptureState();
@@ -125,16 +126,18 @@ internal sealed partial class Simulator3dForm
         string ammoText = string.Equals(entity.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase)
             ? $"42mm {entity.Ammo42Mm}"
             : $"17mm {entity.Ammo17Mm}";
+        double fireRateHz = ResolveDisplayedFireRateHz(entity);
         string sentryText = string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase)
             ? $"   Stance {RuleSet.NormalizeSentryStance(entity.SentryStance)}"
             : string.Empty;
-        string motionText = $"Ammo {ammoText}   Speed {speedMps:0.0}m/s   P {entity.ChassisPowerDrawW:0}W   Pitch {entity.GimbalPitchDeg:0}deg{sentryText}";
+        string attitudeText = $"{entity.ChassisPitchDeg:+0.0;-0.0;0.0}/{entity.ChassisRollDeg:+0.0;-0.0;0.0}\u00b0";
+        string motionText = $"\u5f39\u836f {ammoText}   \u5c04\u9891 {fireRateHz:0.0}Hz   \u901f\u5ea6 {speedMps:0.0}m/s   \u59ff\u6001 {attitudeText}{sentryText}";
         graphics.DrawString(motionText, _tinyHudFont, textBrush, panel.X + 16, panel.Y + 54);
 
-        string aimMode = _autoAimAssistMode == AutoAimAssistMode.HardLock ? "Lock" : "Guide";
+        string aimMode = _autoAimAssistMode == AutoAimAssistMode.HardLock ? "\u786c\u9501" : "\u5f15\u5bfc";
         string autoAimText = entity.AutoAimLocked
-            ? $"AutoAim {aimMode} {entity.AutoAimPlateDirection}  Hit {entity.AutoAimAccuracy:P0}  lead {entity.AutoAimLeadTimeSec:0.00}s/{entity.AutoAimLeadDistanceM:0.00}m  D{entity.AutoAimDistanceCoefficient:0.00} M{entity.AutoAimMotionCoefficient:0.00}"
-            : $"AutoAim {aimMode} free  Hit --  no visible armor lock";
+            ? $"\u81ea\u7784 {aimMode} {entity.AutoAimPlateDirection}   \u547d\u4e2d {entity.AutoAimAccuracy:P0}   \u63d0\u524d {entity.AutoAimLeadTimeSec:0.00}s/{entity.AutoAimLeadDistanceM:0.00}m"
+            : $"\u81ea\u7784 {aimMode}   \u672a\u9501\u5b9a\u88c5\u7532\u677f";
         graphics.DrawString(autoAimText, _tinyHudFont, textBrush, panel.X + 16, panel.Y + 72);
 
         (string buffText, string debuffText) = ResolveBuffDebuffSummary(entity);
@@ -154,6 +157,32 @@ internal sealed partial class Simulator3dForm
             : string.Empty;
         string statusText = $"T AimMode   H Tactical   RMB AutoAim   LMB Fire   Shift Spin   V View   \u6309\u4f4fC\u8d85\u7535   F5 \u952e\u4f4d   F7 Telemetry{sentryPrompt}{supplyPrompt}{deployText}";
         graphics.DrawString(statusText, _tinyHudFont, textBrush, panel.X + 16, panel.Y + 108);
+    }
+
+    private double ResolveDisplayedFireRateHz(SimulationEntity entity)
+    {
+        if (!entity.IsAlive
+            || entity.HeatLockTimerSec > 1e-6
+            || entity.RespawnAmmoLockTimerSec > 1e-6
+            || string.Equals(entity.AmmoType, "none", StringComparison.OrdinalIgnoreCase))
+        {
+            return 0.0;
+        }
+
+        double fireRate = Math.Max(0.5, _host.CombatFireRateHz);
+        if (string.Equals(entity.AmmoType, "17mm", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(entity.RoleKey, "engineer", StringComparison.OrdinalIgnoreCase))
+        {
+            fireRate = Math.Max(fireRate, 20.0);
+        }
+
+        if (string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(RuleSet.NormalizeSentryControlMode(entity.SentryControlMode), "semi_auto", StringComparison.OrdinalIgnoreCase))
+        {
+            fireRate *= 0.55;
+        }
+
+        return fireRate;
     }
 
     private void DrawKeyGuideOverlay(Graphics graphics)
@@ -235,6 +264,247 @@ internal sealed partial class Simulator3dForm
         AddMultiplierEffect(buffs, debuffs, entity.DynamicPowerRecoveryMult, "PowerRec", buffWhenBelowOne: false);
 
         return (JoinHudEffects(buffs), JoinHudEffects(debuffs));
+    }
+
+    private List<BuffProgressEntry> CollectBuffProgressEntries(SimulationEntity entity)
+    {
+        var entries = new List<BuffProgressEntry>(8);
+        AddTimedBuff(entries, "invincible", "\u590d\u6d3b\u65e0\u654c", "\u514d\u75ab\u4f24\u5bb3", entity.RespawnInvincibleTimerSec, 30.0, Color.FromArgb(255, 222, 92));
+        AddTimedBuff(entries, "terrain_highland_def", "\u9ad8\u5730\u9632\u5fa1", "\u53d7\u5230\u4f24\u5bb3 x0.75", entity.TerrainHighlandDefenseTimerSec, 30.0, Color.FromArgb(104, 190, 255));
+        AddTimedBuff(entries, "terrain_fly_def", "\u98de\u5761\u9632\u5fa1", "\u53d7\u5230\u4f24\u5bb3 x0.75", entity.TerrainFlySlopeDefenseTimerSec, 30.0, Color.FromArgb(118, 210, 246));
+        AddTimedBuff(entries, "terrain_road_cool", "\u516c\u8def\u51b7\u5374", "\u5c04\u51fb\u70ed\u91cf\u51b7\u5374 x2.00", entity.TerrainRoadCoolingTimerSec, 5.0, Color.FromArgb(105, 224, 160));
+        AddTimedBuff(entries, "terrain_slope_def", "\u96a7\u9053\u9632\u5fa1", "\u53d7\u5230\u4f24\u5bb3 x0.90", entity.TerrainSlopeDefenseTimerSec, 10.0, Color.FromArgb(150, 206, 255));
+        AddTimedBuff(entries, "terrain_slope_cool", "\u96a7\u9053\u51b7\u5374", "\u5c04\u51fb\u70ed\u91cf\u51b7\u5374 x1.20", entity.TerrainSlopeCoolingTimerSec, 120.0, Color.FromArgb(94, 230, 176));
+
+        if (_host.World.Teams.TryGetValue(entity.Team, out SimulationTeamState? teamState)
+            && teamState.EnergyBuffTimerSec > 1e-3)
+        {
+            AddTimedBuff(entries, "energy_team", "\u80fd\u91cf\u673a\u5173\u589e\u76ca", "\u4f24\u5bb3/\u51b7\u5374/\u56de\u80fd\u63d0\u5347", teamState.EnergyBuffTimerSec, 45.0, Color.FromArgb(255, 174, 82));
+        }
+
+        if (entity.DynamicDamageTakenMult < 0.995)
+        {
+            entries.Add(new BuffProgressEntry(
+                $"defense_{entity.DynamicDamageTakenMult:0.00}",
+                "\u9632\u5fa1\u589e\u76ca",
+                $"\u53d7\u5230\u4f24\u5bb3 x{entity.DynamicDamageTakenMult:0.00}",
+                0.0,
+                0.0,
+                Color.FromArgb(115, 196, 255),
+                false));
+        }
+
+        if (entity.DynamicDamageDealtMult > 1.005)
+        {
+            entries.Add(new BuffProgressEntry(
+                $"damage_{entity.DynamicDamageDealtMult:0.00}",
+                "\u653b\u51fb\u589e\u76ca",
+                $"\u9020\u6210\u4f24\u5bb3 x{entity.DynamicDamageDealtMult:0.00}",
+                0.0,
+                0.0,
+                Color.FromArgb(255, 112, 96),
+                false));
+        }
+
+        if (entity.DynamicCoolingMult > 1.005)
+        {
+            entries.Add(new BuffProgressEntry(
+                $"cooling_{entity.DynamicCoolingMult:0.00}",
+                "\u51b7\u5374\u589e\u76ca",
+                $"\u70ed\u91cf\u51b7\u5374 x{entity.DynamicCoolingMult:0.00}",
+                0.0,
+                0.0,
+                Color.FromArgb(98, 224, 174),
+                false));
+        }
+
+        if (entity.DynamicPowerRecoveryMult > 1.005)
+        {
+            entries.Add(new BuffProgressEntry(
+                $"power_recovery_{entity.DynamicPowerRecoveryMult:0.00}",
+                "\u56de\u80fd\u589e\u76ca",
+                $"\u5e95\u76d8\u56de\u80fd x{entity.DynamicPowerRecoveryMult:0.00}",
+                0.0,
+                0.0,
+                Color.FromArgb(244, 214, 96),
+                false));
+        }
+
+        return entries;
+    }
+
+    private static void AddTimedBuff(
+        List<BuffProgressEntry> entries,
+        string key,
+        string name,
+        string effect,
+        double remainingSec,
+        double durationSec,
+        Color color)
+    {
+        if (remainingSec <= 1e-3)
+        {
+            return;
+        }
+
+        entries.Add(new BuffProgressEntry(
+            key,
+            name,
+            effect,
+            Math.Max(0.0, remainingSec),
+            Math.Max(remainingSec, durationSec),
+            color,
+            true));
+    }
+
+    private void UpdateSelectedBuffNotifications()
+    {
+        SimulationEntity? entity = _host.SelectedEntity;
+        if (entity is null || _appState != SimulatorAppState.InMatch)
+        {
+            _selectedBuffSnapshot.Clear();
+            _selectedBuffSnapshotEntityId = null;
+            return;
+        }
+
+        if (!string.Equals(_selectedBuffSnapshotEntityId, entity.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            _selectedBuffSnapshot.Clear();
+            _selectedBuffSnapshotEntityId = entity.Id;
+        }
+
+        List<BuffProgressEntry> entries = CollectBuffProgressEntries(entity);
+        var currentKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (BuffProgressEntry entry in entries)
+        {
+            currentKeys.Add(entry.Key);
+            if (_selectedBuffSnapshot.ContainsKey(entry.Key))
+            {
+                continue;
+            }
+
+            string durationText = entry.Timed
+                ? $"\u6301\u7eed {entry.RemainingSec:0}\u79d2"
+                : "\u533a\u57df\u5185\u6301\u7eed";
+            _centerBuffToasts.Add(new CenterBuffToast(
+                $"\u83b7\u5f97 {entry.Name}",
+                $"{entry.Effect}  {durationText}",
+                entry.Color));
+        }
+
+        foreach (string oldKey in _selectedBuffSnapshot.Keys.ToArray())
+        {
+            if (!currentKeys.Contains(oldKey))
+            {
+                _selectedBuffSnapshot.Remove(oldKey);
+            }
+        }
+
+        foreach (BuffProgressEntry entry in entries)
+        {
+            _selectedBuffSnapshot[entry.Key] = entry.RemainingSec;
+        }
+
+        if (_centerBuffToasts.Count > 5)
+        {
+            _centerBuffToasts.RemoveRange(0, _centerBuffToasts.Count - 5);
+        }
+    }
+
+    private void AdvanceBuffToasts(float deltaSec)
+    {
+        for (int index = _centerBuffToasts.Count - 1; index >= 0; index--)
+        {
+            CenterBuffToast toast = _centerBuffToasts[index];
+            toast.AgeSec += Math.Max(0f, deltaSec);
+            if (toast.AgeSec >= toast.LifetimeSec)
+            {
+                _centerBuffToasts.RemoveAt(index);
+            }
+        }
+    }
+
+    private void DrawCenterBuffToasts(Graphics graphics)
+    {
+        if (_centerBuffToasts.Count == 0)
+        {
+            return;
+        }
+
+        int shown = Math.Min(3, _centerBuffToasts.Count);
+        float y = ClientSize.Height * 0.30f;
+        for (int i = 0; i < shown; i++)
+        {
+            CenterBuffToast toast = _centerBuffToasts[_centerBuffToasts.Count - 1 - i];
+            float fadeIn = Math.Clamp(toast.AgeSec / 0.22f, 0f, 1f);
+            float fadeOut = Math.Clamp((toast.LifetimeSec - toast.AgeSec) / 0.55f, 0f, 1f);
+            int alpha = (int)(235f * Math.Min(fadeIn, fadeOut));
+            if (alpha <= 0)
+            {
+                continue;
+            }
+
+            SizeF titleSize = graphics.MeasureString(toast.Title, _hudMidFont);
+            SizeF detailSize = graphics.MeasureString(toast.Detail, _smallHudFont);
+            float width = Math.Clamp(Math.Max(titleSize.Width, detailSize.Width) + 42f, 260f, 560f);
+            RectangleF rect = new((ClientSize.Width - width) * 0.5f, y + i * 58f, width, 46f);
+            using GraphicsPath path = CreateRoundedRectangle(Rectangle.Round(rect), 8);
+            using var fill = new SolidBrush(Color.FromArgb((int)(alpha * 0.82f), 10, 16, 24));
+            using var border = new Pen(Color.FromArgb(alpha, toast.Color), 1.2f);
+            using var titleBrush = new SolidBrush(Color.FromArgb(alpha, toast.Color));
+            using var detailBrush = new SolidBrush(Color.FromArgb((int)(alpha * 0.88f), 230, 238, 245));
+            graphics.FillPath(fill, path);
+            graphics.DrawPath(border, path);
+            graphics.DrawString(toast.Title, _hudMidFont, titleBrush, rect.X + 18f, rect.Y + 5f);
+            graphics.DrawString(toast.Detail, _smallHudFont, detailBrush, rect.X + 18f, rect.Y + 25f);
+        }
+    }
+
+    private void DrawBuffProgressOverlay(Graphics graphics)
+    {
+        SimulationEntity? entity = _host.SelectedEntity;
+        if (entity is null || _appState != SimulatorAppState.InMatch)
+        {
+            return;
+        }
+
+        List<BuffProgressEntry> entries = CollectBuffProgressEntries(entity)
+            .Where(entry => entry.Timed && entry.DurationSec > 1e-3)
+            .Take(5)
+            .ToList();
+        if (entries.Count == 0)
+        {
+            return;
+        }
+
+        int width = 282;
+        int rowHeight = 20;
+        int height = 22 + entries.Count * rowHeight;
+        Rectangle panel = new(ClientSize.Width - width - 30, ClientSize.Height - 196 - height, width, height);
+        using GraphicsPath path = CreateRoundedRectangle(panel, 8);
+        using var fill = new SolidBrush(Color.FromArgb(205, 10, 16, 24));
+        using var border = new Pen(Color.FromArgb(120, 140, 160, 180), 1f);
+        using var textBrush = new SolidBrush(Color.FromArgb(226, 236, 242, 248));
+        using var subBrush = new SolidBrush(Color.FromArgb(178, 202, 212, 224));
+        graphics.FillPath(fill, path);
+        graphics.DrawPath(border, path);
+        graphics.DrawString("BUFF", _smallHudFont, textBrush, panel.X + 10, panel.Y + 5);
+
+        for (int index = 0; index < entries.Count; index++)
+        {
+            BuffProgressEntry entry = entries[index];
+            float y = panel.Y + 24 + index * rowHeight;
+            float ratio = (float)Math.Clamp(entry.RemainingSec / Math.Max(entry.DurationSec, 1e-6), 0.0, 1.0);
+            RectangleF bar = new(panel.X + 84, y + 5, panel.Width - 102, 8);
+            using var back = new SolidBrush(Color.FromArgb(116, 42, 50, 62));
+            using var front = new SolidBrush(Color.FromArgb(230, entry.Color));
+            using var barBorder = new Pen(Color.FromArgb(126, 170, 186, 204), 1f);
+            graphics.DrawString(entry.Name, _tinyHudFont, subBrush, panel.X + 10, y - 1);
+            graphics.FillRectangle(back, bar);
+            graphics.FillRectangle(front, bar.X, bar.Y, bar.Width * ratio, bar.Height);
+            graphics.DrawRectangle(barBorder, bar.X, bar.Y, bar.Width, bar.Height);
+            graphics.DrawString($"{entry.RemainingSec:0}s", _tinyHudFont, textBrush, bar.Right - 26, y - 1);
+        }
     }
 
     private static void AddTimedEffect(List<string> effects, string label, double seconds)

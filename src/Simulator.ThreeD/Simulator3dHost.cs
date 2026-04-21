@@ -58,6 +58,7 @@ internal sealed class Simulator3dHost
     private readonly RuntimeGridLoader _runtimeGridLoader;
     private readonly BepuProjectileObstacleBackend _bepuProjectileObstacleBackend = new();
     private readonly string _primaryConfigPath;
+    private readonly string? _appearancePathOverride;
     private readonly JsonObject _config;
     private DateTime _lastDecisionConfigProbeUtc;
     private DateTime _decisionConfigLastWriteUtc;
@@ -92,6 +93,9 @@ internal sealed class Simulator3dHost
         _runtimeGridLoader = new RuntimeGridLoader();
 
         _primaryConfigPath = _configurationService.ResolvePrimaryConfigPath(_layout);
+        _appearancePathOverride = string.IsNullOrWhiteSpace(options.AppearancePath)
+            ? null
+            : Path.GetFullPath(options.AppearancePath);
         _config = _configurationService.LoadConfig(_primaryConfigPath);
         _decisionConfigLastWriteUtc = ReadLastWriteTimeUtc(_primaryConfigPath);
         JsonObject simulatorConfig = ConfigurationService.EnsureObject(_config, "simulator");
@@ -128,7 +132,7 @@ internal sealed class Simulator3dHost
         _simulationService = BuildSimulationService(_rules);
         MapPreset = _mapPresetService.LoadPreset(_layout, ActiveMapPreset);
         _terrainMotionService = new TerrainMotionService(_rules, _decisionDeploymentConfig, MapPreset.Facilities);
-        _appearanceCatalog = AppearanceProfileCatalog.Load(_layout.AppearancePresetPath);
+        _appearanceCatalog = AppearanceProfileCatalog.Load(ResolveAppearancePath());
         _runtimeGrid = _runtimeGridLoader.TryLoad(MapPreset, out _runtimeGridWarning);
         World = _bootstrapService.BuildInitialWorld(_config, _rules, MapPreset);
         ApplyConfiguredRoleProfilesToWorld(resetHealth: true);
@@ -154,6 +158,8 @@ internal sealed class Simulator3dHost
     public double GameDurationSec => _rules.GameDurationSec;
 
     public double AutoAimMaxDistanceM => _rules.Combat.AutoAimMaxDistanceM;
+
+    public double CombatFireRateHz => _rules.Combat.FireRateHz;
 
     public string MatchMode => _matchMode;
 
@@ -214,7 +220,8 @@ internal sealed class Simulator3dHost
         string? subtype = entity.RoleKey.Equals("infantry", StringComparison.OrdinalIgnoreCase)
             ? entity.ChassisSubtype
             : null;
-        return _appearanceCatalog.Resolve(entity.RoleKey, subtype);
+        return TryResolveFacilityAppearanceProfile(entity)
+            ?? _appearanceCatalog.Resolve(entity.RoleKey, subtype);
     }
 
     public ResolvedRoleProfile ResolveRuntimeProfile(SimulationEntity entity)
@@ -810,7 +817,7 @@ internal sealed class Simulator3dHost
         string previousTeam = SelectedTeam;
 
         MapPreset = _mapPresetService.LoadPreset(_layout, ActiveMapPreset);
-        _appearanceCatalog = AppearanceProfileCatalog.Load(_layout.AppearancePresetPath);
+        _appearanceCatalog = AppearanceProfileCatalog.Load(ResolveAppearancePath());
         _runtimeGrid = _runtimeGridLoader.TryLoad(MapPreset, out _runtimeGridWarning);
         _rules = _ruleSetLoader.LoadFromConfig(_config);
         _decisionDeploymentConfig = DecisionDeploymentConfig.LoadFromConfig(_config);
@@ -877,7 +884,8 @@ internal sealed class Simulator3dHost
                 endX,
                 endY,
                 endHeightM,
-                obstacleCandidates);
+                obstacleCandidates,
+                ResolveAppearanceProfile);
         }
 
         return ProjectileObstacleResolver.ResolveHit(
@@ -891,7 +899,8 @@ internal sealed class Simulator3dHost
             endX,
             endY,
             endHeightM,
-            obstacleCandidates);
+            obstacleCandidates,
+            ResolveAppearanceProfile);
     }
 
     private void ApplyPlayerControlState(PlayerControlState? state)
@@ -1455,7 +1464,8 @@ internal sealed class Simulator3dHost
             if (!string.Equals(entity.EntityType, "robot", StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(entity.EntityType, "sentry", StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(entity.EntityType, "outpost", StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(entity.EntityType, "base", StringComparison.OrdinalIgnoreCase))
+                && !string.Equals(entity.EntityType, "base", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(entity.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -1463,10 +1473,39 @@ internal sealed class Simulator3dHost
             string? subtype = entity.RoleKey.Equals("infantry", StringComparison.OrdinalIgnoreCase)
                 ? InfantryAppearanceSubtype
                 : null;
-            RobotAppearanceProfile profile = _appearanceCatalog.Resolve(entity.RoleKey, subtype);
+            RobotAppearanceProfile profile = TryResolveFacilityAppearanceProfile(entity)
+                ?? _appearanceCatalog.Resolve(entity.RoleKey, subtype);
             profile.ApplyToEntity(entity, metersPerWorldUnit);
         }
     }
+
+    private RobotAppearanceProfile? TryResolveFacilityAppearanceProfile(SimulationEntity entity)
+    {
+        if (!SimulationCombatMath.IsStructure(entity))
+        {
+            return null;
+        }
+
+        FacilityRegion? region = MapPreset.Facilities.FirstOrDefault(candidate =>
+        {
+            if (!string.Equals(candidate.Type, entity.EntityType, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (string.Equals(entity.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase))
+            {
+                return string.Equals(candidate.Id, entity.Id, StringComparison.OrdinalIgnoreCase);
+            }
+
+            return string.Equals(candidate.Team, entity.Team, StringComparison.OrdinalIgnoreCase);
+        });
+
+        return region is null ? null : _appearanceCatalog.ResolveFacilityProfile(region);
+    }
+
+    private string ResolveAppearancePath()
+        => _appearancePathOverride ?? _layout.AppearancePresetPath;
 
     private void ApplyConfiguredRoleProfilesToWorld(bool resetHealth)
     {

@@ -281,20 +281,24 @@ internal sealed partial class Simulator3dForm
         glMatrixMode(GlModelView);
         glLoadMatrixf(ToOpenGlMatrix(_viewMatrix));
 
+        _gpuDynamicVertexBuildBuffer.Clear();
         DrawGpuTerrainBase();
         DrawGpuTerrainGeometry();
-        DrawGpuFacilities();
-        _gpuDynamicVertexBuildBuffer.Clear();
         _gpuBatchingDynamicGeometry = true;
         _gpuGeometryPass = true;
         try
         {
+            DrawGpuFacilities();
             bool previousSuppressLabels = _suppressEntityLabels;
             _suppressEntityLabels = true;
             try
             {
                 DrawStaticStructureBodies(_gpuOverlayGraphics ?? graphics);
                 DrawEntityGeometry(_gpuOverlayGraphics ?? graphics);
+                if (!_previewOnly)
+                {
+                    DrawGpuProjectiles();
+                }
             }
             finally
             {
@@ -306,8 +310,12 @@ internal sealed partial class Simulator3dForm
                 try
                 {
                     DrawEntityOverlayBars(_gpuOverlayGraphics);
-                    DrawGpuProjectileTrails(_gpuOverlayGraphics);
-                    DrawCombatMarkers(_gpuOverlayGraphics);
+                    if (!_previewOnly)
+                    {
+                        DrawGpuProjectileTrails(_gpuOverlayGraphics);
+                        DrawCombatMarkers(_gpuOverlayGraphics);
+                    }
+
                     DrawInMatchOverlay(_gpuOverlayGraphics);
                 }
                 finally
@@ -324,9 +332,12 @@ internal sealed partial class Simulator3dForm
             _gpuGeometryPass = false;
             _gpuBatchingDynamicGeometry = false;
         }
-        DrawGpuProjectiles();
+
         FlushGpuDynamicVertices();
-        DrawGpuDebugReference();
+        if (!_previewOnly)
+        {
+            DrawGpuDebugReference();
+        }
 
         if (_gpuOverlayGraphics is not null)
         {
@@ -655,13 +666,13 @@ internal sealed partial class Simulator3dForm
         bool energyMechanismDrawn = false;
         foreach (FacilityRegion region in _host.MapPreset.Facilities)
         {
-            bool energyMechanism = string.Equals(region.Type, "energy_mechanism", StringComparison.OrdinalIgnoreCase);
-            if (!_showDebugSidebars && !energyMechanism)
+            if (!ShouldRenderFacility(region))
             {
                 continue;
             }
 
-            if (energyMechanism && energyMechanismDrawn)
+            bool energyMechanism = string.Equals(region.Type, "energy_mechanism", StringComparison.OrdinalIgnoreCase);
+            if (!_showDebugSidebars && !energyMechanism)
             {
                 continue;
             }
@@ -673,11 +684,28 @@ internal sealed partial class Simulator3dForm
                 "wall" => Color.FromArgb(190, 104, 110, 118),
                 _ => Color.FromArgb(110, 120, 170, 150),
             };
-            DrawGpuFacility(region, color);
+
             if (energyMechanism)
             {
+                if (energyMechanismDrawn)
+                {
+                    continue;
+                }
+
                 energyMechanismDrawn = true;
+                if (TryResolveEnergyMechanismRenderCenter(out FacilityRegion representative, out double energyCenterX, out double energyCenterY))
+                {
+                    DrawGpuEnergyMechanismModel(representative, color, energyCenterX, energyCenterY);
+                }
+                else
+                {
+                    DrawGpuEnergyMechanismModel(region, color);
+                }
+
+                continue;
             }
+
+            DrawGpuFacility(region, color);
         }
     }
 
@@ -695,7 +723,7 @@ internal sealed partial class Simulator3dForm
             Vector3 anchor = ToScenePoint(region.Points[0].X, region.Points[0].Y, height);
             for (int index = 1; index < region.Points.Count - 1; index++)
             {
-                DrawGpuTriangle(anchor, ToScenePoint(region.Points[index].X, region.Points[index].Y, height), ToScenePoint(region.Points[index + 1].X, region.Points[index + 1].Y, height), color);
+                AppendOrDrawGpuTriangle(anchor, ToScenePoint(region.Points[index].X, region.Points[index].Y, height), ToScenePoint(region.Points[index + 1].X, region.Points[index + 1].Y, height), color);
             }
 
             return;
@@ -705,7 +733,7 @@ internal sealed partial class Simulator3dForm
         double maxX = Math.Max(region.X1, region.X2);
         double minY = Math.Min(region.Y1, region.Y2);
         double maxY = Math.Max(region.Y1, region.Y2);
-        DrawGpuQuad(
+        AppendOrDrawGpuQuad(
             ToScenePoint(minX, minY, height),
             ToScenePoint(maxX, minY, height),
             ToScenePoint(maxX, maxY, height),
@@ -718,6 +746,25 @@ internal sealed partial class Simulator3dForm
         _entityOverlayBuffer.Clear();
         foreach (SimulationEntity entity in _host.World.Entities)
         {
+            if (string.Equals(entity.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase))
+            {
+                float baseHeightOnly = (float)Math.Max(0.0, entity.GroundHeightM + entity.AirborneHeightM);
+                Vector3 overlayCenter = ToScenePoint(entity.X, entity.Y, baseHeightOnly);
+                RobotAppearanceProfile overlayProfile = _host.ResolveAppearanceProfile(entity);
+                float overlayHeight = Math.Max(
+                    1.0f,
+                    overlayProfile.StructureGroundClearanceM
+                    + overlayProfile.StructureBaseHeightM
+                    + overlayProfile.StructureFrameHeightM
+                    + overlayProfile.StructureRotorRadiusM);
+                _entityOverlayBuffer.Add(new EntityRenderOverlay(
+                    entity,
+                    overlayCenter,
+                    overlayHeight,
+                    overlayProfile));
+                continue;
+            }
+
             Color teamColor = ResolveTeamColor(entity.Team);
             float baseHeight = (float)Math.Max(0.0, entity.GroundHeightM + entity.AirborneHeightM);
             Vector3 center = ToScenePoint(entity.X, entity.Y, baseHeight + (float)Math.Max(0.06, entity.BodyHeightM * 0.5));
@@ -752,10 +799,10 @@ internal sealed partial class Simulator3dForm
         }
 
         int projectileCount = _host.World.Projectiles.Count;
-        int largeSlices = projectileCount >= 96 ? 6 : projectileCount >= 48 ? 7 : 8;
-        int largeStacks = projectileCount >= 96 ? 4 : 5;
-        int smallSlices = projectileCount >= 96 ? 5 : projectileCount >= 48 ? 6 : 7;
-        int smallStacks = projectileCount >= 96 ? 3 : 4;
+        int largeSlices = projectileCount >= 96 ? 5 : projectileCount >= 48 ? 6 : 7;
+        int largeStacks = projectileCount >= 96 ? 3 : 4;
+        int smallSlices = projectileCount >= 96 ? 4 : projectileCount >= 48 ? 5 : 6;
+        int smallStacks = projectileCount >= 96 ? 2 : 3;
         bool flatProjectileRendering = !_host.SolidProjectileRendering;
         Vector3 cameraRight = Vector3.Zero;
         Vector3 cameraUp = Vector3.Zero;
@@ -794,12 +841,12 @@ internal sealed partial class Simulator3dForm
 
         foreach (SimulationProjectile projectile in _host.World.Projectiles)
         {
-            Color color = string.Equals(projectile.Team, "red", StringComparison.OrdinalIgnoreCase)
-                ? Color.FromArgb(245, 255, 110, 92)
-                : Color.FromArgb(245, 102, 170, 255);
+            bool largeRound = string.Equals(projectile.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase);
+            Color color = largeRound
+                ? Color.FromArgb(248, 250, 252, 255)
+                : Color.FromArgb(248, 112, 255, 128);
             Vector3 center = ToScenePoint(projectile.X, projectile.Y, (float)Math.Max(0.05, projectile.HeightM));
             float radius = (float)(SimulationCombatMath.ProjectileDiameterM(projectile.AmmoType) * 0.5);
-            bool largeRound = string.Equals(projectile.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase);
             float visibleRadius = Math.Max(radius * (largeRound ? 3.2f : 3.8f), largeRound ? 0.030f : 0.020f);
             if (!IsSceneBoundsPotentiallyVisible(center, visibleRadius * 1.3f, visibleRadius * 1.3f))
             {
@@ -818,9 +865,13 @@ internal sealed partial class Simulator3dForm
             }
             else
             {
-                Color rimColor = Color.FromArgb(color.A, ScaleGpuColor(color, largeRound ? 0.82f : 0.88f));
-                Color coreColor = Color.FromArgb(Math.Min(255, color.A + 6), BlendColor(color, Color.White, largeRound ? 0.34f : 0.42f));
-                AppendGpuProjectileBillboard(center, visibleRadius, rimColor, coreColor, largeRound ? 10 : 8, cameraRight, cameraUp);
+                Color rimColor = largeRound
+                    ? Color.FromArgb(color.A, 98, 196, 255)
+                    : Color.FromArgb(color.A, 42, 255, 92);
+                Color coreColor = largeRound
+                    ? Color.FromArgb(255, 255, 255, 255)
+                    : Color.FromArgb(255, 188, 255, 200);
+                AppendGpuProjectileBillboard(_gpuDynamicVertexBuildBuffer, center, visibleRadius, rimColor, coreColor, largeRound ? 10 : 8, cameraRight, cameraUp);
             }
         }
     }
@@ -871,188 +922,52 @@ internal sealed partial class Simulator3dForm
         DrawGpuQuad(d, a, e, h, ScaleGpuColor(color, 0.68f));
     }
 
-    private void DrawGpuEnergyMechanismModel(FacilityRegion region, Color fallbackColor)
+    private void DrawGpuEnergyMechanismModel(FacilityRegion region, Color fallbackColor, double? overrideCenterWorldX = null, double? overrideCenterWorldY = null)
     {
-        RobotAppearanceProfile profile = _host.AppearanceCatalog.Resolve("energy_mechanism");
-        double centerWorldX = (region.X1 + region.X2) * 0.5;
-        double centerWorldY = (region.Y1 + region.Y2) * 0.5;
+        RobotAppearanceProfile profile = _host.AppearanceCatalog.ResolveFacilityProfile(region);
+        (double centerWorldX, double centerWorldY) = overrideCenterWorldX.HasValue && overrideCenterWorldY.HasValue
+            ? (overrideCenterWorldX.Value, overrideCenterWorldY.Value)
+            : ResolveFacilityRegionCenter(region);
         Vector3 center = ToScenePoint(centerWorldX, centerWorldY, 0f);
-        float metersPerWorldUnit = (float)Math.Max(_host.World.MetersPerWorldUnit, 1e-6);
-        float footprintWidthM = (float)Math.Abs(region.X2 - region.X1) * metersPerWorldUnit;
-        float footprintDepthM = (float)Math.Abs(region.Y2 - region.Y1) * metersPerWorldUnit;
-        float referenceLength = Math.Max(0.10f, profile.BodyLengthM);
-        float referenceWidth = Math.Max(0.10f, profile.BodyWidthM);
-        float modelScale = Math.Clamp(Math.Max(footprintWidthM / referenceLength, footprintDepthM / referenceWidth), 0.75f, 1.35f);
+        EnergyRenderMesh mesh = EnergyMechanismGeometry.BuildSingle(
+            profile,
+            center,
+            EnergyMechanismGeometry.ResolveAccentColor(region.Team),
+            (float)_host.World.GameTimeSec);
 
-        const float mechanismYawRad = -MathF.PI * 0.25f;
-        Vector3 groundForward = new(MathF.Cos(mechanismYawRad), 0f, MathF.Sin(mechanismYawRad));
-        Vector3 groundRight = new(-groundForward.Z, 0f, groundForward.X);
-        Vector3 worldUp = Vector3.UnitY;
-        Color baseColor = profile.BodyColor;
-        Color frameColor = profile.TurretColor;
-        Color lampColor = profile.WheelColor;
-        Color edgeColor = Color.FromArgb(255, 18, 22, 26);
-
-        float groundClearance = Math.Max(0f, profile.StructureGroundClearanceM) * modelScale;
-        center += worldUp * groundClearance;
-        float baseLength = Math.Max(profile.StructureBaseLengthM * modelScale, footprintWidthM * 1.02f);
-        float baseDepth = Math.Max(profile.StructureBaseWidthM * modelScale, footprintDepthM * 1.02f);
-        float baseHeight = Math.Max(0.05f, profile.StructureBaseHeightM) * modelScale;
-        float upperDeckLength = Math.Max(0.20f, profile.StructureBaseTopLengthM) * modelScale;
-        float upperDeckDepth = Math.Max(0.20f, profile.StructureBaseTopWidthM) * modelScale;
-        float upperDeckHeight = Math.Max(0.02f, profile.StructureBaseTopHeightM) * modelScale;
-        float troughLength = upperDeckLength * 0.78f;
-        float troughDepth = upperDeckDepth * 0.54f;
-        float frameHeight = Math.Max(baseHeight + 0.40f, profile.StructureFrameHeightM * modelScale);
-        float postHeight = Math.Max(1.90f * modelScale, frameHeight - baseHeight);
-        float postWidth = Math.Max(0.02f, profile.StructureFrameColumnWidthM) * modelScale;
-        float postOffsetZ = Math.Max(postWidth, profile.StructureSupportOffsetM * modelScale);
-        float topBeamWidth = Math.Max(postOffsetZ * 2f, profile.StructureFrameWidthM * modelScale);
-        float topBeamHeight = Math.Max(0.02f, profile.StructureFrameBeamHeightM) * modelScale;
-        float rotorRadius = Math.Max(0.10f, profile.StructureRotorRadiusM) * modelScale;
-        float rotorCenterHeight = Math.Max(baseHeight + 0.30f, profile.StructureRotorCenterHeightM * modelScale);
-        float rotorLayerOffset = Math.Max(profile.StructureFrameDepthM * 0.45f * modelScale, 0.06f * modelScale);
-        float cantileverLength = Math.Max(0.04f, profile.StructureCantileverLengthM) * modelScale;
-        float cantileverHeight = Math.Max(0.01f, profile.StructureCantileverHeightM) * modelScale;
-        float cantileverDepth = Math.Max(0.01f, profile.StructureCantileverDepthM) * modelScale;
-        float cantileverCenterHeight = rotorCenterHeight + profile.StructureCantileverOffsetYM * modelScale;
-        float cantileverPairGap = Math.Max(topBeamWidth + cantileverLength, profile.StructureCantileverPairGapM * modelScale);
-        float hubOuterRadius = Math.Max(0.04f, profile.StructureRotorHubRadiusM) * modelScale;
-        float hubInnerRadius = Math.Max(0.02f, profile.StructureRotorHubRadiusM * 0.44f) * modelScale;
-        float armInnerOffset = Math.Max(hubOuterRadius * 1.35f, 0.12f * modelScale);
-        float armLength = Math.Max(0.10f, profile.StructureRotorArmLengthM) * modelScale;
-        float armOuterRadius = Math.Max(armInnerOffset + armLength, rotorRadius - profile.StructureLampLengthM * 0.15f * modelScale);
-        float armWidth = Math.Max(0.01f, profile.StructureRotorArmWidthM) * modelScale;
-        float armHeight = Math.Max(0.01f, profile.StructureRotorArmHeightM) * modelScale;
-        float lampRadius = Math.Max(0.06f, profile.StructureLampLengthM * 0.5f) * modelScale;
-        float lampThickness = Math.Max(0.008f, profile.StructureLampHeightM * 0.18f) * modelScale;
-
-        DrawGpuPrism(
-            BuildGpuEnergyPlatformFootprint(center, groundForward, groundRight, 0f, baseLength, baseDepth, 0.22f),
-            baseHeight,
-            baseColor);
-        DrawGpuPrism(
-            BuildGpuEnergyPlatformFootprint(center + worldUp * baseHeight, groundForward, groundRight, 0f, upperDeckLength, upperDeckDepth, 0.18f),
-            upperDeckHeight,
-            BlendColor(baseColor, Color.White, 0.06f));
-        DrawGpuPrism(
-            BuildGpuEnergyPlatformFootprint(center + worldUp * (baseHeight + upperDeckHeight), groundForward, groundRight, 0f, troughLength, troughDepth, 0.12f),
-            0.08f * modelScale,
-            frameColor);
-
-        foreach ((float along, float side, Color stripColor) in new[]
+        foreach (EnergyRenderPrism prism in mesh.Prisms)
         {
-            (upperDeckLength * 0.38f, -upperDeckDepth * 0.42f, Color.FromArgb(255, 228, 76, 76)),
-            (-upperDeckLength * 0.38f, upperDeckDepth * 0.42f, Color.FromArgb(255, 58, 112, 232)),
-        })
-        {
-            DrawGpuOrientedBox(
-                center + worldUp * (baseHeight + 0.16f * modelScale) + groundForward * along + groundRight * side,
-                groundForward,
-                groundRight,
-                worldUp,
-                upperDeckLength * 0.36f,
-                0.018f * modelScale,
-                0.012f * modelScale,
-                stripColor,
-                edgeColor);
+            DrawGpuGeneralPrism(prism.Bottom, prism.Top, prism.FillColor);
         }
 
-        foreach (float side in new[] { -1f, 1f })
+        foreach (EnergyRenderBox box in mesh.Boxes)
         {
-            DrawGpuOrientedBox(
-                center + groundForward * (postOffsetZ * side) + worldUp * (baseHeight + postHeight * 0.5f),
-                groundForward,
-                groundRight,
-                worldUp,
-                postWidth,
-                postWidth,
-                postHeight,
-                frameColor,
-                edgeColor);
+            DrawGpuOrientedBox(box.Center, box.Forward, box.Right, box.Up, box.Length, box.Width, box.Height, box.FillColor, box.EdgeColor);
         }
 
-        DrawGpuOrientedBox(
-            center + worldUp * (baseHeight + postHeight + topBeamHeight * 0.5f),
-            groundForward,
-            groundRight,
-            worldUp,
-            topBeamWidth,
-            postWidth,
-            topBeamHeight,
-            frameColor,
-            edgeColor);
-
-        float rotorOrientationOffset = MathF.PI * 0.5f;
-        float rotorYaw = rotorOrientationOffset + (float)_host.World.GameTimeSec * MathF.PI * 0.56f;
-
-        foreach (float side in new[] { -1f, 1f })
+        foreach (EnergyRenderCylinder cylinder in mesh.Cylinders)
         {
-            float braceTop = side * postOffsetZ;
-            float braceBottom = side * (postOffsetZ * 0.72f);
-            DrawGpuEnergyMechanismBrace(
-                center + groundForward * braceTop + groundRight * (-rotorLayerOffset) + worldUp * (baseHeight + postHeight - topBeamHeight * 0.35f),
-                center + groundForward * braceBottom + worldUp * (baseHeight + 0.20f * modelScale),
-                0.040f * modelScale,
-                0.040f * modelScale,
-                frameColor,
-                edgeColor);
-            DrawGpuEnergyMechanismBrace(
-                center + groundForward * braceTop + groundRight * rotorLayerOffset + worldUp * (baseHeight + postHeight - topBeamHeight * 0.35f),
-                center + groundForward * braceBottom + worldUp * (baseHeight + 0.20f * modelScale),
-                0.040f * modelScale,
-                0.040f * modelScale,
-                frameColor,
-                edgeColor);
+            DrawGpuDiskTarget(cylinder.Center, cylinder.NormalAxis, cylinder.UpAxis, cylinder.Radius, cylinder.Thickness, cylinder.FillColor);
+        }
+    }
+
+    private void DrawGpuGeneralPrism(IReadOnlyList<Vector3> bottom, IReadOnlyList<Vector3> top, Color color)
+    {
+        if (bottom.Count < 3 || top.Count < 3 || bottom.Count != top.Count)
+        {
+            return;
         }
 
-        foreach ((float layerOffset, float sideSign, Color rotorColor) in new[]
+        for (int index = 1; index < top.Count - 1; index++)
         {
-            (-rotorLayerOffset, -1f, Color.FromArgb(255, 228, 76, 76)),
-            (rotorLayerOffset, 1f, Color.FromArgb(255, 58, 112, 232)),
-        })
+            AppendOrDrawGpuTriangle(top[0], top[index], top[index + 1], color);
+            AppendOrDrawGpuTriangle(bottom[0], bottom[index + 1], bottom[index], ScaleGpuColor(color, 0.84f));
+        }
+
+        for (int index = 0; index < bottom.Count; index++)
         {
-            Vector3 cantileverCenter = center
-                + groundRight * layerOffset
-                + groundForward * (sideSign * cantileverPairGap * 0.5f)
-                + worldUp * cantileverCenterHeight;
-            DrawGpuEnergyMechanismHanger(
-                cantileverCenter,
-                groundRight,
-                groundForward,
-                worldUp,
-                cantileverLength,
-                cantileverHeight,
-                cantileverDepth,
-                rotorColor,
-                edgeColor);
-            DrawGpuEnergyMechanismBrace(
-                center + groundRight * layerOffset + groundForward * (sideSign * postOffsetZ) + worldUp * cantileverCenterHeight,
-                cantileverCenter - groundForward * (sideSign * cantileverLength * 0.5f),
-                cantileverHeight * 0.62f,
-                cantileverDepth * 0.72f,
-                frameColor,
-                edgeColor);
-
-            Vector3 rotorCenter = center + groundRight * layerOffset + worldUp * rotorCenterHeight;
-            DrawGpuOrientedBox(rotorCenter, groundForward, groundRight, worldUp, hubOuterRadius * 1.32f, 0.08f * modelScale, hubOuterRadius * 1.32f, Color.FromArgb(255, 54, 60, 68), edgeColor);
-            DrawGpuOrientedBox(rotorCenter, groundForward, groundRight, worldUp, hubInnerRadius * 1.25f, 0.11f * modelScale, hubInnerRadius * 1.25f, rotorColor, edgeColor);
-
-            for (int index = 0; index < 5; index++)
-            {
-                float angle = rotorYaw + profile.StructureRotorPhaseDeg * MathF.PI / 180f + index * MathF.Tau / 5f;
-                Vector3 armAxis = Vector3.Normalize(groundForward * MathF.Cos(angle) + worldUp * MathF.Sin(angle));
-                Vector3 armUp = Vector3.Normalize(Vector3.Cross(groundRight, armAxis));
-                Color currentLampColor = index == 0 ? BlendColor(rotorColor, Color.White, 0.25f) : lampColor;
-
-                DrawGpuEnergyMechanismArm(rotorCenter, armAxis, groundRight, armUp, armInnerOffset, armOuterRadius - armInnerOffset, armWidth, armHeight, frameColor, edgeColor);
-
-                Vector3 podCenter = rotorCenter + armAxis * rotorRadius;
-                Vector3 podAnchor = rotorCenter + armAxis * Math.Max(armOuterRadius, rotorRadius - lampRadius * 0.58f);
-                DrawGpuEnergyMechanismBrace(podAnchor + armUp * (0.05f * modelScale), podCenter + armUp * (0.03f * modelScale), 0.022f * modelScale, 0.022f * modelScale, frameColor, edgeColor);
-                DrawGpuEnergyMechanismBrace(podAnchor - armUp * (0.05f * modelScale), podCenter - armUp * (0.03f * modelScale), 0.022f * modelScale, 0.022f * modelScale, frameColor, edgeColor);
-                DrawGpuDiskTarget(podCenter, groundRight, worldUp, lampRadius, Math.Max(0.004f * modelScale, lampThickness * 0.45f), currentLampColor);
-            }
+            int next = (index + 1) % bottom.Count;
+            AppendOrDrawGpuQuad(bottom[index], bottom[next], top[next], top[index], ScaleGpuColor(color, 0.74f - 0.05f * (index % 3)));
         }
     }
 
@@ -1248,9 +1163,9 @@ internal sealed partial class Simulator3dForm
         for (int index = 0; index < segments; index++)
         {
             int next = (index + 1) % segments;
-            DrawGpuQuad(front[index], front[next], back[next], back[index], shellColor);
-            DrawGpuTriangle(frontCenter, front[next], front[index], ScaleGpuColor(shellColor, 0.92f));
-            DrawGpuTriangle(backCenter, back[index], back[next], ScaleGpuColor(ringColor, 1.0f));
+            AppendOrDrawGpuQuad(front[index], front[next], back[next], back[index], shellColor);
+            AppendOrDrawGpuTriangle(frontCenter, front[next], front[index], ScaleGpuColor(shellColor, 0.92f));
+            AppendOrDrawGpuTriangle(backCenter, back[index], back[next], ScaleGpuColor(ringColor, 1.0f));
         }
     }
 
@@ -1319,7 +1234,7 @@ internal sealed partial class Simulator3dForm
                 Vector3 b = center + ResolveSpherePoint(radius, theta1, phi0);
                 Vector3 c = center + ResolveSpherePoint(radius, theta1, phi1);
                 Vector3 d = center + ResolveSpherePoint(radius, theta0, phi1);
-                Color shaded = ShadeFaceColor(color, new[] { a, b, c, d }, 0.72f);
+                Color shaded = ShadeGpuFaceColor(color, a, b, c, 0.72f);
                 DrawGpuQuad(a, b, c, d, shaded);
             }
         }
@@ -1533,13 +1448,14 @@ internal sealed partial class Simulator3dForm
                 Vector3 b = center + ResolveSpherePoint(radius, theta1, phi0);
                 Vector3 c = center + ResolveSpherePoint(radius, theta1, phi1);
                 Vector3 d = center + ResolveSpherePoint(radius, theta0, phi1);
-                Color shaded = ShadeFaceColor(color, new[] { a, b, c, d }, 0.72f);
+                Color shaded = ShadeGpuFaceColor(color, a, b, c, 0.72f);
                 AppendGpuQuad(target, a, b, c, d, shaded);
             }
         }
     }
 
     private static void AppendGpuProjectileBillboard(
+        List<GpuVertex> target,
         Vector3 center,
         float radius,
         Color rimColor,
@@ -1556,11 +1472,9 @@ internal sealed partial class Simulator3dForm
             Vector3 edge0 = center + cameraRight * (MathF.Cos(angle0) * radius) + cameraUp * (MathF.Sin(angle0) * radius);
             Vector3 edge1 = center + cameraRight * (MathF.Cos(angle1) * radius) + cameraUp * (MathF.Sin(angle1) * radius);
 
-            SetGpuColor(coreColor);
-            glVertex3f(center.X, center.Y, center.Z);
-            SetGpuColor(rimColor);
-            glVertex3f(edge0.X, edge0.Y, edge0.Z);
-            glVertex3f(edge1.X, edge1.Y, edge1.Z);
+            target.Add(new GpuVertex(center, coreColor));
+            target.Add(new GpuVertex(edge0, rimColor));
+            target.Add(new GpuVertex(edge1, rimColor));
         }
     }
 
@@ -1573,9 +1487,45 @@ internal sealed partial class Simulator3dForm
             Math.Clamp((int)MathF.Round(color.B * scale), 0, 255));
     }
 
+    private static Color ShadeGpuFaceColor(Color color, Vector3 a, Vector3 b, Vector3 c, float ambient)
+    {
+        Vector3 normal = Vector3.Cross(b - a, c - a);
+        if (normal.LengthSquared() <= 1e-8f)
+        {
+            return color;
+        }
+
+        normal = Vector3.Normalize(normal);
+        Vector3 light = Vector3.Normalize(new Vector3(-0.45f, 1.0f, -0.35f));
+        float diffuse = MathF.Abs(Vector3.Dot(normal, light));
+        return ScaleGpuColor(color, Math.Clamp(ambient + diffuse * 0.42f, 0.35f, 1.12f));
+    }
+
     private static void SetGpuColor(Color color)
     {
         glColor4ub(color.R, color.G, color.B, color.A);
+    }
+
+    private void AppendOrDrawGpuTriangle(Vector3 a, Vector3 b, Vector3 c, Color color)
+    {
+        if (_gpuBatchingDynamicGeometry)
+        {
+            AppendGpuTriangle(_gpuDynamicVertexBuildBuffer, a, b, c, color);
+            return;
+        }
+
+        DrawGpuTriangle(a, b, c, color);
+    }
+
+    private void AppendOrDrawGpuQuad(Vector3 a, Vector3 b, Vector3 c, Vector3 d, Color color)
+    {
+        if (_gpuBatchingDynamicGeometry)
+        {
+            AppendGpuQuad(_gpuDynamicVertexBuildBuffer, a, b, c, d, color);
+            return;
+        }
+
+        DrawGpuQuad(a, b, c, d, color);
     }
 
     private static void DrawGpuTriangle(Vector3 a, Vector3 b, Vector3 c, Color color)

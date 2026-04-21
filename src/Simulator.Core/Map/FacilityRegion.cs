@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Simulator.Core.Map;
 
@@ -44,6 +46,9 @@ public sealed class FacilityRegion
     public double HeightM { get; init; }
 
     public IReadOnlyList<Point2D> Points { get; init; } = Array.Empty<Point2D>();
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? AdditionalProperties { get; init; }
 
     public bool Contains(double x, double y)
     {

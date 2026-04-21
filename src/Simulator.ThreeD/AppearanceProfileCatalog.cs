@@ -1,8 +1,10 @@
 using System.Drawing;
 using System.Numerics;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Simulator.Assets;
 using Simulator.Core.Gameplay;
+using Simulator.Core.Map;
 
 namespace Simulator.ThreeD;
 
@@ -19,13 +21,13 @@ internal sealed class AppearanceProfileCatalog
     {
         var profiles = new Dictionary<string, RobotAppearanceProfile>(StringComparer.OrdinalIgnoreCase)
         {
-            ["hero"] = RobotAppearanceProfile.CreateDefault(0.65f, 0.48f, 0.19f, 0.11f, "hero"),
-            ["engineer"] = RobotAppearanceProfile.CreateDefault(0.55f, 0.50f, 0.17f, 0.11f, "engineer"),
-            ["infantry"] = RobotAppearanceProfile.CreateDefault(0.48f, 0.48f, 0.18f, 0.10f, "infantry"),
-            ["sentry"] = RobotAppearanceProfile.CreateDefault(0.55f, 0.50f, 0.17f, 0.10f, "sentry"),
-            ["outpost"] = RobotAppearanceProfile.CreateDefault(0.65f, 0.55f, 1.578f, 0.0f, "outpost"),
-            ["base"] = RobotAppearanceProfile.CreateDefault(1.881f, 1.609f, 1.181f, 0.0f, "base"),
-            ["energy_mechanism"] = RobotAppearanceProfile.CreateDefault(2.06f, 1.30f, 2.30f, 0.0f, "energy_mechanism"),
+            ["hero"] = GetDefaultProfileForRole("hero"),
+            ["engineer"] = GetDefaultProfileForRole("engineer"),
+            ["infantry"] = GetDefaultProfileForRole("infantry"),
+            ["sentry"] = GetDefaultProfileForRole("sentry"),
+            ["outpost"] = GetDefaultProfileForRole("outpost"),
+            ["base"] = GetDefaultProfileForRole("base"),
+            ["energy_mechanism"] = GetDefaultProfileForRole("energy_mechanism"),
         };
 
         if (!File.Exists(appearancePath))
@@ -64,6 +66,13 @@ internal sealed class AppearanceProfileCatalog
         }
 
         return new AppearanceProfileCatalog(profiles);
+    }
+
+    internal static RobotAppearanceProfile ResolvePreviewProfile(RobotAppearanceProfileDefinition source)
+    {
+        source.EnsureInitialized();
+        string roleKey = string.IsNullOrWhiteSpace(source.RoleKey) ? "infantry" : source.RoleKey;
+        return ParseProfile(source, GetDefaultProfileForRole(roleKey));
     }
 
     private static RobotAppearanceProfile ParseProfile(RobotAppearanceProfileDefinition source, RobotAppearanceProfile defaults)
@@ -123,6 +132,11 @@ internal sealed class AppearanceProfileCatalog
             StructureHangerHeightM = Math.Max(0.04f, (float)(source.StructureHangerHeightM <= 0 ? defaults.StructureHangerHeightM : source.StructureHangerHeightM)),
             StructureHangerDepthM = Math.Max(0.01f, (float)(source.StructureHangerDepthM <= 0 ? defaults.StructureHangerDepthM : source.StructureHangerDepthM)),
             StructureHangerCenterHeightM = Math.Max(0.04f, (float)(source.StructureHangerCenterHeightM <= 0 ? defaults.StructureHangerCenterHeightM : source.StructureHangerCenterHeightM)),
+            StructureLowerModuleWidthM = Math.Max(0.04f, (float)(source.StructureLowerModuleWidthM <= 0 ? defaults.StructureLowerModuleWidthM : source.StructureLowerModuleWidthM)),
+            StructureLowerModuleHeightM = Math.Max(0.04f, (float)(source.StructureLowerModuleHeightM <= 0 ? defaults.StructureLowerModuleHeightM : source.StructureLowerModuleHeightM)),
+            StructureLowerModuleDepthM = Math.Max(0.04f, (float)(source.StructureLowerModuleDepthM <= 0 ? defaults.StructureLowerModuleDepthM : source.StructureLowerModuleDepthM)),
+            StructureLowerModuleOffsetXM = Math.Max(0.05f, (float)(source.StructureLowerModuleOffsetXM <= 0 ? defaults.StructureLowerModuleOffsetXM : source.StructureLowerModuleOffsetXM)),
+            StructureLowerModuleCenterHeightM = Math.Max(0.05f, (float)(source.StructureLowerModuleCenterHeightM <= 0 ? defaults.StructureLowerModuleCenterHeightM : source.StructureLowerModuleCenterHeightM)),
             StructureCantileverPairGapM = Math.Max(0.10f, (float)(source.StructureCantileverPairGapM <= 0 ? defaults.StructureCantileverPairGapM : source.StructureCantileverPairGapM)),
             StructureCantileverLengthM = Math.Max(0.04f, (float)(source.StructureCantileverLengthM <= 0 ? defaults.StructureCantileverLengthM : source.StructureCantileverLengthM)),
             StructureCantileverOffsetYM = (float)source.StructureCantileverOffsetYM,
@@ -181,12 +195,17 @@ internal sealed class AppearanceProfileCatalog
             StructureTowerRadiusM = Math.Max(0.05f, (float)(source.StructureTowerRadiusM <= 0 ? defaults.StructureTowerRadiusM : source.StructureTowerRadiusM)),
             StructureRoofHeightM = Math.Max(0.05f, (float)(source.StructureRoofHeightM <= 0 ? defaults.StructureRoofHeightM : source.StructureRoofHeightM)),
             StructureTopArmorCenterHeightM = Math.Max(0.05f, (float)(source.StructureTopArmorCenterHeightM <= 0 ? defaults.StructureTopArmorCenterHeightM : source.StructureTopArmorCenterHeightM)),
+            StructureTopArmorOffsetXM = (float)source.StructureTopArmorOffsetXM,
+            StructureTopArmorOffsetZM = (float)source.StructureTopArmorOffsetZM,
             StructureTopArmorTiltDeg = (float)(Math.Abs(source.StructureTopArmorTiltDeg) <= double.Epsilon ? defaults.StructureTopArmorTiltDeg : source.StructureTopArmorTiltDeg),
+            StructureSideArmorOpenAngleDeg = (float)(Math.Abs(source.StructureSideArmorOpenAngleDeg) <= double.Epsilon ? defaults.StructureSideArmorOpenAngleDeg : source.StructureSideArmorOpenAngleDeg),
+            StructureSideArmorOutwardOffsetM = Math.Max(0f, (float)(source.StructureSideArmorOutwardOffsetM <= 0 ? defaults.StructureSideArmorOutwardOffsetM : source.StructureSideArmorOutwardOffsetM)),
             StructureDetectorWidthM = Math.Max(0.02f, (float)(source.StructureDetectorWidthM <= 0 ? defaults.StructureDetectorWidthM : source.StructureDetectorWidthM)),
             StructureDetectorHeightM = Math.Max(0.02f, (float)(source.StructureDetectorHeightM <= 0 ? defaults.StructureDetectorHeightM : source.StructureDetectorHeightM)),
             StructureDetectorBridgeCenterHeightM = Math.Max(0.02f, (float)(source.StructureDetectorBridgeCenterHeightM <= 0 ? defaults.StructureDetectorBridgeCenterHeightM : source.StructureDetectorBridgeCenterHeightM)),
             StructureDetectorSensorCenterHeightM = Math.Max(0.02f, (float)(source.StructureDetectorSensorCenterHeightM <= 0 ? defaults.StructureDetectorSensorCenterHeightM : source.StructureDetectorSensorCenterHeightM)),
             StructureCoreColumnHeightM = Math.Max(0.02f, (float)(source.StructureCoreColumnHeightM <= 0 ? defaults.StructureCoreColumnHeightM : source.StructureCoreColumnHeightM)),
+            StructureHexTopEdgeM = Math.Max(0.05f, (float)(source.StructureHexTopEdgeM <= 0 ? defaults.StructureHexTopEdgeM : source.StructureHexTopEdgeM)),
             StructureShoulderHeightM = Math.Max(0.05f, (float)(source.StructureShoulderHeightM <= 0 ? defaults.StructureShoulderHeightM : source.StructureShoulderHeightM)),
             ChassisSpeedScale = Math.Max(0.2f, (float)(source.ChassisSpeedScale <= 0 ? defaults.ChassisSpeedScale : source.ChassisSpeedScale)),
             ChassisDrivePowerLimitW = Math.Max(10f, (float)(source.ChassisDrivePowerLimitW <= 0 ? defaults.ChassisDrivePowerLimitW : source.ChassisDrivePowerLimitW)),
@@ -199,6 +218,18 @@ internal sealed class AppearanceProfileCatalog
             WheelColor = source.WheelColor,
         };
     }
+
+    private static RobotAppearanceProfile GetDefaultProfileForRole(string roleKey)
+        => roleKey.Trim().ToLowerInvariant() switch
+        {
+            "hero" => RobotAppearanceProfile.CreateDefault(0.65f, 0.48f, 0.19f, 0.11f, "hero"),
+            "engineer" => RobotAppearanceProfile.CreateDefault(0.55f, 0.50f, 0.17f, 0.11f, "engineer"),
+            "sentry" => RobotAppearanceProfile.CreateDefault(0.55f, 0.50f, 0.17f, 0.10f, "sentry"),
+            "outpost" => RobotAppearanceProfile.CreateDefault(0.65f, 0.55f, 1.578f, 0.0f, "outpost"),
+            "base" => RobotAppearanceProfile.CreateDefault(1.881f, 1.609f, 1.181f, 0.0f, "base"),
+            "energy_mechanism" => RobotAppearanceProfile.CreateDefault(2.06f, 1.30f, 2.30f, 0.0f, "energy_mechanism"),
+            _ => RobotAppearanceProfile.CreateDefault(0.48f, 0.48f, 0.18f, 0.10f, "infantry"),
+        };
 
     public RobotAppearanceProfile Resolve(string roleKey, string? subtypeOverride = null)
     {
@@ -219,6 +250,13 @@ internal sealed class AppearanceProfileCatalog
         }
 
         return RobotAppearanceProfile.CreateDefault(0.48f, 0.48f, 0.18f, 0.10f, "infantry");
+    }
+
+    public RobotAppearanceProfile ResolveFacilityProfile(FacilityRegion region)
+    {
+        string roleKey = string.IsNullOrWhiteSpace(region.Type) ? "infantry" : region.Type.Trim();
+        RobotAppearanceProfile profile = Resolve(roleKey);
+        return ApplyFacilityOverrides(profile, region.AdditionalProperties);
     }
 
     private static string CompositeKey(string roleKey, string subtype)
@@ -300,6 +338,11 @@ internal sealed class AppearanceProfileCatalog
             StructureHangerHeightM = Math.Max(0.04f, ReadFloat(primary, fallback, defaults.StructureHangerHeightM, "structure_hanger_height_m")),
             StructureHangerDepthM = Math.Max(0.01f, ReadFloat(primary, fallback, defaults.StructureHangerDepthM, "structure_hanger_depth_m")),
             StructureHangerCenterHeightM = Math.Max(0.04f, ReadFloat(primary, fallback, defaults.StructureHangerCenterHeightM, "structure_hanger_center_height_m")),
+            StructureLowerModuleWidthM = Math.Max(0.04f, ReadFloat(primary, fallback, defaults.StructureLowerModuleWidthM, "structure_lower_module_width_m")),
+            StructureLowerModuleHeightM = Math.Max(0.04f, ReadFloat(primary, fallback, defaults.StructureLowerModuleHeightM, "structure_lower_module_height_m")),
+            StructureLowerModuleDepthM = Math.Max(0.04f, ReadFloat(primary, fallback, defaults.StructureLowerModuleDepthM, "structure_lower_module_depth_m")),
+            StructureLowerModuleOffsetXM = Math.Max(0.05f, ReadFloat(primary, fallback, defaults.StructureLowerModuleOffsetXM, "structure_lower_module_offset_x_m")),
+            StructureLowerModuleCenterHeightM = Math.Max(0.05f, ReadFloat(primary, fallback, defaults.StructureLowerModuleCenterHeightM, "structure_lower_module_center_height_m")),
             StructureCantileverPairGapM = Math.Max(0.10f, ReadFloat(primary, fallback, defaults.StructureCantileverPairGapM, "structure_cantilever_pair_gap_m")),
             StructureCantileverLengthM = Math.Max(0.04f, ReadFloat(primary, fallback, defaults.StructureCantileverLengthM, "structure_cantilever_length_m")),
             StructureCantileverOffsetYM = ReadFloat(primary, fallback, defaults.StructureCantileverOffsetYM, "structure_cantilever_offset_y_m"),
@@ -358,12 +401,17 @@ internal sealed class AppearanceProfileCatalog
             StructureTowerRadiusM = Math.Max(0.05f, ReadFloat(primary, fallback, defaults.StructureTowerRadiusM, "structure_tower_radius_m")),
             StructureRoofHeightM = Math.Max(0.05f, ReadFloat(primary, fallback, defaults.StructureRoofHeightM, "structure_roof_height_m")),
             StructureTopArmorCenterHeightM = Math.Max(0.05f, ReadFloat(primary, fallback, defaults.StructureTopArmorCenterHeightM, "structure_top_armor_center_height_m")),
+            StructureTopArmorOffsetXM = ReadFloat(primary, fallback, defaults.StructureTopArmorOffsetXM, "structure_top_armor_offset_x_m"),
+            StructureTopArmorOffsetZM = ReadFloat(primary, fallback, defaults.StructureTopArmorOffsetZM, "structure_top_armor_offset_z_m"),
             StructureTopArmorTiltDeg = ReadFloat(primary, fallback, defaults.StructureTopArmorTiltDeg, "structure_top_armor_tilt_deg"),
+            StructureSideArmorOpenAngleDeg = ReadFloat(primary, fallback, defaults.StructureSideArmorOpenAngleDeg, "structure_side_armor_open_angle_deg"),
+            StructureSideArmorOutwardOffsetM = Math.Max(0f, ReadFloat(primary, fallback, defaults.StructureSideArmorOutwardOffsetM, "structure_side_armor_outward_offset_m")),
             StructureDetectorWidthM = Math.Max(0.02f, ReadFloat(primary, fallback, defaults.StructureDetectorWidthM, "structure_detector_width_m")),
             StructureDetectorHeightM = Math.Max(0.02f, ReadFloat(primary, fallback, defaults.StructureDetectorHeightM, "structure_detector_height_m")),
             StructureDetectorBridgeCenterHeightM = Math.Max(0.02f, ReadFloat(primary, fallback, defaults.StructureDetectorBridgeCenterHeightM, "structure_detector_bridge_center_height_m")),
             StructureDetectorSensorCenterHeightM = Math.Max(0.02f, ReadFloat(primary, fallback, defaults.StructureDetectorSensorCenterHeightM, "structure_detector_sensor_center_height_m")),
             StructureCoreColumnHeightM = Math.Max(0.02f, ReadFloat(primary, fallback, defaults.StructureCoreColumnHeightM, "structure_core_column_height_m")),
+            StructureHexTopEdgeM = Math.Max(0.05f, ReadFloat(primary, fallback, defaults.StructureHexTopEdgeM, "structure_hex_top_edge_m")),
             StructureShoulderHeightM = Math.Max(0.05f, ReadFloat(primary, fallback, defaults.StructureShoulderHeightM, "structure_shoulder_height_m")),
             ChassisSpeedScale = Math.Max(0.2f, ReadFloat(primary, fallback, defaults.ChassisSpeedScale, "chassis_speed_scale")),
             ChassisDrivePowerLimitW = Math.Max(10f, ReadFloat(primary, fallback, defaults.ChassisDrivePowerLimitW, "chassis_drive_power_limit_w")),
@@ -624,6 +672,159 @@ internal sealed class AppearanceProfileCatalog
             Math.Clamp((int)MathF.Round(b), 0, 255));
         return true;
     }
+
+    private static RobotAppearanceProfile ApplyFacilityOverrides(
+        RobotAppearanceProfile profile,
+        IReadOnlyDictionary<string, JsonElement>? values)
+    {
+        if (values is null || values.Count == 0)
+        {
+            return profile;
+        }
+
+        Color bodyColor = ReadFacilityColor(values, "body_color_rgb", profile.BodyColor);
+        Color turretColor = ReadFacilityColor(values, "turret_color_rgb", profile.TurretColor);
+        Color armorColor = ReadFacilityColor(values, "armor_color_rgb", profile.ArmorColor);
+        Color wheelColor = ReadFacilityColor(values, "wheel_color_rgb", profile.WheelColor);
+
+        return profile with
+        {
+            BodyLengthM = ReadFacilityFloat(values, "body_length_m", profile.BodyLengthM, 0.12f),
+            BodyWidthM = ReadFacilityFloat(values, "body_width_m", profile.BodyWidthM, 0.10f),
+            BodyHeightM = ReadFacilityFloat(values, "body_height_m", profile.BodyHeightM, 0.08f),
+            BodyClearanceM = ReadFacilityFloat(values, "body_clearance_m", profile.BodyClearanceM, 0f),
+            BodyRenderWidthScale = Math.Clamp(ReadFacilityFloat(values, "body_render_width_scale", profile.BodyRenderWidthScale, 0.4f), 0.4f, 1.35f),
+            StructureBaseLiftM = Math.Clamp(ReadFacilityFloat(values, "structure_base_lift_m", profile.StructureBaseLiftM, 0f), 0f, 1.20f),
+            StructureGroundClearanceM = ReadFacilityFloat(values, "structure_ground_clearance_m", profile.StructureGroundClearanceM, 0f),
+            StructureBaseHeightM = ReadFacilityFloat(values, "structure_base_height_m", profile.StructureBaseHeightM, 0.05f),
+            StructureBaseLengthM = ReadFacilityFloat(values, "structure_base_length_m", profile.StructureBaseLengthM, 0.40f),
+            StructureBaseWidthM = ReadFacilityFloat(values, "structure_base_width_m", profile.StructureBaseWidthM, 0.40f),
+            StructureBaseTopLengthM = ReadFacilityFloat(values, "structure_base_top_length_m", profile.StructureBaseTopLengthM, 0.20f),
+            StructureBaseTopWidthM = ReadFacilityFloat(values, "structure_base_top_width_m", profile.StructureBaseTopWidthM, 0.20f),
+            StructureBaseTopHeightM = ReadFacilityFloat(values, "structure_base_top_height_m", profile.StructureBaseTopHeightM, 0.02f),
+            StructureFrameWidthM = ReadFacilityFloat(values, "structure_frame_width_m", profile.StructureFrameWidthM, 0.20f),
+            StructureFrameDepthM = ReadFacilityFloat(values, "structure_frame_depth_m", profile.StructureFrameDepthM, 0.04f),
+            StructureFrameHeightM = ReadFacilityFloat(values, "structure_frame_height_m", profile.StructureFrameHeightM, 0.20f),
+            StructureColumnSpanM = ReadFacilityFloat(values, "structure_column_span_m", profile.StructureColumnSpanM, 0.10f),
+            StructureSupportOffsetM = ReadFacilityFloat(values, "structure_support_offset_m", profile.StructureSupportOffsetM, 0.05f),
+            StructureFrameColumnWidthM = ReadFacilityFloat(values, "structure_frame_column_width_m", profile.StructureFrameColumnWidthM, 0.02f),
+            StructureFrameBeamHeightM = ReadFacilityFloat(values, "structure_frame_beam_height_m", profile.StructureFrameBeamHeightM, 0.02f),
+            StructureRotorCenterHeightM = ReadFacilityFloat(values, "structure_rotor_center_height_m", profile.StructureRotorCenterHeightM, 0.05f),
+            StructureRotorPhaseDeg = ReadFacilityFloat(values, "structure_rotor_phase_deg", profile.StructureRotorPhaseDeg),
+            StructureRotorRadiusM = ReadFacilityFloat(values, "structure_rotor_radius_m", profile.StructureRotorRadiusM, 0.10f),
+            StructureRotorHubRadiusM = ReadFacilityFloat(values, "structure_rotor_hub_radius_m", profile.StructureRotorHubRadiusM, 0.02f),
+            StructureRotorArmLengthM = ReadFacilityFloat(values, "structure_rotor_arm_length_m", profile.StructureRotorArmLengthM, 0.02f),
+            StructureRotorArmWidthM = ReadFacilityFloat(values, "structure_rotor_arm_width_m", profile.StructureRotorArmWidthM, 0.01f),
+            StructureRotorArmHeightM = ReadFacilityFloat(values, "structure_rotor_arm_height_m", profile.StructureRotorArmHeightM, 0.01f),
+            StructureLampLengthM = ReadFacilityFloat(values, "structure_lamp_length_m", profile.StructureLampLengthM, 0.04f),
+            StructureLampWidthM = ReadFacilityFloat(values, "structure_lamp_width_m", profile.StructureLampWidthM, 0.04f),
+            StructureLampHeightM = ReadFacilityFloat(values, "structure_lamp_height_m", profile.StructureLampHeightM, 0.01f),
+            StructureHangerWidthM = ReadFacilityFloat(values, "structure_hanger_width_m", profile.StructureHangerWidthM, 0.04f),
+            StructureHangerHeightM = ReadFacilityFloat(values, "structure_hanger_height_m", profile.StructureHangerHeightM, 0.04f),
+            StructureHangerDepthM = ReadFacilityFloat(values, "structure_hanger_depth_m", profile.StructureHangerDepthM, 0.01f),
+            StructureHangerCenterHeightM = ReadFacilityFloat(values, "structure_hanger_center_height_m", profile.StructureHangerCenterHeightM, 0.04f),
+            StructureLowerModuleWidthM = ReadFacilityFloat(values, "structure_lower_module_width_m", profile.StructureLowerModuleWidthM, 0.04f),
+            StructureLowerModuleHeightM = ReadFacilityFloat(values, "structure_lower_module_height_m", profile.StructureLowerModuleHeightM, 0.04f),
+            StructureLowerModuleDepthM = ReadFacilityFloat(values, "structure_lower_module_depth_m", profile.StructureLowerModuleDepthM, 0.04f),
+            StructureLowerModuleOffsetXM = ReadFacilityFloat(values, "structure_lower_module_offset_x_m", profile.StructureLowerModuleOffsetXM, 0.05f),
+            StructureLowerModuleCenterHeightM = ReadFacilityFloat(values, "structure_lower_module_center_height_m", profile.StructureLowerModuleCenterHeightM, 0.05f),
+            StructureCantileverPairGapM = ReadFacilityFloat(values, "structure_cantilever_pair_gap_m", profile.StructureCantileverPairGapM, 0.10f),
+            StructureCantileverLengthM = ReadFacilityFloat(values, "structure_cantilever_length_m", profile.StructureCantileverLengthM, 0.04f),
+            StructureCantileverOffsetYM = ReadFacilityFloat(values, "structure_cantilever_offset_y_m", profile.StructureCantileverOffsetYM),
+            StructureCantileverHeightM = ReadFacilityFloat(values, "structure_cantilever_height_m", profile.StructureCantileverHeightM, 0.01f),
+            StructureCantileverDepthM = ReadFacilityFloat(values, "structure_cantilever_depth_m", profile.StructureCantileverDepthM, 0.01f),
+            StructureBodyTopHeightM = ReadFacilityFloat(values, "structure_body_top_height_m", profile.StructureBodyTopHeightM, 0.05f),
+            StructureHeadBaseHeightM = ReadFacilityFloat(values, "structure_head_base_height_m", profile.StructureHeadBaseHeightM, 0.05f),
+            StructureLowerShoulderHeightM = ReadFacilityFloat(values, "structure_lower_shoulder_height_m", profile.StructureLowerShoulderHeightM, 0.02f),
+            StructureUpperShoulderHeightM = ReadFacilityFloat(values, "structure_upper_shoulder_height_m", profile.StructureUpperShoulderHeightM, 0.02f),
+            StructureTowerRadiusM = ReadFacilityFloat(values, "structure_tower_radius_m", profile.StructureTowerRadiusM, 0.02f),
+            StructureRoofHeightM = ReadFacilityFloat(values, "structure_roof_height_m", profile.StructureRoofHeightM, 0.05f),
+            StructureTopArmorCenterHeightM = ReadFacilityFloat(values, "structure_top_armor_center_height_m", profile.StructureTopArmorCenterHeightM, 0.05f),
+            StructureTopArmorOffsetXM = ReadFacilityFloat(values, "structure_top_armor_offset_x_m", profile.StructureTopArmorOffsetXM),
+            StructureTopArmorOffsetZM = ReadFacilityFloat(values, "structure_top_armor_offset_z_m", profile.StructureTopArmorOffsetZM),
+            StructureTopArmorTiltDeg = ReadFacilityFloat(values, "structure_top_armor_tilt_deg", profile.StructureTopArmorTiltDeg),
+            StructureSideArmorOpenAngleDeg = ReadFacilityFloat(values, "structure_side_armor_open_angle_deg", profile.StructureSideArmorOpenAngleDeg),
+            StructureSideArmorOutwardOffsetM = ReadFacilityFloat(values, "structure_side_armor_outward_offset_m", profile.StructureSideArmorOutwardOffsetM, 0f),
+            StructureDetectorWidthM = ReadFacilityFloat(values, "structure_detector_width_m", profile.StructureDetectorWidthM, 0.02f),
+            StructureDetectorHeightM = ReadFacilityFloat(values, "structure_detector_height_m", profile.StructureDetectorHeightM, 0.02f),
+            StructureDetectorBridgeCenterHeightM = ReadFacilityFloat(values, "structure_detector_bridge_center_height_m", profile.StructureDetectorBridgeCenterHeightM, 0.02f),
+            StructureDetectorSensorCenterHeightM = ReadFacilityFloat(values, "structure_detector_sensor_center_height_m", profile.StructureDetectorSensorCenterHeightM, 0.02f),
+            StructureCoreColumnHeightM = ReadFacilityFloat(values, "structure_core_column_height_m", profile.StructureCoreColumnHeightM, 0.02f),
+            StructureHexTopEdgeM = ReadFacilityFloat(values, "structure_hex_top_edge_m", profile.StructureHexTopEdgeM, 0.05f),
+            StructureShoulderHeightM = ReadFacilityFloat(values, "structure_shoulder_height_m", profile.StructureShoulderHeightM, 0.05f),
+            ArmorPlateWidthM = ReadFacilityFloat(values, "armor_plate_width_m", profile.ArmorPlateWidthM, 0.03f),
+            ArmorPlateLengthM = ReadFacilityFloat(values, "armor_plate_length_m", profile.ArmorPlateLengthM, 0.03f),
+            ArmorPlateHeightM = ReadFacilityFloat(values, "armor_plate_height_m", profile.ArmorPlateHeightM, 0.03f),
+            ArmorPlateGapM = ReadFacilityFloat(values, "armor_plate_gap_m", profile.ArmorPlateGapM, 0.003f),
+            BodyColor = bodyColor,
+            TurretColor = turretColor,
+            ArmorColor = armorColor,
+            WheelColor = wheelColor,
+        };
+    }
+
+    private static float ReadFacilityFloat(
+        IReadOnlyDictionary<string, JsonElement> values,
+        string key,
+        float fallback,
+        float minInclusive = float.NegativeInfinity)
+    {
+        if (!values.TryGetValue(key, out JsonElement value))
+        {
+            return fallback;
+        }
+
+        if (!TryReadFacilityFloat(value, out float parsed) || float.IsNaN(parsed) || float.IsInfinity(parsed))
+        {
+            return fallback;
+        }
+
+        return Math.Max(minInclusive, parsed);
+    }
+
+    private static bool TryReadFacilityFloat(JsonElement value, out float result)
+    {
+        switch (value.ValueKind)
+        {
+            case JsonValueKind.Number:
+                return value.TryGetSingle(out result);
+            case JsonValueKind.String:
+                return float.TryParse(value.GetString(), out result);
+            default:
+                result = 0f;
+                return false;
+        }
+    }
+
+    private static Color ReadFacilityColor(
+        IReadOnlyDictionary<string, JsonElement> values,
+        string key,
+        Color fallback)
+    {
+        if (!values.TryGetValue(key, out JsonElement value) || value.ValueKind != JsonValueKind.Array)
+        {
+            return fallback;
+        }
+
+        int[] channels = new int[3];
+        int index = 0;
+        foreach (JsonElement item in value.EnumerateArray())
+        {
+            if (index >= channels.Length)
+            {
+                break;
+            }
+
+            if (!TryReadFacilityFloat(item, out float parsed))
+            {
+                return fallback;
+            }
+
+            channels[index++] = Math.Clamp((int)MathF.Round(parsed), 0, 255);
+        }
+
+        return index == 3 ? Color.FromArgb(channels[0], channels[1], channels[2]) : fallback;
+    }
 }
 
 internal sealed record RobotAppearanceProfile
@@ -715,6 +916,16 @@ internal sealed record RobotAppearanceProfile
     public float StructureHangerDepthM { get; init; } = 0.06f;
 
     public float StructureHangerCenterHeightM { get; init; } = 1.45f;
+
+    public float StructureLowerModuleWidthM { get; init; } = 0.20f;
+
+    public float StructureLowerModuleHeightM { get; init; } = 0.24f;
+
+    public float StructureLowerModuleDepthM { get; init; } = 0.18f;
+
+    public float StructureLowerModuleOffsetXM { get; init; } = 0.48f;
+
+    public float StructureLowerModuleCenterHeightM { get; init; } = 0.94f;
 
     public float StructureCantileverPairGapM { get; init; } = 2.34f;
 
@@ -832,7 +1043,15 @@ internal sealed record RobotAppearanceProfile
 
     public float StructureTopArmorCenterHeightM { get; init; } = 1.15f;
 
+    public float StructureTopArmorOffsetXM { get; init; }
+
+    public float StructureTopArmorOffsetZM { get; init; }
+
     public float StructureTopArmorTiltDeg { get; init; } = 27.5f;
+
+    public float StructureSideArmorOpenAngleDeg { get; init; } = 27.5f;
+
+    public float StructureSideArmorOutwardOffsetM { get; init; } = 0.12f;
 
     public float StructureDetectorWidthM { get; init; } = 0.98f;
 
@@ -843,6 +1062,8 @@ internal sealed record RobotAppearanceProfile
     public float StructureDetectorSensorCenterHeightM { get; init; } = 1.136f;
 
     public float StructureCoreColumnHeightM { get; init; } = 0.783f;
+
+    public float StructureHexTopEdgeM { get; init; } = 1.089f;
 
     public float StructureShoulderHeightM { get; init; } = 0.860f;
 
@@ -878,6 +1099,11 @@ internal sealed record RobotAppearanceProfile
         entity.BodyClearanceM = BodyClearanceM;
         entity.BodyRenderWidthScale = BodyRenderWidthScale;
         entity.StructureBaseLiftM = StructureBaseLiftM;
+        entity.StructureTopArmorCenterHeightM = StructureTopArmorCenterHeightM;
+        entity.StructureTopArmorOffsetXM = StructureTopArmorOffsetXM;
+        entity.StructureTopArmorOffsetZM = StructureTopArmorOffsetZM;
+        entity.StructureSideArmorOpenAngleDeg = StructureSideArmorOpenAngleDeg;
+        entity.StructureSideArmorOutwardOffsetM = StructureSideArmorOutwardOffsetM;
         entity.WheelRadiusM = WheelRadiusM;
         entity.WheelOffsetsM = WheelOffsetsM.Select(offset => ((double)offset.X, (double)offset.Y)).ToArray();
         entity.ArmorOrbitYawsDeg = ArmorOrbitYawsDeg.Select(value => (double)value).ToArray();
@@ -1045,6 +1271,11 @@ internal sealed record RobotAppearanceProfile
                 StructureHangerHeightM = roleKey.Equals("energy_mechanism", StringComparison.OrdinalIgnoreCase) ? 0.24f : 0.0f,
                 StructureHangerDepthM = roleKey.Equals("energy_mechanism", StringComparison.OrdinalIgnoreCase) ? 0.06f : 0.0f,
                 StructureHangerCenterHeightM = roleKey.Equals("energy_mechanism", StringComparison.OrdinalIgnoreCase) ? 1.45f : 0.0f,
+                StructureLowerModuleWidthM = roleKey.Equals("energy_mechanism", StringComparison.OrdinalIgnoreCase) ? 0.20f : 0.0f,
+                StructureLowerModuleHeightM = roleKey.Equals("energy_mechanism", StringComparison.OrdinalIgnoreCase) ? 0.24f : 0.0f,
+                StructureLowerModuleDepthM = roleKey.Equals("energy_mechanism", StringComparison.OrdinalIgnoreCase) ? 0.18f : 0.0f,
+                StructureLowerModuleOffsetXM = roleKey.Equals("energy_mechanism", StringComparison.OrdinalIgnoreCase) ? 0.48f : 0.0f,
+                StructureLowerModuleCenterHeightM = roleKey.Equals("energy_mechanism", StringComparison.OrdinalIgnoreCase) ? 0.94f : 0.0f,
                 StructureCantileverPairGapM = roleKey.Equals("energy_mechanism", StringComparison.OrdinalIgnoreCase) ? 2.34f : 0.0f,
                 StructureCantileverLengthM = roleKey.Equals("energy_mechanism", StringComparison.OrdinalIgnoreCase) ? 0.28f : 0.0f,
                 StructureCantileverOffsetYM = roleKey.Equals("energy_mechanism", StringComparison.OrdinalIgnoreCase) ? -0.02f : 0.0f,
@@ -1076,12 +1307,17 @@ internal sealed record RobotAppearanceProfile
                 StructureTowerRadiusM = roleKey.Equals("outpost", StringComparison.OrdinalIgnoreCase) ? 0.20f : 0f,
                 StructureRoofHeightM = roleKey.Equals("base", StringComparison.OrdinalIgnoreCase) ? 1.03f : bodyHeight,
                 StructureTopArmorCenterHeightM = roleKey.Equals("outpost", StringComparison.OrdinalIgnoreCase) ? 1.633f : 1.15f,
+                StructureTopArmorOffsetXM = 0f,
+                StructureTopArmorOffsetZM = roleKey.Equals("outpost", StringComparison.OrdinalIgnoreCase) ? 0.255f : 0f,
                 StructureTopArmorTiltDeg = roleKey.Equals("base", StringComparison.OrdinalIgnoreCase) ? 27.5f : 45f,
+                StructureSideArmorOpenAngleDeg = roleKey.Equals("base", StringComparison.OrdinalIgnoreCase) ? 27.5f : 0f,
+                StructureSideArmorOutwardOffsetM = roleKey.Equals("base", StringComparison.OrdinalIgnoreCase) ? 0.12f : 0f,
                 StructureDetectorWidthM = roleKey.Equals("base", StringComparison.OrdinalIgnoreCase) ? 0.98f : 0f,
                 StructureDetectorHeightM = roleKey.Equals("base", StringComparison.OrdinalIgnoreCase) ? 0.095f : 0f,
                 StructureDetectorBridgeCenterHeightM = roleKey.Equals("base", StringComparison.OrdinalIgnoreCase) ? 1.093f : 0f,
                 StructureDetectorSensorCenterHeightM = roleKey.Equals("base", StringComparison.OrdinalIgnoreCase) ? 1.136f : 0f,
                 StructureCoreColumnHeightM = roleKey.Equals("base", StringComparison.OrdinalIgnoreCase) ? 0.783f : 0f,
+                StructureHexTopEdgeM = roleKey.Equals("base", StringComparison.OrdinalIgnoreCase) ? 1.089f : 0f,
                 StructureShoulderHeightM = roleKey.Equals("base", StringComparison.OrdinalIgnoreCase) ? 0.860f : 0f,
                 BodyColor = roleKey.Equals("base", StringComparison.OrdinalIgnoreCase)
                     ? Color.FromArgb(142, 148, 154)

@@ -78,9 +78,9 @@ class Renderer(TerrainOverviewMixin, RendererSidebarMixin, RendererHudMixin, Ren
             {'id': 'blue_second_step', 'type': 'second_step', 'team': 'blue', 'label': '蓝方二级台阶'},
             {'id': 'blue_supply', 'type': 'supply', 'team': 'blue', 'label': '蓝方补给区'},
             {'id': 'blue_fort', 'type': 'fort', 'team': 'blue', 'label': '蓝方堡垒'},
-            {'id': 'red_mining_area', 'type': 'mining_area', 'team': 'red', 'label': '红方取矿区'},
+            {'id': 'red_mining_area', 'type': 'mining_area', 'team': 'red', 'label': '红方装配区'},
             {'id': 'blue_mining_area', 'type': 'mining_area', 'team': 'blue', 'label': '蓝方取矿区'},
-            {'id': 'red_mineral_exchange', 'type': 'mineral_exchange', 'team': 'red', 'label': '红方兑矿区'},
+            {'id': 'red_mineral_exchange', 'type': 'mineral_exchange', 'team': 'red', 'label': '红方能量单元放置区'},
             {'id': 'blue_mineral_exchange', 'type': 'mineral_exchange', 'team': 'blue', 'label': '蓝方兑矿区'},
             {'id': 'center_energy_mechanism', 'type': 'energy_mechanism', 'team': 'neutral', 'label': '中央能量机关'},
             {'id': 'red_rugged_road', 'type': 'rugged_road', 'team': 'red', 'label': '红方起伏路段'},
@@ -99,7 +99,7 @@ class Renderer(TerrainOverviewMixin, RendererSidebarMixin, RendererHudMixin, Ren
             {'id': 'buff_fort_blue', 'type': 'buff_fort', 'team': 'blue', 'label': '蓝方堡垒增益点'},
             {'id': 'buff_supply_red', 'type': 'buff_supply', 'team': 'red', 'label': '红方补给区增益点'},
             {'id': 'buff_supply_blue', 'type': 'buff_supply', 'team': 'blue', 'label': '蓝方补给区增益点'},
-            {'id': 'center_exchange_red', 'type': 'mineral_exchange', 'team': 'red', 'label': '红方中心兑矿区'},
+            {'id': 'center_exchange_red', 'type': 'mineral_exchange', 'team': 'red', 'label': '红方中心能量单元放置区'},
             {'id': 'center_exchange_blue', 'type': 'mineral_exchange', 'team': 'blue', 'label': '蓝方中心兑矿区'},
             {'id': 'buff_hero_deployment_red', 'type': 'buff_hero_deployment', 'team': 'red', 'label': '红方英雄部署区'},
             {'id': 'buff_hero_deployment_blue', 'type': 'buff_hero_deployment', 'team': 'blue', 'label': '蓝方英雄部署区'},
@@ -428,6 +428,25 @@ class Renderer(TerrainOverviewMixin, RendererSidebarMixin, RendererHudMixin, Ren
     def _set_region_palette(self, palette):
         self.region_palette = 'buff' if palette == 'buff' else 'facility'
         self._set_selected_region_index(self.region_option_indices.get(self.region_palette, 0))
+
+    def _select_region_option_for_region(self, region):
+        if not isinstance(region, dict):
+            return False
+        region_type = str(region.get('type', ''))
+        region_team = str(region.get('team', 'neutral'))
+        for palette, options in (('facility', self.facility_options), ('buff', self.buff_options)):
+            for index, option in enumerate(options):
+                if option.get('type') == region_type and option.get('team', 'neutral') == region_team:
+                    self.region_palette = palette
+                    self._set_selected_region_index(index)
+                    return True
+        for palette, options in (('facility', self.facility_options), ('buff', self.buff_options)):
+            for index, option in enumerate(options):
+                if option.get('type') == region_type:
+                    self.region_palette = palette
+                    self._set_selected_region_index(index)
+                    return True
+        return False
 
     def _facility_model_param_default(self, facility, field_name):
         facility_type = str((facility or {}).get('type', ''))
@@ -944,6 +963,7 @@ class Renderer(TerrainOverviewMixin, RendererSidebarMixin, RendererHudMixin, Ren
             round(float(getattr(self, 'terrain_3d_camera_pitch', 0.0)), 3),
             round(float(getattr(self, 'terrain_3d_camera_focus_height', 0.0)), 3),
             bool(getattr(self, 'terrain_scene_force_dark_gray', False)),
+            int(getattr(map_manager, 'facility_version', 0)),
             id(map_rgb) if map_rgb is not None else None,
         )
 
@@ -3054,6 +3074,10 @@ class Renderer(TerrainOverviewMixin, RendererSidebarMixin, RendererHudMixin, Ren
         for option in self.facility_options + self.buff_options:
             if option.get('type') == region_type and option.get('team', 'neutral') == region_team:
                 return option.get('label', region_type)
+        if region_team == 'red' and region_type == 'mining_area':
+            return '装配区'
+        if region_team == 'red' and region_type == 'mineral_exchange':
+            return '能量单元放置区'
         fallback_map = {
             'wall': '墙体',
             'base': '基地',
@@ -3118,6 +3142,10 @@ class Renderer(TerrainOverviewMixin, RendererSidebarMixin, RendererHudMixin, Ren
             'buff_terrain_slope_blue_start': ['陡道跨越路线起点', '仅用于导航/跨越路线提示'],
             'buff_terrain_slope_blue_end': ['陡道跨越路线终点', '仅用于导航/跨越路线提示'],
         }
+        if region_team == 'red' and region_type == 'mining_area':
+            return ['己方装配区', '工程机器人只会在这里采矿']
+        if region_team == 'red' and region_type == 'mineral_exchange':
+            return ['己方能量单元放置区', '工程携矿后会回这里完成兑换']
         return descriptions.get(region_type, ['区域机制说明未定义'])
 
     def _preferred_hover_region(self, regions):
@@ -3426,6 +3454,35 @@ class Renderer(TerrainOverviewMixin, RendererSidebarMixin, RendererHudMixin, Ren
                     radius = max(10, min(rect.width, rect.height) // 2)
                     pygame.draw.circle(surface, color, (center_x, center_y), radius, 3)
                     pygame.draw.circle(surface, color, (center_x, center_y), max(6, radius - 7), 1)
+                elif facility_type == 'base':
+                    center_x = rect.x + rect.width // 2
+                    center_y = rect.y + rect.height // 2
+                    hex_points = [
+                        (rect.x + rect.width * 0.26, rect.y),
+                        (rect.x + rect.width * 0.74, rect.y),
+                        (rect.right, center_y),
+                        (rect.x + rect.width * 0.74, rect.bottom),
+                        (rect.x + rect.width * 0.26, rect.bottom),
+                        (rect.x, center_y),
+                    ]
+                    pygame.draw.polygon(surface, color, hex_points, 2)
+                    pygame.draw.rect(surface, color, pygame.Rect(center_x - rect.width * 0.18, center_y - rect.height * 0.08, rect.width * 0.36, rect.height * 0.16), 1)
+                elif facility_type == 'energy_mechanism':
+                    center_x = rect.x + rect.width // 2
+                    center_y = rect.y + rect.height // 2
+                    pygame.draw.rect(surface, color, rect, 1)
+                    pygame.draw.line(surface, color, (rect.x, center_y), (rect.right, center_y), 2)
+                    for side in (-1, 1):
+                        arm_center = (center_x, int(center_y + side * rect.height * 0.16))
+                        pygame.draw.circle(surface, color, arm_center, max(5, min(rect.width, rect.height) // 8), 2)
+                        for index in range(5):
+                            angle = math.tau * index / 5.0
+                            end = (
+                                int(arm_center[0] + math.cos(angle) * rect.width * 0.28),
+                                int(arm_center[1] + math.sin(angle) * rect.height * 0.28),
+                            )
+                            pygame.draw.line(surface, color, arm_center, end, 1)
+                            pygame.draw.circle(surface, color, end, max(3, min(rect.width, rect.height) // 16), 1)
                 else:
                     pygame.draw.rect(surface, color, rect, 1)
                 if facility_type != 'boundary':
@@ -3564,6 +3621,35 @@ class Renderer(TerrainOverviewMixin, RendererSidebarMixin, RendererHudMixin, Ren
                 radius = max(10, min(rect.width, rect.height) // 2)
                 pygame.draw.circle(target_surface, color, (center_x, center_y), radius, 3)
                 pygame.draw.circle(target_surface, color, (center_x, center_y), max(6, radius - 7), 1)
+            elif facility_type == 'base':
+                center_x = rect.x + rect.width // 2
+                center_y = rect.y + rect.height // 2
+                hex_points = [
+                    (rect.x + rect.width * 0.26, rect.y),
+                    (rect.x + rect.width * 0.74, rect.y),
+                    (rect.right, center_y),
+                    (rect.x + rect.width * 0.74, rect.bottom),
+                    (rect.x + rect.width * 0.26, rect.bottom),
+                    (rect.x, center_y),
+                ]
+                pygame.draw.polygon(target_surface, color, hex_points, 2 if interactive else 1)
+                pygame.draw.rect(target_surface, color, pygame.Rect(center_x - rect.width * 0.18, center_y - rect.height * 0.08, rect.width * 0.36, rect.height * 0.16), 1)
+            elif facility_type == 'energy_mechanism':
+                center_x = rect.x + rect.width // 2
+                center_y = rect.y + rect.height // 2
+                pygame.draw.rect(target_surface, color, rect, 2 if interactive else 1)
+                pygame.draw.line(target_surface, color, (rect.x, center_y), (rect.right, center_y), 2)
+                for side in (-1, 1):
+                    arm_center = (center_x, int(center_y + side * rect.height * 0.16))
+                    pygame.draw.circle(target_surface, color, arm_center, max(5, min(rect.width, rect.height) // 8), 2)
+                    for index in range(5):
+                        angle = math.tau * index / 5.0
+                        end = (
+                            int(arm_center[0] + math.cos(angle) * rect.width * 0.28),
+                            int(arm_center[1] + math.sin(angle) * rect.height * 0.28),
+                        )
+                        pygame.draw.line(target_surface, color, arm_center, end, 1)
+                        pygame.draw.circle(target_surface, color, end, max(3, min(rect.width, rect.height) // 16), 1)
             else:
                 pygame.draw.rect(target_surface, color, rect, 2 if interactive else 1)
             if interactive and is_selected:
@@ -4436,6 +4522,23 @@ class Renderer(TerrainOverviewMixin, RendererSidebarMixin, RendererHudMixin, Ren
 
     def _handle_facility_left_press(self, game_engine, world_pos):
         self.selected_terrain_cell_key = None
+        if world_pos is not None and self.drag_start is None and not self.polygon_points:
+            hits = [
+                region for region in game_engine.map_manager.get_regions_at(world_pos[0], world_pos[1])
+                if region.get('type') != 'boundary'
+            ]
+            priority = {'base': 0, 'outpost': 1, 'energy_mechanism': 2}
+            hits.sort(key=lambda region: (priority.get(str(region.get('type', '')), 10), str(region.get('id', ''))))
+            if hits:
+                hit = hits[0]
+                if hit.get('type') == 'wall':
+                    self.selected_wall_id = hit.get('id')
+                else:
+                    self.selected_terrain_id = hit.get('id')
+                    self.selected_wall_id = None
+                self._select_region_option_for_region(hit)
+                self.overview_side_scroll = 0
+                return
         facility = self._selected_region_option()
         if facility is None:
             return

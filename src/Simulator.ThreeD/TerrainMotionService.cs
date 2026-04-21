@@ -7,7 +7,7 @@ namespace Simulator.ThreeD;
 internal sealed class TerrainMotionService
 {
     private const double GravityMps2 = 9.81;
-    private const double TerrainSmoothHeightThresholdM = 0.045;
+    private const double TerrainSmoothHeightThresholdM = 0.049;
     private const double TerrainRenderAnchorThresholdM = 0.02;
     private const double NavigationReplanIntervalMovingSec = 1.25;
     private const double NavigationReplanIntervalStaticSec = 1.80;
@@ -986,7 +986,7 @@ internal sealed class TerrainMotionService
                 return false;
             }
 
-            if (HasStaticStructureCollisionAt(world, entity, sampleX, sampleY))
+            if (HasStaticCollisionAt(world, runtimeGrid, entity, sampleX, sampleY))
             {
                 return false;
             }
@@ -1048,7 +1048,7 @@ internal sealed class TerrainMotionService
             return false;
         }
 
-        return !HasStaticStructureCollisionAt(world, entity, worldX, worldY);
+        return !HasStaticCollisionAt(world, runtimeGrid, entity, worldX, worldY);
     }
 
     private static bool CanStandOnLocalTerrainPatch(
@@ -1292,6 +1292,12 @@ internal sealed class TerrainMotionService
         double currentSpeedMps = Math.Sqrt(currentVxMps * currentVxMps + currentVyMps * currentVyMps);
 
         double drivePowerLimitW = ResolveEffectiveDrivePowerLimitW(entity);
+        if (entity.AirborneHeightM > 1e-4)
+        {
+            ApplyAirborneInertia(entity, drivePowerLimitW, currentVxMps, currentVyMps, currentSpeedMps, metersPerWorldUnit, dt);
+            return;
+        }
+
         double passiveSuperCapAssistW = ResolveSuperCapAssistLimitW(entity, dt, drivePowerLimitW);
         double bufferHeadroomW = ResolveBufferAssistLimitW(entity, dt);
         double availableDrivePowerLimitW = drivePowerLimitW + passiveSuperCapAssistW + bufferHeadroomW;
@@ -1740,15 +1746,19 @@ internal sealed class TerrainMotionService
         {
             entity.AirborneHeightM = 0;
             entity.VerticalVelocityMps = 0;
+            entity.LedgeLaunchTimerSec = 0;
             return;
         }
 
-        entity.VerticalVelocityMps -= GravityMps2 * dt;
+        double gravityScale = entity.LedgeLaunchTimerSec > 1e-6 ? 0.38 : 1.0;
+        entity.LedgeLaunchTimerSec = Math.Max(0.0, entity.LedgeLaunchTimerSec - dt);
+        entity.VerticalVelocityMps -= GravityMps2 * gravityScale * dt;
         entity.AirborneHeightM = Math.Max(0.0, entity.AirborneHeightM + entity.VerticalVelocityMps * dt);
         if (entity.AirborneHeightM <= 1e-6)
         {
             entity.AirborneHeightM = 0;
             entity.VerticalVelocityMps = 0;
+            entity.LedgeLaunchTimerSec = 0;
         }
     }
 
@@ -1800,18 +1810,25 @@ internal sealed class TerrainMotionService
                 double previousGroundHeight = entity.GroundHeightM;
                 double previousProgress = entity.TraversalProgress;
                 UpdateTraversal(entity, substepDt);
-                if (HasEntityCollisionAt(world, entity, entity.X, entity.Y, out SimulationEntity? blockingEntity))
+                if (ResolveEntityCollisionAt(world, entity, entity.X, entity.Y, out EntityContactResolution traversalContact))
                 {
-                    entity.X = previousX;
-                    entity.Y = previousY;
-                    entity.GroundHeightM = previousGroundHeight;
-                    entity.TraversalProgress = previousProgress;
-                    entity.TraversalActive = false;
-                    entity.VelocityXWorldPerSec = 0.0;
-                    entity.VelocityYWorldPerSec = 0.0;
-                    entity.MotionBlockReason = blockingEntity is null
-                        ? "traversal_collision"
-                        : $"traversal_collision:{blockingEntity.Id}";
+                    if (TryApplyEntityContactResolution(world, runtimeGrid, entity, traversalContact, currentHeightOverrideM: previousGroundHeight))
+                    {
+                        entity.TraversalActive = false;
+                        entity.TraversalProgress = 0.0;
+                        entity.MotionBlockReason = $"traversal_collision:{traversalContact.BlockingEntity.Id}";
+                    }
+                    else
+                    {
+                        entity.X = previousX;
+                        entity.Y = previousY;
+                        entity.GroundHeightM = previousGroundHeight;
+                        entity.TraversalProgress = previousProgress;
+                        entity.TraversalActive = false;
+                        entity.VelocityXWorldPerSec = 0.0;
+                        entity.VelocityYWorldPerSec = 0.0;
+                        entity.MotionBlockReason = $"traversal_collision:{traversalContact.BlockingEntity.Id}";
+                    }
                     break;
                 }
 
@@ -1852,6 +1869,19 @@ internal sealed class TerrainMotionService
 
         if (blocked || heightDelta > maxStep + jumpClearance + 1e-6)
         {
+            if (TryResolveStaticContactAt(world, runtimeGrid, entity, nextX, nextY, currentHeight, out StaticContactResolution staticContact)
+                && TryApplyStaticContactResolution(world, runtimeGrid, entity, staticContact, currentHeight))
+            {
+                entity.MotionBlockReason = staticContact.Reason;
+                return false;
+            }
+
+            if (TryMoveToReachableContactPosition(world, runtimeGrid, entity, entity.X, entity.Y, nextX, nextY, currentHeight, maxStep, jumpClearance))
+            {
+                entity.MotionBlockReason = blocked ? "terrain_block_contact" : "step_contact";
+                return false;
+            }
+
             ApplyWallBounce(entity, entity.X - nextX, entity.Y - nextY, 0.22);
             entity.MotionBlockReason = blocked ? "terrain_block" : "step_too_high";
             return false;
@@ -1859,6 +1889,19 @@ internal sealed class TerrainMotionService
 
         if (!CanOccupyTerrainFootprint(world, runtimeGrid, entity, nextX, nextY, currentHeight, maxStep, jumpClearance))
         {
+            if (TryResolveStaticContactAt(world, runtimeGrid, entity, nextX, nextY, currentHeight, out StaticContactResolution staticContact)
+                && TryApplyStaticContactResolution(world, runtimeGrid, entity, staticContact, currentHeight))
+            {
+                entity.MotionBlockReason = staticContact.Reason;
+                return false;
+            }
+
+            if (TryMoveToReachableContactPosition(world, runtimeGrid, entity, entity.X, entity.Y, nextX, nextY, currentHeight, maxStep, jumpClearance))
+            {
+                entity.MotionBlockReason = "terrain_footprint_contact";
+                return false;
+            }
+
             ApplyWallBounce(entity, entity.X - nextX, entity.Y - nextY, 0.18);
             entity.MotionBlockReason = "terrain_footprint";
             return false;
@@ -1882,15 +1925,51 @@ internal sealed class TerrainMotionService
             return true;
         }
 
-        if (HasEntityCollisionAt(world, entity, nextX, nextY, out SimulationEntity? blockingEntity))
+        if (ResolveEntityCollisionAt(world, entity, nextX, nextY, out EntityContactResolution contact))
         {
-            double awayX = entity.X - (blockingEntity?.X ?? nextX);
-            double awayY = entity.Y - (blockingEntity?.Y ?? nextY);
+            if (TryApplyEntityContactResolution(world, runtimeGrid, entity, contact, currentHeight))
+            {
+                entity.MotionBlockReason = $"entity_contact:{contact.BlockingEntity.Id}";
+                return false;
+            }
+
+            double awayX = entity.X - contact.BlockingEntity.X;
+            double awayY = entity.Y - contact.BlockingEntity.Y;
             ApplyWallBounce(entity, awayX, awayY, 0.24);
-            entity.MotionBlockReason = blockingEntity is null
-                ? "entity_collision"
-                : $"entity_collision:{blockingEntity.Id}";
+            entity.MotionBlockReason = $"entity_collision:{contact.BlockingEntity.Id}";
             return false;
+        }
+
+        if (TryResolveStaticContactAt(world, runtimeGrid, entity, nextX, nextY, currentHeight, out StaticContactResolution residualStaticContact)
+            && TryApplyStaticContactResolution(world, runtimeGrid, entity, residualStaticContact, currentHeight))
+        {
+            entity.MotionBlockReason = residualStaticContact.Reason;
+            return false;
+        }
+
+        double speedMps = Math.Sqrt(
+            entity.VelocityXWorldPerSec * entity.VelocityXWorldPerSec
+            + entity.VelocityYWorldPerSec * entity.VelocityYWorldPerSec) * Math.Max(world.MetersPerWorldUnit, 1e-6);
+        bool frontWheelDrop = TryResolveForwardDownstepHeight(
+            runtimeGrid,
+            entity,
+            nextX,
+            nextY,
+            entity.VelocityXWorldPerSec,
+            entity.VelocityYWorldPerSec,
+            currentHeight,
+            out double forwardDropHeight);
+        if ((heightDelta < -TerrainSmoothHeightThresholdM || frontWheelDrop)
+            && speedMps > 0.20
+            && entity.AirborneHeightM <= 1e-4)
+        {
+            // Keep the world-space chassis height continuous when driving off a ledge;
+            // gravity then owns the descent, producing the expected parabolic drop.
+            targetHeight = frontWheelDrop ? Math.Min(targetHeight, forwardDropHeight) : targetHeight;
+            entity.AirborneHeightM = Math.Max(entity.AirborneHeightM, currentHeight - targetHeight + 0.018);
+            entity.VerticalVelocityMps = 0.0;
+            entity.LedgeLaunchTimerSec = Math.Max(entity.LedgeLaunchTimerSec, 0.26);
+            PreserveDownstepLaunchSpeed(entity, world.MetersPerWorldUnit, speedMps);
         }
 
         entity.X = nextX;
@@ -1898,6 +1977,94 @@ internal sealed class TerrainMotionService
         entity.GroundHeightM = targetHeight;
         entity.MotionBlockReason = string.Empty;
         return true;
+    }
+
+    private static bool TryResolveForwardDownstepHeight(
+        RuntimeGridData runtimeGrid,
+        SimulationEntity entity,
+        double nextX,
+        double nextY,
+        double velocityXWorldPerSec,
+        double velocityYWorldPerSec,
+        double currentWheelPlaneHeightM,
+        out double forwardHeightM)
+    {
+        forwardHeightM = currentWheelPlaneHeightM;
+        double speedWorld = Math.Sqrt(velocityXWorldPerSec * velocityXWorldPerSec + velocityYWorldPerSec * velocityYWorldPerSec);
+        if (speedWorld <= 1e-6)
+        {
+            return false;
+        }
+
+        double dirX = velocityXWorldPerSec / speedWorld;
+        double dirY = velocityYWorldPerSec / speedWorld;
+        double yawRad = DegreesToRadians(entity.AngleDeg);
+        double rightX = -Math.Sin(yawRad);
+        double rightY = Math.Cos(yawRad);
+        double halfLength = Math.Max(0.10, entity.BodyLengthM * 0.5);
+        double halfWidth = Math.Max(0.08, entity.BodyWidthM * entity.BodyRenderWidthScale * 0.5);
+        double frontProbeDistance = halfLength + Math.Max(runtimeGrid.CellWidthWorld, runtimeGrid.CellHeightWorld) * 0.35;
+        double sideProbe = halfWidth * 0.72;
+
+        double minHeight = double.MaxValue;
+        double[] sideOffsets = { 0.0, -sideProbe, sideProbe };
+        foreach (double side in sideOffsets)
+        {
+            double sampleX = nextX + dirX * frontProbeDistance + rightX * side;
+            double sampleY = nextY + dirY * frontProbeDistance + rightY * side;
+            if (sampleX < 0.0
+                || sampleY < 0.0
+                || sampleX >= runtimeGrid.WidthCells * runtimeGrid.CellWidthWorld
+                || sampleY >= runtimeGrid.HeightCells * runtimeGrid.CellHeightWorld)
+            {
+                continue;
+            }
+
+            minHeight = Math.Min(minHeight, SampleTerrainHeight(runtimeGrid, sampleX, sampleY));
+        }
+
+        if (minHeight == double.MaxValue)
+        {
+            return false;
+        }
+
+        forwardHeightM = minHeight;
+        return currentWheelPlaneHeightM - minHeight > TerrainSmoothHeightThresholdM + 1e-6;
+    }
+
+    private static void PreserveDownstepLaunchSpeed(SimulationEntity entity, double metersPerWorldUnit, double currentSpeedMps)
+    {
+        double scale = Math.Max(metersPerWorldUnit, 1e-6);
+        double vxMps = entity.VelocityXWorldPerSec * scale;
+        double vyMps = entity.VelocityYWorldPerSec * scale;
+        double speedMps = Math.Sqrt(vxMps * vxMps + vyMps * vyMps);
+        double yawRad = DegreesToRadians(entity.AngleDeg);
+        double inputForward = Math.Clamp(entity.MoveInputForward, -1.0, 1.0);
+        double inputRight = Math.Clamp(entity.MoveInputRight, -1.0, 1.0);
+        if (speedMps < 0.20)
+        {
+            if (Math.Sqrt(inputForward * inputForward + inputRight * inputRight) > 0.05)
+            {
+                double forwardX = Math.Cos(yawRad);
+                double forwardY = Math.Sin(yawRad);
+                double rightX = Math.Cos(yawRad + Math.PI * 0.5);
+                double rightY = Math.Sin(yawRad + Math.PI * 0.5);
+                vxMps = forwardX * inputForward + rightX * inputRight;
+                vyMps = forwardY * inputForward + rightY * inputRight;
+                speedMps = Math.Sqrt(vxMps * vxMps + vyMps * vyMps);
+            }
+
+            if (speedMps < 0.20)
+            {
+                vxMps = Math.Cos(yawRad);
+                vyMps = Math.Sin(yawRad);
+                speedMps = 1.0;
+            }
+        }
+
+        double launchSpeedMps = Math.Max(Math.Max(speedMps, currentSpeedMps), 2.35);
+        entity.VelocityXWorldPerSec = vxMps / speedMps * launchSpeedMps / scale;
+        entity.VelocityYWorldPerSec = vyMps / speedMps * launchSpeedMps / scale;
     }
 
     private static void ApplyWallBounce(SimulationEntity entity, double awayX, double awayY, double impulseMps)
@@ -1912,6 +2079,26 @@ internal sealed class TerrainMotionService
         double ny = awayY / length;
         entity.VelocityXWorldPerSec += nx * impulseMps;
         entity.VelocityYWorldPerSec += ny * impulseMps;
+    }
+
+    private static void ApplyContactVelocityResponse(SimulationEntity entity, Vector2 separationVector, double outwardImpulseWorldPerSec)
+    {
+        if (separationVector.LengthSquared() <= 1e-10f)
+        {
+            return;
+        }
+
+        Vector2 normal = Vector2.Normalize(separationVector);
+        Vector2 velocity = new((float)entity.VelocityXWorldPerSec, (float)entity.VelocityYWorldPerSec);
+        float intoContact = Vector2.Dot(velocity, normal);
+        if (intoContact < 0f)
+        {
+            velocity -= normal * intoContact;
+        }
+
+        velocity += normal * (float)Math.Max(0.0, outwardImpulseWorldPerSec);
+        entity.VelocityXWorldPerSec = velocity.X;
+        entity.VelocityYWorldPerSec = velocity.Y;
     }
 
     private static bool CanOccupyTerrainFootprint(
@@ -2150,6 +2337,35 @@ internal sealed class TerrainMotionService
         double rightX = -forwardY;
         double rightY = forwardX;
 
+        if (entity.AirborneHeightM > 1e-4)
+        {
+            double horizontalSpeedWorld = Math.Sqrt(
+                entity.VelocityXWorldPerSec * entity.VelocityXWorldPerSec
+                + entity.VelocityYWorldPerSec * entity.VelocityYWorldPerSec);
+            double forwardSpeedWorld = entity.VelocityXWorldPerSec * forwardX + entity.VelocityYWorldPerSec * forwardY;
+            double rightSpeedWorld = entity.VelocityXWorldPerSec * rightX + entity.VelocityYWorldPerSec * rightY;
+            double noseDownBias = Math.Clamp(
+                Math.Max(0.0, -entity.VerticalVelocityMps * 2.4 + entity.AirborneHeightM * 8.0 + horizontalSpeedWorld * 0.8),
+                0.0,
+                26.0);
+            if (horizontalSpeedWorld <= 1e-4)
+            {
+                forwardSpeedWorld = 1.0;
+            }
+
+            double airbornePitchDeg = -Math.Sign(forwardSpeedWorld) * noseDownBias;
+            double airborneRollDeg = Math.Clamp(-rightSpeedWorld * 12.0, -16.0, 16.0);
+            entity.ChassisPitchDeg += (airbornePitchDeg - entity.ChassisPitchDeg) * 0.18;
+            entity.ChassisRollDeg += (airborneRollDeg - entity.ChassisRollDeg) * 0.22;
+            return;
+        }
+
+        if (entity.TraversalActive)
+        {
+            ApplyTraversalSupportPose(entity, halfLength);
+            return;
+        }
+
         if (!entity.TraversalActive && entity.AirborneHeightM <= 1e-4)
         {
             bool hasContactPlane = TryResolveWheelContactPlane(
@@ -2172,7 +2388,10 @@ internal sealed class TerrainMotionService
                 entity.GroundHeightM += (planeHeightM - entity.GroundHeightM) * 0.82;
                 double targetPitchFromWheels = Math.Atan2(forwardSlope, 1.0) * 180.0 / Math.PI;
                 double targetRollFromWheels = Math.Atan2(rightSlope, 1.0) * 180.0 / Math.PI;
-                entity.ChassisPitchDeg += (Math.Clamp(targetPitchFromWheels, -26.0, 26.0) - entity.ChassisPitchDeg) * 0.56;
+                double pitchBlend = entity.ChassisPitchDeg < -8.0 && targetPitchFromWheels > entity.ChassisPitchDeg
+                    ? 0.18
+                    : 0.56;
+                entity.ChassisPitchDeg += (Math.Clamp(targetPitchFromWheels, -26.0, 26.0) - entity.ChassisPitchDeg) * pitchBlend;
                 entity.ChassisRollDeg += (Math.Clamp(targetRollFromWheels, -22.0, 22.0) - entity.ChassisRollDeg) * 0.56;
                 return;
             }
@@ -2198,6 +2417,31 @@ internal sealed class TerrainMotionService
         double targetRollDeg = Math.Clamp(rollFromHeights * 0.72 + normalRoll * 0.28, -18.0, 18.0);
         entity.ChassisPitchDeg += (targetPitchDeg - entity.ChassisPitchDeg) * 0.34;
         entity.ChassisRollDeg += (targetRollDeg - entity.ChassisRollDeg) * 0.34;
+    }
+
+    private static void ApplyTraversalSupportPose(SimulationEntity entity, double halfLength)
+    {
+        double progress = Math.Clamp(entity.TraversalProgress, 0.0, 1.0);
+        double startHeight = entity.TraversalStartGroundHeightM;
+        double targetHeight = entity.TraversalTargetGroundHeightM;
+        double rearBlend = SmoothStep(Math.Clamp((progress - 0.58) / 0.42, 0.0, 1.0));
+        double frontSupportHeight = targetHeight;
+        double rearSupportHeight = Lerp(startHeight, targetHeight, rearBlend);
+        double supportLength = Math.Max(halfLength * 2.0, 1e-3);
+        double supportCenterHeight = (frontSupportHeight + rearSupportHeight) * 0.5;
+        double targetPitchDeg = Math.Clamp(
+            Math.Atan2(frontSupportHeight - rearSupportHeight, supportLength) * 180.0 / Math.PI,
+            -24.0,
+            24.0);
+        entity.GroundHeightM += (supportCenterHeight - entity.GroundHeightM) * 0.88;
+        entity.ChassisPitchDeg += (targetPitchDeg - entity.ChassisPitchDeg) * 0.72;
+        entity.ChassisRollDeg += (0.0 - entity.ChassisRollDeg) * 0.36;
+    }
+
+    private static double SmoothStep(double t)
+    {
+        t = Math.Clamp(t, 0.0, 1.0);
+        return t * t * (3.0 - 2.0 * t);
     }
 
     private static bool TryResolveWheelContactPlane(
@@ -2293,12 +2537,29 @@ internal sealed class TerrainMotionService
         double speedMps = Math.Sqrt(
             entity.VelocityXWorldPerSec * entity.VelocityXWorldPerSec
             + entity.VelocityYWorldPerSec * entity.VelocityYWorldPerSec) * metersPerWorldUnit;
+        double verticalSpeedMps = Math.Abs(entity.VerticalVelocityMps);
         double cellSizeM = Math.Max(
             0.08,
             Math.Min(runtimeGrid.CellWidthWorld, runtimeGrid.CellHeightWorld) * metersPerWorldUnit * 0.75);
         int substeps = (int)Math.Ceiling(speedMps * Math.Max(dt, 0.01) / cellSizeM);
-        return Math.Clamp(substeps, 1, 6);
+        int verticalSubsteps = (int)Math.Ceiling(verticalSpeedMps * Math.Max(dt, 0.01) / 0.06);
+        if (entity.TraversalActive)
+        {
+            return Math.Clamp(Math.Max(substeps, verticalSubsteps), 1, 3);
+        }
+
+        if (entity.AirborneHeightM > 1e-4 || entity.TraversalActive)
+        {
+            substeps = Math.Max(substeps, verticalSubsteps);
+        }
+
+        return Math.Clamp(substeps, 1, entity.AirborneHeightM > 1e-4 ? 16 : 10);
     }
+
+    private static bool ShouldKeepChassisLevelDuringStep(SimulationEntity entity)
+        => string.Equals(entity.RoleKey, "hero", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(entity.RoleKey, "engineer", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase);
 
     private static void StartTraversal(
         SimulationEntity entity,
@@ -2345,7 +2606,24 @@ internal sealed class TerrainMotionService
         double nextY,
         out SimulationEntity? blockingEntity)
     {
+        if (ResolveEntityCollisionAt(world, entity, nextX, nextY, out EntityContactResolution resolution))
+        {
+            blockingEntity = resolution.BlockingEntity;
+            return true;
+        }
+
         blockingEntity = null;
+        return false;
+    }
+
+    private static bool ResolveEntityCollisionAt(
+        SimulationWorldState world,
+        SimulationEntity entity,
+        double nextX,
+        double nextY,
+        out EntityContactResolution resolution)
+    {
+        resolution = default;
         CollisionFootprint footprint = BuildCollisionFootprint(world, entity, nextX, nextY);
         CollisionFootprint currentFootprint = BuildCollisionFootprint(world, entity, entity.X, entity.Y);
         foreach (SimulationEntity other in world.Entities)
@@ -2390,8 +2668,545 @@ internal sealed class TerrainMotionService
                 }
             }
 
-            blockingEntity = other;
+            Vector2 separationVector = ComputeMinimumTranslationVector(footprint, otherFootprint);
+            Vector2 resolvedCenter = footprint.Center + separationVector;
+            resolution = new EntityContactResolution(
+                other,
+                resolvedCenter.X,
+                resolvedCenter.Y,
+                separationVector,
+                separationVector.Length());
             return true;
+        }
+
+        return false;
+    }
+
+    private bool HasStaticCollisionAt(
+        SimulationWorldState world,
+        RuntimeGridData runtimeGrid,
+        SimulationEntity entity,
+        double nextX,
+        double nextY)
+    {
+        return HasStaticStructureCollisionAt(world, entity, nextX, nextY)
+            || HasBlockingFacilityContactAt(world, runtimeGrid, entity, nextX, nextY);
+    }
+
+    private bool TryApplyEntityContactResolution(
+        SimulationWorldState world,
+        RuntimeGridData runtimeGrid,
+        SimulationEntity entity,
+        EntityContactResolution resolution,
+        double currentHeightOverrideM)
+    {
+        double currentHeight = currentHeightOverrideM > -1e8 ? currentHeightOverrideM : SampleTerrainHeight(runtimeGrid, entity.X, entity.Y);
+        double maxStep = Math.Max(Math.Max(0.02, entity.DirectStepHeightM), entity.MaxStepClimbHeightM);
+        double jumpClearance = entity.ChassisSupportsJump ? entity.AirborneHeightM : 0.0;
+        double resolvedX = resolution.ResolvedX;
+        double resolvedY = resolution.ResolvedY;
+        ClampToMap(runtimeGrid, ref resolvedX, ref resolvedY);
+
+        if (!CanOccupyTerrainFootprint(world, runtimeGrid, entity, resolvedX, resolvedY, currentHeight, maxStep, jumpClearance))
+        {
+            if (!TryMoveToReachableContactPosition(world, runtimeGrid, entity, entity.X, entity.Y, resolvedX, resolvedY, currentHeight, maxStep, jumpClearance))
+            {
+                return false;
+            }
+        }
+        else
+        {
+            entity.X = resolvedX;
+            entity.Y = resolvedY;
+            entity.GroundHeightM = SampleTerrainHeight(runtimeGrid, resolvedX, resolvedY);
+        }
+
+        ApplyContactVelocityResponse(entity, resolution.SeparationVector, entity.AirborneHeightM > 1e-4 ? 0.004 : 0.018);
+        TryApplySoftBodyPush(world, runtimeGrid, entity, resolution.BlockingEntity, resolution.SeparationVector);
+        return true;
+    }
+
+    private bool TryResolveStaticContactAt(
+        SimulationWorldState world,
+        RuntimeGridData runtimeGrid,
+        SimulationEntity entity,
+        double nextX,
+        double nextY,
+        double currentHeight,
+        out StaticContactResolution resolution)
+    {
+        resolution = default;
+        CollisionFootprint footprint = BuildCollisionFootprint(world, entity, nextX, nextY);
+        Vector2 accumulated = Vector2.Zero;
+        string reason = string.Empty;
+        bool hit = false;
+        for (int iteration = 0; iteration < 3; iteration++)
+        {
+            if (!TryFindStaticContact(world, runtimeGrid, entity, footprint, currentHeight, out Vector2 mtv, out string contactReason))
+            {
+                break;
+            }
+
+            hit = true;
+            accumulated += mtv;
+            reason = contactReason;
+            footprint = footprint with { Center = footprint.Center + mtv };
+        }
+
+        if (!hit || accumulated.LengthSquared() <= 1e-10f)
+        {
+            return false;
+        }
+
+        resolution = new StaticContactResolution(
+            reason,
+            nextX + accumulated.X,
+            nextY + accumulated.Y,
+            accumulated,
+            accumulated.Length());
+        return true;
+    }
+
+    private bool TryApplyStaticContactResolution(
+        SimulationWorldState world,
+        RuntimeGridData runtimeGrid,
+        SimulationEntity entity,
+        StaticContactResolution resolution,
+        double currentHeightOverrideM)
+    {
+        double currentHeight = currentHeightOverrideM > -1e8 ? currentHeightOverrideM : SampleTerrainHeight(runtimeGrid, entity.X, entity.Y);
+        double maxStep = Math.Max(Math.Max(0.02, entity.DirectStepHeightM), entity.MaxStepClimbHeightM);
+        double jumpClearance = entity.ChassisSupportsJump ? entity.AirborneHeightM : 0.0;
+        double resolvedX = resolution.ResolvedX;
+        double resolvedY = resolution.ResolvedY;
+        ClampToMap(runtimeGrid, ref resolvedX, ref resolvedY);
+
+        bool reachable = CanOccupyTerrainFootprint(world, runtimeGrid, entity, resolvedX, resolvedY, currentHeight, maxStep, jumpClearance)
+            && !HasEntityCollisionAt(world, entity, resolvedX, resolvedY, out _)
+            && !HasStaticCollisionAt(world, runtimeGrid, entity, resolvedX, resolvedY);
+        if (!reachable)
+        {
+            if (!TryMoveToReachableContactPosition(world, runtimeGrid, entity, entity.X, entity.Y, resolvedX, resolvedY, currentHeight, maxStep, jumpClearance))
+            {
+                return false;
+            }
+        }
+        else
+        {
+            entity.X = resolvedX;
+            entity.Y = resolvedY;
+            entity.GroundHeightM = SampleTerrainHeight(runtimeGrid, resolvedX, resolvedY);
+        }
+
+        ApplyContactVelocityResponse(entity, resolution.SeparationVector, entity.AirborneHeightM > 1e-4 ? 0.003 : 0.012);
+        return true;
+    }
+
+    private bool TryMoveToReachableContactPosition(
+        SimulationWorldState world,
+        RuntimeGridData runtimeGrid,
+        SimulationEntity entity,
+        double startX,
+        double startY,
+        double targetX,
+        double targetY,
+        double currentHeight,
+        double maxStep,
+        double jumpClearance)
+    {
+        double bestX = startX;
+        double bestY = startY;
+        bool found = false;
+        double low = 0.0;
+        double high = 1.0;
+        for (int iteration = 0; iteration < 10; iteration++)
+        {
+            double mid = (low + high) * 0.5;
+            double sampleX = Lerp(startX, targetX, mid);
+            double sampleY = Lerp(startY, targetY, mid);
+            ClampToMap(runtimeGrid, ref sampleX, ref sampleY);
+            bool valid = CanOccupyTerrainFootprint(world, runtimeGrid, entity, sampleX, sampleY, currentHeight, maxStep, jumpClearance)
+                && !HasEntityCollisionAt(world, entity, sampleX, sampleY, out _)
+                && !HasStaticCollisionAt(world, runtimeGrid, entity, sampleX, sampleY);
+            if (valid)
+            {
+                found = true;
+                low = mid;
+                bestX = sampleX;
+                bestY = sampleY;
+            }
+            else
+            {
+                high = mid;
+            }
+        }
+
+        if (!found)
+        {
+            return false;
+        }
+
+        entity.X = bestX;
+        entity.Y = bestY;
+        entity.GroundHeightM = SampleTerrainHeight(runtimeGrid, bestX, bestY);
+        double retain = entity.AirborneHeightM > 1e-4 ? 0.86 : 0.48;
+        entity.VelocityXWorldPerSec *= retain;
+        entity.VelocityYWorldPerSec *= retain;
+        return true;
+    }
+
+    private void TryApplySoftBodyPush(
+        SimulationWorldState world,
+        RuntimeGridData runtimeGrid,
+        SimulationEntity mover,
+        SimulationEntity other,
+        Vector2 separationVector)
+    {
+        if (!IsMovableEntity(other) || SimulationCombatMath.IsStructure(other))
+        {
+            return;
+        }
+
+        double currentHeight = SampleTerrainHeight(runtimeGrid, other.X, other.Y);
+        double maxStep = Math.Max(Math.Max(0.02, other.DirectStepHeightM), other.MaxStepClimbHeightM);
+        double jumpClearance = other.ChassisSupportsJump ? other.AirborneHeightM : 0.0;
+        Vector2 rawPush = separationVector.LengthSquared() > 1e-8f
+            ? separationVector
+            : new Vector2((float)(other.X - mover.X), (float)(other.Y - mover.Y));
+        Vector2 pushDir = rawPush.LengthSquared() > 1e-8f
+            ? Vector2.Normalize(rawPush)
+            : Vector2.UnitX;
+        double pushDistance = Math.Min(0.035, Math.Max(0.004, separationVector.Length() * 0.35));
+        double nextX = other.X + pushDir.X * (float)pushDistance;
+        double nextY = other.Y + pushDir.Y * (float)pushDistance;
+        ClampToMap(runtimeGrid, ref nextX, ref nextY);
+        if (!CanOccupyTerrainFootprint(world, runtimeGrid, other, nextX, nextY, currentHeight, maxStep, jumpClearance)
+            || HasEntityCollisionAt(world, other, nextX, nextY, out _)
+            || HasStaticCollisionAt(world, runtimeGrid, other, nextX, nextY))
+        {
+            return;
+        }
+
+        other.X = nextX;
+        other.Y = nextY;
+        other.GroundHeightM = SampleTerrainHeight(runtimeGrid, nextX, nextY);
+        other.VelocityXWorldPerSec += pushDir.X * 0.04;
+        other.VelocityYWorldPerSec += pushDir.Y * 0.04;
+    }
+
+    private bool HasBlockingFacilityContactAt(
+        SimulationWorldState world,
+        RuntimeGridData runtimeGrid,
+        SimulationEntity entity,
+        double nextX,
+        double nextY)
+    {
+        CollisionFootprint footprint = BuildCollisionFootprint(world, entity, nextX, nextY);
+        return TryFindFacilityContact(runtimeGrid, footprint, out _, out _);
+    }
+
+    private bool TryFindStaticContact(
+        SimulationWorldState world,
+        RuntimeGridData runtimeGrid,
+        SimulationEntity entity,
+        CollisionFootprint footprint,
+        double currentHeight,
+        out Vector2 separationVector,
+        out string reason)
+    {
+        _ = world;
+        _ = entity;
+        separationVector = Vector2.Zero;
+        reason = string.Empty;
+        bool found = false;
+        float bestPenetration = 0f;
+        foreach ((CollisionFootprint obstacle, string obstacleReason) in EnumerateBlockingGridCells(runtimeGrid, footprint, currentHeight))
+        {
+            if (!IntersectsFootprint(footprint, obstacle))
+            {
+                continue;
+            }
+
+            Vector2 mtv = ComputeMinimumTranslationVector(footprint, obstacle);
+            float penetration = mtv.Length();
+            if (penetration <= bestPenetration)
+            {
+                continue;
+            }
+
+            bestPenetration = penetration;
+            separationVector = mtv;
+            reason = obstacleReason;
+            found = true;
+        }
+
+        if (TryFindFacilityContact(runtimeGrid, footprint, out Vector2 facilityMtv, out string facilityReason))
+        {
+            float penetration = facilityMtv.Length();
+            if (penetration > bestPenetration)
+            {
+                bestPenetration = penetration;
+                separationVector = facilityMtv;
+                reason = facilityReason;
+                found = true;
+            }
+        }
+
+        return found;
+    }
+
+    private IEnumerable<(CollisionFootprint Footprint, string Reason)> EnumerateBlockingGridCells(
+        RuntimeGridData runtimeGrid,
+        CollisionFootprint footprint,
+        double currentHeight)
+    {
+        Vector2[] corners = GetFootprintVertices(footprint);
+        float minX = corners.Min(point => point.X) - (float)runtimeGrid.CellWidthWorld;
+        float maxX = corners.Max(point => point.X) + (float)runtimeGrid.CellWidthWorld;
+        float minY = corners.Min(point => point.Y) - (float)runtimeGrid.CellHeightWorld;
+        float maxY = corners.Max(point => point.Y) + (float)runtimeGrid.CellHeightWorld;
+        int startCellX = Math.Clamp(WorldToCellX(runtimeGrid, minX), 0, runtimeGrid.WidthCells - 1);
+        int endCellX = Math.Clamp(WorldToCellX(runtimeGrid, maxX), 0, runtimeGrid.WidthCells - 1);
+        int startCellY = Math.Clamp(WorldToCellY(runtimeGrid, minY), 0, runtimeGrid.HeightCells - 1);
+        int endCellY = Math.Clamp(WorldToCellY(runtimeGrid, maxY), 0, runtimeGrid.HeightCells - 1);
+        double halfCellWidth = runtimeGrid.CellWidthWorld * 0.5;
+        double halfCellHeight = runtimeGrid.CellHeightWorld * 0.5;
+        double radius = Math.Sqrt(halfCellWidth * halfCellWidth + halfCellHeight * halfCellHeight);
+        for (int cellY = startCellY; cellY <= endCellY; cellY++)
+        {
+            for (int cellX = startCellX; cellX <= endCellX; cellX++)
+            {
+                if (!runtimeGrid.MovementBlockMap[runtimeGrid.IndexOf(cellX, cellY)])
+                {
+                    continue;
+                }
+
+                double centerX = (cellX + 0.5) * runtimeGrid.CellWidthWorld;
+                double centerY = (cellY + 0.5) * runtimeGrid.CellHeightWorld;
+                yield return (
+                    new CollisionFootprint(
+                        new Vector2((float)centerX, (float)centerY),
+                        Vector2.UnitX,
+                        Vector2.UnitY,
+                        halfCellWidth,
+                        halfCellHeight,
+                        currentHeight - 0.5,
+                        currentHeight + 4.0,
+                        radius),
+                    "static_grid_contact");
+            }
+        }
+    }
+
+    private static void ApplyAirborneInertia(
+        SimulationEntity entity,
+        double drivePowerLimitW,
+        double currentVxMps,
+        double currentVyMps,
+        double currentSpeedMps,
+        double metersPerWorldUnit,
+        double dt)
+    {
+        // Wheels have no ground contact in a ledge drop, so keep horizontal
+        // momentum exactly instead of letting motor braking or lateral drive
+        // acceleration erase the visible projectile-like flight.
+        double newVxMps = currentVxMps;
+        double newVyMps = currentVyMps;
+        double newSpeedMps = Math.Sqrt(newVxMps * newVxMps + newVyMps * newVyMps);
+        entity.VelocityXWorldPerSec = newVxMps / Math.Max(metersPerWorldUnit, 1e-6);
+        entity.VelocityYWorldPerSec = newVyMps / Math.Max(metersPerWorldUnit, 1e-6);
+        entity.EffectiveDrivePowerLimitW = drivePowerLimitW;
+        entity.ChassisPowerRatio = 1.0;
+        entity.ChassisSpeedLimitMps = Math.Max(entity.ChassisSpeedLimitMps, currentSpeedMps);
+        entity.ChassisPowerDrawW = Math.Min(entity.ChassisPowerDrawW, 4.5);
+        entity.ChassisRpm = newSpeedMps / Math.Max(entity.WheelRadiusM, 0.03) * 9.55;
+        entity.MotionBlockReason = string.Empty;
+    }
+
+    private bool TryFindFacilityContact(
+        RuntimeGridData runtimeGrid,
+        CollisionFootprint footprint,
+        out Vector2 separationVector,
+        out string reason)
+    {
+        separationVector = Vector2.Zero;
+        reason = string.Empty;
+        bool found = false;
+        float bestPenetration = 0f;
+        foreach (FacilityRegion facility in _facilities)
+        {
+            if (!FacilityBlocksMovement(facility))
+            {
+                continue;
+            }
+
+            if (TryBuildFacilityPolygon(facility, out List<Vector2> polygon))
+            {
+                if (!IntersectsFootprint(footprint, polygon))
+                {
+                    continue;
+                }
+
+                Vector2 mtv = ComputeMinimumTranslationVector(footprint, polygon);
+                float penetration = mtv.Length();
+                if (penetration <= bestPenetration)
+                {
+                    continue;
+                }
+
+                bestPenetration = penetration;
+                separationVector = mtv;
+                reason = $"facility_contact:{facility.Id}";
+                found = true;
+                continue;
+            }
+
+            if (!TryBuildFacilityCollisionFootprint(runtimeGrid, facility, out CollisionFootprint obstacle))
+            {
+                continue;
+            }
+
+            if (!IntersectsFootprint(footprint, obstacle))
+            {
+                continue;
+            }
+
+            Vector2 obstacleMtv = ComputeMinimumTranslationVector(footprint, obstacle);
+            float obstaclePenetration = obstacleMtv.Length();
+            if (obstaclePenetration <= bestPenetration)
+            {
+                continue;
+            }
+
+            bestPenetration = obstaclePenetration;
+            separationVector = obstacleMtv;
+            reason = $"facility_contact:{facility.Id}";
+            found = true;
+        }
+
+        return found;
+    }
+
+    private static bool TryBuildFacilityCollisionFootprint(
+        RuntimeGridData runtimeGrid,
+        FacilityRegion facility,
+        out CollisionFootprint footprint)
+    {
+        footprint = default;
+        if (facility.Shape.Equals("polygon", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (facility.Shape.Equals("line", StringComparison.OrdinalIgnoreCase))
+        {
+            Vector2 start = new((float)facility.X1, (float)facility.Y1);
+            Vector2 end = new((float)facility.X2, (float)facility.Y2);
+            Vector2 direction = end - start;
+            if (direction.LengthSquared() <= 1e-6f)
+            {
+                float radius = (float)Math.Max(facility.Thickness * 0.5, Math.Max(runtimeGrid.CellWidthWorld, runtimeGrid.CellHeightWorld) * 0.5);
+                footprint = new CollisionFootprint(
+                    start,
+                    Vector2.UnitX,
+                    Vector2.UnitY,
+                    radius,
+                    radius,
+                    -10.0,
+                    10.0,
+                    radius * MathF.Sqrt(2f));
+                return true;
+            }
+
+            float length = direction.Length();
+            Vector2 forward = Vector2.Normalize(direction);
+            Vector2 right = new(-forward.Y, forward.X);
+            float halfThickness = (float)Math.Max(facility.Thickness * 0.5, Math.Max(runtimeGrid.CellWidthWorld, runtimeGrid.CellHeightWorld) * 0.5);
+            footprint = new CollisionFootprint(
+                (start + end) * 0.5f,
+                forward,
+                right,
+                length * 0.5f,
+                halfThickness,
+                -10.0,
+                10.0,
+                MathF.Sqrt(length * length + halfThickness * halfThickness));
+            return true;
+        }
+
+        double minX = Math.Min(facility.X1, facility.X2);
+        double maxX = Math.Max(facility.X1, facility.X2);
+        double minY = Math.Min(facility.Y1, facility.Y2);
+        double maxY = Math.Max(facility.Y1, facility.Y2);
+        float halfLength = (float)Math.Max(0.01, (maxX - minX) * 0.5);
+        float halfWidth = (float)Math.Max(0.01, (maxY - minY) * 0.5);
+        footprint = new CollisionFootprint(
+            new Vector2((float)((minX + maxX) * 0.5), (float)((minY + maxY) * 0.5)),
+            Vector2.UnitX,
+            Vector2.UnitY,
+            halfLength,
+            halfWidth,
+            -10.0,
+            10.0,
+            MathF.Sqrt(halfLength * halfLength + halfWidth * halfWidth));
+        return true;
+    }
+
+    private static bool TryBuildFacilityPolygon(FacilityRegion facility, out List<Vector2> polygon)
+    {
+        polygon = new List<Vector2>();
+        if (!facility.Shape.Equals("polygon", StringComparison.OrdinalIgnoreCase) || facility.Points.Count < 3)
+        {
+            return false;
+        }
+
+        polygon = facility.Points.Select(point => new Vector2((float)point.X, (float)point.Y)).ToList();
+        return polygon.Count >= 3;
+    }
+
+    private static bool FacilityBlocksMovement(FacilityRegion facility)
+    {
+        if (TryGetFacilityBoolean(facility, "blocks_movement", out bool blocksMovement))
+        {
+            return blocksMovement;
+        }
+
+        if (facility.Type.StartsWith("buff_", StringComparison.OrdinalIgnoreCase)
+            || facility.Type.Equals("boundary", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return facility.HeightM > 0.25;
+    }
+
+    private static bool TryGetFacilityBoolean(FacilityRegion facility, string key, out bool value)
+    {
+        value = false;
+        if (facility.AdditionalProperties is null
+            || !facility.AdditionalProperties.TryGetValue(key, out var node))
+        {
+            return false;
+        }
+
+        switch (node.ValueKind)
+        {
+            case System.Text.Json.JsonValueKind.True:
+                value = true;
+                return true;
+            case System.Text.Json.JsonValueKind.False:
+                value = false;
+                return true;
+            case System.Text.Json.JsonValueKind.String:
+                return bool.TryParse(node.GetString(), out value);
+            case System.Text.Json.JsonValueKind.Number:
+                if (node.TryGetInt32(out int intValue))
+                {
+                    value = intValue != 0;
+                    return true;
+                }
+
+                break;
         }
 
         return false;
@@ -2425,11 +3240,26 @@ internal sealed class TerrainMotionService
         double yawRad = DegreesToRadians(entity.AngleDeg);
         Vector2 forward = new((float)Math.Cos(yawRad), (float)Math.Sin(yawRad));
         Vector2 right = new((float)Math.Cos(yawRad + Math.PI * 0.5), (float)Math.Sin(yawRad + Math.PI * 0.5));
-        double minHeightM = entity.GroundHeightM + Math.Max(0.0, entity.AirborneHeightM);
-        double maxHeightM = minHeightM + ResolveCollisionHeightM(entity);
+        double collisionHeightM = ResolveCollisionHeightM(entity);
+        bool descendingAirborne =
+            !SimulationCombatMath.IsStructure(entity)
+            && entity.AirborneHeightM > 1e-4
+            && entity.VerticalVelocityMps < -0.20;
+        double descendingNoseDropM = descendingAirborne
+            ? Math.Min(collisionHeightM * 0.84, -entity.VerticalVelocityMps * 0.12 + entity.AirborneHeightM * 0.46)
+            : 0.0;
+        double minHeightM = entity.GroundHeightM + Math.Max(0.0, entity.AirborneHeightM - descendingNoseDropM);
+        double maxHeightM = minHeightM + collisionHeightM;
+        double noseProbeWorld = descendingAirborne
+            ? Math.Min(halfLengthWorld * 0.58, (-entity.VerticalVelocityMps * 0.050 + entity.AirborneHeightM * 0.22) / metersPerWorldUnit)
+            : 0.0;
+        Vector2 footprintCenter = new(
+            (float)(centerX + forward.X * noseProbeWorld),
+            (float)(centerY + forward.Y * noseProbeWorld));
+        halfLengthWorld += noseProbeWorld * 0.72;
         double boundingRadiusWorld = Math.Sqrt(halfLengthWorld * halfLengthWorld + halfWidthWorld * halfWidthWorld) + 0.01;
         return new CollisionFootprint(
-            new Vector2((float)centerX, (float)centerY),
+            footprintCenter,
             forward,
             right,
             halfLengthWorld,
@@ -2463,6 +3293,78 @@ internal sealed class TerrainMotionService
             && !SeparatesOnAxis(delta, b.Right, a, b);
     }
 
+    private static bool IntersectsFootprint(CollisionFootprint footprint, IReadOnlyList<Vector2> polygon)
+    {
+        if (polygon.Count < 3)
+        {
+            return false;
+        }
+
+        foreach (Vector2 axis in EnumerateAxes(footprint, polygon))
+        {
+            if (SeparatesOnAxis(footprint, polygon, axis))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static Vector2 ComputeMinimumTranslationVector(CollisionFootprint a, CollisionFootprint b)
+    {
+        Vector2 delta = b.Center - a.Center;
+        Vector2 bestAxis = Vector2.UnitX;
+        float bestOverlap = float.PositiveInfinity;
+        foreach (Vector2 axis in new[] { a.Forward, a.Right, b.Forward, b.Right })
+        {
+            Vector2 normalized = axis.LengthSquared() > 1e-8f ? Vector2.Normalize(axis) : Vector2.UnitX;
+            float distance = MathF.Abs(Vector2.Dot(delta, normalized));
+            float overlap = ProjectHalfExtent(a, normalized) + ProjectHalfExtent(b, normalized) - distance;
+            if (overlap < bestOverlap)
+            {
+                bestOverlap = overlap;
+                bestAxis = normalized;
+            }
+        }
+
+        if (!float.IsFinite(bestOverlap) || bestOverlap <= 0f)
+        {
+            return Vector2.Zero;
+        }
+
+        float direction = Vector2.Dot(delta, bestAxis) >= 0f ? -1f : 1f;
+        return bestAxis * (bestOverlap + 1e-3f) * direction;
+    }
+
+    private static Vector2 ComputeMinimumTranslationVector(CollisionFootprint footprint, IReadOnlyList<Vector2> polygon)
+    {
+        Vector2 polygonCenter = ComputePolygonCenter(polygon);
+        Vector2 delta = polygonCenter - footprint.Center;
+        Vector2 bestAxis = Vector2.UnitX;
+        float bestOverlap = float.PositiveInfinity;
+        foreach (Vector2 axis in EnumerateAxes(footprint, polygon))
+        {
+            Vector2 normalized = axis.LengthSquared() > 1e-8f ? Vector2.Normalize(axis) : Vector2.UnitX;
+            ProjectPolygon(polygon, normalized, out float polygonMin, out float polygonMax);
+            ProjectFootprint(footprint, normalized, out float footprintMin, out float footprintMax);
+            float overlap = MathF.Min(footprintMax, polygonMax) - MathF.Max(footprintMin, polygonMin);
+            if (overlap < bestOverlap)
+            {
+                bestOverlap = overlap;
+                bestAxis = normalized;
+            }
+        }
+
+        if (!float.IsFinite(bestOverlap) || bestOverlap <= 0f)
+        {
+            return Vector2.Zero;
+        }
+
+        float direction = Vector2.Dot(delta, bestAxis) >= 0f ? -1f : 1f;
+        return bestAxis * (bestOverlap + 1e-3f) * direction;
+    }
+
     private static bool SeparatesOnAxis(Vector2 delta, Vector2 axis, CollisionFootprint a, CollisionFootprint b)
     {
         float distance = MathF.Abs(Vector2.Dot(delta, axis));
@@ -2476,6 +3378,76 @@ internal sealed class TerrainMotionService
         return (float)(
             footprint.HalfLengthWorld * Math.Abs(Vector2.Dot(axis, footprint.Forward))
             + footprint.HalfWidthWorld * Math.Abs(Vector2.Dot(axis, footprint.Right)));
+    }
+
+    private static IEnumerable<Vector2> EnumerateAxes(CollisionFootprint footprint, IReadOnlyList<Vector2> polygon)
+    {
+        yield return footprint.Forward;
+        yield return footprint.Right;
+        for (int index = 0; index < polygon.Count; index++)
+        {
+            Vector2 current = polygon[index];
+            Vector2 next = polygon[(index + 1) % polygon.Count];
+            Vector2 edge = next - current;
+            if (edge.LengthSquared() <= 1e-8f)
+            {
+                continue;
+            }
+
+            yield return Vector2.Normalize(new Vector2(-edge.Y, edge.X));
+        }
+    }
+
+    private static bool SeparatesOnAxis(CollisionFootprint footprint, IReadOnlyList<Vector2> polygon, Vector2 axis)
+    {
+        Vector2 normalized = axis.LengthSquared() > 1e-8f ? Vector2.Normalize(axis) : Vector2.UnitX;
+        ProjectPolygon(polygon, normalized, out float polygonMin, out float polygonMax);
+        ProjectFootprint(footprint, normalized, out float footprintMin, out float footprintMax);
+        return footprintMax < polygonMin - 1e-4f || polygonMax < footprintMin - 1e-4f;
+    }
+
+    private static void ProjectPolygon(IReadOnlyList<Vector2> polygon, Vector2 axis, out float min, out float max)
+    {
+        min = float.PositiveInfinity;
+        max = float.NegativeInfinity;
+        foreach (Vector2 point in polygon)
+        {
+            float projection = Vector2.Dot(point, axis);
+            min = MathF.Min(min, projection);
+            max = MathF.Max(max, projection);
+        }
+    }
+
+    private static void ProjectFootprint(CollisionFootprint footprint, Vector2 axis, out float min, out float max)
+    {
+        float center = Vector2.Dot(footprint.Center, axis);
+        float halfExtent = ProjectHalfExtent(footprint, axis);
+        min = center - halfExtent;
+        max = center + halfExtent;
+    }
+
+    private static Vector2 ComputePolygonCenter(IReadOnlyList<Vector2> polygon)
+    {
+        Vector2 sum = Vector2.Zero;
+        foreach (Vector2 point in polygon)
+        {
+            sum += point;
+        }
+
+        return polygon.Count == 0 ? Vector2.Zero : sum / polygon.Count;
+    }
+
+    private static Vector2[] GetFootprintVertices(CollisionFootprint footprint)
+    {
+        Vector2 forward = footprint.Forward * (float)footprint.HalfLengthWorld;
+        Vector2 right = footprint.Right * (float)footprint.HalfWidthWorld;
+        return new[]
+        {
+            footprint.Center - forward - right,
+            footprint.Center + forward - right,
+            footprint.Center + forward + right,
+            footprint.Center - forward + right,
+        };
     }
 
     private static void ClampToMap(RuntimeGridData runtimeGrid, ref double x, ref double y)
@@ -2563,7 +3535,7 @@ internal sealed class TerrainMotionService
         double max = double.MinValue;
         int count = 0;
 
-        for (int offsetY = -1; offsetY <= 1; offsetY++)
+        for (int offsetY = -2; offsetY <= 2; offsetY++)
         {
             int sampleY = centerY + offsetY;
             if (sampleY < 0 || sampleY >= runtimeGrid.HeightCells)
@@ -2571,7 +3543,7 @@ internal sealed class TerrainMotionService
                 continue;
             }
 
-            for (int offsetX = -1; offsetX <= 1; offsetX++)
+            for (int offsetX = -2; offsetX <= 2; offsetX++)
             {
                 int sampleX = centerX + offsetX;
                 if (sampleX < 0 || sampleX >= runtimeGrid.WidthCells)
@@ -2587,13 +3559,13 @@ internal sealed class TerrainMotionService
             }
         }
 
-        if (count < 4 || max - min > TerrainSmoothHeightThresholdM + 1e-6)
+        if (count < 9 || max - min > TerrainSmoothHeightThresholdM + 1e-6)
         {
             return baseSample;
         }
 
         double average = sum / count;
-        return NormalizeAnchoredTerrainHeight(Lerp(baseSample, average, 0.55));
+        return NormalizeAnchoredTerrainHeight(Lerp(baseSample, average, 0.72));
     }
 
     private static double NormalizeAnchoredTerrainHeight(double heightM)
@@ -2871,6 +3843,20 @@ internal sealed class TerrainMotionService
         double MinHeightM,
         double MaxHeightM,
         double BoundingRadiusWorld);
+
+    private readonly record struct EntityContactResolution(
+        SimulationEntity BlockingEntity,
+        double ResolvedX,
+        double ResolvedY,
+        Vector2 SeparationVector,
+        double PenetrationWorld);
+
+    private readonly record struct StaticContactResolution(
+        string Reason,
+        double ResolvedX,
+        double ResolvedY,
+        Vector2 SeparationVector,
+        double PenetrationWorld);
 
     private sealed class NavigationPathState
     {

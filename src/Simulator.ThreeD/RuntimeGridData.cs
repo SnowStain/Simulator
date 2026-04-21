@@ -173,7 +173,7 @@ internal sealed class RuntimeGridData
 
     public float SampleHeightWithFacets(double worldX, double worldY)
     {
-        float baseHeight = SampleNearestHeight(worldX, worldY);
+        float baseHeight = SampleSmoothedHeight(worldX, worldY);
         return TrySampleFacetSurface(worldX, worldY, out float facetHeight, out _, out _)
             ? Math.Max(baseHeight, facetHeight)
             : baseHeight;
@@ -197,6 +197,35 @@ internal sealed class RuntimeGridData
         int cellX = Math.Clamp((int)Math.Floor(worldX / Math.Max(1e-6f, CellWidthWorld)), 0, WidthCells - 1);
         int cellY = Math.Clamp((int)Math.Floor(worldY / Math.Max(1e-6f, CellHeightWorld)), 0, HeightCells - 1);
         return HeightMap[IndexOf(cellX, cellY)];
+    }
+
+    private float SampleSmoothedHeight(double worldX, double worldY)
+    {
+        double cellWidth = Math.Max(1e-6f, CellWidthWorld);
+        double cellHeight = Math.Max(1e-6f, CellHeightWorld);
+        double normalizedX = Math.Clamp(worldX / cellWidth, 0.0, Math.Max(0.0, WidthCells - 1e-6));
+        double normalizedY = Math.Clamp(worldY / cellHeight, 0.0, Math.Max(0.0, HeightCells - 1e-6));
+        int cellX0 = Math.Clamp((int)Math.Floor(normalizedX), 0, WidthCells - 1);
+        int cellY0 = Math.Clamp((int)Math.Floor(normalizedY), 0, HeightCells - 1);
+        int cellX1 = Math.Min(cellX0 + 1, WidthCells - 1);
+        int cellY1 = Math.Min(cellY0 + 1, HeightCells - 1);
+
+        float h00 = HeightMap[IndexOf(cellX0, cellY0)];
+        float h10 = HeightMap[IndexOf(cellX1, cellY0)];
+        float h01 = HeightMap[IndexOf(cellX0, cellY1)];
+        float h11 = HeightMap[IndexOf(cellX1, cellY1)];
+        float min = Math.Min(Math.Min(h00, h10), Math.Min(h01, h11));
+        float max = Math.Max(Math.Max(h00, h10), Math.Max(h01, h11));
+        if (max - min > 0.049f)
+        {
+            return h00;
+        }
+
+        float tx = (float)Math.Clamp(normalizedX - cellX0, 0.0, 1.0);
+        float ty = (float)Math.Clamp(normalizedY - cellY0, 0.0, 1.0);
+        float top = h00 + (h10 - h00) * tx;
+        float bottom = h01 + (h11 - h01) * tx;
+        return top + (bottom - top) * ty;
     }
 
     private static bool TrySampleFacetHeight(TerrainFacetRuntime facet, Vector2 point, out float heightM, out Vector3 normal)

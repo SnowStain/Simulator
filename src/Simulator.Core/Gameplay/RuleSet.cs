@@ -664,6 +664,16 @@ public sealed class CombatRuleSet
     public double Damage17ToStructure { get; set; } = 20.0;
 
     public double Damage42ToStructure { get; set; } = 200.0;
+
+    public double Damage17ToBaseFrontUpperArmor { get; set; } = 5.0;
+
+    public double Damage17ToBaseOtherArmor { get; set; } = 20.0;
+
+    public double Damage17ToOutpostArmor { get; set; } = 20.0;
+
+    public double Damage42ToOutpostArmor { get; set; } = 200.0;
+
+    public double CollisionDamageToRobot { get; set; } = 2.0;
 }
 
 public sealed class HeatRuleSet

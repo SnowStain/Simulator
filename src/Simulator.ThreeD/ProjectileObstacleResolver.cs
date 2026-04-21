@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Linq;
 using Simulator.Core.Gameplay;
 
 namespace Simulator.ThreeD;
@@ -16,7 +17,8 @@ internal static class ProjectileObstacleResolver
         double endX,
         double endY,
         double endHeightM,
-        IReadOnlyList<SimulationEntity>? obstacleCandidates = null)
+        IReadOnlyList<SimulationEntity>? obstacleCandidates = null,
+        Func<SimulationEntity, RobotAppearanceProfile>? profileResolver = null)
     {
         double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
         Vector3 start = new((float)(startX * metersPerWorldUnit), (float)startHeightM, (float)(startY * metersPerWorldUnit));
@@ -38,17 +40,7 @@ internal static class ProjectileObstacleResolver
                 continue;
             }
 
-            if (!ProjectileCollisionBroadphase.MayIntersectObstacleBounds(
-                    entity,
-                    metersPerWorldUnit,
-                    projectileRadiusM,
-                    start,
-                    end))
-            {
-                continue;
-            }
-
-            if (!TryResolveEntityHit(world, metersPerWorldUnit, entity, projectileRadiusM, start, end, out ProjectileObstacleHit entityHit))
+            if (!TryResolveEntityHit(world, metersPerWorldUnit, entity, projectileRadiusM, start, end, profileResolver, out ProjectileObstacleHit entityHit))
             {
                 continue;
             }
@@ -70,22 +62,7 @@ internal static class ProjectileObstacleResolver
             return false;
         }
 
-        if (SimulationCombatMath.IsStructure(entity)
-            && string.Equals(projectile.PreferredTargetId, entity.Id, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        if (SimulationCombatMath.IsStructure(entity))
-        {
-            return true;
-        }
-
-        // Robots are damaged exclusively through armor plate intersection in
-        // SimulationCombatMath. Treating the body OBB as an obstacle can consume
-        // the projectile before the plate hit is applied, which produces "hit but
-        // no damage" behavior on normal robots while structures still work.
-        return false;
+        return true;
     }
 
     private static bool TryResolveTerrainHit(
@@ -130,7 +107,7 @@ internal static class ProjectileObstacleResolver
             int terrainIndex = runtimeGrid.IndexOf(cellX, cellY);
             float terrainHeight = runtimeGrid.SampleHeightWithFacets(sampleWorldX, sampleWorldY);
             float clearance = (float)Math.Max(0.012, projectileRadiusM * 0.7);
-            bool hitsFloor = terrainHeight > 0.01f && sample.Y <= terrainHeight + clearance;
+            bool hitsFloor = sample.Y <= terrainHeight + clearance;
 
             if (runtimeGrid.VisionBlockMap[terrainIndex])
             {
@@ -159,7 +136,7 @@ internal static class ProjectileObstacleResolver
                 {
                     float heightDelta = terrainHeight - previousTerrainHeight;
                     if ((cellX != previousCellX || cellY != previousCellY)
-                        && heightDelta > 0.045f
+                        && heightDelta > 0.049f
                         && sample.Y > previousTerrainHeight + clearance)
                     {
                         normal = ResolveBarrierNormal(runtimeGrid, metersPerWorldUnit, sample, previousSample, cellX, cellY);
@@ -199,9 +176,15 @@ internal static class ProjectileObstacleResolver
         double projectileRadiusM,
         Vector3 start,
         Vector3 end,
+        Func<SimulationEntity, RobotAppearanceProfile>? profileResolver,
         out ProjectileObstacleHit hit)
     {
         hit = default;
+        if (SimulationCombatMath.IsStructure(entity))
+        {
+            return TryResolveStructureModelHit(world, metersPerWorldUnit, entity, projectileRadiusM, start, end, profileResolver, out hit);
+        }
+
         Vector2 start2 = new(start.X, start.Z);
         Vector2 end2 = new(end.X, end.Z);
         Vector2 direction = end2 - start2;
@@ -218,19 +201,8 @@ internal static class ProjectileObstacleResolver
         Vector2 localEnd = new(Vector2.Dot(end2 - center2, forward), Vector2.Dot(end2 - center2, right));
         Vector2 localDelta = localEnd - localStart;
 
-        float halfLengthM;
-        float halfWidthM;
-        if (SimulationCombatMath.IsStructure(entity))
-        {
-            float radiusM = (float)Math.Max(0.12, entity.CollisionRadiusWorld * metersPerWorldUnit);
-            halfLengthM = radiusM * 0.72f;
-            halfWidthM = radiusM * 0.72f;
-        }
-        else
-        {
-            halfLengthM = (float)Math.Max(0.06, entity.BodyLengthM * 0.5);
-            halfWidthM = (float)Math.Max(0.06, entity.BodyWidthM * entity.BodyRenderWidthScale * 0.5);
-        }
+        float halfLengthM = (float)Math.Max(0.06, entity.BodyLengthM * 0.5);
+        float halfWidthM = (float)Math.Max(0.06, entity.BodyWidthM * entity.BodyRenderWidthScale * 0.5);
 
         float margin = (float)Math.Max(0.010, projectileRadiusM);
         halfLengthM += margin;
@@ -269,6 +241,306 @@ internal static class ProjectileObstacleResolver
             SupportsRicochet: true,
             Kind: entity.EntityType);
         return true;
+    }
+
+    private static bool TryResolveStructureModelHit(
+        SimulationWorldState world,
+        double metersPerWorldUnit,
+        SimulationEntity entity,
+        double projectileRadiusM,
+        Vector3 start,
+        Vector3 end,
+        Func<SimulationEntity, RobotAppearanceProfile>? profileResolver,
+        out ProjectileObstacleHit hit)
+    {
+        hit = default;
+        ProjectileObstacleHit? best = null;
+        RobotAppearanceProfile? profile = profileResolver?.Invoke(entity);
+        if (string.Equals(entity.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase)
+            && profile is not null)
+        {
+            Vector3 anchor = new((float)(entity.X * metersPerWorldUnit), 0f, (float)(entity.Y * metersPerWorldUnit));
+            EnergyRenderMesh mesh = EnergyMechanismGeometry.BuildSingle(
+                profile,
+                anchor,
+                EnergyMechanismGeometry.ResolveAccentColor(entity.Team),
+                (float)world.GameTimeSec);
+            foreach (EnergyRenderBox box in mesh.Boxes)
+            {
+                TryStoreBest(TryIntersectOrientedBox(start, end, box.Center, box.Forward, box.Right, box.Up, box.Length, box.Width, box.Height, projectileRadiusM, entity.EntityType), ref best);
+            }
+
+            foreach (EnergyRenderCylinder cylinder in mesh.Cylinders)
+            {
+                TryStoreBest(TryIntersectCylinderDisc(start, end, cylinder.Center, cylinder.NormalAxis, cylinder.UpAxis, cylinder.Radius, cylinder.Thickness, projectileRadiusM, entity.EntityType), ref best);
+            }
+
+            foreach (EnergyRenderPrism prism in mesh.Prisms)
+            {
+                TryStoreBest(TryIntersectPrismAabb(start, end, prism.Bottom, prism.Top, projectileRadiusM, entity.EntityType), ref best);
+            }
+
+            if (best is ProjectileObstacleHit energyHit)
+            {
+                hit = energyHit;
+                return true;
+            }
+
+            return false;
+        }
+
+        Vector3 center = new(
+            (float)(entity.X * metersPerWorldUnit),
+            (float)Math.Max(0.0, entity.GroundHeightM + entity.AirborneHeightM + entity.StructureBaseLiftM),
+            (float)(entity.Y * metersPerWorldUnit));
+        float yaw = (float)(entity.AngleDeg * Math.PI / 180.0);
+        Vector3 forward = new(MathF.Cos(yaw), 0f, MathF.Sin(yaw));
+        Vector3 right = new(-forward.Z, 0f, forward.X);
+        Vector3 up = Vector3.UnitY;
+        if (string.Equals(entity.EntityType, "outpost", StringComparison.OrdinalIgnoreCase))
+        {
+            float baseWidth = (float)Math.Clamp(entity.BodyLengthM, 0.40, 0.95);
+            float towerHeight = (float)Math.Clamp(entity.BodyHeightM, 1.00, 2.40);
+            float towerRadius = (float)Math.Clamp(entity.BodyWidthM * 0.36, 0.12, 0.34);
+            TryStoreBest(TryIntersectOrientedBox(start, end, center + up * 0.045f, forward, right, up, baseWidth, baseWidth, 0.09f, projectileRadiusM, entity.EntityType), ref best);
+            TryStoreBest(TryIntersectVerticalCylinder(start, end, center + up * (towerHeight * 0.52f), towerRadius, towerHeight, projectileRadiusM, entity.EntityType), ref best);
+            TryStoreBest(TryIntersectVerticalCylinder(start, end, center + up * (towerHeight * 0.86f), towerRadius + 0.065f, 0.11f, projectileRadiusM, entity.EntityType), ref best);
+        }
+        else if (string.Equals(entity.EntityType, "base", StringComparison.OrdinalIgnoreCase))
+        {
+            float length = (float)Math.Clamp(entity.BodyLengthM, 1.10, 2.35);
+            float width = (float)Math.Clamp(entity.BodyWidthM * entity.BodyRenderWidthScale, 0.90, 2.05);
+            float height = (float)Math.Clamp(entity.BodyHeightM, 0.70, 1.60);
+            TryStoreBest(TryIntersectOrientedBox(start, end, center + up * (height * 0.42f), forward, right, up, length * 0.92f, width * 0.92f, height * 0.84f, projectileRadiusM, entity.EntityType), ref best);
+            TryStoreBest(TryIntersectOrientedBox(start, end, center + up * (height + 0.06f), forward, right, up, length * 0.42f, width * 0.42f, 0.12f, projectileRadiusM, entity.EntityType), ref best);
+        }
+
+        if (best is ProjectileObstacleHit structureHit)
+        {
+            hit = structureHit;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static void TryStoreBest(ProjectileObstacleHit? candidate, ref ProjectileObstacleHit? best)
+    {
+        if (candidate is not ProjectileObstacleHit hit)
+        {
+            return;
+        }
+
+        if (best is null || hit.SegmentT < best.Value.SegmentT)
+        {
+            best = hit;
+        }
+    }
+
+    private static ProjectileObstacleHit? TryIntersectOrientedBox(
+        Vector3 start,
+        Vector3 end,
+        Vector3 center,
+        Vector3 forward,
+        Vector3 right,
+        Vector3 up,
+        float length,
+        float width,
+        float height,
+        double projectileRadiusM,
+        string kind)
+    {
+        Vector3 f = SafeNormalize(forward, Vector3.UnitX);
+        Vector3 r = SafeNormalize(right, Vector3.UnitZ);
+        Vector3 u = SafeNormalize(up, Vector3.UnitY);
+        Vector3 localStart = new(Vector3.Dot(start - center, f), Vector3.Dot(start - center, r), Vector3.Dot(start - center, u));
+        Vector3 localEnd = new(Vector3.Dot(end - center, f), Vector3.Dot(end - center, r), Vector3.Dot(end - center, u));
+        Vector3 delta = localEnd - localStart;
+        Vector3 half = new(
+            Math.Max(0.006f, length * 0.5f + (float)projectileRadiusM),
+            Math.Max(0.006f, width * 0.5f + (float)projectileRadiusM),
+            Math.Max(0.006f, height * 0.5f + (float)projectileRadiusM));
+        if (!TryIntersectAabbSlabs(localStart, delta, -half, half, out float t, out Vector3 localNormal))
+        {
+            return null;
+        }
+
+        Vector3 normal = SafeNormalize(f * localNormal.X + r * localNormal.Y + u * localNormal.Z, -SafeNormalize(end - start, Vector3.UnitX));
+        Vector3 point = start + (end - start) * t;
+        return new ProjectileObstacleHit(point.X, point.Z, point.Y, normal.X, normal.Y, normal.Z, t, SupportsRicochet: true, Kind: kind);
+    }
+
+    private static ProjectileObstacleHit? TryIntersectVerticalCylinder(
+        Vector3 start,
+        Vector3 end,
+        Vector3 center,
+        float radius,
+        float height,
+        double projectileRadiusM,
+        string kind)
+    {
+        return TryIntersectCylinderDisc(start, end, center, Vector3.UnitY, Vector3.UnitX, radius, height * 0.5f, projectileRadiusM, kind);
+    }
+
+    private static ProjectileObstacleHit? TryIntersectCylinderDisc(
+        Vector3 start,
+        Vector3 end,
+        Vector3 center,
+        Vector3 axisDirection,
+        Vector3 radialHint,
+        float radius,
+        float halfLength,
+        double projectileRadiusM,
+        string kind)
+    {
+        Vector3 axis = SafeNormalize(axisDirection, Vector3.UnitY);
+        Vector3 radialA = radialHint - axis * Vector3.Dot(radialHint, axis);
+        radialA = SafeNormalize(radialA, Math.Abs(Vector3.Dot(axis, Vector3.UnitY)) > 0.9f ? Vector3.UnitX : Vector3.UnitY);
+        Vector3 radialB = SafeNormalize(Vector3.Cross(axis, radialA), Vector3.UnitZ);
+        Vector3 localStart = new(Vector3.Dot(start - center, radialA), Vector3.Dot(start - center, radialB), Vector3.Dot(start - center, axis));
+        Vector3 localEnd = new(Vector3.Dot(end - center, radialA), Vector3.Dot(end - center, radialB), Vector3.Dot(end - center, axis));
+        Vector3 delta = localEnd - localStart;
+        float expandedRadius = Math.Max(0.004f, radius + (float)projectileRadiusM);
+        float expandedHalf = Math.Max(0.004f, halfLength + (float)projectileRadiusM);
+        float bestT = float.PositiveInfinity;
+        Vector3 bestNormal = Vector3.Zero;
+
+        float a = delta.X * delta.X + delta.Y * delta.Y;
+        float b = 2f * (localStart.X * delta.X + localStart.Y * delta.Y);
+        float c = localStart.X * localStart.X + localStart.Y * localStart.Y - expandedRadius * expandedRadius;
+        float discriminant = b * b - 4f * a * c;
+        if (a > 1e-8f && discriminant >= 0f)
+        {
+            float sqrt = MathF.Sqrt(discriminant);
+            StoreCylinderT((-b - sqrt) / (2f * a), sideNormal: true);
+            StoreCylinderT((-b + sqrt) / (2f * a), sideNormal: true);
+        }
+
+        if (MathF.Abs(delta.Z) > 1e-8f)
+        {
+            StoreCylinderT((-expandedHalf - localStart.Z) / delta.Z, sideNormal: false);
+            StoreCylinderT((expandedHalf - localStart.Z) / delta.Z, sideNormal: false);
+        }
+
+        if (!float.IsFinite(bestT))
+        {
+            return null;
+        }
+
+        Vector3 normal = SafeNormalize(radialA * bestNormal.X + radialB * bestNormal.Y + axis * bestNormal.Z, -SafeNormalize(end - start, Vector3.UnitX));
+        Vector3 point = start + (end - start) * bestT;
+        return new ProjectileObstacleHit(point.X, point.Z, point.Y, normal.X, normal.Y, normal.Z, bestT, SupportsRicochet: true, Kind: kind);
+
+        void StoreCylinderT(float t, bool sideNormal)
+        {
+            if (t < 0.015f || t > 0.985f || t >= bestT)
+            {
+                return;
+            }
+
+            Vector3 sample = localStart + delta * t;
+            if (MathF.Abs(sample.Z) > expandedHalf + 1e-5f
+                || sample.X * sample.X + sample.Y * sample.Y > expandedRadius * expandedRadius + 1e-5f)
+            {
+                return;
+            }
+
+            bestT = t;
+            bestNormal = sideNormal
+                ? SafeNormalize(new Vector3(sample.X, sample.Y, 0f), Vector3.UnitX)
+                : new Vector3(0f, 0f, sample.Z >= 0f ? 1f : -1f);
+        }
+    }
+
+    private static ProjectileObstacleHit? TryIntersectPrismAabb(
+        Vector3 start,
+        Vector3 end,
+        IReadOnlyList<Vector3> bottom,
+        IReadOnlyList<Vector3> top,
+        double projectileRadiusM,
+        string kind)
+    {
+        if (bottom.Count == 0 || top.Count == 0)
+        {
+            return null;
+        }
+
+        Vector3 min = new(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity);
+        Vector3 max = new(float.NegativeInfinity, float.NegativeInfinity, float.NegativeInfinity);
+        foreach (Vector3 point in bottom.Concat(top))
+        {
+            min = Vector3.Min(min, point);
+            max = Vector3.Max(max, point);
+        }
+
+        Vector3 margin = Vector3.One * (float)Math.Max(0.006, projectileRadiusM);
+        if (!TryIntersectAabbSlabs(start, end - start, min - margin, max + margin, out float t, out Vector3 normal))
+        {
+            return null;
+        }
+
+        Vector3 pointHit = start + (end - start) * t;
+        normal = SafeNormalize(normal, -SafeNormalize(end - start, Vector3.UnitX));
+        return new ProjectileObstacleHit(pointHit.X, pointHit.Z, pointHit.Y, normal.X, normal.Y, normal.Z, t, SupportsRicochet: true, Kind: kind);
+    }
+
+    private static bool TryIntersectAabbSlabs(
+        Vector3 origin,
+        Vector3 delta,
+        Vector3 min,
+        Vector3 max,
+        out float tEnter,
+        out Vector3 normal)
+    {
+        tEnter = 0f;
+        float tExit = 1f;
+        normal = Vector3.Zero;
+        return ClipAxis3(origin.X, delta.X, min.X, max.X, new Vector3(-1f, 0f, 0f), new Vector3(1f, 0f, 0f), ref tEnter, ref tExit, ref normal)
+            && ClipAxis3(origin.Y, delta.Y, min.Y, max.Y, new Vector3(0f, -1f, 0f), new Vector3(0f, 1f, 0f), ref tEnter, ref tExit, ref normal)
+            && ClipAxis3(origin.Z, delta.Z, min.Z, max.Z, new Vector3(0f, 0f, -1f), new Vector3(0f, 0f, 1f), ref tEnter, ref tExit, ref normal)
+            && tEnter >= 0.015f
+            && tEnter <= 0.985f
+            && tEnter <= tExit;
+    }
+
+    private static bool ClipAxis3(
+        float origin,
+        float delta,
+        float min,
+        float max,
+        Vector3 minNormal,
+        Vector3 maxNormal,
+        ref float tEnter,
+        ref float tExit,
+        ref Vector3 normal)
+    {
+        if (MathF.Abs(delta) <= 1e-7f)
+        {
+            return origin >= min && origin <= max;
+        }
+
+        float t0 = (min - origin) / delta;
+        float t1 = (max - origin) / delta;
+        Vector3 enterNormal = minNormal;
+        if (t0 > t1)
+        {
+            (t0, t1) = (t1, t0);
+            enterNormal = maxNormal;
+        }
+
+        if (t0 > tEnter)
+        {
+            tEnter = t0;
+            normal = enterNormal;
+        }
+
+        tExit = MathF.Min(tExit, t1);
+        return tEnter <= tExit;
+    }
+
+    private static Vector3 SafeNormalize(Vector3 value, Vector3 fallback)
+    {
+        return value.LengthSquared() <= 1e-8f ? fallback : Vector3.Normalize(value);
     }
 
     private static bool TryIntersectObbSlabs(

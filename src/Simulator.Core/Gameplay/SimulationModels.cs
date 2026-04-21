@@ -82,6 +82,8 @@ public sealed class SimulationEntity
 
     public double VerticalVelocityMps { get; set; }
 
+    public double LedgeLaunchTimerSec { get; set; }
+
     public double AngleDeg { get; set; }
 
     public double ChassisPitchDeg { get; set; }
@@ -279,6 +281,16 @@ public sealed class SimulationEntity
     public double BodyRenderWidthScale { get; set; } = 1.0;
 
     public double StructureBaseLiftM { get; set; }
+
+    public double StructureTopArmorCenterHeightM { get; set; }
+
+    public double StructureTopArmorOffsetXM { get; set; }
+
+    public double StructureTopArmorOffsetZM { get; set; }
+
+    public double StructureSideArmorOpenAngleDeg { get; set; } = 27.5;
+
+    public double StructureSideArmorOutwardOffsetM { get; set; } = 0.12;
 
     public double WheelRadiusM { get; set; } = 0.08;
 

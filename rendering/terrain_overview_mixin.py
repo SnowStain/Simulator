@@ -663,6 +663,16 @@ class TerrainOverviewMixin:
             selected_label = f"{selected_region['label'] if selected_region is not None else '-'} / {shape_label}"
         selection_text = self.small_font.render(f'当前: {selected_label}', True, self.colors['panel_text'])
         surface.blit(selection_text, (18, 66 + header_offset))
+        if self.terrain_editor_tool == 'facility':
+            selected_region = game_engine.map_manager.get_facility_by_id(self.selected_terrain_id) if self.selected_terrain_id else None
+            if selected_region is not None and selected_region.get('type') in {'base', 'outpost', 'energy_mechanism'}:
+                selected_facility_text = (
+                    f"已选设施: {selected_region.get('id', '-')}  "
+                    f"高度 {float(selected_region.get('height_m', self._facility_model_param_default(selected_region, 'height_m'))):.2f}m  "
+                    f"朝向 {float(selected_region.get('yaw_deg', self._facility_model_param_default(selected_region, 'yaw_deg'))):.1f}°"
+                )
+                selected_facility_render = self.tiny_font.render(selected_facility_text, True, self.colors['panel_text'])
+                surface.blit(selected_facility_render, (430, 68 + header_offset))
 
         if self.terrain_editor_tool == 'terrain':
             select_button = pygame.Rect(18, row2_y, 56, 28)
@@ -1324,7 +1334,35 @@ class TerrainOverviewMixin:
         if not compact_mode:
             surface.blit(self.tiny_font.render(f"队伍: {facility.get('team', 'neutral')}", True, self.colors['panel_text']), (rect.x + 8, y + 40))
 
-        delete_y = min(rect.bottom - 32, y + (64 if not compact_mode else 42))
+        param_y = y + (60 if not compact_mode else 42)
+        if facility.get('type') in {'base', 'outpost', 'energy_mechanism'} and not compact_mode:
+            model_specs = [
+                ('height_m', '高度'),
+                ('yaw_deg', '朝向'),
+                ('z_bottom_m', '离地'),
+                ('model_scale', '缩放'),
+            ]
+            if facility.get('type') == 'energy_mechanism':
+                model_specs.extend([
+                    ('structure_base_length_m', '底座长'),
+                    ('structure_base_width_m', '底座宽'),
+                    ('structure_support_offset_m', '支架距'),
+                    ('structure_cantilever_pair_gap_m', '臂间距'),
+                ])
+            for field_name, label_text in model_specs:
+                if param_y + 22 > rect.bottom - 36:
+                    break
+                value = float(facility.get(field_name, self._facility_model_param_default(facility, field_name)))
+                surface.blit(self.tiny_font.render(f'{label_text}:', True, self.colors['panel_text']), (rect.x + 8, param_y + 4))
+                input_rect = pygame.Rect(rect.right - 86, param_y, 78, 22)
+                input_type = 'terrain' if field_name == 'height_m' else f'facility_param.{field_name}'
+                active = self._is_numeric_input_active(input_type, facility['id'])
+                input_text = self.active_numeric_input['text'] if active and self.active_numeric_input is not None else f'{value:.2f}'
+                self._draw_surface_input_box(surface, input_rect, input_text, active)
+                self.terrain_overview_ui['buttons'].append((input_rect, f'height_input:{input_type}:{facility["id"]}'))
+                param_y += 24
+
+        delete_y = min(rect.bottom - 32, max(param_y + 4, y + (64 if not compact_mode else 42)))
         delete_rect = pygame.Rect(rect.right - 108, delete_y, 100, 24)
         pygame.draw.rect(surface, self.colors['red'], delete_rect, border_radius=5)
         delete_text = self.tiny_font.render('删除该设施', True, self.colors['white'])
@@ -1502,7 +1540,42 @@ class TerrainOverviewMixin:
                     max(1, int((region['x2'] - region['x1']) * scale_x)),
                     max(1, int((region['y2'] - region['y1']) * scale_y)),
                 )
-                pygame.draw.rect(surface, color, facility_rect, 2)
+                facility_type = str(region.get('type', ''))
+                if facility_type == 'base':
+                    cx = facility_rect.x + facility_rect.width // 2
+                    cy = facility_rect.y + facility_rect.height // 2
+                    points = [
+                        (facility_rect.x + facility_rect.width * 0.26, facility_rect.y),
+                        (facility_rect.x + facility_rect.width * 0.74, facility_rect.y),
+                        (facility_rect.right, cy),
+                        (facility_rect.x + facility_rect.width * 0.74, facility_rect.bottom),
+                        (facility_rect.x + facility_rect.width * 0.26, facility_rect.bottom),
+                        (facility_rect.x, cy),
+                    ]
+                    pygame.draw.polygon(surface, color, points, 2)
+                    pygame.draw.rect(surface, color, pygame.Rect(cx - facility_rect.width * 0.18, cy - facility_rect.height * 0.08, facility_rect.width * 0.36, facility_rect.height * 0.16), 1)
+                elif facility_type == 'outpost':
+                    center = (facility_rect.x + facility_rect.width // 2, facility_rect.y + facility_rect.height // 2)
+                    radius = max(4, min(facility_rect.width, facility_rect.height) // 2)
+                    pygame.draw.circle(surface, color, center, radius, 2)
+                    pygame.draw.circle(surface, color, center, max(2, radius - 5), 1)
+                elif facility_type == 'energy_mechanism':
+                    center = (facility_rect.x + facility_rect.width // 2, facility_rect.y + facility_rect.height // 2)
+                    pygame.draw.rect(surface, color, facility_rect, 1)
+                    pygame.draw.line(surface, color, (facility_rect.x, center[1]), (facility_rect.right, center[1]), 2)
+                    for side in (-1, 1):
+                        arm_center = (center[0], int(center[1] + side * facility_rect.height * 0.16))
+                        pygame.draw.circle(surface, color, arm_center, max(3, min(facility_rect.width, facility_rect.height) // 8), 1)
+                        for index in range(5):
+                            angle = math.tau * index / 5.0
+                            end = (
+                                int(arm_center[0] + math.cos(angle) * facility_rect.width * 0.28),
+                                int(arm_center[1] + math.sin(angle) * facility_rect.height * 0.28),
+                            )
+                            pygame.draw.line(surface, color, arm_center, end, 1)
+                            pygame.draw.circle(surface, color, end, max(2, min(facility_rect.width, facility_rect.height) // 16), 1)
+                else:
+                    pygame.draw.rect(surface, color, facility_rect, 2)
 
         if self.terrain_overview_mouse_pos is not None:
             hover_world = self._terrain_overview_pos_to_world(self.terrain_overview_mouse_pos, map_manager)

@@ -468,9 +468,25 @@ public sealed class RobotAppearanceProfileDefinition
     [Category("Structure")]
     public double StructureTopArmorCenterHeightM { get; set; }
 
+    [JsonPropertyName("structure_top_armor_offset_x_m")]
+    [Category("Structure")]
+    public double StructureTopArmorOffsetXM { get; set; }
+
+    [JsonPropertyName("structure_top_armor_offset_z_m")]
+    [Category("Structure")]
+    public double StructureTopArmorOffsetZM { get; set; }
+
     [JsonPropertyName("structure_top_armor_tilt_deg")]
     [Category("Structure")]
     public double StructureTopArmorTiltDeg { get; set; }
+
+    [JsonPropertyName("structure_side_armor_open_angle_deg")]
+    [Category("Structure")]
+    public double StructureSideArmorOpenAngleDeg { get; set; }
+
+    [JsonPropertyName("structure_side_armor_outward_offset_m")]
+    [Category("Structure")]
+    public double StructureSideArmorOutwardOffsetM { get; set; }
 
     [JsonPropertyName("structure_base_lift_m")]
     [Category("Structure")]
@@ -588,6 +604,26 @@ public sealed class RobotAppearanceProfileDefinition
     [Category("Structure")]
     public double StructureHangerCenterHeightM { get; set; }
 
+    [JsonPropertyName("structure_lower_module_width_m")]
+    [Category("Structure")]
+    public double StructureLowerModuleWidthM { get; set; }
+
+    [JsonPropertyName("structure_lower_module_height_m")]
+    [Category("Structure")]
+    public double StructureLowerModuleHeightM { get; set; }
+
+    [JsonPropertyName("structure_lower_module_depth_m")]
+    [Category("Structure")]
+    public double StructureLowerModuleDepthM { get; set; }
+
+    [JsonPropertyName("structure_lower_module_offset_x_m")]
+    [Category("Structure")]
+    public double StructureLowerModuleOffsetXM { get; set; }
+
+    [JsonPropertyName("structure_lower_module_center_height_m")]
+    [Category("Structure")]
+    public double StructureLowerModuleCenterHeightM { get; set; }
+
     [JsonPropertyName("structure_cantilever_pair_gap_m")]
     [Category("Structure")]
     public double StructureCantileverPairGapM { get; set; }
@@ -635,6 +671,10 @@ public sealed class RobotAppearanceProfileDefinition
     [JsonPropertyName("structure_core_column_height_m")]
     [Category("Structure")]
     public double StructureCoreColumnHeightM { get; set; }
+
+    [JsonPropertyName("structure_hex_top_edge_m")]
+    [Category("Structure")]
+    public double StructureHexTopEdgeM { get; set; }
 
     public void EnsureInitialized()
     {

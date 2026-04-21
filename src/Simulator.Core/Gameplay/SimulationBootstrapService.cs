@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using System.Text.Json;
 using Simulator.Core.Map;
 
 namespace Simulator.Core.Gameplay;
@@ -95,23 +96,27 @@ public sealed class SimulationBootstrapService
 
     private static void AddStructureEntities(SimulationWorldState world, MapPresetDefinition mapPreset)
     {
+        int energyIndex = 0;
         foreach (FacilityRegion region in mapPreset.Facilities)
         {
             string type = (region.Type ?? string.Empty).Trim().ToLowerInvariant();
-            if (type is not ("base" or "outpost"))
+            if (type is not ("base" or "outpost" or "energy_mechanism"))
             {
                 continue;
             }
 
-            if (string.Equals(region.Team, "neutral", StringComparison.OrdinalIgnoreCase))
+            if ((type is "base" or "outpost")
+                && string.Equals(region.Team, "neutral", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
 
             (double cx, double cy) = ResolveRegionCenter(region);
+            string entityId = ResolveStructureEntityId(region, ref energyIndex);
             bool exists = world.Entities.Any(entity =>
                 string.Equals(entity.EntityType, type, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(entity.Team, region.Team, StringComparison.OrdinalIgnoreCase));
+                && string.Equals(entity.Team, region.Team, StringComparison.OrdinalIgnoreCase)
+                && (type != "energy_mechanism" || string.Equals(entity.Id, entityId, StringComparison.OrdinalIgnoreCase)));
 
             if (exists)
             {
@@ -119,9 +124,12 @@ public sealed class SimulationBootstrapService
             }
 
             double structureCollisionRadiusM = ResolveStructureCollisionRadiusM(region, world.MetersPerWorldUnit, type);
+            double bodyHeightM = ResolveFacilityOverride(region, "body_height_m", type == "outpost" ? 1.578 : type == "base" ? 1.181 : 2.30, 0.05);
+            double bodyWidthM = ResolveFacilityOverride(region, "body_width_m", type == "outpost" ? 0.65 : type == "base" ? 1.609 : 1.30, 0.05);
+            double bodyLengthM = ResolveFacilityOverride(region, "body_length_m", type == "outpost" ? 0.65 : type == "base" ? 1.881 : 2.06, 0.05);
             world.Entities.Add(new SimulationEntity
             {
-                Id = $"{region.Team}_{type}",
+                Id = entityId,
                 Team = region.Team,
                 EntityType = type,
                 RoleKey = type,
@@ -129,8 +137,8 @@ public sealed class SimulationBootstrapService
                 Y = cy,
                 AngleDeg = ResolveStructureYawDeg(region.Team, type),
                 TurretYawDeg = ResolveStructureYawDeg(region.Team, type),
-                MaxHealth = type == "base" ? 5000.0 : 1500.0,
-                Health = type == "base" ? 5000.0 : 1500.0,
+                MaxHealth = type == "base" ? 5000.0 : type == "outpost" ? 1500.0 : 1.0,
+                Health = type == "base" ? 5000.0 : type == "outpost" ? 1500.0 : 1.0,
                 MaxPower = 0,
                 Power = 0,
                 MaxHeat = 0,
@@ -138,13 +146,55 @@ public sealed class SimulationBootstrapService
                 AmmoType = "none",
                 Ammo17Mm = 0,
                 Ammo42Mm = 0,
-                BodyHeightM = type == "outpost" ? 1.578 : 1.181,
-                BodyWidthM = type == "outpost" ? 0.65 : 1.609,
-                BodyLengthM = type == "outpost" ? 0.65 : 1.881,
+                BodyHeightM = bodyHeightM,
+                BodyWidthM = bodyWidthM,
+                BodyLengthM = bodyLengthM,
                 BodyRenderWidthScale = 1.0,
                 CollisionRadiusWorld = structureCollisionRadiusM / Math.Max(world.MetersPerWorldUnit, 1e-6),
             });
         }
+    }
+
+    private static double ResolveFacilityOverride(
+        FacilityRegion region,
+        string key,
+        double fallback,
+        double minValue)
+    {
+        if (region.AdditionalProperties is null
+            || !region.AdditionalProperties.TryGetValue(key, out JsonElement element))
+        {
+            return fallback;
+        }
+
+        double value;
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Number when element.TryGetDouble(out value):
+                return Math.Max(minValue, value);
+            case JsonValueKind.String when double.TryParse(element.GetString(), out value):
+                return Math.Max(minValue, value);
+            default:
+                return fallback;
+        }
+    }
+
+    private static string ResolveStructureEntityId(FacilityRegion region, ref int energyIndex)
+    {
+        string type = (region.Type ?? string.Empty).Trim().ToLowerInvariant();
+        if (type == "energy_mechanism")
+        {
+            energyIndex++;
+            if (!string.IsNullOrWhiteSpace(region.Id))
+            {
+                return region.Id;
+            }
+
+            string team = string.IsNullOrWhiteSpace(region.Team) ? "neutral" : region.Team;
+            return $"{team}_{type}_{energyIndex}";
+        }
+
+        return $"{region.Team}_{type}";
     }
 
     private static double ResolveStructureYawDeg(string team, string type)
@@ -164,9 +214,17 @@ public sealed class SimulationBootstrapService
         double spanXM = Math.Max(0.04, (maxX - minX) * Math.Max(metersPerWorldUnit, 1e-6));
         double spanYM = Math.Max(0.04, (maxY - minY) * Math.Max(metersPerWorldUnit, 1e-6));
         double radiusM = Math.Max(spanXM, spanYM) * 0.5 + 0.03;
-        return string.Equals(type, "base", StringComparison.OrdinalIgnoreCase)
-            ? Math.Clamp(radiusM, 0.30, 0.72)
-            : Math.Clamp(radiusM, 0.18, 0.42);
+        if (string.Equals(type, "base", StringComparison.OrdinalIgnoreCase))
+        {
+            return Math.Clamp(radiusM, 0.30, 0.72);
+        }
+
+        if (string.Equals(type, "energy_mechanism", StringComparison.OrdinalIgnoreCase))
+        {
+            return Math.Clamp(radiusM, 0.90, 2.20);
+        }
+
+        return Math.Clamp(radiusM, 0.18, 0.42);
     }
 
     private static bool IsSentryRole(string roleKey)

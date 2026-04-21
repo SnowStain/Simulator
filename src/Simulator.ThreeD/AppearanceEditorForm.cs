@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Windows.Forms;
 using Simulator.Assets;
 using Simulator.Core;
@@ -8,6 +9,40 @@ namespace Simulator.ThreeD;
 internal sealed class AppearanceEditorForm : Form
 {
     private readonly record struct TreeSelection(string RoleKey, string? SubtypeKey);
+
+    private sealed class FilteredProfileView : ICustomTypeDescriptor
+    {
+        private readonly object _target;
+        private readonly HashSet<string> _hiddenProperties;
+
+        public FilteredProfileView(object target, IEnumerable<string> hiddenProperties)
+        {
+            _target = target;
+            _hiddenProperties = new HashSet<string>(hiddenProperties, StringComparer.OrdinalIgnoreCase);
+        }
+
+        public AttributeCollection GetAttributes() => TypeDescriptor.GetAttributes(_target, true);
+        public string? GetClassName() => TypeDescriptor.GetClassName(_target, true);
+        public string? GetComponentName() => TypeDescriptor.GetComponentName(_target, true);
+        public TypeConverter? GetConverter() => TypeDescriptor.GetConverter(_target, true);
+        public EventDescriptor? GetDefaultEvent() => TypeDescriptor.GetDefaultEvent(_target, true);
+        public PropertyDescriptor? GetDefaultProperty() => TypeDescriptor.GetDefaultProperty(_target, true);
+        public object? GetEditor(Type editorBaseType) => TypeDescriptor.GetEditor(_target, editorBaseType, true);
+        public EventDescriptorCollection GetEvents(Attribute[]? attributes) => TypeDescriptor.GetEvents(_target, attributes, true);
+        public EventDescriptorCollection GetEvents() => TypeDescriptor.GetEvents(_target, true);
+        public object GetPropertyOwner(PropertyDescriptor? pd) => _target;
+        public PropertyDescriptorCollection GetProperties(Attribute[]? attributes) => GetProperties();
+
+        public PropertyDescriptorCollection GetProperties()
+        {
+            PropertyDescriptorCollection source = TypeDescriptor.GetProperties(_target, true);
+            PropertyDescriptor[] filtered = source
+                .Cast<PropertyDescriptor>()
+                .Where(property => !_hiddenProperties.Contains(property.Name))
+                .ToArray();
+            return new PropertyDescriptorCollection(filtered, readOnly: true);
+        }
+    }
 
     private readonly ProjectLayout _layout;
     private readonly AppearanceEditorService _service;
@@ -190,7 +225,7 @@ internal sealed class AppearanceEditorForm : Form
 
     private IEnumerable<string> GetOrderedRoleKeys()
     {
-        string[] preferred = { "outpost", "base", "hero", "engineer", "infantry", "sentry" };
+        string[] preferred = { "outpost", "base", "energy_mechanism", "hero", "engineer", "infantry", "sentry" };
         foreach (string roleKey in preferred)
         {
             if (_document.Profiles.ContainsKey(roleKey))
@@ -268,7 +303,7 @@ internal sealed class AppearanceEditorForm : Form
             return;
         }
 
-        _propertyGrid.SelectedObject = profile;
+        _propertyGrid.SelectedObject = BuildPropertyGridSelection(selection.Value.RoleKey, profile!);
         _preview.RoleKey = selection.Value.RoleKey;
         _preview.SubtypeKey = selection.Value.SubtypeKey;
         _preview.Profile = profile;
@@ -291,6 +326,72 @@ internal sealed class AppearanceEditorForm : Form
         }
 
         return roleProfile.SubtypeProfiles.TryGetValue(selection.SubtypeKey, out profile);
+    }
+
+    private object BuildPropertyGridSelection(string roleKey, RobotAppearanceProfileDefinition profile)
+    {
+        if (roleKey is not ("base" or "outpost" or "energy_mechanism"))
+        {
+            return profile;
+        }
+
+        string[] hidden =
+        {
+            nameof(RobotAppearanceProfileDefinition.BodyClearanceM),
+            nameof(RobotAppearanceProfileDefinition.WheelStyle),
+            nameof(RobotAppearanceProfileDefinition.WheelRadiusM),
+            nameof(RobotAppearanceProfileDefinition.WheelCount),
+            nameof(RobotAppearanceProfileDefinition.RearLegWheelRadiusM),
+            nameof(RobotAppearanceProfileDefinition.SuspensionStyle),
+            nameof(RobotAppearanceProfileDefinition.CustomWheelPositionsText),
+            nameof(RobotAppearanceProfileDefinition.WheelOrbitYawsText),
+            nameof(RobotAppearanceProfileDefinition.WheelSelfYawsText),
+            nameof(RobotAppearanceProfileDefinition.GimbalLengthM),
+            nameof(RobotAppearanceProfileDefinition.GimbalWidthM),
+            nameof(RobotAppearanceProfileDefinition.GimbalBodyHeightM),
+            nameof(RobotAppearanceProfileDefinition.GimbalMountGapM),
+            nameof(RobotAppearanceProfileDefinition.GimbalMountLengthM),
+            nameof(RobotAppearanceProfileDefinition.GimbalMountWidthM),
+            nameof(RobotAppearanceProfileDefinition.GimbalMountHeightM),
+            nameof(RobotAppearanceProfileDefinition.BarrelLengthM),
+            nameof(RobotAppearanceProfileDefinition.BarrelRadiusM),
+            nameof(RobotAppearanceProfileDefinition.GimbalHeightM),
+            nameof(RobotAppearanceProfileDefinition.GimbalOffsetXM),
+            nameof(RobotAppearanceProfileDefinition.GimbalOffsetYM),
+            nameof(RobotAppearanceProfileDefinition.ArmStyle),
+            nameof(RobotAppearanceProfileDefinition.FrontClimbAssistStyle),
+            nameof(RobotAppearanceProfileDefinition.RearClimbAssistStyle),
+            nameof(RobotAppearanceProfileDefinition.FrontClimbAssistTopLengthM),
+            nameof(RobotAppearanceProfileDefinition.FrontClimbAssistBottomLengthM),
+            nameof(RobotAppearanceProfileDefinition.FrontClimbAssistPlateWidthM),
+            nameof(RobotAppearanceProfileDefinition.FrontClimbAssistPlateHeightM),
+            nameof(RobotAppearanceProfileDefinition.FrontClimbAssistForwardOffsetM),
+            nameof(RobotAppearanceProfileDefinition.FrontClimbAssistInnerOffsetM),
+            nameof(RobotAppearanceProfileDefinition.RearClimbAssistUpperLengthM),
+            nameof(RobotAppearanceProfileDefinition.RearClimbAssistLowerLengthM),
+            nameof(RobotAppearanceProfileDefinition.RearClimbAssistUpperWidthM),
+            nameof(RobotAppearanceProfileDefinition.RearClimbAssistUpperHeightM),
+            nameof(RobotAppearanceProfileDefinition.RearClimbAssistLowerWidthM),
+            nameof(RobotAppearanceProfileDefinition.RearClimbAssistLowerHeightM),
+            nameof(RobotAppearanceProfileDefinition.RearClimbAssistMountOffsetXM),
+            nameof(RobotAppearanceProfileDefinition.RearClimbAssistMountHeightM),
+            nameof(RobotAppearanceProfileDefinition.RearClimbAssistInnerOffsetM),
+            nameof(RobotAppearanceProfileDefinition.RearClimbAssistUpperPairGapM),
+            nameof(RobotAppearanceProfileDefinition.RearClimbAssistHingeRadiusM),
+            nameof(RobotAppearanceProfileDefinition.RearClimbAssistKneeMinDeg),
+            nameof(RobotAppearanceProfileDefinition.RearClimbAssistKneeMaxDeg),
+            nameof(RobotAppearanceProfileDefinition.RearClimbAssistKneeDirection),
+            nameof(RobotAppearanceProfileDefinition.ChassisSubtype),
+            nameof(RobotAppearanceProfileDefinition.DefaultChassisSubtype),
+            nameof(RobotAppearanceProfileDefinition.ChassisSupportsJump),
+            nameof(RobotAppearanceProfileDefinition.ChassisSpeedScale),
+            nameof(RobotAppearanceProfileDefinition.ChassisDrivePowerLimitW),
+            nameof(RobotAppearanceProfileDefinition.ChassisDriveIdleDrawW),
+            nameof(RobotAppearanceProfileDefinition.ChassisDriveRpmCoeff),
+            nameof(RobotAppearanceProfileDefinition.ChassisDriveAccelCoeff),
+        };
+
+        return new FilteredProfileView(profile, hidden);
     }
 
     private void SaveDocument()
@@ -326,9 +427,21 @@ internal sealed class AppearanceEditorForm : Form
             }
 
             IReadOnlyList<(double X, double Y)> wheelOffsets = profile.GetWheelOffsetsOrDefaults();
-            _validationList.Items.Add($"Preview: wheels={wheelOffsets.Count}, shape={profile.BodyShape}, wheelStyle={profile.WheelStyle}");
-            _validationList.Items.Add($"Project: powerLimit={profile.ChassisDrivePowerLimitW:0.###}W, accelCoeff={profile.ChassisDriveAccelCoeff:0.###}, idleDraw={profile.ChassisDriveIdleDrawW:0.###}W");
-            _validationList.Items.Add($"Terrain: clearance={profile.BodyClearanceM:0.###}m, rearLeg={profile.RearClimbAssistStyle}, jump={profile.ChassisSupportsJump}");
+            if (selection.Value.RoleKey is "base" or "outpost" or "energy_mechanism")
+            {
+                _validationList.Items.Add($"Preview: structure={selection.Value.RoleKey}, shape={profile.BodyShape}, height={profile.BodyHeightM:0.###}m");
+                _validationList.Items.Add($"Structure: lift={profile.StructureBaseLiftM:0.###}m, topArmor={profile.StructureTopArmorCenterHeightM:0.###}m");
+                if (selection.Value.RoleKey == "energy_mechanism")
+                {
+                    _validationList.Items.Add($"Mechanism: rotorRadius={profile.StructureRotorRadiusM:0.###}m, cantileverGap={profile.StructureCantileverPairGapM:0.###}m");
+                }
+            }
+            else
+            {
+                _validationList.Items.Add($"Preview: wheels={wheelOffsets.Count}, shape={profile.BodyShape}, wheelStyle={profile.WheelStyle}");
+                _validationList.Items.Add($"Project: powerLimit={profile.ChassisDrivePowerLimitW:0.###}W, accelCoeff={profile.ChassisDriveAccelCoeff:0.###}, idleDraw={profile.ChassisDriveIdleDrawW:0.###}W");
+                _validationList.Items.Add($"Terrain: clearance={profile.BodyClearanceM:0.###}m, rearLeg={profile.RearClimbAssistStyle}, jump={profile.ChassisSupportsJump}");
+            }
             if (!string.IsNullOrWhiteSpace(selection.Value.SubtypeKey)
                 && _document.Profiles.TryGetValue(selection.Value.RoleKey, out RobotAppearanceProfileDefinition? roleProfile)
                 && string.Equals(roleProfile.DefaultChassisSubtype, selection.Value.SubtypeKey, StringComparison.OrdinalIgnoreCase))
@@ -445,10 +558,17 @@ internal sealed class AppearanceEditorForm : Form
         try
         {
             SaveDocument();
+            TreeSelection? selection = GetCurrentSelection();
+            string? previewStructure = selection?.RoleKey is "base" or "outpost" or "energy_mechanism"
+                ? selection.Value.RoleKey
+                : "outpost";
             var preview = new Simulator3dForm(new Simulator3dOptions
             {
                 RendererMode = "gpu",
                 StartInMatch = true,
+                PreviewOnly = true,
+                PreviewStructure = previewStructure,
+                PreviewTeam = string.Equals(previewStructure, "energy_mechanism", StringComparison.OrdinalIgnoreCase) ? null : "blue",
             });
             preview.Show(this);
             _status.Text = "Opened simulator preview with current appearance data.";
