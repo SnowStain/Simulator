@@ -390,6 +390,14 @@ internal sealed partial class Simulator3dForm
         }
 
         center /= Math.Max(1, vertexArray.Length);
+        float normalY = 1f;
+        if (vertexArray.Length >= 3)
+        {
+            Vector3 normal = Vector3.Cross(vertexArray[1] - vertexArray[0], vertexArray[2] - vertexArray[0]);
+            normalY = normal.LengthSquared() <= 1e-8f ? 1f : MathF.Abs(Vector3.Normalize(normal).Y);
+        }
+
+        Color litFillColor = ShadeFaceColor(fillColor, vertexArray, normalY >= 0.55f ? 0.78f : 0.50f);
         target.Add(new TerrainFacePatch(
             vertexArray,
             center,
@@ -397,7 +405,7 @@ internal sealed partial class Simulator3dForm
             Math.Min(minYWorld, maxYWorld),
             Math.Max(minXWorld, maxXWorld),
             Math.Max(minYWorld, maxYWorld),
-            fillColor,
+            litFillColor,
             edgeColor));
     }
 

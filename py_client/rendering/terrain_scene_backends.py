@@ -579,8 +579,9 @@ def _append_facility_scene_vertices(vertices, renderer, game_engine, data, map_r
                     arm_cx = rotor_cx + math.cos(angle) * rotor_radius * 0.52
                     arm_cz = rotor_cz + math.sin(angle) * rotor_radius * 0.52
                     _append_oriented_box(vertices, arm_cx, y0 + frame_h * 0.74, arm_cz, rotor_radius, 0.045 * vertical_scale, 0.045, team_color, yaw=angle)
-                    disk_cx = rotor_cx + math.cos(angle) * rotor_radius
-                    disk_cz = rotor_cz + math.sin(angle) * rotor_radius
+                    disk_center_radius = rotor_radius + disk_radius * 0.42
+                    disk_cx = rotor_cx + math.cos(angle) * disk_center_radius
+                    disk_cz = rotor_cz + math.sin(angle) * disk_center_radius
                     _append_prism(vertices, disk_cx, y0 + frame_h * 0.715, disk_cz, disk_radius, disk_radius, 0.06 * vertical_scale, team_color, yaw=angle, sides=18)
 
 

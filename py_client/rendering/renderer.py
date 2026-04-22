@@ -58,14 +58,14 @@ class Renderer(TerrainOverviewMixin, RendererSidebarMixin, RendererHudMixin, Ren
         self.content_padding = 12
         self.edit_mode = 'none'
         self.facility_options = [
-            {'id': 'red_road_side_dog_hole', 'type': 'dog_hole', 'team': 'red', 'label': '\u7ea2\u65b9\u516c\u8def\u4fa7\u72d7\u6d1e', 'model_type': 'frame_dog_hole', 'model_yaw_deg': 90.0, 'model_bottom_offset_m': 0.10, 'model_clear_width_m': 0.8, 'model_clear_height_m': 0.25, 'model_depth_m': 0.25, 'model_frame_thickness_m': 0.065, 'model_top_beam_thickness_m': 0.05, 'blocks_movement': False},
-            {'id': 'blue_road_side_dog_hole', 'type': 'dog_hole', 'team': 'blue', 'label': '\u84dd\u65b9\u516c\u8def\u4fa7\u72d7\u6d1e', 'model_type': 'frame_dog_hole', 'model_yaw_deg': 90.0, 'model_bottom_offset_m': 0.10, 'model_clear_width_m': 0.8, 'model_clear_height_m': 0.25, 'model_depth_m': 0.25, 'model_frame_thickness_m': 0.065, 'model_top_beam_thickness_m': 0.05, 'blocks_movement': False},
+            {'id': 'red_road_side_dog_hole', 'type': 'dog_hole', 'team': 'red', 'label': '\u7ea2\u65b9\u516c\u8def\u4fa7\u72d7\u6d1e', 'model_type': 'frame_dog_hole', 'model_yaw_deg': 90.0, 'model_bottom_offset_m': 0.0, 'model_clear_width_m': 0.8, 'model_clear_height_m': 0.25, 'model_depth_m': 0.25, 'model_frame_thickness_m': 0.065, 'model_top_beam_thickness_m': 0.05, 'blocks_movement': False},
+            {'id': 'blue_road_side_dog_hole', 'type': 'dog_hole', 'team': 'blue', 'label': '\u84dd\u65b9\u516c\u8def\u4fa7\u72d7\u6d1e', 'model_type': 'frame_dog_hole', 'model_yaw_deg': 90.0, 'model_bottom_offset_m': 0.0, 'model_clear_width_m': 0.8, 'model_clear_height_m': 0.25, 'model_depth_m': 0.25, 'model_frame_thickness_m': 0.065, 'model_top_beam_thickness_m': 0.05, 'blocks_movement': False},
             {'id': 'wall', 'type': 'wall', 'team': 'neutral', 'label': '中立墙体'},
             {'id': 'dead_zone', 'type': 'dead_zone', 'team': 'neutral', 'label': '死区'},
             {'id': 'red_base', 'type': 'base', 'team': 'red', 'label': '红方基地'},
             {'id': 'red_outpost', 'type': 'outpost', 'team': 'red', 'label': '红方前哨站'},
-            {'id': 'red_dog_hole', 'type': 'dog_hole', 'team': 'red', 'label': '红方狗洞', 'model_type': 'frame_dog_hole', 'model_yaw_deg': 90.0, 'model_bottom_offset_m': 0.0, 'model_clear_width_m': 0.8, 'model_clear_height_m': 0.25, 'model_depth_m': 0.25, 'model_frame_thickness_m': 0.065, 'model_top_beam_thickness_m': 0.10, 'blocks_movement': False},
-            {'id': 'road_side_dog_hole', 'type': 'dog_hole', 'team': 'neutral', 'label': '公路侧狗洞', 'model_type': 'frame_dog_hole', 'model_yaw_deg': 90.0, 'model_bottom_offset_m': 0.10, 'model_clear_width_m': 0.8, 'model_clear_height_m': 0.25, 'model_depth_m': 0.25, 'model_frame_thickness_m': 0.065, 'model_top_beam_thickness_m': 0.05, 'blocks_movement': False},
+            {'id': 'red_dog_hole', 'type': 'dog_hole', 'team': 'red', 'label': '红方狗洞', 'model_type': 'frame_dog_hole', 'model_yaw_deg': 0.0, 'model_bottom_offset_m': 0.0, 'model_clear_width_m': 0.8, 'model_clear_height_m': 0.25, 'model_depth_m': 0.25, 'model_frame_thickness_m': 0.065, 'model_top_beam_thickness_m': 0.10, 'blocks_movement': False},
+            {'id': 'road_side_dog_hole', 'type': 'dog_hole', 'team': 'neutral', 'label': '公路侧狗洞', 'model_type': 'frame_dog_hole', 'model_yaw_deg': 90.0, 'model_bottom_offset_m': 0.0, 'model_clear_width_m': 0.8, 'model_clear_height_m': 0.25, 'model_depth_m': 0.25, 'model_frame_thickness_m': 0.065, 'model_top_beam_thickness_m': 0.05, 'blocks_movement': False},
             {'id': 'red_undulating_road', 'type': 'undulating_road', 'team': 'red', 'label': '红方起伏路'},
             {'id': 'red_fly_slope', 'type': 'fly_slope', 'team': 'red', 'label': '红方飞坡'},
             {'id': 'red_first_step', 'type': 'first_step', 'team': 'red', 'label': '红方一级台阶'},
@@ -485,10 +485,9 @@ class Renderer(TerrainOverviewMixin, RendererSidebarMixin, RendererHudMixin, Ren
             })
         elif facility_type == 'dog_hole':
             dog_hole_id = str((facility or {}).get('id', ''))
-            is_red_fly_slope_side = dog_hole_id.startswith('red_dog_hole')
-            is_fly_slope_side = is_red_fly_slope_side or dog_hole_id.startswith('blue_dog_hole') or 'fly_slope' in dog_hole_id
-            default_yaw = 90.0 if is_red_fly_slope_side else (0.0 if is_fly_slope_side else 90.0)
-            default_bottom = 0.0 if is_fly_slope_side else 0.10
+            is_fly_slope_side = dog_hole_id.startswith('red_dog_hole') or dog_hole_id.startswith('blue_dog_hole') or 'fly_slope' in dog_hole_id
+            default_yaw = 0.0 if is_fly_slope_side else 90.0
+            default_bottom = 0.0
             default_top_beam = 0.10 if is_fly_slope_side else 0.05
             defaults.update({
                 'height_m': 0.0,

@@ -324,7 +324,6 @@ internal sealed partial class Simulator3dForm
         glLoadMatrixf(ToOpenGlMatrix(_projectionMatrix));
         glMatrixMode(GlModelView);
         glLoadMatrixf(ToOpenGlMatrix(_viewMatrix));
-
         _gpuDynamicVertexBuildBuffer.Clear();
         _gpuEnergyMechanismVertexBuildBuffer.Clear();
         _gpuProjectileVertexBuildBuffer.Clear();
@@ -1405,6 +1404,12 @@ internal sealed partial class Simulator3dForm
             return;
         }
 
+        string? selectedTeam = _host.SelectedEntity?.Team;
+        if (string.IsNullOrWhiteSpace(selectedTeam))
+        {
+            return;
+        }
+
         Vector3 viewForward = _cameraTargetM - _cameraPositionM;
         if (viewForward.LengthSquared() <= 1e-6f)
         {
@@ -1441,6 +1446,7 @@ internal sealed partial class Simulator3dForm
             SimulationEntity entity = overlay.Entity;
             if (!entity.IsAlive
                 || entity.IsSimulationSuppressed
+                || !string.Equals(entity.Team, selectedTeam, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(entity.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase)
                 || (!string.Equals(entity.EntityType, "robot", StringComparison.OrdinalIgnoreCase)
                     && !string.Equals(entity.EntityType, "sentry", StringComparison.OrdinalIgnoreCase)))
@@ -1482,12 +1488,6 @@ internal sealed partial class Simulator3dForm
     {
         Vector3 halfRight = right * (width * 0.5f);
         Vector3 halfUp = up * (height * 0.5f);
-        DrawGpuQuad(
-            center - halfRight - halfUp,
-            center + halfRight - halfUp,
-            center + halfRight + halfUp,
-            center - halfRight + halfUp,
-            Color.FromArgb(210, 5, 8, 12));
 
         float clamped = Math.Clamp(ratio, 0f, 1f);
         if (clamped <= 0.001f)
@@ -2441,9 +2441,13 @@ internal sealed partial class Simulator3dForm
         }
 
         normal = Vector3.Normalize(normal);
-        Vector3 light = Vector3.Normalize(new Vector3(-0.45f, 1.0f, -0.35f));
-        float diffuse = MathF.Abs(Vector3.Dot(normal, light));
-        return ScaleGpuColor(color, Math.Clamp(ambient + diffuse * 0.42f, 0.35f, 1.12f));
+        Vector3 keyLight = Vector3.Normalize(new Vector3(-0.45f, 1.0f, -0.35f));
+        Vector3 rimLight = Vector3.Normalize(new Vector3(0.55f, 0.72f, 0.48f));
+        float keyDiffuse = MathF.Max(0f, Vector3.Dot(normal, keyLight));
+        float rimDiffuse = MathF.Max(0f, Vector3.Dot(normal, rimLight));
+        float diffuseFill = MathF.Abs(normal.Y) * 0.05f;
+        float brightness = ambient + keyDiffuse * 0.32f + rimDiffuse * 0.13f + diffuseFill;
+        return ScaleGpuColor(color, Math.Clamp(brightness, 0.35f, 1.15f));
     }
 
     private static void SetGpuColor(Color color)

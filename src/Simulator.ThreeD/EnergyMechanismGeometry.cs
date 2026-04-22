@@ -125,6 +125,8 @@ internal static class EnergyMechanismGeometry
         float armInnerRadius = Math.Max(hubRadius * 1.35f, 0.12f);
         float armLength = Math.Max(0.10f, profile.StructureRotorArmLengthM);
         float armOuterRadius = Math.Max(armInnerRadius + 0.04f, Math.Min(armInnerRadius + armLength, rotorRadius - lampLength * 0.15f));
+        float lampDiskRadius = Math.Max(lampLength, lampWidth) * 0.50f;
+        float lampCenterRadius = rotorRadius + Math.Max(lampDiskRadius * 0.42f, Math.Max(armWidth * 1.10f, railGap * 0.95f));
         float podDepth = Math.Max(lampWidth * 0.18f, frameDepth * 0.55f);
         float topBeamY = groundClearance + frameHeight - beamHeight * 0.5f;
         float baseLength = Math.Max(0.40f, profile.StructureBaseLengthM > 0f ? profile.StructureBaseLengthM : Math.Max(frameWidth * 1.65f, profile.BodyLengthM * 1.72f));
@@ -206,9 +208,9 @@ internal static class EnergyMechanismGeometry
             for (int index = 0; index < 5; index++)
             {
                 float yaw = rotorYaw + rotorPhaseRad + MathF.Tau * index / 5f;
-                AddEnergyArm(mesh, anchor, groundForward, groundRight, cx, cy, cz, yaw, armInnerRadius, armOuterRadius, railGap, armWidth, armHeight, frameColor, edgeColor);
-                float lampX = cx + MathF.Cos(yaw) * rotorRadius;
-                float lampY = cy + MathF.Sin(yaw) * rotorRadius;
+                AddEnergyArm(mesh, anchor, groundForward, groundRight, cx, cy, cz, yaw, armInnerRadius, armOuterRadius, railGap, armWidth, armHeight, frameColor, rotorColor);
+                float lampX = cx + MathF.Cos(yaw) * lampCenterRadius;
+                float lampY = cy + MathF.Sin(yaw) * lampCenterRadius;
 
                 Vector3 lampCenter = LocalPoint(anchor, groundForward, groundRight, lampX, lampY, cz);
                 AddRingedDisk(
@@ -216,7 +218,7 @@ internal static class EnergyMechanismGeometry
                     lampCenter,
                     groundRight,
                     Vector3.UnitY,
-                    Math.Max(lampLength, lampWidth) * 0.50f,
+                    lampDiskRadius,
                     Math.Max(0.005f, podDepth * 0.18f),
                     rotorColor,
                     ringGrayOuter,
@@ -264,7 +266,7 @@ internal static class EnergyMechanismGeometry
                 edgeColor);
         }
 
-        mesh.MaxHeight = groundClearance + Math.Max(frameHeight, rotorCenterY + rotorRadius + lampHeight + 0.10f);
+        mesh.MaxHeight = groundClearance + Math.Max(frameHeight, rotorCenterY + lampCenterRadius + lampDiskRadius + lampHeight + 0.10f);
         return mesh;
     }
 
@@ -383,6 +385,30 @@ internal static class EnergyMechanismGeometry
         float dirY = MathF.Sin(yawRad);
         float sideX = -dirY;
         float sideY = dirX;
+
+        float shellInner = innerRadius * 0.90f;
+        float shellOuter = Math.Max(shellInner + 0.05f, outerRadius - railWidth * 0.70f);
+        float shellMid = shellInner + (shellOuter - shellInner) * 0.58f;
+        float rootHalf = Math.Max(railGap * 0.78f, railWidth * 0.75f);
+        float waistHalf = Math.Max(rootHalf * 1.18f, railGap * 1.04f);
+        float endHalf = Math.Max(rootHalf * 0.82f, railGap * 0.84f);
+        IReadOnlyList<Vector3> ShellSection(float zValue)
+            => new[]
+            {
+                LocalPoint(anchor, localForward, localRight, hubX + dirX * shellInner + sideX * rootHalf, hubY + dirY * shellInner + sideY * rootHalf, hubZ + zValue),
+                LocalPoint(anchor, localForward, localRight, hubX + dirX * shellMid + sideX * waistHalf, hubY + dirY * shellMid + sideY * waistHalf, hubZ + zValue),
+                LocalPoint(anchor, localForward, localRight, hubX + dirX * shellOuter + sideX * endHalf, hubY + dirY * shellOuter + sideY * endHalf, hubZ + zValue),
+                LocalPoint(anchor, localForward, localRight, hubX + dirX * (shellOuter + railWidth * 0.38f), hubY + dirY * (shellOuter + railWidth * 0.38f), hubZ + zValue),
+                LocalPoint(anchor, localForward, localRight, hubX + dirX * shellOuter - sideX * endHalf, hubY + dirY * shellOuter - sideY * endHalf, hubZ + zValue),
+                LocalPoint(anchor, localForward, localRight, hubX + dirX * shellMid - sideX * waistHalf, hubY + dirY * shellMid - sideY * waistHalf, hubZ + zValue),
+                LocalPoint(anchor, localForward, localRight, hubX + dirX * shellInner - sideX * rootHalf, hubY + dirY * shellInner - sideY * rootHalf, hubZ + zValue),
+                LocalPoint(anchor, localForward, localRight, hubX + dirX * (shellInner - railWidth * 0.35f), hubY + dirY * (shellInner - railWidth * 0.35f), hubZ + zValue),
+            };
+        mesh.Prisms.Add(new EnergyRenderPrism(
+            ShellSection(-railDepth * 0.52f),
+            ShellSection(railDepth * 0.52f),
+            Color.FromArgb(255, 54, 58, 64),
+            edgeColor));
 
         Vector3 rootA = LocalPoint(anchor, localForward, localRight, hubX + dirX * innerRadius + sideX * railGap, hubY + dirY * innerRadius + sideY * railGap, hubZ);
         Vector3 rootB = LocalPoint(anchor, localForward, localRight, hubX + dirX * innerRadius - sideX * railGap, hubY + dirY * innerRadius - sideY * railGap, hubZ);

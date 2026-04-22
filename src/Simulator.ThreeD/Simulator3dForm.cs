@@ -865,7 +865,6 @@ internal sealed partial class Simulator3dForm : Form
                 _pendingMousePitchDeltaDeg -= lookDelta.Y * 0.14f;
                 if (!_firstPersonView)
                 {
-                    _cameraYawRad += lookDelta.X * (0.18f * MathF.PI / 180f);
                     _cameraPitchRad = Math.Clamp(
                         _cameraPitchRad - lookDelta.Y * (0.14f * MathF.PI / 180f),
                         0.12f,
@@ -1923,29 +1922,26 @@ internal sealed partial class Simulator3dForm : Form
     private void DrawCentralQuarterGauges(Graphics graphics)
     {
         SimulationEntity? entity = _host.SelectedEntity;
-        if (entity is null || _previewOnly)
+        if (entity is null || _previewOnly || ClientSize.Width <= 8 || ClientSize.Height <= 8)
         {
             return;
         }
 
-        float diameter = Math.Max(160f, Math.Min(ClientSize.Width, ClientSize.Height) * 0.40f);
+        float safeClientMin = Math.Clamp(Math.Min(ClientSize.Width, ClientSize.Height), 1f, 4096f);
+        float diameter = Math.Clamp(safeClientMin * 0.40f, 160f, 1640f);
         float centerX = ClientSize.Width * 0.5f;
         float centerY = ClientSize.Height * 0.5f;
         RectangleF ringRect = new(centerX - diameter * 0.5f, centerY - diameter * 0.5f, diameter, diameter);
         float stroke = Math.Clamp(diameter * 0.026f, 7.0f, 14.0f);
         float outerStroke = Math.Max(3.0f, stroke * 0.62f);
 
-        float hpRatio = entity.MaxHealth <= 1e-6 ? 0f : (float)Math.Clamp(entity.Health / entity.MaxHealth, 0.0, 1.0);
+        float hpRatio = SafeGaugeRatio(entity.Health, entity.MaxHealth);
         float powerRatio = entity.EffectiveDrivePowerLimitW <= 1e-6
             ? 0f
-            : (float)Math.Clamp(entity.ChassisPowerDrawW / entity.EffectiveDrivePowerLimitW, 0.0, 1.0);
-        float superCapRatio = entity.MaxSuperCapEnergyJ <= 1e-6
-            ? 0f
-            : (float)Math.Clamp(entity.SuperCapEnergyJ / entity.MaxSuperCapEnergyJ, 0.0, 1.0);
-        float bufferRatio = entity.MaxBufferEnergyJ <= 1e-6
-            ? 0f
-            : (float)Math.Clamp(entity.BufferEnergyJ / entity.MaxBufferEnergyJ, 0.0, 1.0);
-        float heatRatio = entity.MaxHeat <= 1e-6 ? 0f : (float)Math.Clamp(entity.Heat / entity.MaxHeat, 0.0, 1.0);
+            : SafeGaugeRatio(entity.ChassisPowerDrawW, entity.EffectiveDrivePowerLimitW);
+        float superCapRatio = SafeGaugeRatio(entity.SuperCapEnergyJ, entity.MaxSuperCapEnergyJ);
+        float bufferRatio = SafeGaugeRatio(entity.BufferEnergyJ, entity.MaxBufferEnergyJ);
+        float heatRatio = SafeGaugeRatio(entity.Heat, entity.MaxHeat);
 
         DrawQuarterGaugeArc(graphics, ringRect, 180f, hpRatio, Color.FromArgb(166, 72, 214, 126), stroke);
         DrawQuarterGaugeArc(graphics, ringRect, 270f, powerRatio, Color.FromArgb(178, 255, 214, 48), stroke);
@@ -1958,20 +1954,60 @@ internal sealed partial class Simulator3dForm : Form
     private static void DrawQuarterGaugeArc(Graphics graphics, RectangleF rect, float startAngle, float ratio, Color color, float width)
         => DrawPartialGaugeArc(graphics, rect, startAngle, 90f, ratio, color, width);
 
+    private static float SafeGaugeRatio(double value, double maximum)
+    {
+        if (!double.IsFinite(value) || !double.IsFinite(maximum) || maximum <= 1e-6)
+        {
+            return 0f;
+        }
+
+        return (float)Math.Clamp(value / maximum, 0.0, 1.0);
+    }
+
     private static void DrawPartialGaugeArc(Graphics graphics, RectangleF rect, float startAngle, float sweepAngle, float ratio, Color color, float width)
     {
-        using var backPen = new Pen(Color.FromArgb(42, 220, 226, 236), width)
+        if (!float.IsFinite(rect.X)
+            || !float.IsFinite(rect.Y)
+            || !float.IsFinite(rect.Width)
+            || !float.IsFinite(rect.Height)
+            || !float.IsFinite(startAngle)
+            || !float.IsFinite(sweepAngle)
+            || !float.IsFinite(ratio)
+            || !float.IsFinite(width)
+            || rect.Width < 2f
+            || rect.Height < 2f
+            || rect.Width > 8192f
+            || rect.Height > 8192f
+            || MathF.Abs(sweepAngle) <= 1e-4f
+            || width <= 0.1f)
+        {
+            return;
+        }
+
+        float safeWidth = Math.Clamp(width, 1f, Math.Min(rect.Width, rect.Height) * 0.25f);
+        float safeRatio = Math.Clamp(ratio, 0f, 1f);
+        using var backPen = new Pen(Color.FromArgb(42, 220, 226, 236), safeWidth)
         {
             StartCap = LineCap.Round,
             EndCap = LineCap.Round,
         };
-        using var fillPen = new Pen(color, width)
+        using var fillPen = new Pen(color, safeWidth)
         {
             StartCap = LineCap.Round,
             EndCap = LineCap.Round,
         };
-        graphics.DrawArc(backPen, rect, startAngle, sweepAngle);
-        graphics.DrawArc(fillPen, rect, startAngle, Math.Clamp(ratio, 0f, 1f) * sweepAngle);
+        try
+        {
+            graphics.DrawArc(backPen, rect, startAngle, sweepAngle);
+            if (safeRatio > 1e-4f)
+            {
+                graphics.DrawArc(fillPen, rect, startAngle, safeRatio * sweepAngle);
+            }
+        }
+        catch (Exception exception) when (exception is OutOfMemoryException or ArgumentException)
+        {
+            // GDI+ reports invalid arc geometry as OutOfMemory; skip this non-critical HUD element.
+        }
     }
 
     private void DrawF3DebugPoseOverlay(Graphics graphics)
@@ -2224,7 +2260,11 @@ internal sealed partial class Simulator3dForm : Form
 
         if (TryResolveCriticalStateOverlay(entity, out string title, out string detail, out string centerLabel, out float progress))
         {
-            DrawCriticalStateOverlay(graphics, title, detail, centerLabel, progress);
+            bool lowerForDeploymentPowerCut =
+                entity.PowerCutTimerSec > 1e-6
+                && entity.HeroDeploymentActive
+                && string.Equals(entity.RoleKey, "hero", StringComparison.OrdinalIgnoreCase);
+            DrawCriticalStateOverlay(graphics, title, detail, centerLabel, progress, lowerForDeploymentPowerCut);
             return;
         }
 
@@ -2299,12 +2339,15 @@ internal sealed partial class Simulator3dForm : Form
         string title,
         string detail,
         string centerLabel,
-        float progress)
+        float progress,
+        bool lowerOnScreen = false)
     {
         float alphaScale = _firstPersonView ? 1.0f : 0.88f;
 
         float centerX = ClientSize.Width * 0.5f;
-        float centerY = ClientSize.Height * 0.5f - 18f;
+        float centerY = lowerOnScreen
+            ? ClientSize.Height * 0.68f
+            : ClientSize.Height * 0.5f - 18f;
         RectangleF ringRect = new(centerX - 56f, centerY - 56f, 112f, 112f);
         using var shadowPen = new Pen(Color.FromArgb((int)(110 * alphaScale), 0, 0, 0), 11f);
         using var backPen = new Pen(Color.FromArgb((int)(132 * alphaScale), 68, 14, 14), 8f);
@@ -2774,7 +2817,8 @@ internal sealed partial class Simulator3dForm : Form
         using var blackout = new SolidBrush(Color.FromArgb(232, 2, 5, 8));
         graphics.FillRectangle(blackout, ClientRectangle);
 
-        Rectangle box = new(ClientSize.Width / 2 - 230, ClientSize.Height / 2 - 62, 460, 124);
+        bool exiting = entity.HeroDeploymentExitHoldTimerSec > 1e-4;
+        Rectangle box = new(ClientSize.Width / 2 - 230, ClientSize.Height / 2 - (exiting ? 82 : 62), 460, exiting ? 164 : 124);
         using GraphicsPath path = CreateRoundedRectangle(box, 10);
         using var fill = new SolidBrush(Color.FromArgb(218, 18, 26, 34));
         using var border = new Pen(Color.FromArgb(220, 255, 210, 84), 1.4f);
@@ -2787,6 +2831,20 @@ internal sealed partial class Simulator3dForm : Form
         graphics.DrawString("\u82f1\u96c4\u90e8\u7f72\u6a21\u5f0f", _hudMidFont, titleBrush, new RectangleF(box.X, box.Y + 18, box.Width, 26), center);
         graphics.DrawString("\u7b2c\u4e00\u4eba\u79f0\u753b\u9762\u4e2d\u65ad\uff0c\u81ea\u7784\u4e0e\u81ea\u52a8\u5f00\u706b\u5df2\u542f\u7528\u3002", _smallHudFont, textBrush, new RectangleF(box.X + 18, box.Y + 50, box.Width - 36, 24), center);
         graphics.DrawString("\u76ee\u6807\u4f18\u5148\u7ea7\uff1a\u524d\u54e8\u7ad9\u9876\u90e8 80%\uff0c\u57fa\u5730\u9876\u90e8 50%\u3002\u957f\u6309 Z 2\u79d2\u9000\u51fa\u90e8\u7f72\u3002", _tinyHudFont, textBrush, new RectangleF(box.X + 18, box.Y + 82, box.Width - 36, 22), center);
+        if (exiting)
+        {
+            float progress = (float)Math.Clamp(entity.HeroDeploymentExitHoldTimerSec / 2.0, 0.0, 1.0);
+            RectangleF ring = new(box.X + box.Width * 0.5f - 18f, box.Y + 116f, 36f, 36f);
+            using var ringBack = new Pen(Color.FromArgb(130, 44, 50, 58), 4f);
+            using var ringProgress = new Pen(Color.FromArgb(245, 255, 132, 92), 4f)
+            {
+                StartCap = LineCap.Round,
+                EndCap = LineCap.Round,
+            };
+            graphics.DrawEllipse(ringBack, ring);
+            graphics.DrawArc(ringProgress, ring, -90f, progress * 360f);
+            graphics.DrawString("\u9000\u51fa\u90e8\u7f72\u8bfb\u6761", _tinyHudFont, textBrush, new RectangleF(box.X, ring.Bottom + 4f, box.Width, 18f), center);
+        }
     }
 
     private void DrawDeploymentPrompt(Graphics graphics)
@@ -3048,10 +3106,27 @@ internal sealed partial class Simulator3dForm : Form
         string label = HudUnitLabelMap.TryGetValue(entityKey, out string? mappedLabel) ? mappedLabel : ResolveRoleLabel(unit);
         int ammo = ResolveDisplayedAmmo(unit);
         using var title = new SolidBrush(Color.FromArgb(unit.IsAlive ? 242 : 150, 244, 248, 252));
-        graphics.DrawString(label, _tinyHudFont, title, card.X + 5, card.Y + 3);
         using var ammoBrush = new SolidBrush(Color.FromArgb(unit.IsAlive ? 230 : 140, 255, 224, 96));
-        SizeF ammoSize = graphics.MeasureString(ammo.ToString(), _tinyHudFont);
-        graphics.DrawString(ammo.ToString(), _tinyHudFont, ammoBrush, card.Right - ammoSize.Width - 5, card.Y + 3);
+        string ammoText = ammo.ToString();
+        float ammoColumnWidth = Math.Clamp(graphics.MeasureString(ammoText, _tinyHudFont).Width + 8f, 24f, Math.Max(24f, card.Width * 0.36f));
+        RectangleF titleRect = new(card.X + 5, card.Y + 3, Math.Max(8f, card.Width - ammoColumnWidth - 11f), 16f);
+        RectangleF ammoRect = new(card.Right - ammoColumnWidth - 5f, card.Y + 3, ammoColumnWidth, 16f);
+        using StringFormat noWrapLeft = new()
+        {
+            FormatFlags = StringFormatFlags.NoWrap,
+            Trimming = StringTrimming.EllipsisCharacter,
+            Alignment = StringAlignment.Near,
+            LineAlignment = StringAlignment.Near,
+        };
+        using StringFormat noWrapRight = new()
+        {
+            FormatFlags = StringFormatFlags.NoWrap,
+            Trimming = StringTrimming.EllipsisCharacter,
+            Alignment = StringAlignment.Far,
+            LineAlignment = StringAlignment.Near,
+        };
+        graphics.DrawString(label, _tinyHudFont, title, titleRect, noWrapLeft);
+        graphics.DrawString(ammoText, _tinyHudFont, ammoBrush, ammoRect, noWrapRight);
 
         Rectangle hpBar = new(card.X + 5, card.Y + 24, Math.Max(8, card.Width - 10), 9);
         float hpRatio = ResolveHealthRatio(unit);
@@ -3061,10 +3136,15 @@ internal sealed partial class Simulator3dForm : Form
             ? $"\u8840\u91cf {(int)Math.Ceiling(Math.Max(0.0, unit.Health))}/{(int)Math.Ceiling(Math.Max(0.0, unit.MaxHealth))}"
             : $"\u590d\u6d3b {unit.RespawnTimerSec:0}";
         using var hpBrush = new SolidBrush(Color.FromArgb(unit.IsAlive ? 232 : 158, 222, 232, 242));
-        graphics.DrawString(hpText, _tinyHudFont, hpBrush, card.X + 5, card.Y + 36);
         string ammoLabel = string.Equals(unit.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase) ? "42mm" : "17mm";
         using var small = new SolidBrush(Color.FromArgb(188, 204, 214, 226));
-        graphics.DrawString(ammoLabel, _tinyHudFont, small, card.Right - 36, card.Y + 36);
+        RectangleF caliberRect = new(card.Right - 34f, card.Y + 36, 30f, 16f);
+        RectangleF hpTextRect = new(card.X + 5, card.Y + 36, Math.Max(8f, card.Width - 44f), 16f);
+        graphics.DrawString(hpText, _tinyHudFont, hpBrush, hpTextRect, noWrapLeft);
+        if (card.Width >= 78)
+        {
+            graphics.DrawString(ammoLabel, _tinyHudFont, small, caliberRect, noWrapRight);
+        }
         _uiButtons.Add(new UiButton(card, $"match_select:{unit.Id}"));
     }
 
@@ -4144,7 +4224,7 @@ internal sealed partial class Simulator3dForm : Form
     }
 
     private static float ResolveThirdPersonCameraYaw(SimulationEntity selected)
-        => ResolveEntityYaw(selected) + MathF.PI;
+        => (float)(selected.TurretYawDeg * Math.PI / 180.0) + MathF.PI;
 
     private Vector3 ComputeMapCenterMeters()
     {
@@ -4234,7 +4314,11 @@ internal sealed partial class Simulator3dForm : Form
 
                 float chaseDistance = Math.Clamp(8.5f + (float)Math.Max(selected.GroundHeightM, 0.0) * 0.22f, 6.0f, 14.0f);
                 _cameraDistanceM = MathHelperLerp(_cameraDistanceM, chaseDistance, 0.06f);
-                if (!_mouseCaptureActive)
+                if (_mouseCaptureActive)
+                {
+                    _cameraYawRad = ResolveThirdPersonCameraYaw(selected);
+                }
+                else
                 {
                     _cameraYawRad = SmoothAngleRadians(_cameraYawRad, ResolveThirdPersonCameraYaw(selected), 0.12f);
                 }
@@ -4930,12 +5014,11 @@ internal sealed partial class Simulator3dForm : Form
         out float topBeamThickness)
     {
         (double centerWorldX, double centerWorldY) = ResolveFacilityRegionCenter(region);
-        bool isRedFlySlopeDogHole = region.Id.StartsWith("red_dog_hole", StringComparison.OrdinalIgnoreCase);
-        bool isFlySlopeDogHole = isRedFlySlopeDogHole
+        bool isFlySlopeDogHole = region.Id.StartsWith("red_dog_hole", StringComparison.OrdinalIgnoreCase)
             || region.Id.StartsWith("blue_dog_hole", StringComparison.OrdinalIgnoreCase)
             || region.Id.Contains("fly_slope", StringComparison.OrdinalIgnoreCase);
-        double defaultYawDeg = isRedFlySlopeDogHole ? 90.0 : (isFlySlopeDogHole ? 0.0 : 90.0);
-        double defaultBottomOffset = isFlySlopeDogHole ? 0.0 : 0.10;
+        double defaultYawDeg = isFlySlopeDogHole ? 0.0 : 90.0;
+        double defaultBottomOffset = 0.0;
         double defaultTopBeamThickness = isFlySlopeDogHole ? 0.10 : 0.05;
         float yawDeg = (float)ResolveFacilityOverride(region, "model_yaw_deg", defaultYawDeg, -360.0);
         float yaw = yawDeg * (MathF.PI / 180f);
@@ -6281,9 +6364,15 @@ internal sealed partial class Simulator3dForm : Form
         }
 
         normal = Vector3.Normalize(normal);
-        Vector3 light = Vector3.Normalize(new Vector3(-0.45f, 1.0f, -0.35f));
-        float diffuse = MathF.Abs(Vector3.Dot(normal, light));
-        float brightness = Math.Clamp(ambient + diffuse * 0.42f, 0.35f, 1.12f);
+        Vector3 keyLight = Vector3.Normalize(new Vector3(-0.45f, 1.0f, -0.35f));
+        Vector3 rimLight = Vector3.Normalize(new Vector3(0.55f, 0.72f, 0.48f));
+        float keyDiffuse = MathF.Max(0f, Vector3.Dot(normal, keyLight));
+        float rimDiffuse = MathF.Max(0f, Vector3.Dot(normal, rimLight));
+        float diffuseFill = MathF.Abs(normal.Y) * 0.05f;
+        float brightness = Math.Clamp(
+            ambient + keyDiffuse * 0.32f + rimDiffuse * 0.13f + diffuseFill,
+            0.35f,
+            1.15f);
         return ScaleColor(color, brightness);
     }
 

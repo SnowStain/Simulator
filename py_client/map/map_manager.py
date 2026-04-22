@@ -21,6 +21,89 @@ except ModuleNotFoundError:
     from pygame_compat import pygame
 
 class MapManager:
+    LOCKED_DOG_HOLE_REGIONS = {
+        'red_dog_hole': {
+            'id': 'red_dog_hole',
+            'type': 'dog_hole',
+            'team': 'red',
+            'shape': 'rect',
+            'x1': 725,
+            'y1': 92,
+            'x2': 761,
+            'y2': 142,
+            'height_m': 0.0,
+            'blocks_movement': False,
+            'model_type': 'frame_dog_hole',
+            'model_yaw_deg': 0.0,
+            'model_bottom_offset_m': 0.0,
+            'model_clear_width_m': 0.8,
+            'model_clear_height_m': 0.25,
+            'model_depth_m': 0.25,
+            'model_frame_thickness_m': 0.065,
+            'model_top_beam_thickness_m': 0.10,
+        },
+        'blue_dog_hole': {
+            'id': 'blue_dog_hole',
+            'type': 'dog_hole',
+            'team': 'blue',
+            'shape': 'rect',
+            'x1': 824,
+            'y1': 734,
+            'x2': 863,
+            'y2': 789,
+            'height_m': 0.0,
+            'blocks_movement': False,
+            'model_type': 'frame_dog_hole',
+            'model_yaw_deg': 0.0,
+            'model_bottom_offset_m': 0.0,
+            'model_clear_width_m': 0.8,
+            'model_clear_height_m': 0.25,
+            'model_depth_m': 0.25,
+            'model_frame_thickness_m': 0.065,
+            'model_top_beam_thickness_m': 0.10,
+        },
+        'red_road_side_dog_hole': {
+            'id': 'red_road_side_dog_hole',
+            'type': 'dog_hole',
+            'team': 'red',
+            'shape': 'rect',
+            'x1': 513,
+            'y1': 710,
+            'x2': 567,
+            'y2': 727,
+            'height_m': 0.0,
+            'blocks_movement': False,
+            'model_type': 'frame_dog_hole',
+            'model_yaw_deg': 90.0,
+            'model_bottom_offset_m': 0.0,
+            'model_clear_width_m': 0.8,
+            'model_clear_height_m': 0.25,
+            'model_depth_m': 0.25,
+            'model_frame_thickness_m': 0.065,
+            'model_top_beam_thickness_m': 0.05,
+        },
+        'blue_road_side_dog_hole': {
+            'id': 'blue_road_side_dog_hole',
+            'type': 'dog_hole',
+            'team': 'blue',
+            'shape': 'rect',
+            'x1': 1020,
+            'y1': 151,
+            'x2': 1069,
+            'y2': 166,
+            'height_m': 0.0,
+            'blocks_movement': False,
+            'model_type': 'frame_dog_hole',
+            'model_yaw_deg': 90.0,
+            'model_bottom_offset_m': 0.0,
+            'model_clear_width_m': 0.8,
+            'model_clear_height_m': 0.25,
+            'model_depth_m': 0.25,
+            'model_frame_thickness_m': 0.065,
+            'model_top_beam_thickness_m': 0.05,
+        },
+    }
+
     def __init__(self, config):
         self.config = config
         self.map_image = None
@@ -2373,10 +2456,48 @@ class MapManager:
             return 1.0
         return 0.0
 
+    def _locked_dog_hole_region(self, dog_hole_id):
+        locked = self.LOCKED_DOG_HOLE_REGIONS.get(str(dog_hole_id))
+        return dict(locked) if locked else None
+
+    def _ensure_locked_dog_holes(self):
+        existing_ids = set()
+        changed = False
+        deduplicated = []
+        for region in self.facilities:
+            locked = self._locked_dog_hole_region(region.get('id', ''))
+            if not locked:
+                deduplicated.append(region)
+                continue
+            locked_id = locked['id']
+            if locked_id in existing_ids:
+                changed = True
+                continue
+            normalized = self._normalize_region(region)
+            deduplicated.append(normalized)
+            existing_ids.add(locked_id)
+            if normalized != region:
+                changed = True
+
+        for locked_id, locked in self.LOCKED_DOG_HOLE_REGIONS.items():
+            if locked_id not in existing_ids:
+                deduplicated.append(self._normalize_region(locked))
+                changed = True
+
+        if changed:
+            self.facilities = deduplicated
+        return changed
+
     def _normalize_region(self, region):
         normalized = dict(region)
         shape = normalized.get('shape', 'rect')
         normalized['shape'] = shape
+        locked = self._locked_dog_hole_region(normalized.get('id', ''))
+        if locked:
+            normalized.update(locked)
+            normalized['shape'] = 'rect'
+            normalized.pop('points', None)
+            shape = 'rect'
 
         if shape == 'polygon':
             normalized['points'] = self._normalize_points(normalized.get('points', []))
@@ -2398,10 +2519,9 @@ class MapManager:
             normalized['height_m'] = round(float(normalized.get('height_m', self._default_height_for_region(normalized))), 2)
             if normalized.get('type') == 'dog_hole':
                 dog_hole_id = str(normalized.get('id', ''))
-                is_red_fly_slope_side = dog_hole_id.startswith('red_dog_hole')
-                is_fly_slope_side = is_red_fly_slope_side or dog_hole_id.startswith('blue_dog_hole') or 'fly_slope' in dog_hole_id
-                default_yaw = 90.0 if is_red_fly_slope_side else (0.0 if is_fly_slope_side else 90.0)
-                default_bottom = 0.0 if is_fly_slope_side else 0.10
+                is_fly_slope_side = dog_hole_id.startswith('red_dog_hole') or dog_hole_id.startswith('blue_dog_hole') or 'fly_slope' in dog_hole_id
+                default_yaw = 0.0 if is_fly_slope_side else 90.0
+                default_bottom = 0.0
                 default_top_beam = 0.10 if is_fly_slope_side else 0.05
                 normalized.setdefault('blocks_movement', False)
                 normalized.setdefault('model_type', 'frame_dog_hole')
@@ -2518,6 +2638,7 @@ class MapManager:
                     self.facilities = [self._normalize_region(self._scale_region_to_current_map(self._normalize_region(region))) for region in configured]
                 else:
                     self.facilities = [self._normalize_region(region) for region in configured]
+                self._ensure_locked_dog_holes()
             self._mark_facility_overlay_dirty()
             self._mark_raster_dirty()
             return
@@ -2534,7 +2655,7 @@ class MapManager:
             {'id': 'red_mineral_exchange', 'type': 'mineral_exchange', 'team': 'red', 'shape': 'rect', 'x1': 145, 'y1': 540, 'x2': 265, 'y2': 605},
             {'id': 'red_mining_area', 'type': 'mining_area', 'team': 'red', 'shape': 'rect', 'x1': 420, 'y1': 545, 'x2': 540, 'y2': 625},
             {'id': 'red_undulating_road', 'type': 'undulating_road', 'team': 'red', 'shape': 'rect', 'x1': 230, 'y1': 245, 'x2': 740, 'y2': 635},
-            {'id': 'red_road_side_dog_hole', 'type': 'dog_hole', 'team': 'red', 'shape': 'rect', 'x1': 640, 'y1': 607, 'x2': 930, 'y2': 662, 'model_type': 'frame_dog_hole', 'model_yaw_deg': 90.0, 'model_bottom_offset_m': 0.10, 'model_clear_width_m': 0.8, 'model_clear_height_m': 0.25, 'model_depth_m': 0.25, 'model_frame_thickness_m': 0.065, 'model_top_beam_thickness_m': 0.05, 'blocks_movement': False},
+            {'id': 'red_road_side_dog_hole', 'type': 'dog_hole', 'team': 'red', 'shape': 'rect', 'x1': 513, 'y1': 710, 'x2': 567, 'y2': 727, 'model_type': 'frame_dog_hole', 'model_yaw_deg': 90.0, 'model_bottom_offset_m': 0.0, 'model_clear_width_m': 0.8, 'model_clear_height_m': 0.25, 'model_depth_m': 0.25, 'model_frame_thickness_m': 0.065, 'model_top_beam_thickness_m': 0.05, 'blocks_movement': False},
             {'id': 'red_fort', 'type': 'fort', 'team': 'red', 'shape': 'rect', 'x1': 245, 'y1': 320, 'x2': 360, 'y2': 520},
             {'id': 'blue_base', 'type': 'base', 'team': 'blue', 'shape': 'rect', 'x1': 1330, 'y1': 360, 'x2': 1470, 'y2': 500},
             {'id': 'blue_outpost', 'type': 'outpost', 'team': 'blue', 'shape': 'rect', 'x1': 1070, 'y1': 360, 'x2': 1195, 'y2': 500},
@@ -2545,12 +2666,13 @@ class MapManager:
             {'id': 'blue_mineral_exchange', 'type': 'mineral_exchange', 'team': 'blue', 'shape': 'rect', 'x1': 1311, 'y1': 268, 'x2': 1431, 'y2': 333},
             {'id': 'blue_mining_area', 'type': 'mining_area', 'team': 'blue', 'shape': 'rect', 'x1': 1036, 'y1': 248, 'x2': 1156, 'y2': 328},
             {'id': 'blue_undulating_road', 'type': 'undulating_road', 'team': 'blue', 'shape': 'rect', 'x1': 840, 'y1': 245, 'x2': 1345, 'y2': 635},
-            {'id': 'blue_road_side_dog_hole', 'type': 'dog_hole', 'team': 'blue', 'shape': 'rect', 'x1': 640, 'y1': 218, 'x2': 930, 'y2': 268, 'model_type': 'frame_dog_hole', 'model_yaw_deg': 90.0, 'model_bottom_offset_m': 0.10, 'model_clear_width_m': 0.8, 'model_clear_height_m': 0.25, 'model_depth_m': 0.25, 'model_frame_thickness_m': 0.065, 'model_top_beam_thickness_m': 0.05, 'blocks_movement': False},
+            {'id': 'blue_road_side_dog_hole', 'type': 'dog_hole', 'team': 'blue', 'shape': 'rect', 'x1': 1020, 'y1': 151, 'x2': 1069, 'y2': 166, 'model_type': 'frame_dog_hole', 'model_yaw_deg': 90.0, 'model_bottom_offset_m': 0.0, 'model_clear_width_m': 0.8, 'model_clear_height_m': 0.25, 'model_depth_m': 0.25, 'model_frame_thickness_m': 0.065, 'model_top_beam_thickness_m': 0.05, 'blocks_movement': False},
             {'id': 'blue_fort', 'type': 'fort', 'team': 'blue', 'shape': 'rect', 'x1': 1215, 'y1': 320, 'x2': 1330, 'y2': 520},
             {'id': 'boundary_outer', 'type': 'boundary', 'team': 'neutral', 'shape': 'rect', 'x1': 0, 'y1': 0, 'x2': 1575, 'y2': 872, 'thickness': 14},
         ]
         with self._edit_state_lock:
             self.facilities = [self._normalize_region(self._scale_region_to_current_map(region)) for region in self.facilities]
+            self._ensure_locked_dog_holes()
         self._mark_facility_overlay_dirty()
         self._mark_raster_dirty()
 
@@ -2690,6 +2812,7 @@ class MapManager:
             'y2': int(max(y1, y2)),
             'height_m': float(existing.get('height_m', 0.0)) if existing else 0.0,
         })
+        normalized = self._normalize_region(normalized)
 
         with self._edit_state_lock:
             for index, region in enumerate(self.facilities):
@@ -2781,6 +2904,13 @@ class MapManager:
             return None
         with self._edit_state_lock:
             facility['height_m'] = max(0.0, round(float(height_m), 2))
+            normalized = self._normalize_region(facility)
+            if normalized != facility:
+                for index, region in enumerate(self.facilities):
+                    if region.get('id') == facility_id:
+                        self.facilities[index] = normalized
+                        facility = normalized
+                        break
         self._mark_facility_overlay_dirty()
         self._mark_raster_dirty()
         return facility
@@ -2794,6 +2924,13 @@ class MapManager:
             return None
         with self._edit_state_lock:
             facility[safe_name] = round(float(value), 3)
+            normalized = self._normalize_region(facility)
+            if normalized != facility:
+                for index, region in enumerate(self.facilities):
+                    if region.get('id') == facility_id:
+                        self.facilities[index] = normalized
+                        facility = normalized
+                        break
         self._mark_facility_overlay_dirty()
         self._mark_raster_dirty()
         return facility
@@ -2802,12 +2939,15 @@ class MapManager:
         """删除设施区域。"""
         with self._edit_state_lock:
             self.facilities = [region for region in self.facilities if region.get('id') != facility_id]
+            self._ensure_locked_dog_holes()
         self._mark_facility_overlay_dirty()
         self._mark_raster_dirty()
 
     def export_facilities_config(self):
         """导出设施配置。"""
         with self._edit_state_lock:
+            self.facilities = [self._normalize_region(region) for region in self.facilities]
+            self._ensure_locked_dog_holes()
             return [dict(region) for region in self.facilities]
 
     def get_facility_summary(self):

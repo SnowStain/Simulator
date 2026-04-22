@@ -312,7 +312,10 @@ class ConfigManager:
         directory = os.path.dirname(preset_path)
         if directory:
             os.makedirs(directory, exist_ok=True)
-        payload = self.build_map_preset_payload(config or self.config, preset_name=name)
+        source_config = deepcopy(config or self.config)
+        if map_manager is not None:
+            source_config.setdefault('map', {})['facilities'] = map_manager.export_facilities_config()
+        payload = self.build_map_preset_payload(source_config, preset_name=name)
         if map_manager is not None:
             runtime_grid = map_manager.persist_runtime_grid_bundle(name, preset_path=preset_path)
             payload.setdefault('map', {})['runtime_grid'] = runtime_grid

@@ -790,6 +790,12 @@ internal sealed partial class Simulator3dForm
             (float)(bodyWorldYawDeg * Math.PI / 180.0),
             Color.FromArgb(190, 68, 82, 98),
             Color.FromArgb(235, 222, 230, 238));
+        DrawHeadingNeedle(
+            graphics,
+            center,
+            34f,
+            (float)(bodyWorldYawDeg * Math.PI / 180.0),
+            Color.FromArgb(205, 198, 207, 216));
         DrawRotatedHudRectangle(
             graphics,
             center,
@@ -798,6 +804,12 @@ internal sealed partial class Simulator3dForm
             (float)(turretWorldYawDeg * Math.PI / 180.0),
             Color.FromArgb(220, ResolveTeamColor(entity.Team)),
             Color.FromArgb(250, 245, 232, 132));
+        DrawHeadingNeedle(
+            graphics,
+            center,
+            31f,
+            (float)(turretWorldYawDeg * Math.PI / 180.0),
+            Color.FromArgb(255, 255, 230, 92));
 
         graphics.DrawString($"Yaw {bodyWorldYawDeg:0}\u00b0", _tinyHudFont, subTextBrush, panel.X + 104, panel.Y + 30);
         graphics.DrawString($"Tur {turretWorldYawDeg:0}\u00b0", _tinyHudFont, textBrush, panel.X + 104, panel.Y + 46);

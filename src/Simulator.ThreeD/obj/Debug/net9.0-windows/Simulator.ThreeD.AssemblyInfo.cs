@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Simulator.ThreeD")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c96f757f96fb75236856248ac3e7d548b5e33359")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+12ffb27f0045a39076295b50187b3bdc3d7ecaee")]
 [assembly: System.Reflection.AssemblyProductAttribute("Simulator.ThreeD")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Simulator.ThreeD")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

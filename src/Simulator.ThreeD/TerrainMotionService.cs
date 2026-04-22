@@ -12,6 +12,7 @@ internal sealed class TerrainMotionService
     private const double TerrainRenderAnchorThresholdM = 0.02;
     private const double WheelAccelerationRampLimitMps2 = 2.0;
     private const double WheelMaxLinearSpeedMps = 6.0;
+    private const double MotorInstantPowerLimitW = 80.0;
     private const double BufferSuperCapSwitchEnergyJ = 10.0;
     private const double SuperCapForcedDischargeW = 300.0;
     private const double OverPowerCutDurationSec = 5.0;
@@ -3028,7 +3029,8 @@ internal sealed class TerrainMotionService
         double currentVyMps = entity.VelocityYWorldPerSec * metersPerWorldUnit;
         double currentSpeedMps = Math.Sqrt(currentVxMps * currentVxMps + currentVyMps * currentVyMps);
 
-        double drivePowerLimitW = ResolveEffectiveDrivePowerLimitW(entity);
+        double physicalDrivePowerLimitW = ResolvePhysicalDrivePowerLimitW(entity);
+        double drivePowerLimitW = Math.Min(ResolveEffectiveDrivePowerLimitW(entity), physicalDrivePowerLimitW);
         if (entity.PowerCutTimerSec > 1e-6)
         {
             double powerlessDrag = Math.Exp(-7.0 * dt);
@@ -3054,6 +3056,12 @@ internal sealed class TerrainMotionService
         double forwardY = Math.Sin(yawRad);
         double rightX = Math.Cos(yawRad + Math.PI * 0.5);
         double rightY = Math.Sin(yawRad + Math.PI * 0.5);
+        if (entity.SmallGyroActive && IsBalanceInfantry(entity))
+        {
+            moveForward = 0.0;
+            moveRight = 0.0;
+        }
+
         double desiredVxMps = (forwardX * moveForward + rightX * moveRight) * nominalSpeedLimitMps;
         double desiredVyMps = (forwardY * moveForward + rightY * moveRight) * nominalSpeedLimitMps;
 
@@ -3078,19 +3086,28 @@ internal sealed class TerrainMotionService
         bool allowOverPowerAssist = activeSuperCapDrive
             || brakingHard;
         double activeSuperCapAssistW = ResolveSuperCapAssistLimitW(entity, dt, drivePowerLimitW, allowForcedAssist: brakingHard);
-        double powerSplit = entity.SmallGyroActive ? 0.60 : 1.0;
+        bool smallGyroTranslationActive = HasSmallGyroTranslationInput(entity, moveForward, moveRight);
+        double powerSplit = smallGyroTranslationActive
+            ? 0.50
+            : entity.SmallGyroActive
+                ? 0.0
+                : 1.0;
         double translationSuperCapAssistW = activeSuperCapAssistW * powerSplit;
         double bufferHeadroomW = allowOverPowerAssist ? ResolveBufferAssistLimitW(entity, dt) : 0.0;
-        double totalAvailableDrivePowerLimitW = allowOverPowerAssist
+        double uncappedAvailableDrivePowerLimitW = allowOverPowerAssist
             ? drivePowerLimitW + bufferHeadroomW + (activeSuperCapDrive ? activeSuperCapAssistW : 0.0)
             : drivePowerLimitW;
-        double translationDrivePowerLimitW = Math.Max(1.0, drivePowerLimitW * powerSplit);
+        double totalAvailableDrivePowerLimitW = Math.Min(physicalDrivePowerLimitW, uncappedAvailableDrivePowerLimitW);
+        double translationDrivePowerLimitW = Math.Max(1.0, drivePowerLimitW * Math.Max(powerSplit, 0.10));
         double availableDrivePowerLimitW = Math.Max(
             1.0,
             totalAvailableDrivePowerLimitW * powerSplit);
         entity.EffectiveDrivePowerLimitW = totalAvailableDrivePowerLimitW;
         double storedPowerRatio = availableDrivePowerLimitW <= 1e-6 ? 0.35 : Math.Clamp(availableDrivePowerLimitW / Math.Max(1.0, drivePowerLimitW), 0.35, 2.0);
-        double speedLimitMps = ClampWheelLinearSpeedMps(ResolveMoveSpeedMps(entity, availableDrivePowerLimitW) * Math.Max(0.10, entity.ChassisSpeedScale) * Math.Min(storedPowerRatio, 1.65));
+        double smallGyroTranslationSpeedBoost = smallGyroTranslationActive
+            ? ResolveSmallGyroTranslationSpeedBoost(entity)
+            : 1.0;
+        double speedLimitMps = ClampWheelLinearSpeedMps(ResolveMoveSpeedMps(entity, availableDrivePowerLimitW) * Math.Max(0.10, entity.ChassisSpeedScale) * Math.Min(storedPowerRatio, 1.65) * smallGyroTranslationSpeedBoost);
         entity.ChassisSpeedLimitMps = speedLimitMps;
         entity.ChassisPowerRatio = storedPowerRatio;
         desiredVxMps = (forwardX * moveForward + rightX * moveRight) * speedLimitMps;
@@ -3388,21 +3405,15 @@ internal sealed class TerrainMotionService
             return 0.0;
         }
 
-        double turnPowerW = 0.00032 * yawRateAbs * yawRateAbs;
-        if (smallGyroRequested)
+        if (!smallGyroRequested)
         {
-            double limitW = ResolveEffectiveDrivePowerLimitW(entity);
-            if (IsBalanceInfantry(entity))
-            {
-                turnPowerW = Math.Max(turnPowerW, Math.Min(limitW, 50.0));
-            }
-            else
-            {
-                turnPowerW = Math.Max(turnPowerW + 8.0, Math.Max(8.0, limitW * 0.28));
-            }
+            return Math.Max(0.0, 0.00032 * yawRateAbs * yawRateAbs);
         }
 
-        return Math.Max(0.0, turnPowerW);
+        double yawRateRadPerSec = yawRateAbs * Math.PI / 180.0;
+        double equivalentWheelSpeedMps = ResolveSmallGyroEquivalentWheelSpeedMps(entity, yawRateRadPerSec);
+        double mappedPowerW = EstimateMappedSteadyPowerW(entity, equivalentWheelSpeedMps);
+        return Math.Max(0.0, mappedPowerW * ResolveSmallGyroPowerLossMultiplier(entity));
     }
 
     private static bool ShouldUsePassiveSuperCapAssist(SimulationEntity entity)
@@ -3496,15 +3507,21 @@ internal sealed class TerrainMotionService
         return (suppliedPowerW, bufferUseW, superCapUseW, overPowerFault);
     }
 
-    private static void RaiseChassisPowerDrawTo(SimulationEntity entity, double targetPowerW, double dt, bool allowOverPowerAssist = true)
+    private static void RaiseChassisPowerDrawTo(
+        SimulationEntity entity,
+        double targetPowerW,
+        double dt,
+        bool allowOverPowerAssist = true,
+        bool preferSuperCapFirst = false)
     {
         if (dt <= 1e-6)
         {
             return;
         }
 
+        double physicalPowerLimitW = ResolvePhysicalDrivePowerLimitW(entity);
         double currentPowerW = Math.Max(0.0, entity.ChassisPowerDrawW);
-        double targetW = Math.Max(currentPowerW, targetPowerW);
+        double targetW = Math.Max(currentPowerW, Math.Min(targetPowerW, physicalPowerLimitW));
         double missingW = targetW - currentPowerW;
         if (missingW <= 1e-6)
         {
@@ -3512,19 +3529,30 @@ internal sealed class TerrainMotionService
         }
 
         double drivePowerLimitW = ResolveEffectiveDrivePowerLimitW(entity);
-        double standardHeadroomW = Math.Max(0.0, drivePowerLimitW - currentPowerW);
-        double standardUseW = Math.Min(missingW, standardHeadroomW);
-        missingW -= standardUseW;
-
         DriveMotorModel model = ResolveDriveMotorModel(entity);
         double bufferSwitchJ = Math.Min(
             Math.Max(0.0, entity.MaxBufferEnergyJ),
             Math.Max(BufferSuperCapSwitchEnergyJ, entity.BufferReserveEnergyJ));
         double usableSuperCapJ = Math.Max(0.0, entity.SuperCapEnergyJ - model.CapReserveJ);
         bool prioritizeSuperCap = entity.SuperCapEnabled && usableSuperCapJ > 1e-6;
+        double standardHeadroomW = Math.Max(0.0, drivePowerLimitW - currentPowerW);
+        double standardUseW = 0.0;
         double bufferUseW = 0.0;
         double superCapUseW = 0.0;
-        if (allowOverPowerAssist && prioritizeSuperCap && missingW > 1e-6)
+
+        if (allowOverPowerAssist && preferSuperCapFirst && prioritizeSuperCap && missingW > 1e-6)
+        {
+            double remainingSuperCapLimitW = Math.Max(0.0, model.SuperCapDischargeLimitW - entity.CurrentFrameSuperCapDrawW);
+            superCapUseW = Math.Min(
+                missingW,
+                Math.Min(remainingSuperCapLimitW, usableSuperCapJ / dt));
+            missingW -= superCapUseW;
+        }
+
+        standardUseW = Math.Min(missingW, standardHeadroomW);
+        missingW -= standardUseW;
+
+        if (allowOverPowerAssist && !preferSuperCapFirst && prioritizeSuperCap && missingW > 1e-6)
         {
             double remainingSuperCapLimitW = Math.Max(0.0, model.SuperCapDischargeLimitW - entity.CurrentFrameSuperCapDrawW);
             superCapUseW = Math.Min(
@@ -3633,6 +3661,9 @@ internal sealed class TerrainMotionService
         return Math.Max(2.0, entity.WheelOffsetsM.Count);
     }
 
+    private static double ResolvePhysicalDrivePowerLimitW(SimulationEntity entity)
+        => Math.Max(MotorInstantPowerLimitW, ResolveDriveWheelCount(entity) * MotorInstantPowerLimitW);
+
     private static double EstimateMappedSteadyPowerW(SimulationEntity entity, double speedMps)
     {
         double speed = Math.Max(0.0, speedMps);
@@ -3721,8 +3752,13 @@ internal sealed class TerrainMotionService
 
     private static double ResolveRollingDragPerSec(SimulationEntity entity)
     {
-        double drag = 0.16 + entity.MassKg * 0.0035 + Math.Max(entity.ChassisDriveRpmCoeff, 0.00001) * 1800.0;
-        return Math.Clamp(drag, 0.16, 0.72);
+        double drag = 0.22 + entity.MassKg * 0.0048 + Math.Max(entity.ChassisDriveRpmCoeff, 0.00001) * 2050.0;
+        if (HasSmallGyroTranslationInput(entity, entity.MoveInputForward, entity.MoveInputRight))
+        {
+            drag *= ResolveSmallGyroTranslationResistanceScale(entity);
+        }
+
+        return Math.Clamp(drag, 0.24, 0.96);
     }
 
     private static double ResolveBrakeDragPerSec(SimulationEntity entity)
@@ -3742,7 +3778,12 @@ internal sealed class TerrainMotionService
     private static double ResolveRollingResistanceForceN(SimulationEntity entity)
     {
         double massKg = Math.Clamp(entity.MassKg <= 1e-6 ? 20.0 : entity.MassKg, 15.0, 25.0);
-        double coefficient = string.Equals(entity.WheelStyle, "mecanum", StringComparison.OrdinalIgnoreCase) ? 0.030 : 0.024;
+        double coefficient = string.Equals(entity.WheelStyle, "mecanum", StringComparison.OrdinalIgnoreCase) ? 0.046 : 0.038;
+        if (HasSmallGyroTranslationInput(entity, entity.MoveInputForward, entity.MoveInputRight))
+        {
+            coefficient *= ResolveSmallGyroTranslationResistanceScale(entity);
+        }
+
         return massKg * 9.81 * coefficient;
     }
 
@@ -3770,23 +3811,33 @@ internal sealed class TerrainMotionService
         }
 
         double currentYaw = SimulationCombatMath.NormalizeDeg(entity.AngleDeg);
-        double diff = SimulationCombatMath.NormalizeSignedDeg(targetYawDeg - currentYaw);
         double basePowerLimitW = Math.Max(1.0, ResolveEffectiveDrivePowerLimitW(entity));
-        double combinedPowerLimitW = Math.Max(basePowerLimitW, entity.EffectiveDrivePowerLimitW > 1e-6 ? entity.EffectiveDrivePowerLimitW : basePowerLimitW);
+        double physicalDrivePowerLimitW = ResolvePhysicalDrivePowerLimitW(entity);
+        double combinedPowerLimitW = Math.Min(
+            physicalDrivePowerLimitW,
+            Math.Max(basePowerLimitW, entity.EffectiveDrivePowerLimitW > 1e-6 ? entity.EffectiveDrivePowerLimitW : basePowerLimitW));
         double superCapTurnBoost = entity.SuperCapEnabled
             ? Math.Clamp(Math.Sqrt(combinedPowerLimitW / basePowerLimitW), 1.0, 1.55)
             : 1.0;
         double powerScale = 0.65 + Math.Clamp(entity.ChassisPowerRatio, 0.25, 1.0) * 0.35;
         double baseTurnRate = entity.IsPlayerControlled ? 146.0 : 240.0;
         double maxTurnRate = (entity.SmallGyroActive ? ResolveSmallGyroYawRateDegPerSec(entity) : baseTurnRate) * powerScale * superCapTurnBoost;
+        double diff = SimulationCombatMath.NormalizeSignedDeg(targetYawDeg - currentYaw);
         if (entity.SmallGyroActive)
         {
-            double remainingTurnBudgetW = Math.Max(1.0, combinedPowerLimitW * 0.40);
-            double requestedTurnPowerW = EstimateTurnPowerDrawW(entity, maxTurnRate, entity.SmallGyroActive);
-            if (requestedTurnPowerW > 1e-6 && remainingTurnBudgetW + 1e-6 < requestedTurnPowerW)
+            double turnBudgetRatio = HasSmallGyroTranslationInput(entity, entity.MoveInputForward, entity.MoveInputRight)
+                ? 0.50
+                : 1.0;
+            double remainingTurnBudgetW = Math.Max(1.0, combinedPowerLimitW * turnBudgetRatio);
+            if (turnBudgetRatio >= 0.99)
             {
-                double turnScale = Math.Sqrt(Math.Max(0.0, remainingTurnBudgetW / requestedTurnPowerW));
-                maxTurnRate *= Math.Clamp(turnScale, 0.0, 1.0);
+                remainingTurnBudgetW = Math.Max(1.0, remainingTurnBudgetW - Math.Max(0.0, entity.ChassisPowerDrawW));
+            }
+            maxTurnRate = ResolveSmallGyroYawRateForPower(entity, remainingTurnBudgetW);
+
+            if (Math.Abs(diff) > 1e-6)
+            {
+                diff = Math.Sign(diff) * maxTurnRate * dt;
             }
         }
 
@@ -3800,7 +3851,12 @@ internal sealed class TerrainMotionService
         if (yawRateAbs > 1e-3)
         {
             double turnPowerW = EstimateTurnPowerDrawW(entity, yawRateAbs, entity.SmallGyroActive);
-            RaiseChassisPowerDrawTo(entity, entity.ChassisPowerDrawW + turnPowerW, dt, allowOverPowerAssist: entity.SuperCapEnabled);
+            RaiseChassisPowerDrawTo(
+                entity,
+                entity.ChassisPowerDrawW + turnPowerW,
+                dt,
+                allowOverPowerAssist: entity.SuperCapEnabled,
+                preferSuperCapFirst: entity.SuperCapEnabled && entity.SmallGyroActive);
         }
     }
 
@@ -3818,7 +3874,9 @@ internal sealed class TerrainMotionService
             return;
         }
 
-        double remainingFrameLimitW = Math.Max(0.0, Math.Min(model.SuperCapDischargeLimitW, SuperCapForcedDischargeW) - entity.CurrentFrameSuperCapDrawW);
+        double physicalHeadroomW = Math.Max(0.0, ResolvePhysicalDrivePowerLimitW(entity) - Math.Max(0.0, entity.ChassisPowerDrawW));
+        double remainingSuperCapFrameLimitW = Math.Max(0.0, Math.Min(model.SuperCapDischargeLimitW, SuperCapForcedDischargeW) - entity.CurrentFrameSuperCapDrawW);
+        double remainingFrameLimitW = Math.Min(remainingSuperCapFrameLimitW, physicalHeadroomW);
         if (remainingFrameLimitW <= 1e-6)
         {
             return;
@@ -3828,7 +3886,9 @@ internal sealed class TerrainMotionService
         entity.SuperCapEnergyJ = Math.Max(model.CapReserveJ, entity.SuperCapEnergyJ - forcedUseW * dt);
         entity.CurrentFrameSuperCapDrawW += forcedUseW;
         entity.ChassisPowerDrawW += forcedUseW;
-        entity.EffectiveDrivePowerLimitW = Math.Max(entity.EffectiveDrivePowerLimitW, ResolveEffectiveDrivePowerLimitW(entity) + entity.CurrentFrameSuperCapDrawW);
+        entity.EffectiveDrivePowerLimitW = Math.Min(
+            ResolvePhysicalDrivePowerLimitW(entity),
+            Math.Max(entity.EffectiveDrivePowerLimitW, ResolveEffectiveDrivePowerLimitW(entity) + entity.CurrentFrameSuperCapDrawW));
     }
 
     private static void ApplyVerticalMotion(SimulationEntity entity, double dt)
@@ -3841,7 +3901,7 @@ internal sealed class TerrainMotionService
             return;
         }
 
-        double gravityScale = entity.LedgeLaunchTimerSec > 1e-6 ? 0.20 : 1.0;
+        double gravityScale = 1.0;
         entity.LedgeLaunchTimerSec = Math.Max(0.0, entity.LedgeLaunchTimerSec - dt);
         entity.VerticalVelocityMps -= GravityMps2 * gravityScale * dt;
         entity.AirborneHeightM = Math.Max(0.0, entity.AirborneHeightM + entity.VerticalVelocityMps * dt);
@@ -4130,7 +4190,9 @@ internal sealed class TerrainMotionService
             // gravity then owns the descent, producing the expected parabolic drop.
             targetHeight = frontWheelDrop ? Math.Min(targetHeight, forwardDropHeight) : targetHeight;
             entity.AirborneHeightM = Math.Max(entity.AirborneHeightM, currentHeight - targetHeight + 0.018);
-            entity.VerticalVelocityMps = 0.0;
+            double launchPitchRad = DegreesToRadians(Math.Clamp(entity.ChassisPitchDeg, -24.0, 24.0));
+            double launchVerticalMps = Math.Sin(launchPitchRad) * speedMps;
+            entity.VerticalVelocityMps = Math.Abs(launchVerticalMps) <= 0.035 ? 0.0 : launchVerticalMps;
             entity.LedgeLaunchTimerSec = Math.Max(entity.LedgeLaunchTimerSec, 0.42);
             PreserveDownstepLaunchSpeed(entity, world.MetersPerWorldUnit, speedMps);
         }
@@ -4225,7 +4287,7 @@ internal sealed class TerrainMotionService
             }
         }
 
-        double launchSpeedMps = Math.Max(Math.Max(speedMps, currentSpeedMps), 2.85);
+        double launchSpeedMps = Math.Max(speedMps, currentSpeedMps);
         entity.VelocityXWorldPerSec = vxMps / speedMps * launchSpeedMps / scale;
         entity.VelocityYWorldPerSec = vyMps / speedMps * launchSpeedMps / scale;
     }
@@ -5479,12 +5541,11 @@ internal sealed class TerrainMotionService
             centerWorldY /= facility.Points.Count;
         }
 
-        bool isRedFlySlopeDogHole = facility.Id.StartsWith("red_dog_hole", StringComparison.OrdinalIgnoreCase);
-        bool isFlySlopeDogHole = isRedFlySlopeDogHole
+        bool isFlySlopeDogHole = facility.Id.StartsWith("red_dog_hole", StringComparison.OrdinalIgnoreCase)
             || facility.Id.StartsWith("blue_dog_hole", StringComparison.OrdinalIgnoreCase)
             || facility.Id.Contains("fly_slope", StringComparison.OrdinalIgnoreCase);
-        double defaultYawDeg = isRedFlySlopeDogHole ? 90.0 : (isFlySlopeDogHole ? 0.0 : 90.0);
-        double defaultBottomOffset = isFlySlopeDogHole ? 0.0 : 0.10;
+        double defaultYawDeg = isFlySlopeDogHole ? 0.0 : 90.0;
+        double defaultBottomOffset = 0.0;
         double defaultTopBeamThickness = isFlySlopeDogHole ? 0.10 : 0.05;
         double yawRad = DegreesToRadians(ResolveFacilityDouble(facility, "model_yaw_deg", defaultYawDeg, -360.0));
         double bottomOffsetM = ResolveFacilityDouble(facility, "model_bottom_offset_m", defaultBottomOffset, -2.0);
@@ -6133,6 +6194,116 @@ internal sealed class TerrainMotionService
     {
         return string.Equals(entity.RoleKey, "infantry", StringComparison.OrdinalIgnoreCase)
             && entity.ChassisSubtype.Contains("omni", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasSmallGyroTranslationInput(SimulationEntity entity, double moveForward, double moveRight)
+    {
+        if (!entity.SmallGyroActive || IsBalanceInfantry(entity))
+        {
+            return false;
+        }
+
+        return Math.Sqrt(moveForward * moveForward + moveRight * moveRight) > 0.035;
+    }
+
+    private static double ResolveSmallGyroTranslationSpeedBoost(SimulationEntity entity)
+    {
+        if (IsStandardMecanumPowerRole(entity))
+        {
+            return 3.60;
+        }
+
+        return 1.80;
+    }
+
+    private static double ResolveSmallGyroTranslationResistanceScale(SimulationEntity entity)
+    {
+        if (IsStandardMecanumPowerRole(entity))
+        {
+            return 0.18;
+        }
+
+        return 0.34;
+    }
+
+    private static double ResolveSmallGyroEquivalentWheelSpeedMps(SimulationEntity entity, double yawRateRadPerSec)
+    {
+        double halfLength = Math.Max(0.10, entity.BodyLengthM * 0.5);
+        double halfWidth = Math.Max(0.08, entity.BodyWidthM * entity.BodyRenderWidthScale * 0.5);
+        double rotationRadiusM = Math.Clamp(Math.Sqrt(halfLength * halfLength + halfWidth * halfWidth), 0.16, 0.62);
+        double turnSpeedScale = ResolveSmallGyroTurnSpeedScale(entity);
+        if (HasSmallGyroTranslationInput(entity, entity.MoveInputForward, entity.MoveInputRight))
+        {
+            turnSpeedScale *= 1.50;
+        }
+
+        return ClampWheelLinearSpeedMps(Math.Abs(yawRateRadPerSec) * rotationRadiusM / Math.Max(0.10, turnSpeedScale));
+    }
+
+    private static double ResolveSmallGyroTurnSpeedScale(SimulationEntity entity)
+    {
+        if (IsOmniInfantry(entity))
+        {
+            return 0.75;
+        }
+
+        if (string.Equals(entity.RoleKey, "hero", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(entity.RoleKey, "engineer", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase))
+        {
+            return 3.00;
+        }
+
+        return 1.00;
+    }
+
+    private static double ResolveSmallGyroPowerLossMultiplier(SimulationEntity entity)
+    {
+        if (IsBalanceInfantry(entity))
+        {
+            return 1.30;
+        }
+
+        if (IsOmniInfantry(entity))
+        {
+            return 1.00;
+        }
+
+        if (string.Equals(entity.RoleKey, "hero", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(entity.RoleKey, "engineer", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase))
+        {
+            return 2.00;
+        }
+
+        return 1.15;
+    }
+
+    private static double ResolveSmallGyroYawRateForPower(SimulationEntity entity, double targetPowerW)
+    {
+        double safeTargetPowerW = Math.Max(0.0, targetPowerW);
+        if (safeTargetPowerW <= 1e-6)
+        {
+            return 0.0;
+        }
+
+        double low = 0.0;
+        double high = IsBalanceInfantry(entity) ? 960.0 : 1440.0;
+        for (int index = 0; index < 18; index++)
+        {
+            double mid = (low + high) * 0.5;
+            double powerW = EstimateTurnPowerDrawW(entity, mid, smallGyroRequested: true);
+            if (powerW <= safeTargetPowerW)
+            {
+                low = mid;
+            }
+            else
+            {
+                high = mid;
+            }
+        }
+
+        return low;
     }
 
     private static double ResolveSmallGyroYawRateDegPerSec(SimulationEntity entity)

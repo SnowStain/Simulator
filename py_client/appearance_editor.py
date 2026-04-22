@@ -974,7 +974,7 @@ def _append_preview_energy_pod(vertices, center, length, width, height, depth, c
     _append_preview_prism(vertices, section(-half_depth), section(half_depth), color_rgb, yaw_rad=yaw_rad)
 
 
-def _append_preview_energy_arm(vertices, hub_center, yaw_rad, inner_radius, outer_radius, rail_gap, rail_width, rail_depth, color_rgb, base_yaw_rad=0.0):
+def _append_preview_energy_arm(vertices, hub_center, yaw_rad, inner_radius, outer_radius, rail_gap, rail_width, rail_depth, color_rgb, accent_rgb=None, base_yaw_rad=0.0):
     hub_x, hub_y, hub_z = hub_center
     dir_x = math.cos(yaw_rad)
     dir_y = math.sin(yaw_rad)
@@ -985,6 +985,41 @@ def _append_preview_energy_arm(vertices, hub_center, yaw_rad, inner_radius, oute
     rail_depth = max(0.008, float(rail_depth))
     inner_radius = max(0.02, float(inner_radius))
     outer_radius = max(inner_radius + 0.02, float(outer_radius))
+    accent_rgb = accent_rgb or color_rgb
+
+    shell_inner = inner_radius * 0.90
+    shell_outer = max(shell_inner + 0.05, outer_radius - rail_width * 0.70)
+    shell_mid = shell_inner + (shell_outer - shell_inner) * 0.58
+    root_half = max(rail_gap * 0.78, rail_width * 0.75)
+    waist_half = max(root_half * 1.18, rail_gap * 1.04)
+    end_half = max(root_half * 0.82, rail_gap * 0.84)
+
+    def shell_point(radius, half_offset, z_value):
+        return (
+            hub_x + dir_x * radius + side_x * half_offset,
+            hub_y + dir_y * radius + side_y * half_offset,
+            hub_z + z_value,
+        )
+
+    def shell_section(z_value):
+        return [
+            shell_point(shell_inner, root_half, z_value),
+            shell_point(shell_mid, waist_half, z_value),
+            shell_point(shell_outer, end_half, z_value),
+            (hub_x + dir_x * (shell_outer + rail_width * 0.38), hub_y + dir_y * (shell_outer + rail_width * 0.38), hub_z + z_value),
+            shell_point(shell_outer, -end_half, z_value),
+            shell_point(shell_mid, -waist_half, z_value),
+            shell_point(shell_inner, -root_half, z_value),
+            (hub_x + dir_x * (shell_inner - rail_width * 0.35), hub_y + dir_y * (shell_inner - rail_width * 0.35), hub_z + z_value),
+        ]
+
+    _append_preview_prism(
+        vertices,
+        shell_section(-rail_depth * 0.52),
+        shell_section(rail_depth * 0.52),
+        [54, 58, 64],
+        yaw_rad=base_yaw_rad,
+    )
 
     root_center = (hub_x + dir_x * inner_radius, hub_y + dir_y * inner_radius, hub_z)
     end_center = (hub_x + dir_x * outer_radius, hub_y + dir_y * outer_radius, hub_z)
@@ -992,6 +1027,12 @@ def _append_preview_energy_arm(vertices, hub_center, yaw_rad, inner_radius, oute
     root_b = (root_center[0] - side_x * rail_gap, root_center[1] - side_y * rail_gap, hub_z)
     end_a = (end_center[0] + side_x * rail_gap * 0.72, end_center[1] + side_y * rail_gap * 0.72, hub_z)
     end_b = (end_center[0] - side_x * rail_gap * 0.72, end_center[1] - side_y * rail_gap * 0.72, hub_z)
+    shell_root_a = shell_point(shell_inner, root_half * 1.02, 0.0)
+    shell_root_b = shell_point(shell_inner, -root_half * 1.02, 0.0)
+    shell_end_a = shell_point(shell_outer, end_half * 1.04, 0.0)
+    shell_end_b = shell_point(shell_outer, -end_half * 1.04, 0.0)
+    _append_preview_beam(vertices, shell_root_a, shell_end_a, rail_width * 0.34, rail_depth * 1.10, accent_rgb, yaw_rad=base_yaw_rad)
+    _append_preview_beam(vertices, shell_root_b, shell_end_b, rail_width * 0.34, rail_depth * 1.10, accent_rgb, yaw_rad=base_yaw_rad)
     _append_preview_beam(vertices, root_a, end_a, rail_width, rail_depth, color_rgb, yaw_rad=base_yaw_rad)
     _append_preview_beam(vertices, root_b, end_b, rail_width, rail_depth, color_rgb, yaw_rad=base_yaw_rad)
     _append_preview_beam(vertices, root_a, root_b, rail_width * 0.85, rail_depth, color_rgb, yaw_rad=base_yaw_rad)
@@ -1425,6 +1466,8 @@ class ModernGLAppearancePreview:
         arm_inner_radius = max(hub_radius * 1.35, 0.12)
         arm_length = max(0.10, float(profile.get('structure_rotor_arm_length_m', 1.12)))
         arm_outer_radius = max(arm_inner_radius + 0.04, min(arm_inner_radius + arm_length, rotor_radius - lamp_length * 0.15))
+        lamp_disk_radius = max(lamp_length, lamp_width) * 0.50
+        lamp_center_radius = rotor_radius + max(lamp_disk_radius * 0.42, max(arm_width * 1.10, rail_gap * 0.95))
         pod_depth = max(lamp_width * 0.18, frame_depth * 0.55)
         top_beam_y = ground_clearance + frame_height - beam_h * 0.5
         base_length = max(0.40, float(profile.get('structure_base_length_m', max(frame_width * 1.65, float(profile.get('body_length_m', 2.06)) * 1.72))))
@@ -1492,10 +1535,10 @@ class ModernGLAppearancePreview:
             _append_preview_ringed_disk(vertices, (cx, cy, cz), hub_radius * 0.98, max(frame_depth * 0.12, 0.012), rotor_color, ring_count=6, segments=24, yaw_rad=mechanism_yaw)
             for index in range(5):
                 yaw = rotor_yaw + rotor_phase_rad + math.radians(72.0 * index)
-                _append_preview_energy_arm(vertices, (cx, cy, cz), yaw, arm_inner_radius, arm_outer_radius, rail_gap, arm_width, arm_height, frame_color, base_yaw_rad=mechanism_yaw)
-                lamp_x = cx + math.cos(yaw) * rotor_radius
-                lamp_y = cy + math.sin(yaw) * rotor_radius
-                _append_preview_ringed_disk(vertices, (lamp_x, lamp_y, cz), lamp_length * 0.43, max(0.005, pod_depth * 0.18), rotor_color, ring_count=10, segments=14, yaw_rad=mechanism_yaw)
+                _append_preview_energy_arm(vertices, (cx, cy, cz), yaw, arm_inner_radius, arm_outer_radius, rail_gap, arm_width, arm_height, frame_color, accent_rgb=rotor_color, base_yaw_rad=mechanism_yaw)
+                lamp_x = cx + math.cos(yaw) * lamp_center_radius
+                lamp_y = cy + math.sin(yaw) * lamp_center_radius
+                _append_preview_ringed_disk(vertices, (lamp_x, lamp_y, cz), lamp_disk_radius, max(0.005, pod_depth * 0.18), rotor_color, ring_count=10, segments=14, yaw_rad=mechanism_yaw)
 
         rod_top_y = connector_center_y - hanger_block_h * 0.65
         rod_bottom_y = lower_module_center_h + lower_module_h * 0.42
@@ -2763,6 +2806,9 @@ class AppearanceEditorApp:
             lamp_length = max(0.06, float(profile.get('structure_lamp_length_m', 0.16)))
             lamp_height = max(0.03, float(profile.get('structure_lamp_height_m', 0.00)))
             lamp_width = max(0.03, float(profile.get('structure_lamp_width_m', 0.07)))
+            arm_width = max(0.04, float(profile.get('structure_rotor_arm_width_m', 0.06)))
+            lamp_disk_radius = max(lamp_length, lamp_width) * 0.50
+            lamp_center_radius = rotor_radius + max(lamp_disk_radius * 0.42, arm_width * 1.10)
             hanger_w = max(0.18, float(profile.get('structure_hanger_width_m', 0.62)))
             hanger_h = max(0.10, float(profile.get('structure_hanger_height_m', 0.38)))
             hanger_d = max(0.04, float(profile.get('structure_hanger_depth_m', 0.10)))
@@ -2802,7 +2848,7 @@ class AppearanceEditorApp:
                 yield ('turret', (rotor_center_x, rotor_center_y, rotor_z), (rotor_radius, rotor_radius, max(frame_depth * 0.55, 0.06)))
                 for index in range(5):
                     yaw = rotor_yaw + rotor_phase_rad + index * math.tau / 5.0
-                    yield ('armor_light', (rotor_center_x + math.cos(yaw) * rotor_radius, rotor_center_y + math.sin(yaw) * rotor_radius, rotor_z), (lamp_length * 0.50, lamp_height * 0.55, lamp_width * 0.30))
+                    yield ('armor_light', (rotor_center_x + math.cos(yaw) * lamp_center_radius, rotor_center_y + math.sin(yaw) * lamp_center_radius, rotor_z), (lamp_disk_radius, lamp_height * 0.55, lamp_width * 0.30))
             module_side_offset = max(lower_module_w * 0.72, lower_module_offset)
             assembly_center_y = (hanger_center_h + lower_module_center_h) * 0.5
             assembly_half_y = max(0.06, abs(hanger_center_h - lower_module_center_h) * 0.5 + lower_module_h * 0.6)

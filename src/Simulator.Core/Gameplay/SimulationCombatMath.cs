@@ -286,6 +286,7 @@ public static class SimulationCombatMath
         double hubRadius = Math.Max(0.05, target.StructureRotorHubRadiusM);
         double lampLength = Math.Max(0.06, target.StructureLampLengthM);
         double lampWidth = Math.Max(0.06, target.StructureLampWidthM);
+        double armWidth = Math.Max(0.04, Math.Min(lampLength, lampWidth) * 0.20);
         double cantileverLength = Math.Max(0.0, target.StructureCantileverLengthM);
         double cantileverPairGap = Math.Max(
             frameWidth + cantileverLength,
@@ -294,6 +295,7 @@ public static class SimulationCombatMath
             Math.Max(frameDepth * 1.8, hubRadius * 2.6),
             Math.Min(cantileverPairGap, frameWidth) * 0.42 + cantileverLength * 0.30);
         double diskDiameterM = Math.Max(0.18, Math.Max(lampLength, lampWidth));
+        rotorRadius += Math.Max(diskDiameterM * 0.21, armWidth * 1.10);
         return new EnergyTargetLayout(
             rotorCenterHeight + target.StructureCantileverOffsetYM,
             rotorPhaseRad,

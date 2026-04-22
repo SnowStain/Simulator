@@ -109,10 +109,12 @@ internal static class ProjectileObstacleResolver
             float clearance = (float)Math.Max(0.012, projectileRadiusM * 0.7);
             bool hitsFloor = sample.Y <= terrainHeight + clearance;
 
-            if (runtimeGrid.VisionBlockMap[terrainIndex])
+            if (runtimeGrid.VisionBlockMap[terrainIndex] || runtimeGrid.MovementBlockMap[terrainIndex])
             {
-                float visionTop = Math.Max(terrainHeight, runtimeGrid.VisionBlockHeightMap[terrainIndex]);
-                if (sample.Y >= terrainHeight - clearance && sample.Y <= visionTop + clearance)
+                float blockTop = runtimeGrid.VisionBlockMap[terrainIndex]
+                    ? Math.Max(terrainHeight, runtimeGrid.VisionBlockHeightMap[terrainIndex])
+                    : Math.Max(terrainHeight + 1.20f, runtimeGrid.VisionBlockHeightMap[terrainIndex]);
+                if (sample.Y >= terrainHeight - clearance && sample.Y <= blockTop + clearance)
                 {
                     Vector3 normal = ResolveBarrierNormal(runtimeGrid, metersPerWorldUnit, sample, previousSample, cellX, cellY);
                     hit = new ProjectileObstacleHit(
@@ -124,7 +126,7 @@ internal static class ProjectileObstacleResolver
                         normal.Z,
                         t,
                         SupportsRicochet: true,
-                        Kind: "vision_block");
+                        Kind: runtimeGrid.VisionBlockMap[terrainIndex] ? "vision_block" : "movement_block");
                     return true;
                 }
             }

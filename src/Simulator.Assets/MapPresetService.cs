@@ -58,9 +58,10 @@ public sealed class MapPresetService
                     continue;
                 }
 
-                facilities.Add(ParseFacility(regionNode));
+                facilities.Add(NormalizeLockedDogHoleFacility(ParseFacility(regionNode)));
             }
         }
+        EnsureLockedDogHoleFacilities(facilities);
 
         MapCoordinateSystemDefinition coordinateSystem = ParseCoordinateSystem(map);
         TerrainSurfaceDefinition? terrainSurface = ParseTerrainSurface(
@@ -158,6 +159,119 @@ public sealed class MapPresetService
             AdditionalProperties = additionalProperties.Count == 0 ? null : additionalProperties,
         };
     }
+
+    private readonly record struct LockedDogHoleFacility(
+        string Id,
+        string Team,
+        double X1,
+        double Y1,
+        double X2,
+        double Y2,
+        double YawDeg,
+        double BottomOffsetM,
+        double TopBeamThicknessM);
+
+    private static readonly LockedDogHoleFacility[] LockedDogHoleFacilities =
+    [
+        new("red_dog_hole", "red", 725, 92, 761, 142, 0.0, 0.0, 0.10),
+        new("blue_dog_hole", "blue", 824, 734, 863, 789, 0.0, 0.0, 0.10),
+        new("red_road_side_dog_hole", "red", 513, 710, 567, 727, 90.0, 0.0, 0.05),
+        new("blue_road_side_dog_hole", "blue", 1020, 151, 1069, 166, 90.0, 0.0, 0.05),
+    ];
+
+    private static void EnsureLockedDogHoleFacilities(List<FacilityRegion> facilities)
+    {
+        HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+        for (int index = facilities.Count - 1; index >= 0; index--)
+        {
+            FacilityRegion region = facilities[index];
+            if (!TryResolveLockedDogHoleFacility(region.Id, out LockedDogHoleFacility locked))
+            {
+                continue;
+            }
+
+            if (!seen.Add(locked.Id))
+            {
+                facilities.RemoveAt(index);
+                continue;
+            }
+
+            facilities[index] = NormalizeLockedDogHoleFacility(region);
+        }
+
+        foreach (LockedDogHoleFacility locked in LockedDogHoleFacilities)
+        {
+            if (seen.Contains(locked.Id))
+            {
+                continue;
+            }
+
+            facilities.Add(CreateLockedDogHoleFacility(locked));
+        }
+    }
+
+    private static FacilityRegion CreateLockedDogHoleFacility(LockedDogHoleFacility locked)
+        => NormalizeLockedDogHoleFacility(new FacilityRegion
+        {
+            Id = locked.Id,
+            Type = "dog_hole",
+            Team = locked.Team,
+        });
+
+    private static FacilityRegion NormalizeLockedDogHoleFacility(FacilityRegion region)
+    {
+        if (!TryResolveLockedDogHoleFacility(region.Id, out LockedDogHoleFacility locked))
+        {
+            return region;
+        }
+
+        Dictionary<string, JsonElement> properties = region.AdditionalProperties is null
+            ? new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, JsonElement>(region.AdditionalProperties, StringComparer.OrdinalIgnoreCase);
+        SetJson(properties, "model_type", "frame_dog_hole");
+        SetJson(properties, "model_yaw_deg", locked.YawDeg);
+        SetJson(properties, "model_bottom_offset_m", locked.BottomOffsetM);
+        SetJson(properties, "model_clear_width_m", 0.8);
+        SetJson(properties, "model_clear_height_m", 0.25);
+        SetJson(properties, "model_depth_m", 0.25);
+        SetJson(properties, "model_frame_thickness_m", 0.065);
+        SetJson(properties, "model_top_beam_thickness_m", locked.TopBeamThicknessM);
+        SetJson(properties, "blocks_movement", false);
+
+        return new FacilityRegion
+        {
+            Id = locked.Id,
+            Type = "dog_hole",
+            Team = locked.Team,
+            Shape = "rect",
+            X1 = locked.X1,
+            Y1 = locked.Y1,
+            X2 = locked.X2,
+            Y2 = locked.Y2,
+            Thickness = region.Thickness,
+            HeightM = 0.0,
+            Points = Array.Empty<Point2D>(),
+            AdditionalProperties = properties,
+        };
+    }
+
+    private static bool TryResolveLockedDogHoleFacility(string id, out LockedDogHoleFacility facility)
+    {
+        foreach (LockedDogHoleFacility locked in LockedDogHoleFacilities)
+        {
+            if (string.Equals(id, locked.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                facility = locked;
+                return true;
+            }
+        }
+
+        facility = default;
+        return false;
+    }
+
+    private static void SetJson<T>(Dictionary<string, JsonElement> properties, string key, T value)
+        => properties[key] = JsonSerializer.SerializeToElement(value);
 
     private static MapCoordinateSystemDefinition ParseCoordinateSystem(JsonObject map)
     {
