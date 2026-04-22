@@ -13,7 +13,7 @@
     "sim3d_renderer_backend": "gpu",
     "terrain_scene_backend": "wgl_opengl",
     "sim3d_selected_team": "blue",
-    "sim3d_selected_entity_id": "blue_robot_3",
+    "sim3d_selected_entity_id": "blue_robot_7",
     "player_projectile_ricochet_enabled": true,
     "match_mode": "full",
     "single_unit_test_team": "blue",
@@ -26,7 +26,7 @@
     "sim3d_sentry_stance": "attack",
     "sim3d_autoaim_accuracy_scale": 1,
     "sim3d_projectile_entity_rendering": true,
-    "sim3d_projectile_physics_backend": "native",
+    "sim3d_projectile_physics_backend": "bepu",
     "show_entities": true,
     "player_look_sensitivity_deg": 0.21,
     "player_pitch_sensitivity_deg": 0.005,
@@ -67,7 +67,7 @@
       "state_machine.sentry": true,
       "state_machine.engineer": true
     },
-    "terrain_smooth_strength": 3,
+    "terrain_smooth_strength": 2,
     "terrain_scene_max_cells": 96000,
     "player_terrain_render_scale": 0.78,
     "player_motion_terrain_render_scale": 0.78,
@@ -930,7 +930,7 @@
         330.0
       ],
       "small_defense_mult": 0.75,
-      "small_buff_duration_sec": 20.0,
+      "small_buff_duration_sec": 45.0,
       "large_duration_by_hits": {
         "5": 30.0,
         "6": 35.0,

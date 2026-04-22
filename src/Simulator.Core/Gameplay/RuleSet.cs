@@ -738,7 +738,9 @@ public sealed class FacilityRuleSet
 
     public double EnergyBuffDurationSec { get; set; } = 45.0;
 
-    public double EnergySmallBuffDurationSec { get; set; } = 20.0;
+    public double EnergySmallBuffDurationSec { get; set; } = 45.0;
+
+    public double EnergySmallDefenseMult { get; set; } = 0.75;
 
     public double EnergyDamageDealtMult { get; set; } = 1.15;
 

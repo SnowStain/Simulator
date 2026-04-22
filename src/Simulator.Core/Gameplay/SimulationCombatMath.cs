@@ -27,6 +27,7 @@ public static class SimulationCombatMath
     private const double GravityMps2 = 9.81;
     private const double SmallProjectileAutoAimLatencySec = 0.032;
     private const double LargeProjectileAutoAimLatencySec = 0.055;
+    private const double ShooterInheritedVelocityLeadScale = 1.48;
     private const double OutpostTowerRadiusM = 0.20;
     private const double OutpostTowerHeightM = 1.578;
     private const double OutpostBaseLiftM = 0.40;
@@ -135,6 +136,89 @@ public static class SimulationCombatMath
                 target.Y + visualOffset.Z / Math.Max(metersPerWorldUnit, 1e-6),
                 target.GroundHeightM + target.AirborneHeightM + visualOffset.Y,
                 NormalizeDeg(target.AngleDeg + selfYawDeg),
+                armorSideLengthM,
+                Math.Clamp(target.ArmorPlateLengthM, 0.04, 0.60),
+                Math.Clamp(target.ArmorPlateHeightM, 0.04, 0.60)));
+        }
+
+        return plates;
+    }
+
+    public static IReadOnlyList<ArmorPlateTarget> GetProjectedRobotArmorPlateTargets(
+        SimulationEntity target,
+        double metersPerWorldUnit,
+        double leadTimeSec)
+    {
+        if (leadTimeSec <= 1e-6 || IsStructure(target))
+        {
+            return GetArmorPlateTargets(target, metersPerWorldUnit, 0.0);
+        }
+
+        double projectedYawDeg = NormalizeDeg(
+            target.AngleDeg + RadiansToDegrees(ResolveAutoAimAngularVelocityRadPerSec(target)) * leadTimeSec);
+        double projectedX = target.X + ResolveObservedVelocityXWorldPerSec(target) * leadTimeSec;
+        double projectedY = target.Y + ResolveObservedVelocityYWorldPerSec(target) * leadTimeSec;
+        double bodyHalfLengthM = Math.Max(0.01, target.BodyLengthM * 0.5);
+        double bodyHalfWidthM = Math.Max(0.01, target.BodyWidthM * target.BodyRenderWidthScale * 0.5);
+        double gapM = Math.Max(0.005, target.ArmorPlateGapM);
+        double plateThicknessM = ResolveArmorPlateThicknessM(target);
+        double localCenterHeightM = Math.Max(0.08, target.BodyClearanceM + target.BodyHeightM * 0.5)
+            + ResolveVisualBodyLiftM(target);
+
+        IReadOnlyList<double> orbitYaws = target.ArmorOrbitYawsDeg.Count > 0
+            ? target.ArmorOrbitYawsDeg
+            : new[] { 0d, 180d, 90d, 270d };
+        IReadOnlyList<double> selfYaws = target.ArmorSelfYawsDeg.Count > 0
+            ? target.ArmorSelfYawsDeg
+            : orbitYaws;
+
+        var plates = new List<ArmorPlateTarget>(orbitYaws.Count);
+        double armorSideLengthM = Math.Clamp(Math.Max(target.ArmorPlateLengthM, target.ArmorPlateHeightM), 0.04, 0.60);
+        for (int index = 0; index < orbitYaws.Count; index++)
+        {
+            double orbitYawDeg = orbitYaws[index];
+            double orbitYawRad = DegreesToRadians(orbitYawDeg);
+            double outwardX = Math.Cos(orbitYawRad);
+            double outwardY = Math.Sin(orbitYawRad);
+            bool frontBackFace = Math.Abs(outwardX) >= Math.Abs(outwardY);
+            double localForwardM;
+            double localLateralM;
+            double faceYawDeg;
+            if (frontBackFace)
+            {
+                double sign = outwardX >= 0.0 ? 1.0 : -1.0;
+                localForwardM = sign * (bodyHalfLengthM + gapM + plateThicknessM * 0.5);
+                localLateralM = 0.0;
+                faceYawDeg = sign > 0.0 ? 0.0 : 180.0;
+            }
+            else
+            {
+                double sign = outwardY >= 0.0 ? 1.0 : -1.0;
+                localForwardM = 0.0;
+                localLateralM = sign * (bodyHalfWidthM + gapM + plateThicknessM * 0.5);
+                faceYawDeg = sign > 0.0 ? 90.0 : -90.0;
+            }
+
+            ResolveChassisAxes(
+                projectedYawDeg,
+                target.ChassisPitchDeg,
+                target.ChassisRollDeg,
+                out Vector3 chassisForward,
+                out Vector3 chassisRight,
+                out Vector3 chassisUp);
+            Vector3 visualOffset =
+                chassisForward * (float)localForwardM
+                + chassisRight * (float)localLateralM
+                + chassisUp * (float)localCenterHeightM;
+            double selfYawDeg = target.ArmorSelfYawsDeg.Count > 0
+                ? (index < selfYaws.Count ? selfYaws[index] : orbitYawDeg)
+                : faceYawDeg;
+            plates.Add(new ArmorPlateTarget(
+                $"armor_{index + 1}",
+                projectedX + visualOffset.X / Math.Max(metersPerWorldUnit, 1e-6),
+                projectedY + visualOffset.Z / Math.Max(metersPerWorldUnit, 1e-6),
+                target.GroundHeightM + target.AirborneHeightM + visualOffset.Y,
+                NormalizeDeg(projectedYawDeg + selfYawDeg),
                 armorSideLengthM,
                 Math.Clamp(target.ArmorPlateLengthM, 0.04, 0.60),
                 Math.Clamp(target.ArmorPlateHeightM, 0.04, 0.60)));
@@ -431,11 +515,6 @@ public static class SimulationCombatMath
                     continue;
                 }
 
-                if (!IsPlateFacingShooter(shooter, candidatePlate))
-                {
-                    continue;
-                }
-
                 if (canSeePlate is not null && !canSeePlate(candidate, candidatePlate))
                 {
                     continue;
@@ -447,7 +526,19 @@ public static class SimulationCombatMath
                     score -= candidatePlate.Id.Equals("outpost_top", StringComparison.OrdinalIgnoreCase) ? 260.0 : 220.0;
                 }
 
-                double lifetimeScore = ComputePlateLifetimeScore(world, shooter, candidate, candidatePlate, metersPerWorldUnit);
+                bool plateFacingOrEmerging = IsPlateFacingOrEmergingSoon(
+                    world,
+                    shooter,
+                    candidate,
+                    candidatePlate,
+                    metersPerWorldUnit,
+                    out double lifetimeScore);
+                if (!plateFacingOrEmerging)
+                {
+                    continue;
+                }
+
+                double plateAreaScore = ResolveArmorPlateAreaScore(candidatePlate);
                 bool sameLockedPlate = string.Equals(shooter.AutoAimTargetId, candidate.Id, StringComparison.OrdinalIgnoreCase)
                     && string.Equals(shooter.AutoAimPlateId, candidatePlate.Id, StringComparison.OrdinalIgnoreCase);
                 if (sameLockedPlate)
@@ -457,6 +548,7 @@ public static class SimulationCombatMath
                 }
 
                 score -= lifetimeScore;
+                score -= Math.Clamp(plateAreaScore, 0.0, 0.20) * 160.0;
                 if (candidatePlate.Id.Equals("outpost_top", StringComparison.OrdinalIgnoreCase))
                 {
                     score += 220.0;
@@ -543,7 +635,7 @@ public static class SimulationCombatMath
             return false;
         }
 
-        if (!IsPlateFacingShooter(shooter, plate))
+        if (!IsPlateFacingOrEmergingSoon(world, shooter, target, plate, metersPerWorldUnit, out _))
         {
             target = null;
             plate = default;
@@ -652,7 +744,10 @@ public static class SimulationCombatMath
         double horizonSec = Math.Abs(target.AngularVelocityDegPerSec) > 12.0 || target.SmallGyroActive
             ? 0.36
             : 0.22;
-        ArmorPlateTarget futurePlate = GetArmorPlateTargets(target, metersPerWorldUnit, world.GameTimeSec + horizonSec)
+        IReadOnlyList<ArmorPlateTarget> futurePlates = IsStructure(target)
+            ? GetArmorPlateTargets(target, metersPerWorldUnit, world.GameTimeSec + horizonSec)
+            : GetProjectedRobotArmorPlateTargets(target, metersPerWorldUnit, horizonSec);
+        ArmorPlateTarget futurePlate = futurePlates
             .FirstOrDefault(candidate => candidate.Id.Equals(plate.Id, StringComparison.OrdinalIgnoreCase));
         if (string.IsNullOrWhiteSpace(futurePlate.Id))
         {
@@ -674,6 +769,31 @@ public static class SimulationCombatMath
         }
 
         return (switchingSameTarget ? 44.0 : 14.0) + enteringBonus;
+    }
+
+    private static bool IsPlateFacingOrEmergingSoon(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        SimulationEntity target,
+        ArmorPlateTarget plate,
+        double metersPerWorldUnit,
+        out double lifetimeScore)
+    {
+        lifetimeScore = ComputePlateLifetimeScore(world, shooter, target, plate, metersPerWorldUnit);
+        if (IsPlateFacingShooter(shooter, plate))
+        {
+            return true;
+        }
+
+        bool rotating = target.SmallGyroActive || Math.Abs(target.AngularVelocityDegPerSec) > 24.0;
+        return rotating && lifetimeScore >= 18.0;
+    }
+
+    private static double ResolveArmorPlateAreaScore(ArmorPlateTarget plate)
+    {
+        double width = plate.WidthM > 1e-6 ? plate.WidthM : plate.SideLengthM;
+        double height = plate.HeightSpanM > 1e-6 ? plate.HeightSpanM : plate.SideLengthM;
+        return Math.Max(0.0016, width * height);
     }
 
     public static (double X, double Y, double HeightM) ComputeMuzzlePoint(
@@ -963,6 +1083,11 @@ public static class SimulationCombatMath
         ArmorPlateTarget plate,
         double maxDistanceM)
     {
+        if (string.Equals(target.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase))
+        {
+            return ComputeEnergyMechanismAutoAimSolution(world, shooter, target, plate, maxDistanceM);
+        }
+
         double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
         double dxWorld = plate.X - shooter.X;
         double dyWorld = plate.Y - shooter.Y;
@@ -978,7 +1103,7 @@ public static class SimulationCombatMath
             out double leadTimeSec,
             out double leadDistanceM);
         double distanceCoefficient = ComputeAutoAimDistanceCoefficient(distanceM, maxDistanceM);
-        double motionCoefficient = ComputeAutoAimMotionCoefficient(world, target);
+        double motionCoefficient = ComputeAutoAimMotionCoefficient(world, shooter, target);
         if (target.AutoAimInstabilityTimerSec > 1e-6)
         {
             motionCoefficient *= 0.50;
@@ -990,7 +1115,7 @@ public static class SimulationCombatMath
             && string.Equals(shooter.RoleKey, "hero", StringComparison.OrdinalIgnoreCase)
             && (plate.Id.Equals("outpost_top", StringComparison.OrdinalIgnoreCase)
                 || plate.Id.Equals("base_top_slide", StringComparison.OrdinalIgnoreCase));
-        if (IsAutoAimTargetEffectivelyStatic(world, target, plate))
+        if (IsAutoAimTargetEffectivelyStatic(world, shooter, target, plate))
         {
             (double centerYaw, double centerPitch) = ComputeAimAnglesToPoint(
                 world,
@@ -1048,8 +1173,7 @@ public static class SimulationCombatMath
         double sideXWorld = -Math.Sin(plateYawRad) * lateralErrorM / metersPerWorldUnit;
         double sideYWorld = Math.Cos(plateYawRad) * lateralErrorM / metersPerWorldUnit;
 
-        // The ballistic solver still handles gravity; the error is applied to a nearby virtual point,
-        // so auto aim can miss high/low instead of simply pinning the crosshair to the armor center.
+        // 弹道求解仍负责重力；误差只施加到附近虚拟点，避免自瞄总是钉死装甲板中心。
         (double yawDeg, double pitchDeg) = ComputeAimAnglesToPoint(
             world,
             shooter,
@@ -1064,6 +1188,48 @@ public static class SimulationCombatMath
             accuracy,
             distanceCoefficient,
             motionCoefficient,
+            leadTimeSec,
+            leadDistanceM,
+            DescribeArmorPlateDirection(target, plate));
+    }
+
+    private static AutoAimSolution ComputeEnergyMechanismAutoAimSolution(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        SimulationEntity target,
+        ArmorPlateTarget plate,
+        double maxDistanceM)
+    {
+        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
+        double dxWorld = plate.X - shooter.X;
+        double dyWorld = plate.Y - shooter.Y;
+        double distanceM = Math.Sqrt(dxWorld * dxWorld + dyWorld * dyWorld) * metersPerWorldUnit;
+        (double predictedX, double predictedY, double predictedHeightM) = PredictArmorPlatePoint(
+            world,
+            shooter,
+            target,
+            plate,
+            distanceM,
+            0.0,
+            out double leadTimeSec,
+            out double leadDistanceM);
+
+        // 能量机关圆盘在竖直平面旋转，专用自瞄应锁定未来圆盘中心，不复用普通横向扰动。
+        (double yawDeg, double pitchDeg) = ComputeAimAnglesToPoint(
+            world,
+            shooter,
+            predictedX,
+            predictedY,
+            predictedHeightM,
+            preferHighArc: false);
+
+        double distanceCoefficient = ComputeAutoAimDistanceCoefficient(distanceM, maxDistanceM);
+        return new AutoAimSolution(
+            yawDeg,
+            pitchDeg,
+            1.0,
+            distanceCoefficient,
+            1.0,
             leadTimeSec,
             leadDistanceM,
             DescribeArmorPlateDirection(target, plate));
@@ -1383,7 +1549,7 @@ public static class SimulationCombatMath
     {
         if (plate.Id.StartsWith("energy_", StringComparison.OrdinalIgnoreCase))
         {
-            return "energy disk";
+            return "\u80fd\u91cf\u5706\u76d8";
         }
 
         if (plate.Id.StartsWith("armor_", StringComparison.OrdinalIgnoreCase))
@@ -1392,35 +1558,35 @@ public static class SimulationCombatMath
             double abs = Math.Abs(relativeYaw);
             if (abs <= 45.0)
             {
-                return "front";
+                return "\u524d\u88c5\u7532";
             }
 
             if (abs >= 135.0)
             {
-                return "rear";
+                return "\u540e\u88c5\u7532";
             }
 
-            return relativeYaw > 0.0 ? "left" : "right";
+            return relativeYaw > 0.0 ? "\u5de6\u88c5\u7532" : "\u53f3\u88c5\u7532";
         }
 
         if (plate.Id.Equals("outpost_top", StringComparison.OrdinalIgnoreCase))
         {
-            return "mid tilted";
+            return "\u4e2d\u90e8\u659c\u88c5\u7532";
         }
 
         if (plate.Id.StartsWith("outpost_ring_", StringComparison.OrdinalIgnoreCase))
         {
-            return "rotating ring";
+            return "\u65cb\u8f6c\u88c5\u7532";
         }
 
         if (plate.Id.Equals("base_top_slide", StringComparison.OrdinalIgnoreCase))
         {
-            return "top sliding";
+            return "\u9876\u90e8\u6ed1\u79fb\u88c5\u7532";
         }
 
         if (plate.Id.Equals("base_core", StringComparison.OrdinalIgnoreCase))
         {
-            return "core";
+            return "\u6838\u5fc3\u88c5\u7532";
         }
 
         return plate.Id;
@@ -1452,7 +1618,7 @@ public static class SimulationCombatMath
 
         double toShooterYawDeg = NormalizeDeg(RadiansToDegrees(Math.Atan2(shooter.Y - plate.Y, shooter.X - plate.X)));
         double facingError = Math.Abs(NormalizeSignedDeg(toShooterYawDeg - plate.YawDeg));
-        return facingError <= 86.0;
+        return facingError <= 60.0;
     }
 
     private static double ComputeFacingMargin(SimulationEntity shooter, ArmorPlateTarget plate)
@@ -1608,7 +1774,7 @@ public static class SimulationCombatMath
             return (plate.X, plate.Y, plate.HeightM, 0.0);
         }
 
-        if (IsAutoAimTargetEffectivelyStatic(world, target, plate))
+        if (IsAutoAimTargetEffectivelyStatic(world, shooter, target, plate))
         {
             return (plate.X, plate.Y, plate.HeightM, 0.0);
         }
@@ -1617,6 +1783,18 @@ public static class SimulationCombatMath
             || (shooter.HeroDeploymentActive
                 && string.Equals(shooter.RoleKey, "hero", StringComparison.OrdinalIgnoreCase)
                 && IsHeroDeploymentTargetPlate(target, plate));
+        (double relativeVelocityXWorldPerSec, double relativeVelocityYWorldPerSec, double plateVelocityZMps) =
+            ResolveArmorPlatePointRelativeObservedVelocityWorld(world, shooter, target, plate);
+        double plateSpeedMps = Math.Sqrt(
+            relativeVelocityXWorldPerSec * relativeVelocityXWorldPerSec
+            + relativeVelocityYWorldPerSec * relativeVelocityYWorldPerSec) * metersPerWorldUnit;
+        if (plateSpeedMps <= 0.10
+            && Math.Abs(plateVelocityZMps) <= 0.06
+            && !target.SmallGyroActive)
+        {
+            return (plate.X, plate.Y, plate.HeightM, 0.0);
+        }
+
         (double translationLeadScale, double angularLeadScale) = ResolveAutoAimLeadScales(shooter, target);
         if (string.Equals(target.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase))
         {
@@ -1642,7 +1820,11 @@ public static class SimulationCombatMath
                 .FirstOrDefault(candidate => string.Equals(candidate.Id, plate.Id, StringComparison.OrdinalIgnoreCase));
             if (!string.IsNullOrWhiteSpace(predictedPlate.Id))
             {
-                return (predictedPlate.X, predictedPlate.Y, predictedPlate.HeightM, DistanceBetweenPlatePointsM(metersPerWorldUnit, plate, predictedPlate));
+                double shooterFutureOffsetX = ResolveObservedVelocityXWorldPerSec(shooter) * leadTimeSec * translationLeadScale * ShooterInheritedVelocityLeadScale;
+                double shooterFutureOffsetY = ResolveObservedVelocityYWorldPerSec(shooter) * leadTimeSec * translationLeadScale * ShooterInheritedVelocityLeadScale;
+                double relativePredictedX = predictedPlate.X - shooterFutureOffsetX;
+                double relativePredictedY = predictedPlate.Y - shooterFutureOffsetY;
+                return (relativePredictedX, relativePredictedY, predictedPlate.HeightM, DistanceBetweenPlatePointsM(metersPerWorldUnit, plate, predictedPlate));
             }
         }
 
@@ -1657,18 +1839,42 @@ public static class SimulationCombatMath
                     return (plate.X, plate.Y, predictedPlate.HeightM, Math.Abs(predictedPlate.HeightM - plate.HeightM));
                 }
 
+                double shooterFutureOffsetX = ResolveObservedVelocityXWorldPerSec(shooter) * leadTimeSec * translationLeadScale * ShooterInheritedVelocityLeadScale;
+                double shooterFutureOffsetY = ResolveObservedVelocityYWorldPerSec(shooter) * leadTimeSec * translationLeadScale * ShooterInheritedVelocityLeadScale;
+                double relativePredictedX = predictedPlate.X - shooterFutureOffsetX;
+                double relativePredictedY = predictedPlate.Y - shooterFutureOffsetY;
+                return (relativePredictedX, relativePredictedY, predictedPlate.HeightM, DistanceBetweenPlatePointsM(metersPerWorldUnit, plate, predictedPlate));
+            }
+        }
+        else
+        {
+            ArmorPlateTarget predictedPlate = GetProjectedRobotArmorPlateTargets(target, metersPerWorldUnit, leadTimeSec)
+                .FirstOrDefault(candidate => string.Equals(candidate.Id, plate.Id, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(predictedPlate.Id))
+            {
+                if (suppressLateralLead)
+                {
+                    return (plate.X, plate.Y, predictedPlate.HeightM, Math.Abs(predictedPlate.HeightM - plate.HeightM));
+                }
+
                 return (predictedPlate.X, predictedPlate.Y, predictedPlate.HeightM, DistanceBetweenPlatePointsM(metersPerWorldUnit, plate, predictedPlate));
             }
         }
 
         double offsetXWorld = plate.X - target.X;
         double offsetYWorld = plate.Y - target.Y;
-        double angularLeadRad = DegreesToRadians(target.AngularVelocityDegPerSec * leadTimeSec * angularLeadScale);
+        double angularLeadRad = ResolveAutoAimAngularVelocityRadPerSec(target) * leadTimeSec * angularLeadScale;
         double rotatedOffsetXWorld = offsetXWorld * Math.Cos(angularLeadRad) - offsetYWorld * Math.Sin(angularLeadRad);
         double rotatedOffsetYWorld = offsetXWorld * Math.Sin(angularLeadRad) + offsetYWorld * Math.Cos(angularLeadRad);
 
-        double predictedX = target.X + target.VelocityXWorldPerSec * leadTimeSec * translationLeadScale + rotatedOffsetXWorld;
-        double predictedY = target.Y + target.VelocityYWorldPerSec * leadTimeSec * translationLeadScale + rotatedOffsetYWorld;
+        double predictedX = target.X
+            + ResolveObservedVelocityXWorldPerSec(target) * leadTimeSec * translationLeadScale
+            - ResolveObservedVelocityXWorldPerSec(shooter) * leadTimeSec * translationLeadScale * ShooterInheritedVelocityLeadScale
+            + rotatedOffsetXWorld;
+        double predictedY = target.Y
+            + ResolveObservedVelocityYWorldPerSec(target) * leadTimeSec * translationLeadScale
+            - ResolveObservedVelocityYWorldPerSec(shooter) * leadTimeSec * translationLeadScale * ShooterInheritedVelocityLeadScale
+            + rotatedOffsetYWorld;
         double predictedHeightM = Math.Max(0.0, plate.HeightM + target.VerticalVelocityMps * leadTimeSec);
         if (suppressLateralLead)
         {
@@ -1792,6 +1998,13 @@ public static class SimulationCombatMath
     }
 
     public static bool IsAutoAimTargetEffectivelyStatic(SimulationWorldState world, SimulationEntity target, ArmorPlateTarget plate)
+        => IsAutoAimTargetEffectivelyStatic(world, shooter: null, target, plate);
+
+    public static bool IsAutoAimTargetEffectivelyStatic(
+        SimulationWorldState world,
+        SimulationEntity? shooter,
+        SimulationEntity target,
+        ArmorPlateTarget plate)
     {
         if (string.Equals(target.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase))
         {
@@ -1805,12 +2018,14 @@ public static class SimulationCombatMath
         }
 
         double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
-        double translationSpeedMps = Math.Sqrt(
-            target.VelocityXWorldPerSec * target.VelocityXWorldPerSec
-            + target.VelocityYWorldPerSec * target.VelocityYWorldPerSec) * metersPerWorldUnit;
-        return translationSpeedMps <= 0.025
-            && Math.Abs(target.VerticalVelocityMps) <= 0.025
-            && Math.Abs(target.AngularVelocityDegPerSec) <= 1.5
+        (double plateVelocityXWorldPerSec, double plateVelocityYWorldPerSec, double plateVelocityZMps) = shooter is null
+            ? ResolveArmorPlatePointObservedVelocityWorld(world, target, plate)
+            : ResolveArmorPlatePointRelativeObservedVelocityWorld(world, shooter, target, plate);
+        double plateTranslationSpeedMps = Math.Sqrt(
+            plateVelocityXWorldPerSec * plateVelocityXWorldPerSec
+            + plateVelocityYWorldPerSec * plateVelocityYWorldPerSec) * metersPerWorldUnit;
+        return plateTranslationSpeedMps <= 0.06
+            && Math.Abs(plateVelocityZMps) <= 0.05
             && !target.SmallGyroActive
             && target.AutoAimInstabilityTimerSec <= 1e-6;
     }
@@ -1972,14 +2187,23 @@ public static class SimulationCombatMath
         return 0.50 + t * 0.50;
     }
 
-    private static double ComputeAutoAimMotionCoefficient(SimulationWorldState world, SimulationEntity target)
+    private static double ComputeAutoAimMotionCoefficient(SimulationWorldState world, SimulationEntity shooter, SimulationEntity target)
     {
+        ArmorPlateTarget representativePlate = GetArmorPlateTargets(target, Math.Max(world.MetersPerWorldUnit, 1e-6), world.GameTimeSec)
+            .FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(representativePlate.Id))
+        {
+            return 1.0;
+        }
+
         double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
+        (double plateVelocityXWorldPerSec, double plateVelocityYWorldPerSec, _) =
+            ResolveArmorPlatePointRelativeObservedVelocityWorld(world, shooter, target, representativePlate);
         double translationSpeedMps = Math.Sqrt(
-            target.VelocityXWorldPerSec * target.VelocityXWorldPerSec
-            + target.VelocityYWorldPerSec * target.VelocityYWorldPerSec) * metersPerWorldUnit;
-        bool translating = translationSpeedMps > 0.08;
-        bool rotating = Math.Abs(target.AngularVelocityDegPerSec) > 12.0 || target.SmallGyroActive;
+            plateVelocityXWorldPerSec * plateVelocityXWorldPerSec
+            + plateVelocityYWorldPerSec * plateVelocityYWorldPerSec) * metersPerWorldUnit;
+        bool translating = translationSpeedMps > 0.12;
+        bool rotating = Math.Abs(target.AngularVelocityDegPerSec) > 18.0 || target.SmallGyroActive;
 
         if (translating && rotating)
         {
@@ -1999,6 +2223,153 @@ public static class SimulationCombatMath
         return 1.0;
     }
 
+    private static (double VelocityXWorldPerSec, double VelocityYWorldPerSec, double VelocityZMps) ResolveArmorPlatePointVelocityWorld(
+        SimulationWorldState world,
+        SimulationEntity target,
+        ArmorPlateTarget plate)
+    {
+        if (string.Equals(target.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase)
+            || IsStructure(target))
+        {
+            return (
+                target.VelocityXWorldPerSec,
+                target.VelocityYWorldPerSec,
+                target.VerticalVelocityMps);
+        }
+
+        double offsetXWorld = plate.X - target.X;
+        double offsetYWorld = plate.Y - target.Y;
+        double omegaRadPerSec = ResolveAutoAimAngularVelocityRadPerSec(target);
+        double angularVelocityXWorld = -omegaRadPerSec * offsetYWorld;
+        double angularVelocityYWorld = omegaRadPerSec * offsetXWorld;
+        return (
+            target.VelocityXWorldPerSec + angularVelocityXWorld,
+            target.VelocityYWorldPerSec + angularVelocityYWorld,
+            target.VerticalVelocityMps);
+    }
+
+    private static (double VelocityXWorldPerSec, double VelocityYWorldPerSec, double VelocityZMps) ResolveArmorPlatePointObservedVelocityWorld(
+        SimulationWorldState world,
+        SimulationEntity target,
+        ArmorPlateTarget plate)
+    {
+        if (TryResolveDynamicStructurePlateVelocityWorld(world, target, plate, out (double VelocityXWorldPerSec, double VelocityYWorldPerSec, double VelocityZMps) structureVelocity))
+        {
+            return structureVelocity;
+        }
+
+        if (string.Equals(target.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase)
+            || IsStructure(target))
+        {
+            return (
+                ResolveObservedVelocityXWorldPerSec(target),
+                ResolveObservedVelocityYWorldPerSec(target),
+                target.VerticalVelocityMps);
+        }
+
+        double offsetXWorld = plate.X - target.X;
+        double offsetYWorld = plate.Y - target.Y;
+        double omegaRadPerSec = ResolveAutoAimAngularVelocityRadPerSec(target);
+        double angularVelocityXWorld = -omegaRadPerSec * offsetYWorld;
+        double angularVelocityYWorld = omegaRadPerSec * offsetXWorld;
+        return (
+            ResolveObservedVelocityXWorldPerSec(target) + angularVelocityXWorld,
+            ResolveObservedVelocityYWorldPerSec(target) + angularVelocityYWorld,
+            target.VerticalVelocityMps);
+    }
+
+    private static bool TryResolveDynamicStructurePlateVelocityWorld(
+        SimulationWorldState world,
+        SimulationEntity target,
+        ArmorPlateTarget plate,
+        out (double VelocityXWorldPerSec, double VelocityYWorldPerSec, double VelocityZMps) velocity)
+    {
+        velocity = default;
+        if (!IsStructure(target))
+        {
+            return false;
+        }
+
+        const double sampleDtSec = 1.0 / 30.0;
+        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
+        IReadOnlyList<ArmorPlateTarget> futureTargets;
+        if (string.Equals(target.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase))
+        {
+            string? plateTeam = null;
+            SimulationTeamState? teamState = null;
+            if (TryParseEnergyArmIndex(plate.Id, out string parsedTeam, out _))
+            {
+                plateTeam = parsedTeam;
+                world.Teams.TryGetValue(parsedTeam, out teamState);
+            }
+
+            futureTargets = GetEnergyMechanismTargets(
+                target,
+                metersPerWorldUnit,
+                world.GameTimeSec + sampleDtSec,
+                plateTeam,
+                teamState);
+        }
+        else
+        {
+            futureTargets = GetArmorPlateTargets(target, metersPerWorldUnit, world.GameTimeSec + sampleDtSec);
+        }
+
+        ArmorPlateTarget futurePlate = futureTargets
+            .FirstOrDefault(candidate => string.Equals(candidate.Id, plate.Id, StringComparison.OrdinalIgnoreCase));
+        if (string.IsNullOrWhiteSpace(futurePlate.Id))
+        {
+            return false;
+        }
+
+        velocity = (
+            (futurePlate.X - plate.X) / sampleDtSec,
+            (futurePlate.Y - plate.Y) / sampleDtSec,
+            (futurePlate.HeightM - plate.HeightM) / sampleDtSec);
+        return true;
+    }
+
+    private static (double VelocityXWorldPerSec, double VelocityYWorldPerSec, double VelocityZMps) ResolveArmorPlatePointRelativeVelocityWorld(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        SimulationEntity target,
+        ArmorPlateTarget plate)
+    {
+        (double plateVelocityXWorldPerSec, double plateVelocityYWorldPerSec, double plateVelocityZMps) =
+            ResolveArmorPlatePointVelocityWorld(world, target, plate);
+        return (
+            plateVelocityXWorldPerSec - shooter.VelocityXWorldPerSec,
+            plateVelocityYWorldPerSec - shooter.VelocityYWorldPerSec,
+            plateVelocityZMps - shooter.VerticalVelocityMps);
+    }
+
+    private static (double VelocityXWorldPerSec, double VelocityYWorldPerSec, double VelocityZMps) ResolveArmorPlatePointRelativeObservedVelocityWorld(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        SimulationEntity target,
+        ArmorPlateTarget plate)
+    {
+        (double plateVelocityXWorldPerSec, double plateVelocityYWorldPerSec, double plateVelocityZMps) =
+            ResolveArmorPlatePointObservedVelocityWorld(world, target, plate);
+        return (
+            plateVelocityXWorldPerSec - ResolveObservedVelocityXWorldPerSec(shooter),
+            plateVelocityYWorldPerSec - ResolveObservedVelocityYWorldPerSec(shooter),
+            plateVelocityZMps - shooter.VerticalVelocityMps);
+    }
+
+    private static double ResolveAutoAimAngularVelocityRadPerSec(SimulationEntity target)
+        // 渲染与玩法 yaw 正方向和自瞄横向约定相反，因此预测时需要反转观测到的底盘角速度。
+        => -DegreesToRadians(ResolveObservedAngularVelocityDegPerSec(target));
+
+    private static double ResolveObservedVelocityXWorldPerSec(SimulationEntity entity)
+        => entity.HasObservedKinematics ? entity.ObservedVelocityXWorldPerSec : entity.VelocityXWorldPerSec;
+
+    private static double ResolveObservedVelocityYWorldPerSec(SimulationEntity entity)
+        => entity.HasObservedKinematics ? entity.ObservedVelocityYWorldPerSec : entity.VelocityYWorldPerSec;
+
+    private static double ResolveObservedAngularVelocityDegPerSec(SimulationEntity entity)
+        => entity.HasObservedKinematics ? entity.ObservedAngularVelocityDegPerSec : entity.AngularVelocityDegPerSec;
+
     private static double ResolveAutoAimLateralErrorSign(
         SimulationWorldState world,
         SimulationEntity shooter,
@@ -2013,14 +2384,11 @@ public static class SimulationCombatMath
         double sideX = -Math.Sin(aimYawRad);
         double sideY = Math.Cos(aimYawRad);
 
-        double offsetXWorld = plate.X - target.X;
-        double offsetYWorld = plate.Y - target.Y;
-        double omegaRadPerSec = DegreesToRadians(target.AngularVelocityDegPerSec);
-        double angularVelocityXWorld = -omegaRadPerSec * offsetYWorld;
-        double angularVelocityYWorld = omegaRadPerSec * offsetXWorld;
+        (double plateVelocityXWorldPerSec, double plateVelocityYWorldPerSec, _) =
+            ResolveArmorPlatePointRelativeObservedVelocityWorld(world, shooter, target, plate);
         double lateralVelocityMps =
-            ((target.VelocityXWorldPerSec + angularVelocityXWorld) * sideX
-                + (target.VelocityYWorldPerSec + angularVelocityYWorld) * sideY)
+            (plateVelocityXWorldPerSec * sideX
+                + plateVelocityYWorldPerSec * sideY)
             * metersPerWorldUnit;
 
         if (Math.Abs(lateralVelocityMps) <= 0.035)

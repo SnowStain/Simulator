@@ -93,6 +93,7 @@ internal sealed partial class Simulator3dForm
     private int _gpuOverlayTexture;
     private Size _gpuOverlayTextureSize = Size.Empty;
     private long _lastGpuOverlayUploadTicks;
+    private bool _lastGpuOverlayPausedState;
     private int _gpuTerrainVertexBuffer;
     private int _gpuTerrainVertexCount;
     private int _gpuTerrainBufferVersion = -1;
@@ -222,6 +223,9 @@ internal sealed partial class Simulator3dForm
 
     [DllImport("opengl32.dll")]
     private static extern void glVertex3f(float x, float y, float z);
+
+    [DllImport("opengl32.dll")]
+    private static extern void glLineWidth(float width);
 
     [DllImport("opengl32.dll")]
     private static extern void glTexCoord2f(float s, float t);
@@ -376,8 +380,11 @@ internal sealed partial class Simulator3dForm
         FlushGpuDynamicVertices();
         FlushGpuProjectileVertices();
         flushTicks = Stopwatch.GetTimestamp() - stepStartTicks;
+        DrawGpuEntityHealthBars();
         if (!_previewOnly)
         {
+            DrawGpuProjectileTrailLines();
+            DrawGpuPredictedProjectileTrajectory();
             DrawGpuDebugReference();
         }
 
@@ -413,6 +420,7 @@ internal sealed partial class Simulator3dForm
         long nowTicks = _frameClock.ElapsedTicks;
         bool mustUpload = _gpuOverlayTexture == 0
             || _gpuOverlayTextureSize != ClientSize
+            || _lastGpuOverlayPausedState != _paused
             || _lastGpuOverlayUploadTicks <= 0
             || (nowTicks - _lastGpuOverlayUploadTicks) / (double)Stopwatch.Frequency >= GpuOverlayUploadIntervalSec;
         if (mustUpload)
@@ -422,6 +430,7 @@ internal sealed partial class Simulator3dForm
             DrawInMatchOverlay(_gpuOverlayGraphics);
             UploadGpuOverlayBitmap();
             _lastGpuOverlayUploadTicks = nowTicks;
+            _lastGpuOverlayPausedState = _paused;
         }
 
         PresentGpuOverlayTexture();
@@ -1027,7 +1036,8 @@ internal sealed partial class Simulator3dForm
             }
 
             bool energyMechanism = string.Equals(region.Type, "energy_mechanism", StringComparison.OrdinalIgnoreCase);
-            if (!_showDebugSidebars && !energyMechanism)
+            bool dogHole = string.Equals(region.Type, "dog_hole", StringComparison.OrdinalIgnoreCase);
+            if (!_showDebugSidebars && !energyMechanism && !dogHole)
             {
                 continue;
             }
@@ -1060,8 +1070,65 @@ internal sealed partial class Simulator3dForm
                 continue;
             }
 
+            if (dogHole)
+            {
+                DrawGpuDogHoleModel(region);
+                continue;
+            }
+
             DrawGpuFacility(region, color);
         }
+    }
+
+    private void DrawGpuDogHoleModel(FacilityRegion region)
+    {
+        ResolveDogHoleFrameGeometry(
+            region,
+            out Vector3 center,
+            out Vector3 forward,
+            out Vector3 right,
+            out Vector3 up,
+            out float openingWidth,
+            out float openingHeight,
+            out float depth,
+            out float frameThickness,
+            out float topBeamThickness);
+
+        float pillarHeight = openingHeight + topBeamThickness;
+        float halfSpan = openingWidth * 0.5f + frameThickness * 0.5f;
+        Color fillColor = Color.FromArgb(242, 74, 79, 86);
+        Color edgeColor = Color.FromArgb(246, 40, 44, 49);
+
+        DrawGpuOrientedBox(
+            center - right * halfSpan + up * (pillarHeight * 0.5f),
+            forward,
+            right,
+            up,
+            depth,
+            frameThickness,
+            pillarHeight,
+            fillColor,
+            edgeColor);
+        DrawGpuOrientedBox(
+            center + right * halfSpan + up * (pillarHeight * 0.5f),
+            forward,
+            right,
+            up,
+            depth,
+            frameThickness,
+            pillarHeight,
+            fillColor,
+            edgeColor);
+        DrawGpuOrientedBox(
+            center + up * (openingHeight + topBeamThickness * 0.5f),
+            forward,
+            right,
+            up,
+            depth,
+            openingWidth + frameThickness * 2f,
+            topBeamThickness,
+            fillColor,
+            edgeColor);
     }
 
     private void DrawGpuFacility(FacilityRegion region, Color color)
@@ -1232,20 +1299,243 @@ internal sealed partial class Simulator3dForm
         }
     }
 
-    private void DrawGpuProjectileTrails(Graphics graphics)
+    private void DrawGpuProjectileTrailLines()
     {
         if (!_showProjectileTrails || _projectileTrailPoints.Count == 0)
         {
             return;
         }
 
+        glDisable(GlDepthTest);
+        glLineWidth(2.0f);
         foreach (SimulationProjectile projectile in _host.World.Projectiles)
         {
-            if (_projectileTrailPoints.TryGetValue(projectile.Id, out List<Vector3>? trail) && trail.Count > 1)
+            if (!_projectileTrailPoints.TryGetValue(projectile.Id, out List<Vector3>? trail) || trail.Count < 2)
             {
-                DrawProjectileTrail(graphics, projectile, trail);
+                continue;
             }
+
+            bool largeRound = string.Equals(projectile.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase);
+            Color color = largeRound
+                ? Color.FromArgb(170, 86, 188, 255)
+                : Color.FromArgb(176, 72, 255, 108);
+            DrawGpuPolyline(trail, color);
         }
+
+        glLineWidth(1.0f);
+        glEnable(GlDepthTest);
+    }
+
+    private void DrawGpuPredictedProjectileTrajectory()
+    {
+        if (!_showProjectileTrails || _paused)
+        {
+            return;
+        }
+
+        SimulationEntity? entity = _host.SelectedEntity;
+        if (entity is null || !entity.IsAlive)
+        {
+            return;
+        }
+
+        double metersPerWorldUnit = Math.Max(_host.World.MetersPerWorldUnit, 1e-6);
+        double yawRad = entity.TurretYawDeg * Math.PI / 180.0;
+        double pitchRad = entity.GimbalPitchDeg * Math.PI / 180.0;
+        double speedMps = SimulationCombatMath.ProjectileSpeedMps(entity);
+        (double x, double y, double heightM) = SimulationCombatMath.ComputeMuzzlePoint(_host.World, entity, entity.GimbalPitchDeg);
+        double inheritedVxWorldPerSec = entity.HasObservedKinematics ? entity.ObservedVelocityXWorldPerSec : entity.VelocityXWorldPerSec;
+        double inheritedVyWorldPerSec = entity.HasObservedKinematics ? entity.ObservedVelocityYWorldPerSec : entity.VelocityYWorldPerSec;
+        double vxMps = inheritedVxWorldPerSec * metersPerWorldUnit + Math.Cos(pitchRad) * Math.Cos(yawRad) * speedMps;
+        double vyMps = inheritedVyWorldPerSec * metersPerWorldUnit + Math.Cos(pitchRad) * Math.Sin(yawRad) * speedMps;
+        double vzMps = Math.Sin(pitchRad) * speedMps;
+
+        Span<Vector3> trajectory = stackalloc Vector3[128];
+        int count = 0;
+        bool hasImpactSurface = false;
+        RuntimeGridData? runtimeGrid = _host.RuntimeGrid;
+        double dt = 0.035;
+        double maxLifeSec = string.Equals(entity.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase) ? 4.2 : 2.8;
+        for (double t = 0.0; t <= maxLifeSec && count < trajectory.Length; t += dt)
+        {
+            trajectory[count++] = ToScenePoint(x, y, (float)heightM);
+            if (heightM < -0.05 || IsPredictedProjectileOutsideWorld(runtimeGrid, x, y))
+            {
+                break;
+            }
+
+            if (runtimeGrid is not null && runtimeGrid.IsValid)
+            {
+                float terrainHeight = runtimeGrid.SampleOcclusionHeight((float)x, (float)y);
+                if (heightM <= terrainHeight + 0.015 && t > 0.05)
+                {
+                    hasImpactSurface = true;
+                    break;
+                }
+            }
+
+            ApplyPredictedProjectileStep(entity.AmmoType, metersPerWorldUnit, dt, ref x, ref y, ref heightM, ref vxMps, ref vyMps, ref vzMps);
+        }
+
+        if (count < 2)
+        {
+            return;
+        }
+
+        glDisable(GlDepthTest);
+        glLineWidth(4.0f);
+        DrawGpuPolyline(trajectory[..count], Color.FromArgb(92, 255, 190, 56));
+        glLineWidth(2.0f);
+        DrawGpuPolyline(trajectory[..count], Color.FromArgb(242, 255, 214, 76));
+        if (hasImpactSurface)
+        {
+            bool largeRound = string.Equals(entity.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase);
+            float radius = largeRound ? 0.18f : 0.11f;
+            DrawGpuImpactCircle(trajectory[count - 1] + Vector3.UnitY * 0.012f, Vector3.UnitY, radius, Color.FromArgb(248, 255, 224, 72));
+        }
+
+        glLineWidth(1.0f);
+        glEnable(GlDepthTest);
+    }
+
+    private void DrawGpuEntityHealthBars()
+    {
+        if (_previewOnly || _entityOverlayBuffer.Count == 0)
+        {
+            return;
+        }
+
+        Vector3 viewForward = _cameraTargetM - _cameraPositionM;
+        if (viewForward.LengthSquared() <= 1e-6f)
+        {
+            viewForward = Vector3.UnitZ;
+        }
+        else
+        {
+            viewForward = Vector3.Normalize(viewForward);
+        }
+
+        Vector3 cameraRight = Vector3.Cross(viewForward, Vector3.UnitY);
+        if (cameraRight.LengthSquared() <= 1e-6f)
+        {
+            cameraRight = Vector3.UnitX;
+        }
+        else
+        {
+            cameraRight = Vector3.Normalize(cameraRight);
+        }
+
+        Vector3 cameraUp = Vector3.Cross(cameraRight, viewForward);
+        if (cameraUp.LengthSquared() <= 1e-6f)
+        {
+            cameraUp = Vector3.UnitY;
+        }
+        else
+        {
+            cameraUp = Vector3.Normalize(cameraUp);
+        }
+
+        glEnable(GlDepthTest);
+        foreach (EntityRenderOverlay overlay in _entityOverlayBuffer)
+        {
+            SimulationEntity entity = overlay.Entity;
+            if (!entity.IsAlive
+                || entity.IsSimulationSuppressed
+                || string.Equals(entity.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase)
+                || (!string.Equals(entity.EntityType, "robot", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(entity.EntityType, "sentry", StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            if (_firstPersonView && string.Equals(entity.Id, _host.SelectedEntity?.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            float healthRatio = entity.MaxHealth <= 1e-6
+                ? 0f
+                : (float)Math.Clamp(entity.Health / entity.MaxHealth, 0.0, 1.0);
+            Vector3 anchor = overlay.Center + Vector3.UnitY * (overlay.Height + 0.18f);
+            float distanceM = MathF.Sqrt(Math.Max(0.01f, Vector3.DistanceSquared(anchor, _cameraPositionM)));
+            float width = Math.Clamp(distanceM * 0.025f, 0.42f, 0.90f);
+            float height = Math.Clamp(width * 0.085f, 0.035f, 0.065f);
+            DrawGpuBillboardHealthBar(
+                anchor,
+                cameraRight,
+                cameraUp,
+                width,
+                height,
+                healthRatio,
+                ResolveTeamColor(entity.Team));
+        }
+    }
+
+    private static void DrawGpuBillboardHealthBar(
+        Vector3 center,
+        Vector3 right,
+        Vector3 up,
+        float width,
+        float height,
+        float ratio,
+        Color teamColor)
+    {
+        Vector3 halfRight = right * (width * 0.5f);
+        Vector3 halfUp = up * (height * 0.5f);
+        DrawGpuQuad(
+            center - halfRight - halfUp,
+            center + halfRight - halfUp,
+            center + halfRight + halfUp,
+            center - halfRight + halfUp,
+            Color.FromArgb(210, 5, 8, 12));
+
+        float clamped = Math.Clamp(ratio, 0f, 1f);
+        if (clamped <= 0.001f)
+        {
+            return;
+        }
+
+        float inset = Math.Min(height * 0.22f, width * 0.04f);
+        Vector3 left = center - halfRight + right * inset;
+        Vector3 bottom = -halfUp + up * inset;
+        Vector3 top = halfUp - up * inset;
+        Vector3 fillRight = right * Math.Max(0.0f, (width - inset * 2f) * clamped);
+        Color fillColor = Color.FromArgb(232, BlendColor(teamColor, Color.White, 0.18f));
+        DrawGpuQuad(
+            left + bottom,
+            left + fillRight + bottom,
+            left + fillRight + top,
+            left + top,
+            fillColor);
+    }
+
+    private static void DrawGpuImpactCircle(Vector3 center, Vector3 normal, float radius, Color color)
+    {
+        if (normal.LengthSquared() <= 1e-8f || radius <= 1e-4f)
+        {
+            return;
+        }
+
+        normal = Vector3.Normalize(normal);
+        Vector3 tangent = Vector3.Cross(normal, Vector3.UnitZ);
+        if (tangent.LengthSquared() <= 1e-6f)
+        {
+            tangent = Vector3.Cross(normal, Vector3.UnitX);
+        }
+
+        tangent = Vector3.Normalize(tangent);
+        Vector3 bitangent = Vector3.Normalize(Vector3.Cross(normal, tangent));
+        SetGpuColor(color);
+        glBegin(GlLineLoop);
+        const int segments = 36;
+        for (int index = 0; index < segments; index++)
+        {
+            float angle = MathF.Tau * index / segments;
+            Vector3 point = center + tangent * (MathF.Cos(angle) * radius) + bitangent * (MathF.Sin(angle) * radius);
+            glVertex3f(point.X, point.Y, point.Z);
+        }
+
+        glEnd();
     }
 
     private void DrawGpuDebugReference()
@@ -2217,6 +2507,46 @@ internal sealed partial class Simulator3dForm
         glBegin(GlLines);
         glVertex3f(a.X, a.Y, a.Z);
         glVertex3f(b.X, b.Y, b.Z);
+        glEnd();
+    }
+
+    private static void DrawGpuPolyline(IReadOnlyList<Vector3> points, Color color)
+    {
+        if (points.Count < 2)
+        {
+            return;
+        }
+
+        SetGpuColor(color);
+        glBegin(GlLines);
+        for (int index = 1; index < points.Count; index++)
+        {
+            Vector3 a = points[index - 1];
+            Vector3 b = points[index];
+            glVertex3f(a.X, a.Y, a.Z);
+            glVertex3f(b.X, b.Y, b.Z);
+        }
+
+        glEnd();
+    }
+
+    private static void DrawGpuPolyline(ReadOnlySpan<Vector3> points, Color color)
+    {
+        if (points.Length < 2)
+        {
+            return;
+        }
+
+        SetGpuColor(color);
+        glBegin(GlLines);
+        for (int index = 1; index < points.Length; index++)
+        {
+            Vector3 a = points[index - 1];
+            Vector3 b = points[index];
+            glVertex3f(a.X, a.Y, a.Z);
+            glVertex3f(b.X, b.Y, b.Z);
+        }
+
         glEnd();
     }
 

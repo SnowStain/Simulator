@@ -930,7 +930,7 @@ internal sealed class Simulator3dHost
             seed: 20260419,
             enableAutoMovement: false,
             canSeeAutoAimPlate: (world, shooter, target, plate) =>
-                AutoAimVisibility.CanSeePlate(world, _runtimeGrid, shooter, target, plate),
+                !shooter.IsPlayerControlled || AutoAimVisibility.CanSeePlate(world, _runtimeGrid, shooter, target, plate),
             resolveProjectileObstacle: (world, shooter, projectile, startX, startY, startHeightM, endX, endY, endHeightM, obstacleCandidates) =>
                 ResolveProjectileObstacle(
                     world,
@@ -1698,7 +1698,7 @@ internal sealed class Simulator3dHost
             entity.ChassisBoostMultiplier = profile.BoostPowerMultiplier;
             entity.ChassisBoostPowerCapW = profile.BoostPowerCapW;
             entity.MaxBufferEnergyJ = Math.Max(0.0, entity.MaxBufferEnergyJ <= 1e-6 ? 60.0 : entity.MaxBufferEnergyJ);
-            entity.BufferReserveEnergyJ = Math.Clamp(entity.BufferReserveEnergyJ <= 1e-6 ? 30.0 : entity.BufferReserveEnergyJ, 0.0, entity.MaxBufferEnergyJ);
+            entity.BufferReserveEnergyJ = Math.Clamp(entity.BufferReserveEnergyJ <= 1e-6 ? 10.0 : entity.BufferReserveEnergyJ, 0.0, entity.MaxBufferEnergyJ);
             entity.MaxSuperCapEnergyJ = Math.Max(0.0, entity.MaxSuperCapEnergyJ <= 1e-6 ? 2000.0 : entity.MaxSuperCapEnergyJ);
 
             if (resetHealth)

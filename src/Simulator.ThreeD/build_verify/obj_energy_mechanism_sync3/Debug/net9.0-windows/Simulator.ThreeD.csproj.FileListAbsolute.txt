@@ -1,6 +1,0 @@
-E:\Artinx\260111new\Simulator\src\Simulator.ThreeD\build_verify\obj_energy_mechanism_sync3\Debug\net9.0-windows\Simulator.ThreeD.csproj.AssemblyReference.cache
-E:\Artinx\260111new\Simulator\src\Simulator.ThreeD\build_verify\obj_energy_mechanism_sync3\Debug\net9.0-windows\Simulator.ThreeD.GeneratedMSBuildEditorConfig.editorconfig
-E:\Artinx\260111new\Simulator\src\Simulator.ThreeD\build_verify\obj_energy_mechanism_sync3\Debug\net9.0-windows\Simulator.ThreeD.AssemblyInfoInputs.cache
-E:\Artinx\260111new\Simulator\src\Simulator.ThreeD\build_verify\obj_energy_mechanism_sync3\Debug\net9.0-windows\Simulator.ThreeD.AssemblyInfo.cs
-E:\Artinx\260111new\Simulator\src\Simulator.ThreeD\build_verify\obj_energy_mechanism_sync3\Debug\net9.0-windows\Simulator.ThreeD.csproj.CoreCompileInputs.cache
-E:\Artinx\260111new\Simulator\src\Simulator.ThreeD\build_verify\obj_energy_mechanism_sync3\Debug\net9.0-windows\Simulator.ThreeD.sourcelink.json

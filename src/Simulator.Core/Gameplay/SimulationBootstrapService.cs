@@ -88,7 +88,7 @@ public sealed class SimulationBootstrapService
                 entity.ChassisBoostMultiplier = profile.BoostPowerMultiplier;
                 entity.ChassisBoostPowerCapW = profile.BoostPowerCapW;
                 entity.MaxBufferEnergyJ = 60.0;
-                entity.BufferReserveEnergyJ = 30.0;
+                entity.BufferReserveEnergyJ = 10.0;
                 entity.BufferEnergyJ = entity.MaxBufferEnergyJ;
                 world.Entities.Add(entity);
             }

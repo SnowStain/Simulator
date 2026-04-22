@@ -214,6 +214,19 @@ public sealed class TerrainEditorService
                 node["points"] = pointsArray;
             }
 
+            if (facility.AdditionalProperties is not null)
+            {
+                foreach ((string key, System.Text.Json.JsonElement value) in facility.AdditionalProperties)
+                {
+                    if (node.ContainsKey(key))
+                    {
+                        continue;
+                    }
+
+                    node[key] = System.Text.Json.Nodes.JsonNode.Parse(value.GetRawText());
+                }
+            }
+
             facilities.Add(node);
         }
 

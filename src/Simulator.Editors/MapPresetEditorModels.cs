@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Globalization;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Simulator.Core.Map;
 
@@ -113,6 +114,9 @@ public sealed class FacilityRegionEditorModel
     [Description("Polygon points as x,y; x,y; x,y")]
     public string PointsText { get; set; } = string.Empty;
 
+    [Browsable(false)]
+    public Dictionary<string, JsonElement>? AdditionalProperties { get; set; }
+
     public override string ToString() => $"{Id} [{Type}/{Shape}]";
 
     public static FacilityRegionEditorModel FromFacility(FacilityRegion facility)
@@ -131,6 +135,9 @@ public sealed class FacilityRegionEditorModel
             HeightM = facility.HeightM,
             PointsText = string.Join("; ", facility.Points.Select(point =>
                 string.Create(CultureInfo.InvariantCulture, $"{point.X:0.###},{point.Y:0.###}"))),
+            AdditionalProperties = facility.AdditionalProperties is null
+                ? null
+                : new Dictionary<string, JsonElement>(facility.AdditionalProperties, StringComparer.OrdinalIgnoreCase),
         };
     }
 

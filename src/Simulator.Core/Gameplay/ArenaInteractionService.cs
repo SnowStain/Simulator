@@ -567,7 +567,7 @@ public sealed class ArenaInteractionService
         {
             return;
         }
-        if (!TryConsumeEnergyOpportunityToken(teamState, out bool large))
+        if (!TryConsumeEnergyOpportunityToken(teamState, world.GameTimeSec, out bool large))
         {
             return;
         }
@@ -623,14 +623,28 @@ public sealed class ArenaInteractionService
                     : "\u80fd\u91cf\u673a\u5173\u6fc0\u6d3b\u5931\u8d25\uff1a\u8bef\u51fb\u975e\u5f53\u524d\u76ee\u6807\uff0c\u8fdb\u5ea6\u5df2\u6e05\u96f6\u5e76\u91cd\u65b0\u968f\u673a\u76ee\u6807\u3002");
         }
         int safeRingScore = Math.Clamp(ringScore, 1, 10);
+        if (armIndex >= 0
+            && armIndex < teamState.EnergyHitRingsByArm.Length
+            && teamState.EnergyHitRingsByArm[armIndex] > 0)
+        {
+            teamState.EnergyCurrentLitMask = ResolveEnergyLitMask(teamState);
+            return new FacilityInteractionEvent(
+                world.GameTimeSec,
+                shooter.Team,
+                shooter.Id,
+                hitPlate.Id,
+                "energy_mechanism",
+                "\u80fd\u91cf\u673a\u5173\uff1a\u8be5\u5706\u76d8\u5df2\u8ba1\u5165\u8fdb\u5ea6\uff0c\u672c\u6b21\u547d\u4e2d\u4e0d\u91cd\u590d\u7d2f\u8ba1\u3002");
+        }
+
         teamState.EnergyLastRingScore = safeRingScore;
         teamState.EnergyLastHitArmIndex = armIndex;
         teamState.EnergyLastHitFlashEndSec = world.GameTimeSec + 2.0;
         teamState.EnergyHitRingsByArm[armIndex] = Math.Max(teamState.EnergyHitRingsByArm[armIndex], safeRingScore);
-        teamState.EnergyActivatedGroupCount++;
+        teamState.EnergyActivatedGroupCount = CountActivatedEnergyDisks(teamState);
         teamState.EnergyHitRingCount++;
         teamState.EnergyHitRingSum += safeRingScore;
-        if (teamState.EnergyActivatedGroupCount >= 5)
+        if (CountActivatedEnergyDisks(teamState) >= 5)
         {
             if (teamState.EnergyLargeMechanismActive)
             {
@@ -665,7 +679,7 @@ public sealed class ArenaInteractionService
             "energy_mechanism",
             $"\u547d\u4e2d\u80fd\u91cf\u673a\u5173\uff1a\u5df2\u5b8c\u6210 {teamState.EnergyActivatedGroupCount}/5\uff0c\u672c\u6b21\u73af\u6570 {safeRingScore}\u3002");
     }
-    private static void TickEnergyMechanismActivation(
+    private void TickEnergyMechanismActivation(
         SimulationWorldState world,
         SimulationTeamState teamState,
         double deltaTimeSec,
@@ -676,7 +690,7 @@ public sealed class ArenaInteractionService
             return;
         }
         teamState.EnergyActivationWindowTimerSec += deltaTimeSec;
-        if (teamState.EnergyActivationWindowTimerSec > 20.0)
+        if (teamState.EnergyActivationWindowTimerSec > _rules.Facility.EnergyActivationWindowSec)
         {
             double failedAverageRing = teamState.EnergyHitRingCount > 0
                 ? teamState.EnergyHitRingSum / Math.Max(1.0, teamState.EnergyHitRingCount)
@@ -738,20 +752,30 @@ public sealed class ArenaInteractionService
         }
     }
 
-    private static bool TryConsumeEnergyOpportunityToken(SimulationTeamState teamState, out bool large)
+    private static bool TryConsumeEnergyOpportunityToken(SimulationTeamState teamState, double gameTimeSec, out bool large)
     {
         large = false;
+        if (gameTimeSec < 180.0)
+        {
+            if (teamState.EnergySmallTokens > 0)
+            {
+                teamState.EnergySmallTokens--;
+                return true;
+            }
+
+            return false;
+        }
+
+        teamState.EnergySmallTokens = 0;
+        if (gameTimeSec >= 420.0)
+        {
+            return false;
+        }
+
         if (teamState.EnergyLargeTokens > 0)
         {
             teamState.EnergyLargeTokens--;
-            teamState.EnergySmallTokens = 0;
             large = true;
-            return true;
-        }
-
-        if (teamState.EnergySmallTokens > 0)
-        {
-            teamState.EnergySmallTokens--;
             return true;
         }
 
@@ -876,7 +900,7 @@ public sealed class ArenaInteractionService
         teamState.EnergyBuffTimerSec = Math.Max(teamState.EnergyBuffTimerSec, _rules.Facility.EnergySmallBuffDurationSec);
         teamState.EnergyMechanismState = "activated";
         teamState.EnergyBuffDamageDealtMult = Math.Max(teamState.EnergyBuffDamageDealtMult, 1.0);
-        teamState.EnergyBuffDamageTakenMult = Math.Min(teamState.EnergyBuffDamageTakenMult, 0.75);
+        teamState.EnergyBuffDamageTakenMult = Math.Min(teamState.EnergyBuffDamageTakenMult, _rules.Facility.EnergySmallDefenseMult);
         teamState.EnergyBuffCoolingMult = Math.Max(teamState.EnergyBuffCoolingMult, 1.0);
         teamState.EnergyCurrentLitMask = 0;
     }
@@ -898,19 +922,19 @@ public sealed class ArenaInteractionService
         double damageDealtMult;
         double damageTakenMult;
         double coolingMult;
-        if (averageRing >= 9.0)
+        if (averageRing > 9.0)
         {
             damageDealtMult = 3.00;
             damageTakenMult = 0.50;
             coolingMult = 5.00;
         }
-        else if (averageRing >= 8.0)
+        else if (averageRing > 8.0)
         {
             damageDealtMult = 2.00;
             damageTakenMult = 0.75;
             coolingMult = 3.00;
         }
-        else if (averageRing >= 7.0)
+        else if (averageRing > 7.0)
         {
             damageDealtMult = 2.00;
             damageTakenMult = 0.75;
@@ -929,6 +953,20 @@ public sealed class ArenaInteractionService
         teamState.EnergyBuffDamageTakenMult = Math.Min(teamState.EnergyBuffDamageTakenMult, damageTakenMult);
         teamState.EnergyBuffCoolingMult = Math.Max(teamState.EnergyBuffCoolingMult, coolingMult);
         teamState.EnergyCurrentLitMask = 0;
+    }
+
+    private static int CountActivatedEnergyDisks(SimulationTeamState teamState)
+    {
+        int count = 0;
+        for (int index = 0; index < teamState.EnergyHitRingsByArm.Length; index++)
+        {
+            if (teamState.EnergyHitRingsByArm[index] > 0)
+            {
+                count++;
+            }
+        }
+
+        return count;
     }
 
     private static void ResetEnergyVisualState(SimulationTeamState teamState)

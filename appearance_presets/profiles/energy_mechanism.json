@@ -24,7 +24,7 @@
   "structure_rotor_radius_m": 0.98,
   "structure_rotor_hub_radius_m": 0.09,
   "structure_rotor_arm_length_m": 0.83,
-  "structure_rotor_arm_width_m": 0.06,
+  "structure_rotor_arm_width_m": 0.1,
   "structure_rotor_arm_height_m": 0.04,
   "structure_lamp_length_m": 0.31,
   "structure_lamp_width_m": 0.45,

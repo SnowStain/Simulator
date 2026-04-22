@@ -30,6 +30,10 @@ internal static class AutoAimVisibility
             ? Vector3.Normalize(forward + Vector3.UnitY)
             : Vector3.UnitY;
         float halfSideM = (float)Math.Clamp(plate.SideLengthM * 0.46, 0.025, 0.30);
+        if (!IsPlateFaceVisibleToShooter(target, plate, start, center))
+        {
+            return false;
+        }
 
         return CanSeeSample(center)
             || CanSeeSample(center + side * halfSideM)
@@ -125,6 +129,31 @@ internal static class AutoAimVisibility
         return false;
     }
 
+    private static bool IsPlateFaceVisibleToShooter(SimulationEntity target, ArmorPlateTarget plate, Vector3 start, Vector3 plateCenter)
+    {
+        if ((!string.Equals(target.EntityType, "robot", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(target.EntityType, "sentry", StringComparison.OrdinalIgnoreCase))
+            || plate.Id.Contains("top", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        Vector3 toShooter = start - plateCenter;
+        if (toShooter.LengthSquared() <= 1e-8f)
+        {
+            return true;
+        }
+
+        Vector3 normal = SimulationCombatMath.ResolveArmorPlateNormal(plate);
+        if (normal.LengthSquared() <= 1e-8f)
+        {
+            return true;
+        }
+
+        float facing = Vector3.Dot(Vector3.Normalize(toShooter), Vector3.Normalize(normal));
+        return facing >= 0.20f;
+    }
+
     private static bool IsEntityOccluding(
         SimulationWorldState world,
         double metersPerWorldUnit,
@@ -197,8 +226,7 @@ internal static class AutoAimVisibility
             return false;
         }
 
-        // The target itself is not part of the general occluder pass. This extra core test prevents
-        // far-side armor from being lockable through the chassis while keeping the near armor visible.
+        // 目标自身不会进入通用遮挡列表，这里额外检查车体核心，避免透过底盘锁到背面装甲。
         return SegmentIntersectsEntityCore(target, metersPerWorldUnit, start, end, 0.96f);
     }
 
@@ -225,7 +253,7 @@ internal static class AutoAimVisibility
         float halfWidth = (float)Math.Max(0.06, entity.BodyWidthM * entity.BodyRenderWidthScale * 0.5 + 0.010);
         if (SimulationCombatMath.IsStructure(entity))
         {
-            float radius = (float)Math.Max(0.12, entity.CollisionRadiusWorld * metersPerWorldUnit);
+            float radius = ResolveStructureVisionBlockRadiusM(entity, metersPerWorldUnit);
             halfLength = radius * 0.72f;
             halfWidth = radius * 0.72f;
         }
@@ -251,10 +279,31 @@ internal static class AutoAimVisibility
         float top = bottom + (float)Math.Max(
             0.24,
             SimulationCombatMath.IsStructure(entity)
-                ? entity.BodyHeightM + 0.16
+                ? ResolveStructureVisionBlockHeightM(entity)
                 : entity.BodyClearanceM + entity.BodyHeightM + entity.GimbalBodyHeightM * 0.55);
         return sampleHeight >= bottom && sampleHeight <= top;
     }
+
+    private static float ResolveStructureVisionBlockRadiusM(SimulationEntity structure, double metersPerWorldUnit)
+    {
+        float collisionRadius = (float)Math.Max(0.0, structure.CollisionRadiusWorld * metersPerWorldUnit);
+        return structure.EntityType switch
+        {
+            "base" => Math.Max(0.72f, collisionRadius),
+            "outpost" => Math.Max(0.52f, collisionRadius),
+            "energy_mechanism" => Math.Max(1.45f, collisionRadius),
+            _ => Math.Max(0.34f, collisionRadius),
+        };
+    }
+
+    private static float ResolveStructureVisionBlockHeightM(SimulationEntity structure)
+        => structure.EntityType switch
+        {
+            "base" => Math.Max(1.10f, (float)structure.BodyHeightM + 0.55f),
+            "outpost" => Math.Max(1.65f, (float)structure.BodyHeightM + 1.00f),
+            "energy_mechanism" => Math.Max(2.35f, (float)structure.BodyHeightM + 1.80f),
+            _ => Math.Max(0.80f, (float)structure.BodyHeightM),
+        };
 
     private static bool TryClipSlab(
         float origin,

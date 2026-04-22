@@ -106,7 +106,7 @@ internal sealed partial class Simulator3dForm
         graphics.FillRectangle(teamBrush, panel.X, panel.Y, 5, panel.Height);
 
         string roleLabel = ResolveRoleLabel(entity);
-        string controlLabel = entity.IsPlayerControlled ? "Manual" : "AI";
+        string controlLabel = entity.IsPlayerControlled ? "\u624b\u52a8" : "\u81ea\u52a8";
         using var titleBrush = new SolidBrush(Color.FromArgb(238, 244, 248));
         using var textBrush = new SolidBrush(Color.FromArgb(206, 216, 226));
         graphics.DrawString($"{entity.Id}  {roleLabel}  {controlLabel}", _smallHudFont, titleBrush, panel.X + 16, panel.Y + 10);
@@ -116,24 +116,24 @@ internal sealed partial class Simulator3dForm
         (float powerRatio, string powerLabel) = ResolvePowerGauge(entity);
         (float energyRatio, string energyLabel) = ResolveEnergyGauge(entity);
         (float superCapRatio, string superCapLabel) = ResolveSuperCapGauge(entity);
-        DrawMiniGauge(graphics, new RectangleF(barX, barY, 112, 10), entity.MaxHealth <= 0 ? 0f : (float)(entity.Health / entity.MaxHealth), Color.FromArgb(72, 214, 126), $"HP {(int)entity.Health}/{(int)entity.MaxHealth}");
-        DrawMiniGauge(graphics, new RectangleF(barX + 126, barY, 96, 10), powerRatio, Color.FromArgb(75, 146, 232), powerLabel);
-        DrawMiniGauge(graphics, new RectangleF(barX + 236, barY, 70, 10), entity.MaxHeat <= 0 ? 0f : (float)(entity.Heat / entity.MaxHeat), Color.FromArgb(228, 130, 58), $"H {(int)entity.Heat}");
+        DrawMiniGauge(graphics, new RectangleF(barX, barY, 112, 10), entity.MaxHealth <= 0 ? 0f : (float)(entity.Health / entity.MaxHealth), Color.FromArgb(72, 214, 126), $"\u8840\u91cf {(int)entity.Health}/{(int)entity.MaxHealth}");
+        DrawPowerGauge(graphics, new RectangleF(barX + 126, barY, 96, 10), entity, powerRatio, powerLabel);
+        DrawMiniGauge(graphics, new RectangleF(barX + 236, barY, 70, 10), entity.MaxHeat <= 0 ? 0f : (float)(entity.Heat / entity.MaxHeat), Color.FromArgb(228, 130, 58), $"\u70ed\u91cf {(int)entity.Heat}");
         DrawMiniGauge(graphics, new RectangleF(barX + 320, barY, 92, 10), energyRatio, Color.FromArgb(88, 220, 208), energyLabel);
         DrawMiniGauge(graphics, new RectangleF(barX + 426, barY, 82, 10), superCapRatio, entity.SuperCapEnabled ? Color.FromArgb(255, 210, 76) : Color.FromArgb(152, 164, 178), superCapLabel);
 
-        double speedMps = Math.Sqrt(
-            entity.VelocityXWorldPerSec * entity.VelocityXWorldPerSec
-            + entity.VelocityYWorldPerSec * entity.VelocityYWorldPerSec) * Math.Max(_host.World.MetersPerWorldUnit, 1e-6);
+        (double speedMps, _, _) = ResolveDisplayWorldVelocity(entity);
         string ammoText = string.Equals(entity.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase)
             ? $"42mm {entity.Ammo42Mm}"
             : $"17mm {entity.Ammo17Mm}";
         double fireRateHz = ResolveDisplayedFireRateHz(entity);
         string sentryText = string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase)
-            ? $"   Stance {RuleSet.NormalizeSentryStance(entity.SentryStance)}"
+            ? $"   \u54e8\u5175\u5f62\u6001 {ResolveSentryStanceLabel(entity.SentryStance)}"
             : string.Empty;
-        string attitudeText = $"{entity.ChassisPitchDeg:+0.0;-0.0;0.0}/{entity.ChassisRollDeg:+0.0;-0.0;0.0}\u00b0";
-        string motionText = $"\u5f39\u836f {ammoText}   \u5c04\u9891 {fireRateHz:0.0}Hz   \u901f\u5ea6 {speedMps:0.0}m/s   \u59ff\u6001 {attitudeText}{sentryText}";
+        string gyroText = entity.SmallGyroActive
+            ? $"   小陀螺ω {entity.AngularVelocityDegPerSec:+0;-0;0}\u00b0/s"
+            : string.Empty;
+        string motionText = $"\u5f39\u836f {ammoText}   \u5c04\u9891 {fireRateHz:0.0}Hz   \u5927\u5730\u901f\u5ea6 {speedMps:0.0}m/s{gyroText}{sentryText}";
         graphics.DrawString(motionText, _tinyHudFont, textBrush, panel.X + 16, panel.Y + 54);
 
         string aimMode = _autoAimAssistMode == AutoAimAssistMode.HardLock ? "\u786c\u9501" : "\u5f15\u5bfc";
@@ -143,23 +143,40 @@ internal sealed partial class Simulator3dForm
             : $"\u81ea\u7784 {aimMode}   \u672a\u9501\u5b9a{targetTypeText}";
         graphics.DrawString(autoAimText, _tinyHudFont, textBrush, panel.X + 16, panel.Y + 72);
 
-        (string buffText, string debuffText) = ResolveBuffDebuffSummary(entity);
-        graphics.DrawString($"Buff {buffText}", _tinyHudFont, textBrush, panel.X + 16, panel.Y + 90);
-        graphics.DrawString($"Debuff {debuffText}", _tinyHudFont, textBrush, panel.X + 300, panel.Y + 90);
-
         bool inFriendlySupply = IsInFriendlyFacility(entity, "supply", "buff_supply");
         bool inDeployZone = IsInFriendlyFacility(entity, "buff_hero_deployment");
-        string supplyPrompt = inFriendlySupply ? "   B Resupply" : string.Empty;
+        string supplyPrompt = inFriendlySupply ? "   B \u8865\u7ed9" : string.Empty;
         string deployText = entity.HeroDeploymentActive
-            ? "   Hold Z ExitDeploy"
+            ? "   \u957f\u6309Z\u9000\u51fa\u90e8\u7f72"
             : entity.HeroDeploymentRequested
-                ? "   HERO DEPLOY HOLD"
-                : inDeployZone ? "   Hold Z Deploy" : string.Empty;
+                ? "   \u82f1\u96c4\u90e8\u7f72\u8bfb\u6761"
+                : inDeployZone ? "   \u957f\u6309Z\u90e8\u7f72" : string.Empty;
         string sentryPrompt = string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase)
-            ? "   X SentryStance"
+            ? "   X \u54e8\u5175\u5f62\u6001"
             : string.Empty;
-        string statusText = $"\u76ee\u6807 {ResolveAutoAimModeLabel(entity)}   LMB Fire   RMB AutoAim   F5 Help   F7 Power   H Tactical{sentryPrompt}{supplyPrompt}{deployText}";
-        graphics.DrawString(statusText, _tinyHudFont, textBrush, panel.X + 16, panel.Y + 108);
+        string statusText = $"\u76ee\u6807 {ResolveAutoAimModeLabel(entity)}   \u5de6\u952e\u5f00\u706b   \u53f3\u952e\u81ea\u7784   F5\u952e\u4f4d   F7\u529f\u7387   H\u6307\u6325{sentryPrompt}{supplyPrompt}{deployText}";
+        graphics.DrawString(statusText, _tinyHudFont, textBrush, panel.X + 16, panel.Y + 96);
+    }
+
+    private static string ResolveSentryStanceLabel(string stance)
+    {
+        string normalized = RuleSet.NormalizeSentryStance(stance);
+        if (string.Equals(normalized, "defense", StringComparison.OrdinalIgnoreCase))
+        {
+            return "\u9632\u5b88";
+        }
+
+        if (string.Equals(normalized, "patrol", StringComparison.OrdinalIgnoreCase))
+        {
+            return "\u5de1\u903b";
+        }
+
+        if (string.Equals(normalized, "attack", StringComparison.OrdinalIgnoreCase))
+        {
+            return "\u8fdb\u653b";
+        }
+
+        return normalized;
     }
 
     private static string ResolveAutoAimTargetTypeText(SimulationEntity entity)
@@ -178,6 +195,39 @@ internal sealed partial class Simulator3dForm
         return string.Equals(entity.AutoAimTargetMode, "energy", StringComparison.OrdinalIgnoreCase)
             ? "\u80fd\u91cf\u673a\u5173"
             : "\u88c5\u7532\u677f";
+    }
+
+    private (double SpeedMps, double XComponentMps, double YComponentMps) ResolveDisplayWorldVelocity(SimulationEntity entity)
+    {
+        double metersPerWorldUnit = Math.Max(_host.World.MetersPerWorldUnit, 1e-6);
+        double vxMps = entity.VelocityXWorldPerSec * metersPerWorldUnit;
+        double vyMps = entity.VelocityYWorldPerSec * metersPerWorldUnit;
+        double speedMps = Math.Sqrt(vxMps * vxMps + vyMps * vyMps);
+        double referenceYawRad = ResolveRedBaseForwardYawDeg() * Math.PI / 180.0;
+        double worldYForwardX = Math.Cos(referenceYawRad);
+        double worldYForwardY = Math.Sin(referenceYawRad);
+        double worldXForwardX = -worldYForwardY;
+        double worldXForwardY = worldYForwardX;
+        double displayX = vxMps * worldXForwardX + vyMps * worldXForwardY;
+        double displayY = vxMps * worldYForwardX + vyMps * worldYForwardY;
+        return (speedMps, displayX, displayY);
+    }
+
+    private double ResolveDisplayWorldYawDeg(double yawDeg)
+        => NormalizeCompassDeg(yawDeg - ResolveRedBaseForwardYawDeg());
+
+    private double ResolveRedBaseForwardYawDeg()
+    {
+        foreach (SimulationEntity entity in _host.World.Entities)
+        {
+            if (string.Equals(entity.EntityType, "base", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(entity.Team, "red", StringComparison.OrdinalIgnoreCase))
+            {
+                return entity.AngleDeg;
+            }
+        }
+
+        return 0.0;
     }
 
     private double ResolveDisplayedFireRateHz(SimulationEntity entity)
@@ -724,6 +774,8 @@ internal sealed partial class Simulator3dForm
         using var textBrush = new SolidBrush(Color.FromArgb(230, 236, 241, 245));
         using var subTextBrush = new SolidBrush(Color.FromArgb(196, 198, 207, 216));
         graphics.DrawString(_firstPersonView ? "First Person" : "Third Person", _smallHudFont, textBrush, panel.X + 12, panel.Y + 8);
+        double bodyWorldYawDeg = ResolveDisplayWorldYawDeg(entity.AngleDeg);
+        double turretWorldYawDeg = ResolveDisplayWorldYawDeg(entity.TurretYawDeg);
 
         PointF center = new(panel.X + 58, panel.Y + 52);
         using var axisPen = new Pen(Color.FromArgb(96, 154, 170, 188), 1f);
@@ -735,7 +787,7 @@ internal sealed partial class Simulator3dForm
             center,
             58f,
             24f,
-            (float)(entity.AngleDeg * Math.PI / 180.0),
+            (float)(bodyWorldYawDeg * Math.PI / 180.0),
             Color.FromArgb(190, 68, 82, 98),
             Color.FromArgb(235, 222, 230, 238));
         DrawRotatedHudRectangle(
@@ -743,12 +795,12 @@ internal sealed partial class Simulator3dForm
             center,
             46f,
             13f,
-            (float)(entity.TurretYawDeg * Math.PI / 180.0),
+            (float)(turretWorldYawDeg * Math.PI / 180.0),
             Color.FromArgb(220, ResolveTeamColor(entity.Team)),
             Color.FromArgb(250, 245, 232, 132));
 
-        graphics.DrawString("Body", _tinyHudFont, subTextBrush, panel.X + 112, panel.Y + 32);
-        graphics.DrawString("Turret", _tinyHudFont, textBrush, panel.X + 112, panel.Y + 48);
+        graphics.DrawString($"Yaw {bodyWorldYawDeg:0}\u00b0", _tinyHudFont, subTextBrush, panel.X + 104, panel.Y + 30);
+        graphics.DrawString($"Tur {turretWorldYawDeg:0}\u00b0", _tinyHudFont, textBrush, panel.X + 104, panel.Y + 46);
         graphics.DrawString($"P {entity.GimbalPitchDeg:+0;-0;0}\u00b0", _tinyHudFont, subTextBrush, panel.X + 112, panel.Y + 64);
     }
 

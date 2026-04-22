@@ -4,6 +4,7 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using System.Windows.Forms;
 using Simulator.Core.Gameplay;
 using Simulator.Core.Map;
@@ -12,11 +13,11 @@ namespace Simulator.ThreeD;
 
 internal sealed partial class Simulator3dForm : Form
 {
-    private const int ToolbarHeight = 54;
+    private const int ToolbarHeight = 0;
     private const int HudHeight = 118;
     private const int SidebarWidth = 270;
     private const int DecisionSidebarWidth = 320;
-    private const float FirstPersonVerticalFovRad = MathF.PI * 0.5f; // 90 degrees.
+    private const float FirstPersonVerticalFovRad = MathF.PI * 0.5f; // 90度视场角。
     private const float FirstPersonBarrelScreenDropM = 0.030f;
     private const float FirstPersonSightConvergenceM = 24.0f;
 
@@ -265,6 +266,7 @@ internal sealed partial class Simulator3dForm : Form
     private readonly List<MatchEventFeedItem> _matchEventFeed = new();
     private readonly List<CenterBuffToast> _centerBuffToasts = new();
     private readonly Dictionary<string, double> _selectedBuffSnapshot = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, double> _powerCutSnapshot = new(StringComparer.OrdinalIgnoreCase);
     private string? _selectedBuffSnapshotEntityId;
     private DriveTelemetryForm? _driveTelemetryForm;
     private Bitmap? _cachedTerrainLayerBitmap;
@@ -355,7 +357,7 @@ internal sealed partial class Simulator3dForm : Form
         _previewStructure = Simulator3dOptions.NormalizePreviewStructure(options.PreviewStructure);
         _previewTeam = Simulator3dOptions.NormalizePreviewTeam(options.PreviewTeam);
 
-        Text = "RM26 C# 3D Simulator";
+        Text = "RM ARTINX A-Soul\u6a21\u62df\u5668";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(1100, 720);
         ClientSize = new Size(1440, 900);
@@ -520,26 +522,36 @@ internal sealed partial class Simulator3dForm : Form
 
         DrawWeaponLockOverlay(graphics);
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        bool gpuWorldLines = UseGpuRenderer && !UseFastFlatRenderer && _hasPresentedGpuFrame;
+        if (!gpuWorldLines)
+        {
+            DrawPredictedProjectileTrajectory(graphics);
+        }
         DrawCrosshair(graphics);
         DrawDeploymentPrompt(graphics);
         DrawEnergyActivationPrompt(graphics);
         DrawHeroDeploymentFeedOverlay(graphics);
         if (UseGpuRenderer && !UseFastFlatRenderer && _hasPresentedGpuFrame)
         {
-            DrawEntityOverlayBars(graphics);
             if (!_previewOnly)
             {
-                DrawGpuProjectileTrails(graphics);
                 DrawCombatMarkers(graphics);
             }
+
+            if (IsAnyKeyHeld(Keys.F3))
+            {
+                DrawEntityOverlayBars(graphics);
+            }
         }
-        DrawMatchToolbar(graphics);
         DrawHud(graphics);
+        DrawFpsBadge(graphics);
+        DrawCentralQuarterGauges(graphics);
         DrawPlayerStatusPanelV2(graphics);
         DrawBuffProgressOverlay(graphics);
         DrawCenterBuffToasts(graphics);
         DrawKeyGuideOverlay(graphics);
         DrawOrientationWidget(graphics);
+        DrawF3DebugPoseOverlay(graphics);
         DrawTacticalOverlay(graphics);
         DrawMatchEventFeed(graphics);
         if (_showDebugSidebars)
@@ -724,6 +736,7 @@ internal sealed partial class Simulator3dForm : Form
         if (simulatedSteps > 0)
         {
             UpdateSelectedBuffNotifications();
+            CapturePowerCutNotifications();
         }
 
         AdvanceCombatMarkers((float)elapsedSec);
@@ -1487,20 +1500,20 @@ internal sealed partial class Simulator3dForm : Form
             graphics.Restore(state);
         }
 
-        string team = string.Equals(entity.Team, "red", StringComparison.OrdinalIgnoreCase) ? "Red" : "Blue";
+        string team = string.Equals(entity.Team, "red", StringComparison.OrdinalIgnoreCase) ? "\u7ea2\u65b9" : "\u84dd\u65b9";
         string role = ResolveRoleLabel(entity);
         string subtype = string.Equals(entity.RoleKey, "infantry", StringComparison.OrdinalIgnoreCase)
-            ? (_host.InfantryMode == "balance" ? "Balance" : "Full")
-            : "Standard";
+            ? (_host.InfantryMode == "balance" ? "\u5e73\u8861" : "\u5168\u5411")
+            : "\u6807\u51c6";
         int ammo = string.Equals(entity.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase) ? entity.Ammo42Mm : entity.Ammo17Mm;
-        string ammoLabel = EntityHasBarrel(entity) ? $"{entity.AmmoType} {ammo}" : "No ammo";
+        string ammoLabel = EntityHasBarrel(entity) ? $"{entity.AmmoType} {ammo}" : "\u65e0\u5f39\u836f";
 
         int textY = viewport.Bottom + 16;
         graphics.DrawString($"{team}  |  {role}  |  {subtype}", _hudMidFont, Brushes.WhiteSmoke, rect.X + 18, textY);
         textY += 28;
-        graphics.DrawString($"HP {entity.Health:0}/{entity.MaxHealth:0}   Power {(int)entity.Power}/{(int)entity.MaxPower}   {ammoLabel}", _smallHudFont, Brushes.Gainsboro, rect.X + 18, textY);
+        graphics.DrawString($"\u8840\u91cf {entity.Health:0}/{entity.MaxHealth:0}   \u529f\u7387 {(int)entity.Power}/{(int)entity.MaxPower}   {ammoLabel}", _smallHudFont, Brushes.Gainsboro, rect.X + 18, textY);
         textY += 22;
-        graphics.DrawString($"ID {entity.Id}", _smallHudFont, Brushes.LightGray, rect.X + 18, textY);
+        graphics.DrawString($"\u7f16\u53f7 {entity.Id}", _smallHudFont, Brushes.LightGray, rect.X + 18, textY);
     }
 
     private void DrawMatchToolbar(Graphics graphics)
@@ -1521,7 +1534,7 @@ internal sealed partial class Simulator3dForm : Form
             ? $"单兵种测试 | 主控 {_host.SingleUnitTestFocusId}"
             : "完整模式";
         graphics.DrawString(modeText, _tinyHudFont, subtitleBrush, 16f, 32f);
-        string perfText = $"Render {_host.ActiveRendererMode} | Target {Math.Max(120, _displayRefreshRateHz)}Hz | FPS {_smoothedFrameRate:0}";
+        string perfText = $"\u6e32\u67d3 {_host.ActiveRendererMode} | \u76ee\u6807 {Math.Max(120, _displayRefreshRateHz)}Hz | \u5e27\u7387 {_smoothedFrameRate:0}";
         SizeF perfSize = graphics.MeasureString(perfText, _tinyHudFont);
         graphics.DrawString(perfText, _tinyHudFont, subtitleBrush, Math.Max(16f, ClientSize.Width - perfSize.Width - 430f), 32f);
 
@@ -1596,13 +1609,13 @@ internal sealed partial class Simulator3dForm : Form
 
         using var titleBrush = new SolidBrush(Color.FromArgb(238, 246, 242));
         using var textBrush = new SolidBrush(Color.FromArgb(204, 218, 224));
-        graphics.DrawString("Command Mode", _hudMidFont, titleBrush, panel.X + 14, panel.Y + 10);
-        graphics.DrawString("Click own unit to select. Click enemy/ground to command selected unit.", _tinyHudFont, textBrush, panel.X + 14, panel.Y + 36);
+        graphics.DrawString("\u6307\u6325\u6a21\u5f0f", _hudMidFont, titleBrush, panel.X + 14, panel.Y + 10);
+        graphics.DrawString("\u70b9\u51fb\u5df1\u65b9\u5355\u4f4d\u9009\u4e2d\uff0c\u518d\u70b9\u51fb\u654c\u65b9\u6216\u5730\u9762\u4e0b\u8fbe\u6307\u4ee4\u3002", _tinyHudFont, textBrush, panel.X + 14, panel.Y + 36);
 
         int y = panel.Y + 58;
-        DrawButton(graphics, new Rectangle(panel.X + 14, y, 88, 28), "Attack", "tactical_mode:attack", _tacticalCommandMode == TacticalCommandMode.Attack, Color.FromArgb(190, 82, 76));
-        DrawButton(graphics, new Rectangle(panel.X + 112, y, 88, 28), "Defend", "tactical_mode:defend", _tacticalCommandMode == TacticalCommandMode.Defend, Color.FromArgb(64, 132, 210));
-        DrawButton(graphics, new Rectangle(panel.X + 210, y, 88, 28), "Patrol", "tactical_mode:patrol", _tacticalCommandMode == TacticalCommandMode.Patrol, Color.FromArgb(74, 154, 112));
+        DrawButton(graphics, new Rectangle(panel.X + 14, y, 88, 28), "\u8fdb\u653b", "tactical_mode:attack", _tacticalCommandMode == TacticalCommandMode.Attack, Color.FromArgb(190, 82, 76));
+        DrawButton(graphics, new Rectangle(panel.X + 112, y, 88, 28), "\u9632\u5b88", "tactical_mode:defend", _tacticalCommandMode == TacticalCommandMode.Defend, Color.FromArgb(64, 132, 210));
+        DrawButton(graphics, new Rectangle(panel.X + 210, y, 88, 28), "\u5de1\u903b", "tactical_mode:patrol", _tacticalCommandMode == TacticalCommandMode.Patrol, Color.FromArgb(74, 154, 112));
 
         y += 38;
         double[] scales = { 0.3, 0.6, 1.0, 1.5 };
@@ -1620,10 +1633,10 @@ internal sealed partial class Simulator3dForm : Form
 
         y += 38;
         string targetText = _tacticalCommandMode == TacticalCommandMode.Attack
-            ? $"Target: {(_tacticalAttackTargetId ?? ResolveDefaultTacticalTargetId() ?? "none")}"
-            : $"Point: {_tacticalGroundTargetX:0},{_tacticalGroundTargetY:0}";
+            ? $"\u76ee\u6807\uff1a{(_tacticalAttackTargetId ?? ResolveDefaultTacticalTargetId() ?? "\u65e0")}"
+            : $"\u5730\u70b9\uff1a{_tacticalGroundTargetX:0},{_tacticalGroundTargetY:0}";
         graphics.DrawString(targetText, _tinyHudFont, textBrush, panel.X + 14, y);
-        graphics.DrawString($"Team {_host.SelectedTeam} | H exit | T aim {_autoAimAssistMode}", _tinyHudFont, textBrush, panel.X + 14, y + 18);
+        graphics.DrawString($"\u961f\u4f0d {ResolveTeamName(_host.SelectedTeam)} | H \u9000\u51fa | T \u81ea\u7784 {ResolveAutoAimAssistLabel(_autoAimAssistMode)}", _tinyHudFont, textBrush, panel.X + 14, y + 18);
         y += 40;
         SimulationEntity? selected = _host.SelectedEntity;
         if (selected is not null)
@@ -1631,16 +1644,16 @@ internal sealed partial class Simulator3dForm : Form
             int ammo = string.Equals(selected.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase)
                 ? selected.Ammo42Mm
                 : selected.Ammo17Mm;
-            graphics.DrawString($"Selected: {selected.Id} / {ResolveRoleLabel(selected)}", _tinyHudFont, titleBrush, panel.X + 14, y);
+            graphics.DrawString($"\u5df2\u9009\uff1a{selected.Id} / {ResolveRoleLabel(selected)}", _tinyHudFont, titleBrush, panel.X + 14, y);
             graphics.DrawString(
-                $"HP {selected.Health:0}/{selected.MaxHealth:0}   Ammo {ammo}   Heat {selected.Heat:0}/{Math.Max(1.0, selected.MaxHeat):0}   Power {selected.ChassisPowerDrawW:0}/{Math.Max(1.0, selected.EffectiveDrivePowerLimitW):0}W",
+                $"\u8840\u91cf {selected.Health:0}/{selected.MaxHealth:0}   \u5f39\u836f {ammo}   \u70ed\u91cf {selected.Heat:0}/{Math.Max(1.0, selected.MaxHeat):0}   \u529f\u7387 {selected.ChassisPowerDrawW:0}/{Math.Max(1.0, selected.EffectiveDrivePowerLimitW):0}W",
                 _tinyHudFont,
                 textBrush,
                 panel.X + 14,
                 y + 18);
         }
 
-        DrawButton(graphics, new Rectangle(panel.Right - 96, panel.Bottom - 36, 78, 26), "Apply", "tactical_apply", false, Color.FromArgb(86, 126, 156));
+        DrawButton(graphics, new Rectangle(panel.Right - 96, panel.Bottom - 36, 78, 26), "\u5e94\u7528", "tactical_apply", false, Color.FromArgb(86, 126, 156));
     }
 
     private void DrawTacticalRoutes(Graphics graphics)
@@ -1768,7 +1781,7 @@ internal sealed partial class Simulator3dForm : Form
         }
     }
 
-    private void DrawHud(Graphics graphics)
+    private void DrawHudLegacy(Graphics graphics)
     {
         Rectangle hudRect = new(0, ToolbarHeight, ClientSize.Width, HudHeight);
         using (var hudBrush = new SolidBrush(Color.FromArgb(238, 32, 37, 45)))
@@ -1823,6 +1836,69 @@ internal sealed partial class Simulator3dForm : Form
         DrawTeamHudSection(graphics, "blue", "蓝方", blueRect);
     }
 
+    private void DrawHud(Graphics graphics)
+    {
+        int centerX = ClientSize.Width / 2;
+        Rectangle centerPanel = new(centerX - 105, 2, 210, 56);
+
+        double remaining = Math.Max(0.0, _host.GameDurationSec - _host.World.GameTimeSec);
+        int remainingSeconds = (int)remaining;
+        int minutes = remainingSeconds / 60;
+        int seconds = remainingSeconds % 60;
+        StringFormat centerFormat = new()
+        {
+            Alignment = StringAlignment.Center,
+            LineAlignment = StringAlignment.Center,
+        };
+        using (var shadowBrush = new SolidBrush(Color.FromArgb(170, 0, 0, 0)))
+        using (var titleBrush = new SolidBrush(Color.FromArgb(224, 226, 234, 242)))
+        {
+            graphics.DrawString(_paused ? "\u5df2\u6682\u505c" : "\u5bf9\u5c40\u65f6\u95f4", _tinyHudFont, shadowBrush, new RectangleF(centerPanel.X + 1, centerPanel.Y + 3, centerPanel.Width, 18), centerFormat);
+            graphics.DrawString(_paused ? "\u5df2\u6682\u505c" : "\u5bf9\u5c40\u65f6\u95f4", _tinyHudFont, titleBrush, new RectangleF(centerPanel.X, centerPanel.Y + 4, centerPanel.Width, 18), centerFormat);
+        }
+
+        using (var shadowBrush = new SolidBrush(Color.FromArgb(190, 0, 0, 0)))
+        using (var timerBrush = new SolidBrush(Color.White))
+        {
+            graphics.DrawString($"{minutes}:{seconds:00}", _hudBigFont, shadowBrush, new RectangleF(centerPanel.X + 1, centerPanel.Y + 20, centerPanel.Width, 34), centerFormat);
+            graphics.DrawString($"{minutes}:{seconds:00}", _hudBigFont, timerBrush, new RectangleF(centerPanel.X, centerPanel.Y + 21, centerPanel.Width, 34), centerFormat);
+        }
+
+        DrawTeamGoldBadge(graphics, "red", new Rectangle(centerPanel.Left - 126, 24, 116, 24));
+        DrawTeamGoldBadge(graphics, "blue", new Rectangle(centerPanel.Right + 10, 24, 116, 24));
+
+        int sideGap = 138;
+        int sideMargin = 12;
+        int sideWidth = Math.Max(
+            220,
+            Math.Min(
+                centerPanel.Left - sideGap - sideMargin,
+                ClientSize.Width - centerPanel.Right - sideGap - sideMargin));
+        Rectangle redRect = new(centerPanel.Left - sideGap - sideWidth, 8, sideWidth, HudHeight - 16);
+        Rectangle blueRect = new(centerPanel.Right + sideGap, 8, sideWidth, HudHeight - 16);
+        DrawTeamHudSection(graphics, "red", "\u7ea2\u65b9", redRect);
+        DrawTeamHudSection(graphics, "blue", "\u84dd\u65b9", blueRect);
+    }
+
+    private void DrawFpsBadge(Graphics graphics)
+    {
+        Rectangle badge = new(Math.Max(8, ClientSize.Width - 88), Math.Max(HudHeight + 2, ClientSize.Height - 30), 82, 22);
+        using var shadow = new SolidBrush(Color.FromArgb(170, 0, 0, 0));
+        using var text = new SolidBrush(Color.FromArgb(236, 236, 246, 252));
+        graphics.DrawString($"\u5e27\u7387 {_smoothedFrameRate:0}", _tinyHudFont, shadow, badge.X + 9, badge.Y + 5);
+        graphics.DrawString($"\u5e27\u7387 {_smoothedFrameRate:0}", _tinyHudFont, text, badge.X + 8, badge.Y + 4);
+    }
+
+    private void DrawTeamGoldBadge(Graphics graphics, string teamKey, Rectangle rect)
+    {
+        double gold = _host.World.Teams.TryGetValue(teamKey, out SimulationTeamState? teamState) ? teamState.Gold : 0.0;
+        using var shadow = new SolidBrush(Color.FromArgb(170, 0, 0, 0));
+        using var text = new SolidBrush(Color.FromArgb(246, 255, 224, 96));
+        StringFormat center = new() { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+        graphics.DrawString($"\u91d1\u5e01 {(int)gold}", _smallHudFont, shadow, new Rectangle(rect.X + 1, rect.Y + 1, rect.Width, rect.Height), center);
+        graphics.DrawString($"\u91d1\u5e01 {(int)gold}", _smallHudFont, text, rect, center);
+    }
+
     private void DrawCrosshair(Graphics graphics)
     {
         float x = ClientSize.Width * 0.5f;
@@ -1842,6 +1918,265 @@ internal sealed partial class Simulator3dForm : Form
         DrawHeroDeploymentChargeRing(graphics, x, y);
         DrawTrackedArmorPlateHighlight(graphics);
         DrawAutoAimGuidanceMarker(graphics);
+    }
+
+    private void DrawCentralQuarterGauges(Graphics graphics)
+    {
+        SimulationEntity? entity = _host.SelectedEntity;
+        if (entity is null || _previewOnly)
+        {
+            return;
+        }
+
+        float diameter = Math.Max(160f, Math.Min(ClientSize.Width, ClientSize.Height) * 0.40f);
+        float centerX = ClientSize.Width * 0.5f;
+        float centerY = ClientSize.Height * 0.5f;
+        RectangleF ringRect = new(centerX - diameter * 0.5f, centerY - diameter * 0.5f, diameter, diameter);
+        float stroke = Math.Clamp(diameter * 0.026f, 7.0f, 14.0f);
+        float outerStroke = Math.Max(3.0f, stroke * 0.62f);
+
+        float hpRatio = entity.MaxHealth <= 1e-6 ? 0f : (float)Math.Clamp(entity.Health / entity.MaxHealth, 0.0, 1.0);
+        float powerRatio = entity.EffectiveDrivePowerLimitW <= 1e-6
+            ? 0f
+            : (float)Math.Clamp(entity.ChassisPowerDrawW / entity.EffectiveDrivePowerLimitW, 0.0, 1.0);
+        float superCapRatio = entity.MaxSuperCapEnergyJ <= 1e-6
+            ? 0f
+            : (float)Math.Clamp(entity.SuperCapEnergyJ / entity.MaxSuperCapEnergyJ, 0.0, 1.0);
+        float bufferRatio = entity.MaxBufferEnergyJ <= 1e-6
+            ? 0f
+            : (float)Math.Clamp(entity.BufferEnergyJ / entity.MaxBufferEnergyJ, 0.0, 1.0);
+        float heatRatio = entity.MaxHeat <= 1e-6 ? 0f : (float)Math.Clamp(entity.Heat / entity.MaxHeat, 0.0, 1.0);
+
+        DrawQuarterGaugeArc(graphics, ringRect, 180f, hpRatio, Color.FromArgb(166, 72, 214, 126), stroke);
+        DrawQuarterGaugeArc(graphics, ringRect, 270f, powerRatio, Color.FromArgb(178, 255, 214, 48), stroke);
+        DrawQuarterGaugeArc(graphics, ringRect, 0f, superCapRatio, Color.FromArgb(178, 255, 96, 196), stroke);
+        RectangleF bufferRect = RectangleF.Inflate(ringRect, stroke * 0.82f, stroke * 0.82f);
+        DrawPartialGaugeArc(graphics, bufferRect, 18f, 45f, bufferRatio, Color.FromArgb(146, 168, 174, 184), outerStroke);
+        DrawQuarterGaugeArc(graphics, ringRect, 90f, heatRatio, Color.FromArgb(166, 228, 130, 58), stroke);
+    }
+
+    private static void DrawQuarterGaugeArc(Graphics graphics, RectangleF rect, float startAngle, float ratio, Color color, float width)
+        => DrawPartialGaugeArc(graphics, rect, startAngle, 90f, ratio, color, width);
+
+    private static void DrawPartialGaugeArc(Graphics graphics, RectangleF rect, float startAngle, float sweepAngle, float ratio, Color color, float width)
+    {
+        using var backPen = new Pen(Color.FromArgb(42, 220, 226, 236), width)
+        {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round,
+        };
+        using var fillPen = new Pen(color, width)
+        {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round,
+        };
+        graphics.DrawArc(backPen, rect, startAngle, sweepAngle);
+        graphics.DrawArc(fillPen, rect, startAngle, Math.Clamp(ratio, 0f, 1f) * sweepAngle);
+    }
+
+    private void DrawF3DebugPoseOverlay(Graphics graphics)
+    {
+        if (!IsAnyKeyHeld(Keys.F3))
+        {
+            return;
+        }
+
+        SimulationEntity? entity = _host.SelectedEntity;
+        if (entity is null)
+        {
+            return;
+        }
+
+        List<string> lines = new()
+        {
+            $"坐标 X:{entity.X:0.0} Y:{entity.Y:0.0} Z:{entity.GroundHeightM + entity.AirborneHeightM:0.00}m",
+            $"姿态 yaw:{ResolveDisplayWorldYawDeg(entity.AngleDeg):+0.0;-0.0;0.0} pitch:{entity.ChassisPitchDeg:+0.0;-0.0;0.0} roll:{entity.ChassisRollDeg:+0.0;-0.0;0.0}",
+        };
+
+        int wheelIndex = 0;
+        foreach (double clearanceM in ResolveWheelGroundClearances(entity))
+        {
+            lines.Add($"轮{wheelIndex + 1} 离地 {clearanceM * 100.0:+0.0;-0.0;0.0}cm");
+            wheelIndex++;
+        }
+
+        Rectangle panel = new(14, HudHeight + 8, 260, 24 + lines.Count * 17);
+        using GraphicsPath path = CreateRoundedRectangle(panel, 7);
+        using var fill = new SolidBrush(Color.FromArgb(178, 4, 8, 12));
+        using var border = new Pen(Color.FromArgb(170, 255, 220, 92), 1f);
+        using var text = new SolidBrush(Color.FromArgb(238, 246, 242, 210));
+        graphics.FillPath(fill, path);
+        graphics.DrawPath(border, path);
+        float y = panel.Y + 10;
+        foreach (string line in lines)
+        {
+            graphics.DrawString(line, _tinyHudFont, text, panel.X + 12, y);
+            y += 17f;
+        }
+    }
+
+    private IEnumerable<double> ResolveWheelGroundClearances(SimulationEntity entity)
+    {
+        IReadOnlyList<(double X, double Y)> wheelOffsets = entity.WheelOffsetsM;
+        if (wheelOffsets.Count == 0)
+        {
+            double halfLength = Math.Max(0.10, entity.BodyLengthM * 0.5);
+            double halfWidth = Math.Max(0.09, entity.BodyWidthM * entity.BodyRenderWidthScale * 0.5);
+            wheelOffsets = new[]
+            {
+                (halfLength, halfWidth),
+                (halfLength, -halfWidth),
+                (-halfLength, halfWidth),
+                (-halfLength, -halfWidth),
+            };
+        }
+
+        double yawRad = entity.AngleDeg * Math.PI / 180.0;
+        double forwardX = Math.Cos(yawRad);
+        double forwardY = Math.Sin(yawRad);
+        double rightX = -forwardY;
+        double rightY = forwardX;
+        double metersPerWorldUnit = Math.Max(_host.World.MetersPerWorldUnit, 1e-6);
+        double chassisPlaneM = entity.GroundHeightM + entity.AirborneHeightM;
+        foreach ((double localForwardM, double localRightM) in wheelOffsets)
+        {
+            double worldX = entity.X + (forwardX * localForwardM + rightX * localRightM) / metersPerWorldUnit;
+            double worldY = entity.Y + (forwardY * localForwardM + rightY * localRightM) / metersPerWorldUnit;
+            double terrainHeightM = SampleTerrainHeightMeters(worldX, worldY);
+            yield return chassisPlaneM - terrainHeightM;
+        }
+    }
+
+    private void DrawPredictedProjectileTrajectory(Graphics graphics)
+    {
+        if (!_showProjectileTrails || _paused)
+        {
+            return;
+        }
+
+        SimulationEntity? entity = _host.SelectedEntity;
+        if (entity is null || !entity.IsAlive)
+        {
+            return;
+        }
+
+        double metersPerWorldUnit = Math.Max(_host.World.MetersPerWorldUnit, 1e-6);
+        double yawRad = entity.TurretYawDeg * Math.PI / 180.0;
+        double pitchRad = entity.GimbalPitchDeg * Math.PI / 180.0;
+        double speedMps = SimulationCombatMath.ProjectileSpeedMps(entity);
+        (double x, double y, double heightM) = SimulationCombatMath.ComputeMuzzlePoint(_host.World, entity, entity.GimbalPitchDeg);
+        double inheritedVxWorldPerSec = entity.HasObservedKinematics ? entity.ObservedVelocityXWorldPerSec : entity.VelocityXWorldPerSec;
+        double inheritedVyWorldPerSec = entity.HasObservedKinematics ? entity.ObservedVelocityYWorldPerSec : entity.VelocityYWorldPerSec;
+        double vxMps = inheritedVxWorldPerSec * metersPerWorldUnit + Math.Cos(pitchRad) * Math.Cos(yawRad) * speedMps;
+        double vyMps = inheritedVyWorldPerSec * metersPerWorldUnit + Math.Cos(pitchRad) * Math.Sin(yawRad) * speedMps;
+        double vzMps = Math.Sin(pitchRad) * speedMps;
+
+        List<PointF> projected = new(80);
+        RuntimeGridData? runtimeGrid = _host.RuntimeGrid;
+        double dt = 0.035;
+        double maxLifeSec = string.Equals(entity.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase) ? 4.2 : 2.8;
+        bool hasImpactSurface = false;
+        for (double t = 0.0; t <= maxLifeSec; t += dt)
+        {
+            Vector3 scenePoint = ToScenePoint(x, y, (float)heightM);
+            if (TryProject(scenePoint, out PointF point, out _))
+            {
+                projected.Add(point);
+            }
+
+            if (heightM < -0.05 || IsPredictedProjectileOutsideWorld(runtimeGrid, x, y))
+            {
+                break;
+            }
+
+            if (runtimeGrid is not null && runtimeGrid.IsValid)
+            {
+                float terrainHeight = runtimeGrid.SampleOcclusionHeight((float)x, (float)y);
+                if (heightM <= terrainHeight + 0.015 && t > 0.05)
+                {
+                    hasImpactSurface = true;
+                    break;
+                }
+            }
+
+            ApplyPredictedProjectileStep(entity.AmmoType, metersPerWorldUnit, dt, ref x, ref y, ref heightM, ref vxMps, ref vyMps, ref vzMps);
+        }
+
+        if (projected.Count < 2)
+        {
+            return;
+        }
+
+        using GraphicsPath path = new();
+        path.AddLines(projected.ToArray());
+        using var glowPen = new Pen(Color.FromArgb(96, 255, 190, 56), 6.0f)
+        {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round,
+            LineJoin = LineJoin.Round,
+        };
+        using var pathPen = new Pen(Color.FromArgb(238, 255, 214, 76), 2.0f)
+        {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round,
+            LineJoin = LineJoin.Round,
+        };
+        graphics.DrawPath(glowPen, path);
+        graphics.DrawPath(pathPen, path);
+
+        PointF end = projected[^1];
+        using var dotBrush = new SolidBrush(Color.FromArgb(245, 255, 222, 96));
+        graphics.FillEllipse(dotBrush, end.X - 3.0f, end.Y - 3.0f, 6.0f, 6.0f);
+        if (hasImpactSurface)
+        {
+            float radius = string.Equals(entity.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase) ? 11f : 7f;
+            using var impactPen = new Pen(Color.FromArgb(245, 255, 224, 72), 2.0f);
+            graphics.DrawEllipse(impactPen, end.X - radius, end.Y - radius, radius * 2f, radius * 2f);
+        }
+    }
+
+    private static bool IsPredictedProjectileOutsideWorld(RuntimeGridData? runtimeGrid, double x, double y)
+    {
+        if (runtimeGrid is null || !runtimeGrid.IsValid)
+        {
+            return false;
+        }
+
+        return x < 0.0
+            || y < 0.0
+            || x >= runtimeGrid.WidthCells * runtimeGrid.CellWidthWorld
+            || y >= runtimeGrid.HeightCells * runtimeGrid.CellHeightWorld;
+    }
+
+    private static void ApplyPredictedProjectileStep(
+        string ammoType,
+        double metersPerWorldUnit,
+        double dt,
+        ref double x,
+        ref double y,
+        ref double heightM,
+        ref double vxMps,
+        ref double vyMps,
+        ref double vzMps)
+    {
+        double speedMps = Math.Sqrt(vxMps * vxMps + vyMps * vyMps + vzMps * vzMps);
+        if (speedMps > 1e-6)
+        {
+            double diameterM = SimulationCombatMath.ProjectileDiameterM(ammoType);
+            double areaM2 = Math.PI * diameterM * diameterM * 0.25;
+            double massKg = string.Equals(ammoType, "42mm", StringComparison.OrdinalIgnoreCase) ? 0.041 : 0.0032;
+            double dragAccelMps2 = 0.5 * 1.20 * 0.47 * areaM2 * speedMps * speedMps / Math.Max(0.001, massKg);
+            dragAccelMps2 = Math.Min(dragAccelMps2, speedMps / Math.Max(dt, 1e-6) * 0.72);
+            double dragStep = dragAccelMps2 * dt / speedMps;
+            vxMps -= vxMps * dragStep;
+            vyMps -= vyMps * dragStep;
+            vzMps -= vzMps * dragStep;
+        }
+
+        vzMps -= 9.81 * dt;
+        x += vxMps / Math.Max(metersPerWorldUnit, 1e-6) * dt;
+        y += vyMps / Math.Max(metersPerWorldUnit, 1e-6) * dt;
+        heightM += vzMps * dt;
     }
 
     private void DrawHeroDeploymentChargeRing(Graphics graphics, float centerX, float centerY)
@@ -1876,7 +2211,7 @@ internal sealed partial class Simulator3dForm : Form
 
     private void DrawWeaponLockOverlay(Graphics graphics)
     {
-        if (!_firstPersonView || _paused)
+        if (_paused)
         {
             return;
         }
@@ -1887,30 +2222,111 @@ internal sealed partial class Simulator3dForm : Form
             return;
         }
 
+        if (TryResolveCriticalStateOverlay(entity, out string title, out string detail, out string centerLabel, out float progress))
+        {
+            DrawCriticalStateOverlay(graphics, title, detail, centerLabel, progress);
+            return;
+        }
+
+        if (!_firstPersonView)
+        {
+            return;
+        }
+
         string? lockText = ResolveWeaponLockOverlayText(entity);
         if (string.IsNullOrWhiteSpace(lockText))
         {
             return;
         }
 
-        using var fogBrush = new SolidBrush(Color.FromArgb(112, 186, 192, 202));
-        using var hazeBrush = new HatchBrush(HatchStyle.WideDownwardDiagonal, Color.FromArgb(28, 255, 255, 255), Color.FromArgb(0, 0, 0, 0));
-        using var shadowBrush = new SolidBrush(Color.FromArgb(92, 42, 0, 0));
-        graphics.FillRectangle(fogBrush, ClientRectangle);
-        graphics.FillRectangle(hazeBrush, ClientRectangle);
-        graphics.FillRectangle(shadowBrush, ClientRectangle);
-
         Rectangle box = new(ClientSize.Width / 2 - 250, ClientSize.Height / 2 - 42, 500, 84);
         using GraphicsPath path = CreateRoundedRectangle(box, 12);
-        using var fill = new SolidBrush(Color.FromArgb(214, 36, 10, 10));
-        using var border = new Pen(Color.FromArgb(240, 255, 88, 88), 1.4f);
-        using var titleBrush = new SolidBrush(Color.FromArgb(255, 255, 118, 118));
-        using var textBrush = new SolidBrush(Color.FromArgb(245, 255, 232, 232));
+        using var fill = new SolidBrush(Color.FromArgb(196, 14, 20, 28));
+        using var border = new Pen(Color.FromArgb(220, 132, 154, 180), 1.4f);
+        using var titleBrush = new SolidBrush(Color.FromArgb(255, 232, 238, 246));
+        using var textBrush = new SolidBrush(Color.FromArgb(238, 218, 228, 240));
         StringFormat center = new() { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
         graphics.FillPath(fill, path);
         graphics.DrawPath(border, path);
         graphics.DrawString("枪管锁定", _hudMidFont, titleBrush, new RectangleF(box.X, box.Y + 14, box.Width, 22), center);
         graphics.DrawString(lockText, _smallHudFont, textBrush, new RectangleF(box.X + 18, box.Y + 38, box.Width - 36, 24), center);
+    }
+
+    private bool TryResolveCriticalStateOverlay(
+        SimulationEntity entity,
+        out string title,
+        out string detail,
+        out string centerLabel,
+        out float progress)
+    {
+        title = string.Empty;
+        detail = string.Empty;
+        centerLabel = string.Empty;
+        progress = 0f;
+
+        if (entity.PowerCutTimerSec > 1e-6)
+        {
+            double remainingSec = Math.Max(0.0, entity.PowerCutTimerSec);
+            title = "超功率";
+            detail = $"底盘断电中，还剩 {remainingSec:0.0}s";
+            centerLabel = $"{remainingSec:0.0}s";
+            progress = (float)Math.Clamp(remainingSec / 5.0, 0.0, 1.0);
+            return true;
+        }
+
+        if (entity.HeatLockTimerSec > 1e-6 || string.Equals(entity.State, "heat_locked", StringComparison.OrdinalIgnoreCase))
+        {
+            ResolvedRoleProfile profile = _host.ResolveRuntimeProfile(entity);
+            double coolingRate = Math.Max(0.1, profile.HeatDissipationRate * Math.Max(0.1, entity.DynamicCoolingMult));
+            double unlockSec = Math.Max(entity.HeatLockTimerSec, entity.Heat / coolingRate);
+            title = "超热量";
+            detail = $"枪管锁定，预计 {unlockSec:0.0}s 后恢复";
+            centerLabel = $"{unlockSec:0.0}s";
+            progress = (float)Math.Clamp(
+                Math.Max(
+                    entity.Heat / Math.Max(1.0, entity.MaxHeat),
+                    entity.HeatLockTimerSec / Math.Max(0.5, unlockSec)),
+                0.0,
+                1.0);
+            return true;
+        }
+
+        return false;
+    }
+
+    private void DrawCriticalStateOverlay(
+        Graphics graphics,
+        string title,
+        string detail,
+        string centerLabel,
+        float progress)
+    {
+        float alphaScale = _firstPersonView ? 1.0f : 0.88f;
+
+        float centerX = ClientSize.Width * 0.5f;
+        float centerY = ClientSize.Height * 0.5f - 18f;
+        RectangleF ringRect = new(centerX - 56f, centerY - 56f, 112f, 112f);
+        using var shadowPen = new Pen(Color.FromArgb((int)(110 * alphaScale), 0, 0, 0), 11f);
+        using var backPen = new Pen(Color.FromArgb((int)(132 * alphaScale), 68, 14, 14), 8f);
+        using var progressPen = new Pen(Color.FromArgb((int)(240 * alphaScale), 255, 88, 88), 8f)
+        {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round,
+        };
+        using var ringFill = new SolidBrush(Color.FromArgb((int)(176 * alphaScale), 36, 8, 8));
+        using var titleBrush = new SolidBrush(Color.FromArgb((int)(248 * alphaScale), 255, 122, 122));
+        using var detailBrush = new SolidBrush(Color.FromArgb((int)(232 * alphaScale), 255, 228, 228));
+        using var centerBrush = new SolidBrush(Color.FromArgb((int)(250 * alphaScale), 255, 242, 242));
+
+        graphics.FillEllipse(ringFill, ringRect);
+        graphics.DrawEllipse(shadowPen, ringRect);
+        graphics.DrawEllipse(backPen, ringRect);
+        graphics.DrawArc(progressPen, ringRect, -90f, Math.Clamp(progress, 0f, 1f) * 360f);
+
+        StringFormat centered = new() { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+        graphics.DrawString(centerLabel, _hudMidFont, centerBrush, new RectangleF(ringRect.X, ringRect.Y + 14f, ringRect.Width, 28f), centered);
+        graphics.DrawString(title, _hudMidFont, titleBrush, new RectangleF(centerX - 180f, ringRect.Bottom + 10f, 360f, 24f), centered);
+        graphics.DrawString(detail, _smallHudFont, detailBrush, new RectangleF(centerX - 230f, ringRect.Bottom + 36f, 460f, 24f), centered);
     }
 
     private string? ResolveWeaponLockOverlayText(SimulationEntity entity)
@@ -2215,9 +2631,9 @@ internal sealed partial class Simulator3dForm : Form
         float barX = panel.X + 16;
         float barY = panel.Y + 35;
         (float powerRatio, string powerLabel) = ResolvePowerGauge(entity);
-        DrawMiniGauge(graphics, new RectangleF(barX, barY, 112, 10), entity.MaxHealth <= 0 ? 0f : (float)(entity.Health / entity.MaxHealth), Color.FromArgb(72, 214, 126), $"HP {(int)entity.Health}/{(int)entity.MaxHealth}");
-        DrawMiniGauge(graphics, new RectangleF(barX + 126, barY, 96, 10), powerRatio, Color.FromArgb(75, 146, 232), powerLabel);
-        DrawMiniGauge(graphics, new RectangleF(barX + 236, barY, 96, 10), entity.MaxHeat <= 0 ? 0f : (float)(entity.Heat / entity.MaxHeat), Color.FromArgb(228, 130, 58), $"H {(int)entity.Heat}");
+        DrawMiniGauge(graphics, new RectangleF(barX, barY, 112, 10), entity.MaxHealth <= 0 ? 0f : (float)(entity.Health / entity.MaxHealth), Color.FromArgb(72, 214, 126), $"\u8840\u91cf {(int)entity.Health}/{(int)entity.MaxHealth}");
+        DrawPowerGauge(graphics, new RectangleF(barX + 126, barY, 96, 10), entity, powerRatio, powerLabel);
+        DrawMiniGauge(graphics, new RectangleF(barX + 236, barY, 96, 10), entity.MaxHeat <= 0 ? 0f : (float)(entity.Heat / entity.MaxHeat), Color.FromArgb(228, 130, 58), $"\u70ed\u91cf {(int)entity.Heat}");
 
         double speedMps = Math.Sqrt(
             entity.VelocityXWorldPerSec * entity.VelocityXWorldPerSec
@@ -2228,11 +2644,11 @@ internal sealed partial class Simulator3dForm : Form
         string motionText = $"弹药 {ammoText}   速度 {speedMps:0.0}m/s   云台 {entity.GimbalPitchDeg:0}°";
         if (!string.IsNullOrWhiteSpace(entity.MotionBlockReason))
         {
-            motionText += $"   Block {entity.MotionBlockReason}";
+            motionText += $"   \u963b\u6321 {entity.MotionBlockReason}";
         }
         graphics.DrawString(motionText, _tinyHudFont, textBrush, panel.X + 16, panel.Y + 54);
 
-        string statusText = $"决策 {FormatDecisionLabelShort(entity.AiDecisionSelected, entity.AiDecision)}   Shift 上台阶   Ctrl/LMB 开火";
+        string statusText = $"决策 {FormatDecisionLabelShort(entity.AiDecisionSelected, entity.AiDecision)}   Shift 上台阶   Ctrl/\u5de6\u952e 开火";
         graphics.DrawString(statusText, _tinyHudFont, textBrush, panel.X + 16, panel.Y + 73);
     }
 
@@ -2271,9 +2687,9 @@ internal sealed partial class Simulator3dForm : Form
         (float powerRatio, string powerLabel) = ResolvePowerGauge(entity);
         (float energyRatio, string energyLabel) = ResolveEnergyGauge(entity);
         (float superCapRatio, string superCapLabel) = ResolveSuperCapGauge(entity);
-        DrawMiniGauge(graphics, new RectangleF(barX, barY, 112, 10), entity.MaxHealth <= 0 ? 0f : (float)(entity.Health / entity.MaxHealth), Color.FromArgb(72, 214, 126), $"HP {(int)entity.Health}/{(int)entity.MaxHealth}");
-        DrawMiniGauge(graphics, new RectangleF(barX + 126, barY, 96, 10), powerRatio, Color.FromArgb(75, 146, 232), powerLabel);
-        DrawMiniGauge(graphics, new RectangleF(barX + 236, barY, 70, 10), entity.MaxHeat <= 0 ? 0f : (float)(entity.Heat / entity.MaxHeat), Color.FromArgb(228, 130, 58), $"H {(int)entity.Heat}");
+        DrawMiniGauge(graphics, new RectangleF(barX, barY, 112, 10), entity.MaxHealth <= 0 ? 0f : (float)(entity.Health / entity.MaxHealth), Color.FromArgb(72, 214, 126), $"\u8840\u91cf {(int)entity.Health}/{(int)entity.MaxHealth}");
+        DrawPowerGauge(graphics, new RectangleF(barX + 126, barY, 96, 10), entity, powerRatio, powerLabel);
+        DrawMiniGauge(graphics, new RectangleF(barX + 236, barY, 70, 10), entity.MaxHeat <= 0 ? 0f : (float)(entity.Heat / entity.MaxHeat), Color.FromArgb(228, 130, 58), $"\u70ed\u91cf {(int)entity.Heat}");
         DrawMiniGauge(graphics, new RectangleF(barX + 320, barY, 92, 10), energyRatio, Color.FromArgb(88, 220, 208), energyLabel);
         DrawMiniGauge(graphics, new RectangleF(barX + 426, barY, 70, 10), superCapRatio, entity.SuperCapEnabled ? Color.FromArgb(255, 210, 76) : Color.FromArgb(152, 164, 178), superCapLabel);
 
@@ -2286,7 +2702,7 @@ internal sealed partial class Simulator3dForm : Form
         string motionText = $"弹药 {ammoText}   速度 {speedMps:0.0}m/s   云台 {entity.GimbalPitchDeg:0}°";
         if (!string.IsNullOrWhiteSpace(entity.MotionBlockReason))
         {
-            motionText += $"   Block {entity.MotionBlockReason}";
+            motionText += $"   \u963b\u6321 {entity.MotionBlockReason}";
         }
         graphics.DrawString(motionText, _tinyHudFont, textBrush, panel.X + 16, panel.Y + 54);
 
@@ -2314,6 +2730,37 @@ internal sealed partial class Simulator3dForm : Form
         graphics.DrawString(label, _tinyHudFont, Brushes.WhiteSmoke, rect.X, rect.Y - 12);
     }
 
+    private void DrawPowerGauge(Graphics graphics, RectangleF rect, SimulationEntity entity, float ratio, string label)
+    {
+        DrawMiniGauge(graphics, rect, ratio, Color.FromArgb(75, 146, 232), label);
+        RectangleF bufferRect = new(rect.X, rect.Bottom + 2f, rect.Width, 3f);
+        float bufferRatio = entity.MaxBufferEnergyJ <= 1e-6
+            ? 0f
+            : (float)Math.Clamp(entity.BufferEnergyJ / entity.MaxBufferEnergyJ, 0.0, 1.0);
+        using (var bufferBack = new SolidBrush(Color.FromArgb(122, 42, 46, 52)))
+        using (var bufferFill = new SolidBrush(Color.FromArgb(210, 154, 162, 170)))
+        using (var bufferPen = new Pen(Color.FromArgb(160, 186, 192, 198), 1f))
+        {
+            graphics.FillRectangle(bufferBack, bufferRect);
+            graphics.FillRectangle(bufferFill, bufferRect.X, bufferRect.Y, bufferRect.Width * bufferRatio, bufferRect.Height);
+            graphics.DrawRectangle(bufferPen, bufferRect.X, bufferRect.Y, bufferRect.Width, bufferRect.Height);
+        }
+
+        double displayLimit = Math.Max(1.0, ResolveDisplayedDrivePowerLimitW(entity));
+        double overPowerW = Math.Max(0.0, entity.ChassisPowerDrawW - displayLimit);
+        if (overPowerW <= 1e-3)
+        {
+            return;
+        }
+
+        float overRatio = (float)Math.Clamp(overPowerW / 300.0, 0.08, 1.0);
+        RectangleF overRect = new(rect.Right - rect.Width * overRatio, rect.Y, rect.Width * overRatio, rect.Height);
+        using var overFill = new SolidBrush(Color.FromArgb(235, 255, 210, 76));
+        using var overPen = new Pen(Color.FromArgb(255, 255, 232, 118), 1f);
+        graphics.FillRectangle(overFill, overRect);
+        graphics.DrawRectangle(overPen, overRect.X, overRect.Y, overRect.Width, overRect.Height);
+    }
+
     private void DrawHeroDeploymentFeedOverlay(Graphics graphics)
     {
         SimulationEntity? entity = _host.SelectedEntity;
@@ -2337,9 +2784,9 @@ internal sealed partial class Simulator3dForm : Form
         using var titleBrush = new SolidBrush(Color.FromArgb(255, 255, 224, 116));
         using var textBrush = new SolidBrush(Color.FromArgb(232, 232, 240, 248));
         StringFormat center = new() { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-        graphics.DrawString("HERO DEPLOYMENT MODE", _hudMidFont, titleBrush, new RectangleF(box.X, box.Y + 18, box.Width, 26), center);
-        graphics.DrawString("First-person video feed is cut. Auto aim and auto trigger are active.", _smallHudFont, textBrush, new RectangleF(box.X + 18, box.Y + 50, box.Width - 36, 24), center);
-        graphics.DrawString("Target priority: outpost top 80%, base top 50%. Hold Z for 2s to exit deploy mode.", _tinyHudFont, textBrush, new RectangleF(box.X + 18, box.Y + 82, box.Width - 36, 22), center);
+        graphics.DrawString("\u82f1\u96c4\u90e8\u7f72\u6a21\u5f0f", _hudMidFont, titleBrush, new RectangleF(box.X, box.Y + 18, box.Width, 26), center);
+        graphics.DrawString("\u7b2c\u4e00\u4eba\u79f0\u753b\u9762\u4e2d\u65ad\uff0c\u81ea\u7784\u4e0e\u81ea\u52a8\u5f00\u706b\u5df2\u542f\u7528\u3002", _smallHudFont, textBrush, new RectangleF(box.X + 18, box.Y + 50, box.Width - 36, 24), center);
+        graphics.DrawString("\u76ee\u6807\u4f18\u5148\u7ea7\uff1a\u524d\u54e8\u7ad9\u9876\u90e8 80%\uff0c\u57fa\u5730\u9876\u90e8 50%\u3002\u957f\u6309 Z 2\u79d2\u9000\u51fa\u90e8\u7f72\u3002", _tinyHudFont, textBrush, new RectangleF(box.X + 18, box.Y + 82, box.Width - 36, 22), center);
     }
 
     private void DrawDeploymentPrompt(Graphics graphics)
@@ -2375,8 +2822,8 @@ internal sealed partial class Simulator3dForm : Form
         StringFormat center = new() { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
         graphics.FillPath(fill, path);
         graphics.DrawPath(border, path);
-        graphics.DrawString("Deployment Zone", _smallHudFont, titleBrush, new RectangleF(box.X, box.Y + 6, box.Width, 18), center);
-        graphics.DrawString(entity.HeroDeploymentRequested ? "Holding deployment... stay inside zone for 2s" : "Hold Z for 2s to deploy and switch to top-armor auto fire", _tinyHudFont, textBrush, new RectangleF(box.X + 10, box.Y + 26, box.Width - 20, 18), center);
+        graphics.DrawString("\u90e8\u7f72\u533a", _smallHudFont, titleBrush, new RectangleF(box.X, box.Y + 6, box.Width, 18), center);
+        graphics.DrawString(entity.HeroDeploymentRequested ? "\u6b63\u5728\u8bfb\u6761\uff0c\u8bf7\u5728\u90e8\u7f72\u533a\u5185\u4fdd\u63012\u79d2" : "\u957f\u6309 Z 2\u79d2\u8fdb\u5165\u90e8\u7f72\uff0c\u81ea\u52a8\u653b\u51fb\u9876\u90e8\u88c5\u7532", _tinyHudFont, textBrush, new RectangleF(box.X + 10, box.Y + 26, box.Width - 20, 18), center);
     }
 
     private void DrawEnergyActivationPrompt(Graphics graphics)
@@ -2474,7 +2921,14 @@ internal sealed partial class Simulator3dForm : Form
             displayLimit);
         double draw = Math.Max(0.0, entity.ChassisPowerDrawW);
         float ratio = (float)Math.Clamp(draw / limit, 0.0, 1.0);
-        return (ratio, $"P {draw:0}/{limit:0}W");
+        double overPowerW = Math.Max(0.0, draw - limit);
+        string overText = overPowerW > 1e-3 ? $" +{overPowerW:0}" : string.Empty;
+        if (entity.PowerCutTimerSec > 1e-6)
+        {
+            return (0f, $"P CUT {entity.PowerCutTimerSec:0.0}s");
+        }
+
+        return (ratio, $"P {draw:0}/{limit:0}{overText}W");
     }
 
     private static double ResolveDisplayedDrivePowerLimitW(SimulationEntity entity)
@@ -2504,25 +2958,132 @@ internal sealed partial class Simulator3dForm : Form
     {
         if (entity.MaxChassisEnergy <= 1e-6)
         {
-            return (0f, "E --");
+            return (0f, "\u80fd\u91cf --");
         }
 
         float ratio = (float)Math.Clamp(entity.ChassisEnergy / entity.MaxChassisEnergy, 0.0, 1.0);
-        return (ratio, $"E {entity.ChassisEnergy / 1000.0:0.0}k");
+        return (ratio, $"\u80fd\u91cf {entity.ChassisEnergy / 1000.0:0.0}k");
     }
 
     private static (float Ratio, string Label) ResolveSuperCapGauge(SimulationEntity entity)
     {
         if (entity.MaxSuperCapEnergyJ <= 1e-6)
         {
-            return (0f, "SC --");
+            return (0f, "\u8d85\u7535 --");
         }
 
         float ratio = (float)Math.Clamp(entity.SuperCapEnergyJ / entity.MaxSuperCapEnergyJ, 0.0, 1.0);
-        return (ratio, entity.SuperCapEnabled ? $"SC {entity.SuperCapEnergyJ:0}" : $"sc {entity.SuperCapEnergyJ:0}");
+        if (entity.SuperCapEnabled && entity.SuperCapEnergyJ <= 300.0)
+        {
+            return (ratio, $"\u8d85\u7535\u4f4e {entity.SuperCapEnergyJ:0}");
+        }
+
+        return (ratio, $"\u8d85\u7535 {entity.SuperCapEnergyJ:0}");
     }
 
     private void DrawTeamHudSection(Graphics graphics, string teamKey, string teamLabel, Rectangle rect)
+    {
+        Color teamColor = ResolveTeamColor(teamKey);
+
+        bool redSide = string.Equals(teamKey, "red", StringComparison.OrdinalIgnoreCase);
+        SimulationEntity? baseEntity = FindEntityById($"{teamKey}_base");
+        SimulationEntity? outpostEntity = FindEntityById($"{teamKey}_outpost");
+        int outerBarWidth = Math.Min(118, Math.Max(74, rect.Width / 5));
+        Rectangle outpostBar = redSide
+            ? new Rectangle(rect.X + 4, rect.Y + 9, outerBarWidth, 12)
+            : new Rectangle(rect.Right - outerBarWidth - 4, rect.Y + 9, outerBarWidth, 12);
+        Rectangle baseBar = redSide
+            ? new Rectangle(outpostBar.Right + 7, rect.Y + 7, Math.Max(80, rect.Right - outpostBar.Right - 11), 16)
+            : new Rectangle(rect.X + 4, rect.Y + 7, Math.Max(80, outpostBar.Left - rect.X - 11), 16);
+
+        float baseRatio = ResolveHealthRatio(baseEntity);
+        float outpostRatio = ResolveHealthRatio(outpostEntity);
+        DrawTopHudBar(graphics, baseBar, baseRatio, teamColor, $"{teamLabel} \u57fa\u5730 {(int)Math.Max(0.0, baseEntity?.Health ?? 0)}/{(int)Math.Max(0.0, baseEntity?.MaxHealth ?? 0)}", false);
+        DrawTopHudBar(graphics, outpostBar, outpostRatio, teamColor, "\u524d\u54e8\u7ad9", (outpostEntity?.Health ?? 0.0) <= 0.0);
+
+        IReadOnlyList<SimulationEntity> units = BuildTeamHudUnits(teamKey);
+        if (units.Count == 0)
+        {
+            return;
+        }
+
+        int unitAreaY = rect.Y + 30;
+        int availableWidth = rect.Width - 8;
+        int gap = 4;
+        int cardWidth = Math.Max(58, (availableWidth - gap * (units.Count - 1)) / Math.Max(1, units.Count));
+        for (int index = 0; index < units.Count; index++)
+        {
+            int logicalIndex = redSide ? index : units.Count - 1 - index;
+            SimulationEntity unit = units[logicalIndex];
+            Rectangle card = new(rect.X + 4 + index * (cardWidth + gap), unitAreaY, Math.Min(cardWidth, rect.Right - 4 - (rect.X + 4 + index * (cardWidth + gap))), 58);
+            DrawTopHudUnitCard(graphics, unit, card, teamColor);
+        }
+    }
+
+    private void DrawTopHudBar(Graphics graphics, Rectangle rect, float ratio, Color color, string label, bool forceGrey)
+    {
+        float clamped = Math.Clamp(ratio, 0f, 1f);
+        Color fillColor = forceGrey ? Color.FromArgb(132, 112, 118, 126) : color;
+        using var back = new SolidBrush(Color.FromArgb(164, 4, 8, 12));
+        using var fill = new SolidBrush(Color.FromArgb(forceGrey ? 150 : 224, fillColor));
+        using var border = new Pen(Color.FromArgb(170, 184, 194, 206), 1f);
+        graphics.FillRectangle(back, rect);
+        graphics.FillRectangle(fill, rect.X, rect.Y, rect.Width * clamped, rect.Height);
+        graphics.DrawRectangle(border, rect);
+        using var text = new SolidBrush(Color.FromArgb(forceGrey ? 178 : 238, 246, 248, 252));
+        StringFormat center = new() { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+        graphics.DrawString(label, _tinyHudFont, text, rect, center);
+    }
+
+    private void DrawTopHudUnitCard(Graphics graphics, SimulationEntity unit, Rectangle card, Color teamColor)
+    {
+        bool isSelected = string.Equals(_host.SelectedEntity?.Id, unit.Id, StringComparison.OrdinalIgnoreCase);
+        using GraphicsPath path = CreateRoundedRectangle(card, 5);
+        using var fill = new SolidBrush(Color.FromArgb(unit.IsAlive ? 218 : 172, 10, 15, 22));
+        using var border = new Pen(isSelected ? Color.FromArgb(245, 255, 218, 84) : Color.FromArgb(unit.IsAlive ? 168 : 110, teamColor), isSelected ? 1.8f : 1f);
+        graphics.FillPath(fill, path);
+        graphics.DrawPath(border, path);
+
+        string entityKey = ExtractEntityKey(unit.Id);
+        string label = HudUnitLabelMap.TryGetValue(entityKey, out string? mappedLabel) ? mappedLabel : ResolveRoleLabel(unit);
+        int ammo = ResolveDisplayedAmmo(unit);
+        using var title = new SolidBrush(Color.FromArgb(unit.IsAlive ? 242 : 150, 244, 248, 252));
+        graphics.DrawString(label, _tinyHudFont, title, card.X + 5, card.Y + 3);
+        using var ammoBrush = new SolidBrush(Color.FromArgb(unit.IsAlive ? 230 : 140, 255, 224, 96));
+        SizeF ammoSize = graphics.MeasureString(ammo.ToString(), _tinyHudFont);
+        graphics.DrawString(ammo.ToString(), _tinyHudFont, ammoBrush, card.Right - ammoSize.Width - 5, card.Y + 3);
+
+        Rectangle hpBar = new(card.X + 5, card.Y + 24, Math.Max(8, card.Width - 10), 9);
+        float hpRatio = ResolveHealthRatio(unit);
+        DrawTopHudBar(graphics, hpBar, hpRatio, unit.IsAlive ? Color.FromArgb(86, 224, 126) : Color.FromArgb(112, 118, 126), string.Empty, !unit.IsAlive);
+
+        string hpText = unit.IsAlive
+            ? $"\u8840\u91cf {(int)Math.Ceiling(Math.Max(0.0, unit.Health))}/{(int)Math.Ceiling(Math.Max(0.0, unit.MaxHealth))}"
+            : $"\u590d\u6d3b {unit.RespawnTimerSec:0}";
+        using var hpBrush = new SolidBrush(Color.FromArgb(unit.IsAlive ? 232 : 158, 222, 232, 242));
+        graphics.DrawString(hpText, _tinyHudFont, hpBrush, card.X + 5, card.Y + 36);
+        string ammoLabel = string.Equals(unit.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase) ? "42mm" : "17mm";
+        using var small = new SolidBrush(Color.FromArgb(188, 204, 214, 226));
+        graphics.DrawString(ammoLabel, _tinyHudFont, small, card.Right - 36, card.Y + 36);
+        _uiButtons.Add(new UiButton(card, $"match_select:{unit.Id}"));
+    }
+
+    private static float ResolveHealthRatio(SimulationEntity? entity)
+    {
+        if (entity is null || entity.MaxHealth <= 1e-6)
+        {
+            return 0f;
+        }
+
+        return (float)Math.Clamp(entity.Health / entity.MaxHealth, 0.0, 1.0);
+    }
+
+    private static int ResolveDisplayedAmmo(SimulationEntity entity)
+        => string.Equals(entity.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase)
+            ? entity.Ammo42Mm
+            : entity.Ammo17Mm;
+
+    private void DrawTeamHudSectionLegacy(Graphics graphics, string teamKey, string teamLabel, Rectangle rect)
     {
         Color teamColor = ResolveTeamColor(teamKey);
         using (var panelBrush = new SolidBrush(Color.FromArgb(238, 48, 54, 64)))
@@ -3416,7 +3977,7 @@ internal sealed partial class Simulator3dForm : Form
             }
             catch
             {
-                // Try the next launcher.
+                // 当前启动器失败时继续尝试下一个。
             }
         }
 
@@ -3432,7 +3993,7 @@ internal sealed partial class Simulator3dForm : Form
         }
         catch
         {
-            // Fall through to the warning dialog below.
+            // 继续走到下面的警告弹窗。
         }
 
         MessageBox.Show(this, "Python launcher not found.", "RM26 3D Simulator", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -3887,9 +4448,8 @@ internal sealed partial class Simulator3dForm : Form
 
     private bool DrawProjectedMapFloorImage(Graphics graphics)
     {
-        // The map floor is now rendered through sampled terrain-color tiles instead of a
-        // perspective image warp. This avoids GDI+ OOM crashes and keeps the PNG aligned
-        // 1:1 with the runtime map coordinates.
+        // 地图底面改为按地形颜色采样绘制，避免透视贴图导致 GDI+ 内存溢出，
+        // 同时保证 PNG 与局内地图坐标一一对齐。
         return false;
     }
 
@@ -3918,13 +4478,14 @@ internal sealed partial class Simulator3dForm : Form
             }
 
             bool energyMechanism = string.Equals(region.Type, "energy_mechanism", StringComparison.OrdinalIgnoreCase);
-            if (!_showDebugSidebars && !energyMechanism)
+            bool dogHole = string.Equals(region.Type, "dog_hole", StringComparison.OrdinalIgnoreCase);
+            if (!_showDebugSidebars && !energyMechanism && !dogHole)
             {
                 continue;
             }
 
             if (region.Type.StartsWith("buff_", StringComparison.OrdinalIgnoreCase)
-                || (!energyMechanism && region.HeightM <= 0.20))
+                || (!energyMechanism && !dogHole && region.HeightM <= 0.20))
             {
                 continue;
             }
@@ -3948,6 +4509,12 @@ internal sealed partial class Simulator3dForm : Form
                 continue;
             }
 
+            if (dogHole)
+            {
+                DrawDogHoleModel(graphics, region);
+                continue;
+            }
+
             IReadOnlyList<Vector3> footprint = BuildFacilityFootprint(region);
             if (footprint.Count < 3)
             {
@@ -3960,6 +4527,63 @@ internal sealed partial class Simulator3dForm : Form
             Color edgeColor = Color.FromArgb(198, BlendColor(teamColor, Color.Black, 0.18f));
             DrawPrismWireframe(graphics, footprint, height, topColor, edgeColor, null);
         }
+    }
+
+    private void DrawDogHoleModel(Graphics graphics, FacilityRegion region)
+    {
+        ResolveDogHoleFrameGeometry(
+            region,
+            out Vector3 center,
+            out Vector3 forward,
+            out Vector3 right,
+            out Vector3 up,
+            out float openingWidth,
+            out float openingHeight,
+            out float depth,
+            out float frameThickness,
+            out float topBeamThickness);
+
+        float pillarHeight = openingHeight + topBeamThickness;
+        float halfSpan = openingWidth * 0.5f + frameThickness * 0.5f;
+        Color fillColor = Color.FromArgb(228, 74, 79, 86);
+        Color edgeColor = Color.FromArgb(238, 40, 44, 49);
+
+        DrawOrientedBoxSolid(
+            graphics,
+            center - right * halfSpan + up * (pillarHeight * 0.5f),
+            forward,
+            right,
+            up,
+            depth,
+            frameThickness,
+            pillarHeight,
+            fillColor,
+            edgeColor,
+            null);
+        DrawOrientedBoxSolid(
+            graphics,
+            center + right * halfSpan + up * (pillarHeight * 0.5f),
+            forward,
+            right,
+            up,
+            depth,
+            frameThickness,
+            pillarHeight,
+            fillColor,
+            edgeColor,
+            null);
+        DrawOrientedBoxSolid(
+            graphics,
+            center + up * (openingHeight + topBeamThickness * 0.5f),
+            forward,
+            right,
+            up,
+            depth,
+            openingWidth + frameThickness * 2f,
+            topBeamThickness,
+            fillColor,
+            edgeColor,
+            null);
     }
 
     private float FacilitySortDepth(FacilityRegion region)
@@ -4080,6 +4704,7 @@ internal sealed partial class Simulator3dForm : Form
             return;
         }
 
+        bool debugCollisionOnly = UseGpuRenderer && IsAnyKeyHeld(Keys.F3);
         foreach (EntityRenderOverlay overlay in _entityOverlayBuffer)
         {
             if (string.Equals(overlay.Entity.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase))
@@ -4090,6 +4715,10 @@ internal sealed partial class Simulator3dForm : Form
             if (IsAnyKeyHeld(Keys.F3))
             {
                 DrawEntityCollisionBox(graphics, overlay.Entity, overlay.Center, overlay.Profile);
+                if (debugCollisionOnly)
+                {
+                    continue;
+                }
             }
 
             if (UseGpuRenderer
@@ -4286,6 +4915,79 @@ internal sealed partial class Simulator3dForm : Form
         }
 
         return ((region.X1 + region.X2) * 0.5, (region.Y1 + region.Y2) * 0.5);
+    }
+
+    private void ResolveDogHoleFrameGeometry(
+        FacilityRegion region,
+        out Vector3 center,
+        out Vector3 forward,
+        out Vector3 right,
+        out Vector3 up,
+        out float openingWidth,
+        out float openingHeight,
+        out float depth,
+        out float frameThickness,
+        out float topBeamThickness)
+    {
+        (double centerWorldX, double centerWorldY) = ResolveFacilityRegionCenter(region);
+        bool isRedFlySlopeDogHole = region.Id.StartsWith("red_dog_hole", StringComparison.OrdinalIgnoreCase);
+        bool isFlySlopeDogHole = isRedFlySlopeDogHole
+            || region.Id.StartsWith("blue_dog_hole", StringComparison.OrdinalIgnoreCase)
+            || region.Id.Contains("fly_slope", StringComparison.OrdinalIgnoreCase);
+        double defaultYawDeg = isRedFlySlopeDogHole ? 90.0 : (isFlySlopeDogHole ? 0.0 : 90.0);
+        double defaultBottomOffset = isFlySlopeDogHole ? 0.0 : 0.10;
+        double defaultTopBeamThickness = isFlySlopeDogHole ? 0.10 : 0.05;
+        float yawDeg = (float)ResolveFacilityOverride(region, "model_yaw_deg", defaultYawDeg, -360.0);
+        float yaw = yawDeg * (MathF.PI / 180f);
+        float bottomOffset = (float)ResolveFacilityOverride(region, "model_bottom_offset_m", defaultBottomOffset, -2.0);
+        openingWidth = (float)ResolveFacilityOverride(region, "model_clear_width_m", 0.8, 0.05);
+        openingHeight = (float)ResolveFacilityOverride(region, "model_clear_height_m", 0.25, 0.05);
+        depth = (float)ResolveFacilityOverride(region, "model_depth_m", 0.25, 0.03);
+        frameThickness = (float)ResolveFacilityOverride(region, "model_frame_thickness_m", 0.065, 0.01);
+        topBeamThickness = (float)ResolveFacilityOverride(region, "model_top_beam_thickness_m", defaultTopBeamThickness, 0.01);
+        float groundHeight = SampleTerrainHeightMeters(centerWorldX, centerWorldY);
+
+        center = ToScenePoint(centerWorldX, centerWorldY, groundHeight + bottomOffset);
+        forward = new Vector3(MathF.Cos(yaw), 0f, MathF.Sin(yaw));
+        right = new Vector3(-forward.Z, 0f, forward.X);
+        up = Vector3.UnitY;
+    }
+
+    private float SampleTerrainHeightMeters(double worldX, double worldY)
+    {
+        if (_cachedRuntimeGrid is null || !_cachedRuntimeGrid.IsValid)
+        {
+            return 0f;
+        }
+
+        float sampleX = (float)worldX;
+        float sampleY = (float)worldY;
+        float maxWorldX = _cachedRuntimeGrid.WidthCells * _cachedRuntimeGrid.CellWidthWorld;
+        float maxWorldY = _cachedRuntimeGrid.HeightCells * _cachedRuntimeGrid.CellHeightWorld;
+        sampleX = Math.Clamp(sampleX, 0f, Math.Max(0f, maxWorldX - 1e-4f));
+        sampleY = Math.Clamp(sampleY, 0f, Math.Max(0f, maxWorldY - 1e-4f));
+        return _cachedRuntimeGrid.SampleOcclusionHeight(sampleX, sampleY);
+    }
+
+    private static double ResolveFacilityOverride(
+        FacilityRegion region,
+        string key,
+        double fallback,
+        double minValue)
+    {
+        if (region.AdditionalProperties is null
+            || !region.AdditionalProperties.TryGetValue(key, out JsonElement element))
+        {
+            return fallback;
+        }
+
+        double value;
+        return element.ValueKind switch
+        {
+            JsonValueKind.Number when element.TryGetDouble(out value) => Math.Max(minValue, value),
+            JsonValueKind.String when double.TryParse(element.GetString(), out value) => Math.Max(minValue, value),
+            _ => fallback,
+        };
     }
 
     private void DrawPreviewOnlyOverlay(Graphics graphics)
@@ -4823,7 +5525,7 @@ internal sealed partial class Simulator3dForm : Form
         graphics.FillRectangle(fillBrush, fillRect);
         graphics.DrawRectangle(outlinePen, backRect.X, backRect.Y, backRect.Width, backRect.Height);
 
-        string hpText = $"HP {(int)Math.Ceiling(Math.Max(0.0, entity.Health))}/{(int)Math.Ceiling(Math.Max(0.0, entity.MaxHealth))}";
+        string hpText = $"\u8840\u91cf {(int)Math.Ceiling(Math.Max(0.0, entity.Health))}/{(int)Math.Ceiling(Math.Max(0.0, entity.MaxHealth))}";
         using var textBrush = new SolidBrush(Color.FromArgb(entity.IsAlive ? 232 : 148, 232, 236, 242));
         SizeF hpSize = graphics.MeasureString(hpText, _tinyHudFont);
         graphics.DrawString(hpText, _tinyHudFont, textBrush, barPoint.X - hpSize.Width * 0.5f, backRect.Y - 13f);
@@ -5208,10 +5910,78 @@ internal sealed partial class Simulator3dForm : Form
             {
                 return true;
             }
+
+            if (IsStructureOccludingPoint(sample, targetPoint))
+            {
+                return true;
+            }
         }
 
         return false;
     }
+
+    private bool IsStructureOccludingPoint(Vector3 samplePoint, Vector3 targetPoint)
+    {
+        float metersPerWorldUnit = (float)Math.Max(_host.World.MetersPerWorldUnit, 1e-6);
+        foreach (SimulationEntity structure in _host.World.Entities)
+        {
+            if (!structure.IsAlive
+                || structure.IsSimulationSuppressed
+                || !SimulationCombatMath.IsStructure(structure))
+            {
+                continue;
+            }
+
+            Vector3 center = ToScenePoint(structure.X, structure.Y, (float)Math.Max(0.0, structure.GroundHeightM + structure.AirborneHeightM));
+            float bottom = center.Y;
+            float height = ResolveStructureVisionBlockHeightM(structure);
+            if (samplePoint.Y < bottom - 0.02f || samplePoint.Y > bottom + height + 0.05f)
+            {
+                continue;
+            }
+
+            float radius = ResolveStructureVisionBlockRadiusM(structure, metersPerWorldUnit);
+            float dx = samplePoint.X - center.X;
+            float dz = samplePoint.Z - center.Z;
+            if (dx * dx + dz * dz > radius * radius)
+            {
+                continue;
+            }
+
+            float targetDx = targetPoint.X - center.X;
+            float targetDz = targetPoint.Z - center.Z;
+            float targetMargin = Math.Max(0.10f, radius * 0.25f);
+            if (targetDx * targetDx + targetDz * targetDz <= (radius + targetMargin) * (radius + targetMargin))
+            {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    private static float ResolveStructureVisionBlockRadiusM(SimulationEntity structure, float metersPerWorldUnit)
+    {
+        float collisionRadius = (float)Math.Max(0.0, structure.CollisionRadiusWorld * metersPerWorldUnit);
+        return structure.EntityType switch
+        {
+            "base" => Math.Max(0.72f, collisionRadius),
+            "outpost" => Math.Max(0.52f, collisionRadius),
+            "energy_mechanism" => Math.Max(1.45f, collisionRadius),
+            _ => Math.Max(0.34f, collisionRadius),
+        };
+    }
+
+    private static float ResolveStructureVisionBlockHeightM(SimulationEntity structure)
+        => structure.EntityType switch
+        {
+            "base" => Math.Max(1.10f, (float)structure.BodyHeightM + 0.55f),
+            "outpost" => Math.Max(1.65f, (float)structure.BodyHeightM + 1.00f),
+            "energy_mechanism" => Math.Max(2.35f, (float)structure.BodyHeightM + 1.80f),
+            _ => Math.Max(0.80f, (float)structure.BodyHeightM),
+        };
 
     private void UpdateProjectileTrailCache()
     {
@@ -5698,29 +6468,26 @@ internal sealed partial class Simulator3dForm : Form
     }
 
     private static string ResolveRoleLabel(SimulationEntity entity)
+        => ResolveRoleLabel(entity.RoleKey);
+
+    private static string ResolveTeamName(string team)
     {
-        if (entity.RoleKey.Equals("hero", StringComparison.OrdinalIgnoreCase))
+        if (team.Equals("red", StringComparison.OrdinalIgnoreCase))
         {
-            return "Hero";
+            return "\u7ea2\u65b9";
         }
 
-        if (entity.RoleKey.Equals("engineer", StringComparison.OrdinalIgnoreCase))
+        if (team.Equals("blue", StringComparison.OrdinalIgnoreCase))
         {
-            return "Engineer";
+            return "\u84dd\u65b9";
         }
 
-        if (entity.RoleKey.Equals("sentry", StringComparison.OrdinalIgnoreCase))
-        {
-            return "Sentry";
-        }
-
-        if (entity.RoleKey.Equals("infantry", StringComparison.OrdinalIgnoreCase))
-        {
-            return "Infantry";
-        }
-
-        return entity.RoleKey;
+        return team;
     }
+
+    private static string ResolveAutoAimAssistLabel(AutoAimAssistMode mode)
+        => mode == AutoAimAssistMode.HardLock ? "\u786c\u9501" : "\u5f15\u5bfc";
+
 
     private static string ResolveRoleLabel(string role)
     {
@@ -5937,7 +6704,7 @@ internal sealed partial class Simulator3dForm : Form
 
         foreach (SimulationCombatEvent combatEvent in _host.LastReport.CombatEvents)
         {
-            if (!combatEvent.Hit || combatEvent.Damage <= 0.0)
+            if (!combatEvent.Hit)
             {
                 continue;
             }
@@ -5945,6 +6712,8 @@ internal sealed partial class Simulator3dForm : Form
             entityById.TryGetValue(combatEvent.TargetId, out SimulationEntity? target);
             Color tint = combatEvent.CriticalHit
                 ? Color.FromArgb(255, 236, 188, 62)
+                : combatEvent.DamagePrevented
+                    ? Color.FromArgb(224, 196, 196, 196)
                 : target is null
                     ? Color.FromArgb(244, 255, 214, 84)
                     : ResolveTeamColor(target.Team);
@@ -5957,7 +6726,7 @@ internal sealed partial class Simulator3dForm : Form
                 target?.X ?? 0.0,
                 target?.Y ?? 0.0,
                 (target?.GroundHeightM ?? 0.0) + (target?.AirborneHeightM ?? 0.0) + 0.9,
-                $"-{combatEvent.Damage:0.##}",
+                combatEvent.Damage <= 1e-6 ? "-0HP" : $"-{combatEvent.Damage:0.##}HP",
                 Color.FromArgb(246, tint),
                 0.70f,
                 markerOffsetX,
@@ -5972,11 +6741,19 @@ internal sealed partial class Simulator3dForm : Form
                     : ResolveTeamColor(shooter?.Team ?? target?.Team ?? "neutral");
             string targetLabel = target is null ? combatEvent.TargetId : FormatEventEntityName(target);
             string shooterLabel = shooter is null ? combatEvent.ShooterId : FormatEventEntityName(shooter);
-            AppendMatchEvent(
-                combatEvent.CriticalHit
+            string combatText = combatEvent.DamagePrevented
+                ? $"{shooterLabel} 命中 {targetLabel}  -0HP  {ResolveDamagePreventedLabel(combatEvent.DamagePreventedReason)}  p{combatEvent.HitProbability * 100.0:0}%"
+                : combatEvent.CriticalHit
                     ? $"{shooterLabel} 暴击 {targetLabel}  -{combatEvent.Damage:0.##}HP  (150%)  p{combatEvent.HitProbability * 100.0:0}%"
-                    : $"{shooterLabel} 命中 {targetLabel}  -{combatEvent.Damage:0.##}HP  p{combatEvent.HitProbability * 100.0:0}%",
-                eventColor);
+                    : $"{shooterLabel} 命中 {targetLabel}  -{combatEvent.Damage:0.##}HP  p{combatEvent.HitProbability * 100.0:0}%";
+            AppendMatchEvent(combatText, eventColor);
+        }
+
+        foreach (SimulationShotEvent shotEvent in _host.LastReport.ShotEvents)
+        {
+            string fireLine =
+                $"{DateTime.Now:HH:mm:ss.fff} {shotEvent.ShooterId} team={shotEvent.Team} ammo={shotEvent.AmmoType} auto={(shotEvent.AutoAim ? 1 : 0)} player={(shotEvent.PlayerControlled ? 1 : 0)} target={shotEvent.TargetId} plate={shotEvent.PlateId}";
+            AppendGameplayLog("fire_events.log", fireLine);
         }
 
         if (_combatMarkers.Count > 24)
@@ -6065,6 +6842,31 @@ internal sealed partial class Simulator3dForm : Form
         }
     }
 
+    private void CapturePowerCutNotifications()
+    {
+        var activeIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (SimulationEntity entity in _host.World.Entities)
+        {
+            activeIds.Add(entity.Id);
+            _powerCutSnapshot.TryGetValue(entity.Id, out double previousTimerSec);
+            double currentTimerSec = Math.Max(0.0, entity.PowerCutTimerSec);
+            _powerCutSnapshot[entity.Id] = currentTimerSec;
+            if (currentTimerSec <= 1e-3 || previousTimerSec > 1e-3)
+            {
+                continue;
+            }
+
+            Color teamColor = ResolveTeamColor(entity.Team);
+            AppendMatchEvent($"{FormatEventEntityName(entity)} 底盘超功率犯规，断电 5s", teamColor, 8.0f);
+        }
+
+        List<string> staleIds = _powerCutSnapshot.Keys.Where(id => !activeIds.Contains(id)).ToList();
+        foreach (string staleId in staleIds)
+        {
+            _powerCutSnapshot.Remove(staleId);
+        }
+    }
+
     private void AppendMatchEvent(string text, Color color, float lifetimeSec = 7.5f)
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -6073,9 +6875,31 @@ internal sealed partial class Simulator3dForm : Form
         }
 
         _matchEventFeed.Add(new MatchEventFeedItem(text.Trim(), color, lifetimeSec));
+        AppendGameplayLog("match_event_feed.log", $"{DateTime.Now:HH:mm:ss.fff} {text.Trim()}");
         if (_matchEventFeed.Count > 9)
         {
             _matchEventFeed.RemoveRange(0, _matchEventFeed.Count - 9);
+        }
+    }
+
+    private static string ResolveDamagePreventedLabel(string reason)
+        => reason switch
+        {
+            "invincible" => "无敌",
+            "base_protected" => "基地无敌",
+            _ => "免伤",
+        };
+
+    private static void AppendGameplayLog(string fileName, string line)
+    {
+        try
+        {
+            string logDirectory = Path.Combine(AppContext.BaseDirectory, "logs");
+            Directory.CreateDirectory(logDirectory);
+            File.AppendAllText(Path.Combine(logDirectory, fileName), line + Environment.NewLine);
+        }
+        catch
+        {
         }
     }
 

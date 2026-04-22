@@ -130,19 +130,19 @@ internal sealed partial class Simulator3dForm
                 edgeColor);
 
             DrawOutpostHead(graphics, center, yaw, towerHeight, headBaseHeight, entity, profile, capColor, edgeColor);
-            DrawOutpostRibs(graphics, center, yaw, entity, bodyColor, edgeColor);
             Vector3 forward = new(MathF.Cos(yaw), 0f, MathF.Sin(yaw));
             Vector3 side = new(-forward.Z, 0f, forward.X);
+            DrawOutpostRibs(graphics, center, yaw, bodyColor, edgeColor);
             DrawStructureHealthLightBar(
                 graphics,
                 entity,
-                center + forward * (towerRadius + 0.040f) + Vector3.UnitY * ((lowerShoulderHeight + upperShoulderHeight) * 0.5f),
+                OffsetScenePosition(center, 0.285f, 0f, yaw, 0.62f),
                 Vector3.UnitY,
                 forward,
                 side,
-                Math.Max(0.42f, upperShoulderHeight - lowerShoulderHeight),
-                0.018f,
-                0.026f);
+                0.68f,
+                0.030f,
+                0.110f);
         }
 
         if (renderPass != StructureRenderPass.StaticBody)
@@ -899,7 +899,7 @@ internal sealed partial class Simulator3dForm
         DrawGeneralPrism(graphics, bottom, top, fillColor, edgeColor, null);
     }
 
-    private void DrawOutpostRibs(Graphics graphics, Vector3 center, float yaw, SimulationEntity entity, Color bodyColor, Color edgeColor)
+    private void DrawOutpostRibs(Graphics graphics, Vector3 center, float yaw, Color bodyColor, Color edgeColor)
     {
         Color ribColor = Color.FromArgb(255, BlendColor(bodyColor, Color.Black, 0.24f));
         float[] yaws = { 0f, MathF.PI * 0.5f, MathF.PI, MathF.PI * 1.5f };
@@ -926,22 +926,6 @@ internal sealed partial class Simulator3dForm
                 edgeColor,
                 null);
         }
-
-        Color lightColor = Color.FromArgb(entity.IsAlive ? 255 : 226, ResolveTeamColor(entity.Team));
-        Vector3 lightCenter = OffsetScenePosition(center, 0.285f, 0f, yaw, 0.62f);
-        IReadOnlyList<Vector3> lightFootprint = BuildOrientedRectFootprint(
-            lightCenter,
-            0.030f,
-            0.110f,
-            0f,
-            yaw);
-        DrawPrismWireframe(
-            graphics,
-            lightFootprint,
-            0.68f,
-            lightColor,
-            Color.FromArgb(255, BlendColor(lightColor, Color.White, 0.16f)),
-            null);
     }
 
     private float DrawEnergyMechanismModel(Graphics graphics, FacilityRegion region, double? overrideCenterWorldX = null, double? overrideCenterWorldY = null)

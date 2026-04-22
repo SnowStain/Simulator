@@ -36,7 +36,7 @@
     "sim3d_renderer_backend": "gpu",
     "terrain_scene_backend": "wgl_opengl",
     "sim3d_selected_team": "blue",
-    "sim3d_selected_entity_id": "blue_robot_3",
+    "sim3d_selected_entity_id": "blue_robot_7",
     "player_projectile_ricochet_enabled": true,
     "match_mode": "full",
     "single_unit_test_team": "blue",
@@ -49,7 +49,7 @@
     "sim3d_sentry_stance": "attack",
     "sim3d_autoaim_accuracy_scale": 1,
     "sim3d_projectile_entity_rendering": true,
-    "sim3d_projectile_physics_backend": "native"
+    "sim3d_projectile_physics_backend": "bepu"
   },
   "ai": {
     "decision_deployment": {

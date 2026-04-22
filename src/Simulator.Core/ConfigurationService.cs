@@ -58,7 +58,25 @@ public sealed class ConfigurationService
             Directory.CreateDirectory(parent);
         }
 
-        File.WriteAllText(configPath, config.ToJsonString(JsonOptions));
+        string tempPath = Path.Combine(
+            string.IsNullOrWhiteSpace(parent) ? "." : parent,
+            $".{Path.GetFileName(configPath)}.{Guid.NewGuid():N}.tmp");
+        using (var stream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
+        using (var writer = new StreamWriter(stream))
+        {
+            writer.Write(config.ToJsonString(JsonOptions));
+            writer.WriteLine();
+            writer.Flush();
+            stream.Flush(flushToDisk: true);
+        }
+        if (File.Exists(configPath))
+        {
+            File.Replace(tempPath, configPath, null, ignoreMetadataErrors: true);
+        }
+        else
+        {
+            File.Move(tempPath, configPath);
+        }
     }
 
     public string GetMapPreset(JsonObject config)

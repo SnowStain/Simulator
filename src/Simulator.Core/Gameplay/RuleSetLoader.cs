@@ -67,6 +67,7 @@ public sealed class RuleSetLoader
         ruleSet.Facility.EnergyLargeWindowStartSec = GetDouble(rules, ruleSet.Facility.EnergyLargeWindowStartSec, "energy_mechanism", "large_window_start_sec");
         ruleSet.Facility.EnergyBuffDurationSec = GetDouble(rules, ruleSet.Facility.EnergyBuffDurationSec, "energy_mechanism", "buff_duration_sec");
         ruleSet.Facility.EnergySmallBuffDurationSec = GetDouble(rules, ruleSet.Facility.EnergySmallBuffDurationSec, "energy_mechanism", "small_buff_duration_sec");
+        ruleSet.Facility.EnergySmallDefenseMult = GetDouble(rules, ruleSet.Facility.EnergySmallDefenseMult, "energy_mechanism", "small_defense_mult");
         ruleSet.Facility.EnergyDamageDealtMult = GetDouble(rules, ruleSet.Facility.EnergyDamageDealtMult, "energy_mechanism", "damage_dealt_mult");
         ruleSet.Facility.EnergyCoolingMult = GetDouble(rules, ruleSet.Facility.EnergyCoolingMult, "energy_mechanism", "cooling_mult");
         ruleSet.Facility.EnergyPowerRecoveryMult = GetDouble(rules, ruleSet.Facility.EnergyPowerRecoveryMult, "energy_mechanism", "power_recovery_mult");

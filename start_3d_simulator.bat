@@ -1,7 +1,7 @@
 @echo off
 cd /d "%~dp0"
 if exist ".venv\Scripts\python.exe" (
-    ".venv\Scripts\python.exe" simulator_3d.py
+    ".venv\Scripts\python.exe" open_csharp_project.py --action run --target threeD
 ) else (
-    python simulator_3d.py
+    python open_csharp_project.py --action run --target threeD
 )

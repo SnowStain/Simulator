@@ -150,7 +150,7 @@ internal sealed partial class Simulator3dForm
                 + chassisForward3 * wheel.LocalX
                 + chassisRight3 * wheel.LocalY
                 + chassisUp3 * wheel.CenterHeightM;
-            if (!wheel.FixedToLeg && entity.AirborneHeightM <= 1e-4f)
+            if (entity.AirborneHeightM <= 1e-4f)
             {
                 wheelCenter.Y = MathF.Max(wheelCenter.Y, center.Y + wheel.RadiusM);
             }
@@ -510,7 +510,7 @@ internal sealed partial class Simulator3dForm
                     wheel.LocalY,
                     yaw,
                     Math.Max(wheel.RadiusM, wheel.CenterHeightM));
-                if (!wheel.FixedToLeg && entity.AirborneHeightM <= 1e-4f)
+                if (entity.AirborneHeightM <= 1e-4f)
                 {
                     wheelCenter.Y = MathF.Max(wheelCenter.Y, center.Y + wheel.RadiusM);
                 }

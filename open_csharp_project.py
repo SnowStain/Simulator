@@ -24,6 +24,7 @@ from typing import Callable
 class TargetSpec:
     path: Path
     run_project: Path | None = None
+    python_script: Path | None = None
 
 
 def launcher_log_dir(root: Path) -> Path:
@@ -41,6 +42,8 @@ def project_targets(root: Path) -> dict[str, TargetSpec]:
         # Running "solution" maps to the default runnable app (ThreeD).
         "solution": TargetSpec(path=root / "Simulator.sln", run_project=three_d),
         "threeD": TargetSpec(path=three_d, run_project=three_d),
+        "terrainEditor": TargetSpec(path=root / "py_client" / "terrain_editor.py", python_script=root / "py_client" / "terrain_editor.py"),
+        "appearanceEditor": TargetSpec(path=root / "py_client" / "appearance_editor.py", python_script=root / "py_client" / "appearance_editor.py"),
         "runtime": TargetSpec(path=runtime, run_project=runtime),
         "core": TargetSpec(path=root / "src" / "Simulator.Core" / "Simulator.Core.csproj"),
         "assets": TargetSpec(path=root / "src" / "Simulator.Assets" / "Simulator.Assets.csproj"),
@@ -111,6 +114,13 @@ def locate_dotnet() -> str | None:
     return shutil.which("dotnet")
 
 
+def locate_python() -> str:
+    venv_python = repo_root() / ".venv" / "Scripts" / "python.exe"
+    if venv_python.is_file():
+        return str(venv_python)
+    return sys.executable or "python"
+
+
 def run_with_dotnet(
     target_name: str,
     target_spec: TargetSpec,
@@ -118,6 +128,13 @@ def run_with_dotnet(
     no_build: bool,
     app_args: list[str],
 ) -> bool:
+    if target_spec.python_script is not None:
+        command = [locate_python(), str(target_spec.python_script), *app_args]
+        log_dir = launcher_log_dir(repo_root())
+        stdout_path = log_dir / f"{target_name}.stdout.log"
+        stderr_path = log_dir / f"{target_name}.stderr.log"
+        return run_detached(command, stdout_path=stdout_path, stderr_path=stderr_path)
+
     run_project = target_spec.run_project
     if run_project is None:
         print(

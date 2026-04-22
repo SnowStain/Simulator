@@ -1,5 +1,0 @@
-E:\Artinx\260111new\Simulator\src\Simulator.Core\build_verify\obj_energy_mechanism_sync\Debug\net9.0\Simulator.Core.GeneratedMSBuildEditorConfig.editorconfig
-E:\Artinx\260111new\Simulator\src\Simulator.Core\build_verify\obj_energy_mechanism_sync\Debug\net9.0\Simulator.Core.AssemblyInfoInputs.cache
-E:\Artinx\260111new\Simulator\src\Simulator.Core\build_verify\obj_energy_mechanism_sync\Debug\net9.0\Simulator.Core.AssemblyInfo.cs
-E:\Artinx\260111new\Simulator\src\Simulator.Core\build_verify\obj_energy_mechanism_sync\Debug\net9.0\Simulator.Core.csproj.CoreCompileInputs.cache
-E:\Artinx\260111new\Simulator\src\Simulator.Core\build_verify\obj_energy_mechanism_sync\Debug\net9.0\Simulator.Core.sourcelink.json

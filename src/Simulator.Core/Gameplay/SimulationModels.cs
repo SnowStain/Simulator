@@ -154,7 +154,21 @@ public sealed class SimulationEntity
 
     public double VelocityYWorldPerSec { get; set; }
 
+    public double ObservedVelocityXWorldPerSec { get; set; }
+
+    public double ObservedVelocityYWorldPerSec { get; set; }
+
     public double AngularVelocityDegPerSec { get; set; }
+
+    public double ObservedAngularVelocityDegPerSec { get; set; }
+
+    public double LastObservedX { get; set; }
+
+    public double LastObservedY { get; set; }
+
+    public double LastObservedAngleDeg { get; set; }
+
+    public bool HasObservedKinematics { get; set; }
 
     public double ChassisTargetYawDeg { get; set; }
 
@@ -246,6 +260,10 @@ public sealed class SimulationEntity
 
     public double ChassisPowerDrawW { get; set; }
 
+    public double CurrentFrameSuperCapDrawW { get; set; }
+
+    public double CurrentFrameBufferDrawW { get; set; }
+
     public double EffectiveDrivePowerLimitW { get; set; }
 
     public double ChassisRpm { get; set; }
@@ -270,7 +288,7 @@ public sealed class SimulationEntity
 
     public double MaxBufferEnergyJ { get; set; } = 60.0;
 
-    public double BufferReserveEnergyJ { get; set; } = 30.0;
+    public double BufferReserveEnergyJ { get; set; } = 10.0;
 
     public string ChassisSubtype { get; set; } = string.Empty;
 
@@ -460,6 +478,8 @@ public sealed class SimulationEntity
     public int InstantReviveCount { get; set; }
 
     public double HeatLockTimerSec { get; set; }
+
+    public double PowerCutTimerSec { get; set; }
 
     public double FireCooldownSec { get; set; }
 

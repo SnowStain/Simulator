@@ -1,0 +1,1396 @@
+13:07:32.274 red_robot_7 命中 blue outpost  -20HP  p94%
+13:07:32.374 red_robot_7 命中 blue outpost  -20HP  p92%
+13:07:32.589 blue_robot_1 命中 red outpost  -200HP  p80%
+13:07:33.124 red_robot_3 命中 blue outpost  -20HP  p97%
+13:07:33.312 red_robot_3 命中 blue outpost  -20HP  p96%
+13:07:33.571 red_robot_7 命中 blue outpost  -20HP  p93%
+13:07:34.102 red_robot_3 命中 blue outpost  -20HP  p97%
+13:07:35.270 red_robot_3 命中 blue outpost  -20HP  p96%
+13:07:38.470 red_robot_1 命中 blue outpost  -200HP  p80%
+13:07:43.990 blue_robot_3 命中 red outpost  -20HP  p93%
+13:07:46.727 red_robot_3 命中 blue outpost  -20HP  p96%
+13:07:49.453 Activated terrain_fly_slope_blue
+13:07:55.185 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:07:55.250 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:07:55.313 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:07:55.378 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:07:55.447 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:07:55.505 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:07:55.535 blue_robot_3 命中 red outpost  -20HP  p93%
+13:07:55.571 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:07:55.659 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:07:55.729 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:07:55.791 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:07:55.791 DOWN  blue_robot_7 eliminated red_robot_3
+13:08:00.133 blue_robot_3 命中 red outpost  -20HP  p94%
+13:08:04.881 red_robot_7 命中 blue outpost  -20HP  p93%
+13:08:06.429 red_robot_7 命中 blue outpost  -20HP  p92%
+13:08:06.673 red_robot_7 命中 blue outpost  -20HP  p93%
+13:08:10.194 RESPAWN  red_robot_3 respawned
+13:08:23.766 blue_robot_7 命中 red_robot_1  -15HP  p100%
+13:08:23.833 blue_robot_7 命中 red_robot_1  -15HP  p100%
+13:08:23.897 blue_robot_7 命中 red_robot_1  -15HP  p100%
+13:08:24.033 blue_robot_7 命中 red_robot_1  -15HP  p100%
+13:08:24.104 red_robot_4 命中 blue_robot_7  -25HP  p29%
+13:08:24.145 blue_robot_7 命中 red_robot_1  -15HP  p100%
+13:08:24.209 blue_robot_7 命中 red_robot_1  -15HP  p100%
+13:08:24.370 blue_robot_7 命中 red_robot_1  -15HP  p100%
+13:08:24.568 blue_robot_7 命中 red_robot_1  -15HP  p41%
+13:08:24.639 blue_robot_7 命中 red_robot_1  -15HP  p41%
+13:08:24.822 blue_robot_7 命中 red_robot_1  -15HP  p41%
+13:08:24.823 DOWN  blue_robot_7 eliminated red_robot_1
+13:08:25.928 blue_robot_7 命中 red_robot_3  -0HP  无敌  p100%
+13:08:25.991 blue_robot_7 命中 red_robot_3  -0HP  无敌  p100%
+13:08:26.054 blue_robot_7 命中 red_robot_3  -0HP  无敌  p100%
+13:08:26.125 blue_robot_7 命中 red_robot_3  -0HP  无敌  p100%
+13:08:26.180 blue_robot_7 命中 red_robot_3  -0HP  无敌  p100%
+13:08:26.315 blue_robot_7 命中 red_robot_3  -0HP  无敌  p100%
+13:08:26.387 blue_robot_7 命中 red_robot_3  -0HP  无敌  p100%
+13:08:26.544 blue_robot_7 命中 red_robot_3  -0HP  无敌  p100%
+13:08:26.599 blue_robot_7 命中 red_robot_3  -0HP  无敌  p100%
+13:08:26.668 blue_robot_7 命中 red_robot_3  -0HP  无敌  p100%
+13:08:26.723 blue_robot_7 命中 red_robot_3  -0HP  无敌  p100%
+13:08:26.790 blue_robot_7 命中 red_robot_3  -0HP  无敌  p100%
+13:08:26.852 blue_robot_7 命中 red_robot_3  -0HP  无敌  p100%
+13:08:29.973 blue_robot_3 命中 red outpost  -20HP  p93%
+13:08:32.445 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:32.514 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:32.622 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:32.689 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:32.792 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:32.858 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:32.919 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:33.017 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:33.146 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:33.208 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:33.270 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:33.334 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:33.405 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:33.489 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:33.558 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:33.620 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:33.683 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:33.837 blue_robot_7 命中 red_robot_2  -10HP  p30%
+13:08:33.899 blue_robot_7 命中 red_robot_2  -10HP  p30%
+13:08:33.967 blue_robot_7 命中 red_robot_2  -10HP  p30%
+13:08:34.029 blue_robot_7 命中 red_robot_2  -10HP  p30%
+13:08:34.167 blue_robot_7 命中 red_robot_2  -10HP  p30%
+13:08:34.298 blue_robot_7 命中 red_robot_2  -10HP  p30%
+13:08:34.361 blue_robot_7 命中 red_robot_2  -10HP  p30%
+13:08:34.616 blue_robot_7 命中 red_robot_2  -10HP  p20%
+13:08:34.617 DOWN  blue_robot_7 eliminated red_robot_2
+13:08:36.557 blue_robot_7 命中 blue outpost  -20HP  p100%
+13:08:36.560 red_robot_7 命中 blue outpost  -20HP  p92%
+13:08:36.776 red_robot_7 命中 blue outpost  -20HP  p93%
+13:08:36.936 blue_robot_7 命中 blue outpost  -20HP  p100%
+13:08:37.506 red_robot_7 命中 blue outpost  -20HP  p92%
+13:08:37.769 red_robot_7 命中 blue outpost  -20HP  p93%
+13:08:38.196 red_robot_7 命中 blue outpost  -20HP  p93%
+13:08:42.190 red_robot_7 命中 blue outpost  -20HP  p94%
+13:08:42.293 red_robot_7 命中 blue outpost  -20HP  p92%
+13:08:42.486 blue_robot_1 命中 red outpost  -200HP  p80%
+13:08:43.031 red_robot_3 命中 blue outpost  -20HP  p97%
+13:08:43.223 red_robot_3 命中 blue outpost  -20HP  p96%
+13:08:43.475 red_robot_7 命中 blue outpost  -20HP  p93%
+13:08:43.994 red_robot_3 命中 blue outpost  -20HP  p97%
+13:08:45.160 red_robot_3 命中 blue outpost  -20HP  p96%
+13:08:47.087 Activated terrain_highland_blue
+13:08:47.886 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:47.941 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:48.007 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:48.070 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:48.134 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:48.264 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:48.315 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:48.382 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:48.382 red_robot_1 命中 blue outpost  -200HP  p80%
+13:08:48.447 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:48.517 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:48.676 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:48.735 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:48.804 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:48.873 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:48.962 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:49.089 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:49.159 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:49.247 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:08:49.518 blue_robot_7 命中 red_robot_2  -10HP  p39%
+13:08:49.581 blue_robot_7 命中 red_robot_2  -10HP  p40%
+13:08:49.891 blue_robot_7 命中 red_robot_2  -10HP  p41%
+13:08:50.126 blue_robot_7 命中 red_robot_2  -10HP  p41%
+13:08:50.348 blue_robot_7 命中 red_robot_2  -10HP  p58%
+13:08:50.732 blue_robot_7 命中 red_robot_2  -10HP  p63%
+13:08:51.965 blue_robot_7 命中 red_robot_2  -10HP  p40%
+13:08:51.965 DOWN  blue_robot_7 eliminated red_robot_2
+13:09:50.532 blue_robot_3 命中 red outpost  -20HP  p93%
+13:09:54.785 red_robot_7 命中 blue outpost  -20HP  p94%
+13:09:54.887 red_robot_7 命中 blue outpost  -20HP  p92%
+13:09:55.698 red_robot_3 命中 blue outpost  -20HP  p97%
+13:09:55.893 red_robot_3 命中 blue outpost  -20HP  p96%
+13:09:56.187 red_robot_7 命中 blue outpost  -20HP  p93%
+13:09:56.779 red_robot_3 命中 blue outpost  -20HP  p97%
+13:09:58.022 red_robot_3 命中 blue outpost  -20HP  p96%
+13:09:59.004 Energy  小能量机关开始激活：请按随机顺序命中己方 5 个待激活圆盘。
+13:10:01.107 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p92%
+13:10:01.107 Energy  命中能量机关：已完成 1/5，本次环数 3。
+13:10:01.388 red_robot_1 命中 blue outpost  -200HP  p80%
+13:10:03.635 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p91%
+13:10:03.635 Energy  命中能量机关：已完成 2/5，本次环数 4。
+13:10:05.673 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p92%
+13:10:05.674 Energy  命中能量机关：已完成 3/5，本次环数 6。
+13:10:07.233 blue_robot_3 命中 red outpost  -20HP  p93%
+13:10:09.443 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p92%
+13:10:09.444 Energy  命中能量机关：已完成 4/5，本次环数 3。
+13:10:10.214 red_robot_3 命中 blue outpost  -20HP  p96%
+13:10:12.295 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p92%
+13:10:12.296 Energy  小能量机关激活成功：全队获得 25% 防御增益，持续 20 秒。
+13:10:19.553 blue_robot_3 命中 red outpost  -20HP  p93%
+13:10:22.437 red_robot_3 命中 blue outpost  -20HP  p96%
+13:10:24.359 blue_robot_3 命中 red outpost  -20HP  p94%
+13:10:24.569 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:10:24.642 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:10:24.718 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:10:24.793 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:10:24.810 red_robot_3 命中 blue outpost  -20HP  p97%
+13:10:24.861 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:10:25.036 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:10:25.089 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:10:25.164 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:10:25.219 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:10:25.285 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:10:25.379 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:10:25.431 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:10:25.507 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:10:25.560 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:10:25.625 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:10:25.699 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:10:25.754 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:10:27.050 blue_robot_7 命中 red_robot_2  -10HP  p66%
+13:10:27.129 blue_robot_7 命中 red_robot_2  -10HP  p67%
+13:10:27.457 blue_robot_7 命中 red_robot_2  -10HP  p71%
+13:10:28.820 red_robot_7 命中 blue outpost  -20HP  p93%
+13:10:30.373 red_robot_7 命中 blue outpost  -20HP  p92%
+13:10:30.617 red_robot_7 命中 blue outpost  -20HP  p93%
+13:10:32.226 Activated terrain_fly_slope_blue
+13:10:36.940 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:10:37.003 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:10:37.069 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:10:37.159 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:10:37.230 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:10:37.349 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:10:37.416 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:10:37.489 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:10:37.543 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:10:37.673 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:10:37.674 DOWN  blue_robot_7 eliminated red_robot_3
+13:10:45.246 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:10:45.333 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:10:45.382 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:10:45.445 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:10:45.515 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:10:45.515 DOWN  blue_robot_7 eliminated red_robot_2
+13:10:49.636 RESPAWN  red_robot_2 respawned
+13:10:53.296 RESPAWN  red_robot_3 respawned
+13:10:54.237 blue_robot_3 命中 red outpost  -20HP  p93%
+13:10:57.962 blue_robot_7 命中 red outpost  -20HP  p58%
+13:10:58.018 blue_robot_7 命中 red outpost  -20HP  p58%
+13:10:58.129 blue_robot_7 命中 red outpost  -20HP  p57%
+13:10:58.197 blue_robot_7 命中 red outpost  -20HP  p57%
+13:10:58.478 blue_robot_7 命中 red outpost  -20HP  p57%
+13:10:58.913 blue_robot_7 命中 red outpost  -20HP  p57%
+13:10:58.979 blue_robot_7 命中 red outpost  -20HP  p57%
+13:10:59.040 blue_robot_7 命中 red outpost  -20HP  p57%
+13:10:59.109 blue_robot_7 命中 red outpost  -20HP  p57%
+13:10:59.176 blue_robot_7 命中 red outpost  -20HP  p57%
+13:10:59.236 blue_robot_7 命中 red outpost  -20HP  p57%
+13:10:59.301 blue_robot_7 命中 red outpost  -20HP  p57%
+13:10:59.404 blue_robot_7 命中 red outpost  -20HP  p57%
+13:10:59.455 blue_robot_7 命中 red outpost  -20HP  p57%
+13:10:59.626 blue_robot_7 命中 red outpost  -20HP  p57%
+13:10:59.749 blue_robot_7 命中 red outpost  -20HP  p58%
+13:11:00.489 blue_robot_7 命中 red outpost  -20HP  p57%
+13:11:00.628 blue_robot_7 命中 red outpost  -20HP  p58%
+13:11:00.771 red_robot_7 命中 blue outpost  -20HP  p92%
+13:11:00.807 blue_robot_7 命中 red outpost  -20HP  p57%
+13:11:00.877 blue_robot_7 命中 red outpost  -20HP  p57%
+13:11:00.969 blue_robot_7 命中 red outpost  -20HP  p57%
+13:11:00.990 red_robot_7 命中 blue outpost  -20HP  p93%
+13:11:01.025 blue_robot_7 命中 red outpost  -20HP  p57%
+13:11:01.679 blue_robot_7 命中 red outpost  -20HP  p57%
+13:11:01.717 red_robot_7 命中 blue outpost  -20HP  p92%
+13:11:01.748 blue_robot_7 命中 red outpost  -20HP  p57%
+13:11:01.885 blue_robot_7 命中 red outpost  -20HP  p57%
+13:11:01.957 blue_robot_7 命中 red outpost  -20HP  p57%
+13:11:01.971 red_robot_7 命中 blue outpost  -20HP  p93%
+13:11:02.119 blue_robot_7 命中 red outpost  -20HP  p57%
+13:11:02.241 blue_robot_7 命中 red outpost  -20HP  p57%
+13:11:02.461 red_robot_7 命中 blue outpost  -20HP  p93%
+13:11:02.924 red_robot_7 命中 blue outpost  -20HP  p93%
+13:11:05.890 blue_robot_7 命中 red outpost  -20HP  p57%
+13:11:05.965 blue_robot_7 命中 red outpost  -20HP  p58%
+13:11:06.030 blue_robot_7 命中 red outpost  -20HP  p58%
+13:11:07.179 blue_robot_7 命中 red outpost  -20HP  p58%
+13:11:07.520 blue_robot_7 命中 red outpost  -20HP  p58%
+13:11:08.136 blue_robot_7 命中 red outpost  -20HP  p58%
+13:11:08.201 blue_robot_7 命中 red outpost  -20HP  p58%
+13:11:08.264 blue_robot_7 命中 red outpost  -20HP  p58%
+13:11:08.332 blue_robot_7 命中 red outpost  -20HP  p58%
+13:11:08.399 blue_robot_7 命中 red outpost  -20HP  p58%
+13:11:08.485 blue_robot_7 命中 red outpost  -20HP  p58%
+13:11:08.538 blue_robot_7 命中 red outpost  -20HP  p58%
+13:11:08.600 blue_robot_7 命中 red outpost  -20HP  p58%
+13:11:08.733 blue_robot_7 命中 red outpost  -20HP  p59%
+13:11:09.992 blue_robot_7 命中 red outpost  -20HP  p58%
+13:11:10.046 blue_robot_7 命中 red outpost  -20HP  p58%
+13:11:24.576 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:24.637 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:24.703 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:24.764 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:24.832 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:24.897 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:24.996 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:25.046 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:25.108 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:25.176 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:25.316 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:25.366 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:25.492 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:25.545 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:25.612 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:25.680 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:25.735 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:25.797 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:25.866 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:25.927 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:25.990 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:26.086 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:26.137 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:26.202 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:26.270 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:26.338 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:26.472 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:26.572 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:26.816 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:26.880 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:26.948 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:11:28.742 blue_robot_3 命中 red outpost  -20HP  p93%
+13:13:34.856 blue_robot_3 命中 red outpost  -20HP  p94%
+13:13:36.662 red_robot_7 命中 blue_robot_7  -25HP  p27%
+13:13:36.731 red_robot_7 命中 blue_robot_7  -25HP  p27%
+13:13:36.876 red_robot_7 命中 blue_robot_7  -25HP  p27%
+13:13:36.898 red_robot_7 命中 blue_robot_7  -25HP  p27%
+13:13:37.232 red_robot_7 命中 blue_robot_7  -25HP  p35%
+13:13:37.299 red_robot_7 命中 blue_robot_7  -25HP  p35%
+13:13:38.086 red_robot_7 命中 blue_robot_7  -25HP  p26%
+13:13:45.465 Activated terrain_highland_blue
+13:13:54.529 blue_robot_3 命中 red outpost  -20HP  p93%
+13:13:56.088 blue_robot_7 命中 red outpost  -20HP  p63%
+13:13:56.151 blue_robot_7 命中 red outpost  -20HP  p63%
+13:13:56.228 blue_robot_7 命中 red outpost  -20HP  p63%
+13:13:56.351 blue_robot_7 命中 red outpost  -20HP  p63%
+13:13:56.431 blue_robot_7 命中 red outpost  -20HP  p63%
+13:13:57.007 blue_robot_7 命中 red outpost  -20HP  p63%
+13:13:57.075 blue_robot_7 命中 red outpost  -20HP  p63%
+13:13:57.200 blue_robot_7 命中 red outpost  -20HP  p63%
+13:13:57.322 blue_robot_7 命中 red outpost  -20HP  p63%
+13:13:57.391 blue_robot_7 命中 red outpost  -20HP  p63%
+13:13:57.493 blue_robot_7 命中 red outpost  -20HP  p63%
+13:13:57.562 blue_robot_7 命中 red outpost  -20HP  p63%
+13:13:57.619 blue_robot_7 命中 red outpost  -20HP  p64%
+13:13:58.500 blue_robot_7 命中 red outpost  -20HP  p63%
+13:13:58.798 blue_robot_7 命中 red outpost  -20HP  p63%
+13:13:58.866 blue_robot_7 命中 red outpost  -20HP  p63%
+13:13:59.182 blue_robot_7 命中 red outpost  -20HP  p63%
+13:14:09.855 blue_robot_3 命中 red outpost  -20HP  p94%
+13:14:14.366 red_robot_7 命中 blue_robot_7  -19HP  p59%
+13:14:14.432 red_robot_7 命中 blue_robot_7  -19HP  p59%
+13:14:14.481 red_robot_7 命中 blue_robot_7  -19HP  p29%
+13:14:14.879 red_robot_7 命中 blue_robot_7  -19HP  p47%
+13:14:14.929 red_robot_7 命中 blue_robot_7  -19HP  p38%
+13:14:15.058 red_robot_7 命中 blue_robot_7  -19HP  p38%
+13:14:15.129 red_robot_7 命中 blue_robot_7  -19HP  p38%
+13:14:15.187 red_robot_7 命中 blue_robot_7  -19HP  p38%
+13:14:15.288 red_robot_7 命中 blue_robot_7  -19HP  p38%
+13:14:15.596 red_robot_7 命中 blue_robot_7  -19HP  p37%
+13:14:15.728 red_robot_7 命中 blue_robot_7  -19HP  p37%
+13:14:15.855 red_robot_7 命中 blue_robot_7  -19HP  p47%
+13:14:15.855 DOWN  red_robot_7 eliminated blue_robot_7
+13:14:16.452 blue_robot_3 命中 red outpost  -20HP  p93%
+13:14:38.180 blue_robot_3 命中 red outpost  -20HP  p93%
+13:14:38.702 Bought ammo -100 gold, +10
+13:14:39.912 RESPAWN  blue_robot_7 respawned
+13:14:40.310 blue_robot_3 命中 red outpost  -20HP  p94%
+13:14:40.310 red_robot_7 命中 blue_robot_7  -0HP  无敌  p56%
+13:14:40.399 red_robot_7 命中 blue_robot_7  -0HP  无敌  p57%
+13:14:41.017 red_robot_7 命中 blue_robot_7  -0HP  无敌  p79%
+13:14:41.172 red_robot_7 命中 blue_robot_7  -0HP  无敌  p80%
+13:14:49.049 blue_robot_3 命中 red outpost  -20HP  p93%
+13:14:59.909 blue_robot_3 命中 red outpost  -20HP  p93%
+13:15:04.415 blue_robot_1 命中 red outpost  -200HP  p83%
+13:15:04.415 DESTROY  blue_robot_1 destroyed red_outpost
+13:15:12.548 Activated terrain_highland_blue
+13:15:18.411 red_robot_7 命中 blue_robot_1  -15HP  p58%
+13:15:18.478 red_robot_7 命中 blue_robot_1  -15HP  p58%
+13:15:18.745 red_robot_7 命中 blue_robot_1  -15HP  p57%
+13:15:18.867 red_robot_7 命中 blue_robot_1  -15HP  p56%
+13:15:18.999 red_robot_7 命中 blue_robot_1  -15HP  p55%
+13:15:19.238 red_robot_7 命中 blue_robot_1  -15HP  p28%
+13:15:19.674 red_robot_7 命中 blue_robot_1  -15HP  p32%
+13:15:19.881 red_robot_7 命中 blue_robot_1  -15HP  p64%
+13:15:19.912 blue_robot_1 命中 red_robot_2  -115HP  p100%
+13:15:20.025 red_robot_7 命中 blue_robot_1  -15HP  p64%
+13:15:20.071 red_robot_7 命中 blue_robot_1  -15HP  p64%
+13:15:20.072 DOWN  red_robot_7 eliminated blue_robot_1
+13:15:59.619 RESPAWN  blue_robot_1 respawned
+13:16:00.381 red_robot_7 命中 blue_robot_1  -0HP  无敌  p73%
+13:16:00.444 red_robot_7 命中 blue_robot_1  -0HP  无敌  p73%
+13:16:00.972 red_robot_7 命中 blue_robot_1  -0HP  无敌  p75%
+13:16:01.336 red_robot_7 命中 blue_robot_1  -0HP  无敌  p76%
+13:16:02.118 red_robot_7 命中 blue_robot_1  -0HP  无敌  p79%
+13:16:02.344 red_robot_7 命中 blue_robot_1  -0HP  无敌  p80%
+13:22:48.269 red_robot_7 命中 blue outpost  -20HP  p94%
+13:22:48.321 blue_robot_3 命中 red outpost  -20HP  p95%
+13:22:53.765 red_robot_1 命中 blue outpost  -200HP  p80%
+13:22:55.583 Energy  小能量机关开始激活：请按随机顺序命中己方 5 个待激活圆盘。
+13:22:58.485 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+13:22:59.073 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p93%
+13:22:59.074 Energy  命中能量机关：已完成 1/5，本次环数 1。
+13:23:00.846 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p93%
+13:23:00.846 Energy  命中能量机关：已完成 2/5，本次环数 2。
+13:23:05.239 Energy  能量机关激活失败：当前目标超时，平均环数 1.5，进度已清零并重新随机目标。
+13:23:08.227 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+13:23:11.315 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+13:23:13.034 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p100%
+13:23:13.034 Energy  命中能量机关：已完成 1/5，本次环数 4。
+13:23:15.265 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p100%
+13:23:15.265 Energy  命中能量机关：已完成 2/5，本次环数 2。
+13:23:18.012 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p100%
+13:23:18.013 Energy  命中能量机关：已完成 3/5，本次环数 1。
+13:23:19.800 Energy  能量机关激活失败：20 秒激活窗口结束，平均环数 2.3，已熄灭并回到初始相位。
+13:23:21.321 blue_robot_3 命中 red outpost  -20HP  p95%
+13:23:39.530 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:23:47.429 red_robot_3 命中 blue outpost  -20HP  p97%
+13:23:50.212 Activated terrain_highland_blue
+13:23:52.586 blue_robot_3 命中 red_robot_2  -10HP  p100%
+13:23:52.656 blue_robot_3 命中 red_robot_2  -10HP  p100%
+13:23:52.760 blue_robot_3 命中 red_robot_2  -10HP  p100%
+13:23:52.799 blue_robot_3 命中 red_robot_2  -10HP  p100%
+13:23:55.309 red_robot_7 命中 blue outpost  -20HP  p94%
+13:24:01.141 blue_robot_3 命中 red_robot_3  -20HP  p100%
+13:24:01.220 blue_robot_3 命中 red_robot_3  -20HP  p100%
+13:24:01.285 blue_robot_3 命中 red_robot_3  -20HP  p100%
+13:24:01.350 blue_robot_3 命中 red_robot_3  -20HP  p100%
+13:24:11.359 blue_robot_3 命中 red_robot_3  -20HP  p100%
+13:24:11.445 blue_robot_3 命中 red_robot_3  -20HP  p100%
+13:24:11.523 blue_robot_3 命中 red_robot_3  -20HP  p100%
+13:24:13.687 Activated terrain_highland_red
+13:32:00.509 blue_robot_1 命中 red outpost  -200HP  p80%
+13:32:00.842 blue_robot_3 命中 red outpost  -20HP  p94%
+13:32:00.909 blue_robot_3 命中 red outpost  -20HP  p95%
+13:32:06.293 Activated terrain_highland_blue
+13:32:06.331 red_robot_1 命中 blue outpost  -200HP  p80%
+13:32:07.056 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:32:07.125 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:32:07.187 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:32:07.252 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:32:07.333 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:32:07.400 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:32:07.464 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:32:07.530 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:32:07.601 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:32:07.764 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:32:07.835 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:32:07.890 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:32:07.988 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:32:08.045 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:32:08.114 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:32:08.172 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:32:08.236 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:32:08.391 blue_robot_7 命中 red_robot_2  -10HP  p38%
+13:32:08.471 blue_robot_7 命中 red_robot_2  -10HP  p38%
+13:32:08.970 blue_robot_7 命中 red_robot_2  -10HP  p39%
+13:32:10.174 blue_robot_7 命中 red_robot_2  -10HP  p63%
+13:32:10.292 blue_robot_7 命中 red_robot_2  -10HP  p64%
+13:32:19.504 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:32:19.670 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:32:19.858 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:32:20.026 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:32:20.196 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:32:20.364 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:32:20.534 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:32:20.701 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:32:20.906 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:32:21.075 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:32:21.076 DOWN  blue_robot_7 eliminated red_robot_3
+13:32:53.778 RESPAWN  red_robot_3 respawned
+13:32:58.963 Activated terrain_highland_red
+13:33:03.962 red_robot_7 命中 blue outpost  -20HP  p93%
+13:33:06.311 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:33:06.654 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:33:09.264 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:33:09.265 DOWN  blue_robot_7 eliminated red_robot_2
+13:34:28.957 blue_robot_3 命中 red outpost  -20HP  p79%
+13:34:29.046 blue_robot_3 命中 red outpost  -20HP  p76%
+13:34:29.119 blue_robot_1 命中 red outpost  -200HP  p80%
+13:34:29.808 red_robot_3 命中 blue outpost  -20HP  p77%
+13:34:29.881 red_robot_3 命中 blue outpost  -20HP  p77%
+13:34:30.016 blue_robot_3 命中 red outpost  -20HP  p75%
+13:34:30.223 red_robot_3 命中 blue outpost  -20HP  p77%
+13:34:30.672 red_robot_3 命中 blue outpost  -20HP  p77%
+13:34:30.950 red_robot_7 命中 blue outpost  -20HP  p74%
+13:34:33.752 blue_robot_3 命中 red outpost  -20HP  p75%
+13:34:34.711 blue_robot_7 命中 red outpost  -20HP  p83%
+13:34:35.269 red_robot_1 命中 blue outpost  -200HP  p80%
+13:34:37.546 Energy  小能量机关开始激活：请按随机顺序命中己方 5 个待激活圆盘。
+13:34:38.701 blue_robot_3 命中 red outpost  -20HP  p76%
+13:34:40.676 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+13:34:41.470 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p79%
+13:34:41.471 Energy  命中能量机关：已完成 1/5，本次环数 1。
+13:34:43.146 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p77%
+13:34:43.147 Energy  命中能量机关：已完成 2/5，本次环数 2。
+13:34:46.028 blue_robot_3 命中 red outpost  -20HP  p75%
+13:34:46.380 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p75%
+13:34:46.381 Energy  命中能量机关：已完成 3/5，本次环数 4。
+13:34:50.707 Energy  能量机关激活失败：当前目标超时，平均环数 2.3，进度已清零并重新随机目标。
+13:34:50.923 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p76%
+13:34:50.923 Energy  命中能量机关：已完成 1/5，本次环数 1。
+13:34:52.516 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p76%
+13:34:52.516 Energy  命中能量机关：已完成 2/5，本次环数 1。
+13:34:54.162 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p76%
+13:34:54.163 Energy  命中能量机关：已完成 3/5，本次环数 2。
+13:34:56.619 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p76%
+13:34:56.620 Energy  命中能量机关：已完成 4/5，本次环数 5。
+13:35:00.842 Energy  能量机关激活失败：当前目标超时，平均环数 2.3，进度已清零并重新随机目标。
+13:35:02.020 Energy  能量机关激活失败：20 秒激活窗口结束，已熄灭并回到初始相位。
+13:35:19.215 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:35:19.276 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:35:19.338 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:35:19.402 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:35:19.471 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:35:19.562 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:35:19.612 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:35:19.675 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:35:19.738 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:35:19.815 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:35:19.886 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:35:19.972 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:35:20.034 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:35:20.202 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:35:20.283 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:35:20.402 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:35:20.473 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:35:20.563 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:35:20.660 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:35:20.736 blue_robot_7 命中 red_robot_2  -10HP  p46%
+13:35:20.994 blue_robot_7 命中 red_robot_2  -10HP  p45%
+13:35:21.176 blue_robot_7 命中 red_robot_2  -10HP  p46%
+13:35:21.560 blue_robot_7 命中 red_robot_2  -10HP  p47%
+13:35:34.560 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:35:34.763 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:35:39.031 red_robot_3 命中 blue outpost  -20HP  p97%
+13:37:12.172 blue_robot_7 命中 red outpost  -20HP  p76%
+13:37:12.613 blue_robot_7 命中 red outpost  -20HP  p75%
+13:37:13.043 blue_robot_7 命中 red outpost  -20HP  p75%
+13:37:14.696 red_robot_7 命中 blue outpost  -20HP  p74%
+13:37:15.189 blue_robot_7 命中 red outpost  -20HP  p75%
+13:37:16.951 red_robot_7 命中 blue outpost  -20HP  p74%
+13:37:16.952 blue_robot_7 命中 red outpost  -20HP  p76%
+13:38:23.554 red_robot_7 命中 blue outpost  -20HP  p78%
+13:38:23.917 red_robot_7 命中 blue outpost  -20HP  p76%
+13:38:24.895 blue_robot_3 命中 red outpost  -20HP  p77%
+13:38:25.394 blue_robot_3 命中 red outpost  -20HP  p75%
+13:38:26.073 blue_robot_3 命中 red outpost  -20HP  p75%
+13:38:26.074 red_robot_7 命中 blue outpost  -20HP  p93%
+13:38:26.376 blue_robot_3 命中 red outpost  -20HP  p75%
+13:38:26.377 red_robot_7 命中 blue outpost  -20HP  p93%
+13:38:26.715 red_robot_3 命中 blue outpost  -20HP  p79%
+13:38:27.837 red_robot_3 命中 blue outpost  -20HP  p78%
+13:38:28.691 red_robot_3 命中 blue outpost  -20HP  p78%
+13:38:30.309 red_robot_7 命中 blue outpost  -20HP  p94%
+13:38:48.964 blue_robot_1 命中 red outpost  -200HP  p80%
+13:38:49.116 red_robot_1 命中 blue outpost  -200HP  p80%
+13:39:01.188 Activated terrain_fly_slope_blue
+13:39:09.079 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:39:09.378 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:39:09.676 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:39:09.973 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:39:10.271 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:39:10.570 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:39:11.496 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:39:11.802 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:39:12.716 blue_robot_7 命中 red_robot_3  -15HP  p53%
+13:39:13.016 blue_robot_7 命中 red_robot_3  -15HP  p100%
+13:39:13.016 DOWN  blue_robot_7 eliminated red_robot_3
+13:39:18.122 blue_robot_7 命中 red_robot_7  -10HP  p47%
+13:39:18.820 blue_robot_7 命中 red_robot_7  -10HP  p46%
+13:39:19.117 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:39:19.414 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:39:19.708 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:39:20.006 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:39:20.304 blue_robot_7 命中 red_robot_7  -10HP  p100%
+13:39:20.601 blue_robot_7 命中 red_robot_7  -10HP  p46%
+13:39:21.198 blue_robot_7 命中 red_robot_7  -10HP  p46%
+13:39:22.090 blue_robot_7 命中 red_robot_7  -10HP  p46%
+13:39:22.387 blue_robot_7 命中 red_robot_7  -10HP  p46%
+13:39:22.681 blue_robot_7 命中 red_robot_7  -10HP  p46%
+13:39:22.988 blue_robot_7 命中 red_robot_7  -10HP  p46%
+13:39:23.306 blue_robot_7 命中 red_robot_7  -10HP  p46%
+13:39:25.476 blue_robot_7 命中 red_robot_7  -10HP  p46%
+13:39:25.788 blue_robot_7 命中 red_robot_7  -10HP  p46%
+13:39:26.102 blue_robot_7 命中 red_robot_7  -10HP  p46%
+13:39:26.404 blue_robot_7 命中 red_robot_7  -10HP  p46%
+13:39:26.709 blue_robot_7 命中 red_robot_7  -10HP  p46%
+13:39:32.825 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:39:33.199 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:39:33.796 blue_robot_7 命中 red_robot_2  -10HP  p100%
+13:39:38.655 red_robot_4 命中 blue_robot_7  -19HP  p78%
+13:39:51.372 blue_robot_7 命中 red outpost  -20HP  p70%
+13:42:48.810 red_robot_7 命中 blue outpost  -20HP  p77%
+13:42:49.230 red_robot_7 命中 blue outpost  -20HP  p74%
+13:42:54.049 red_robot_3 命中 blue outpost  -20HP  p78%
+13:43:00.655 red_robot_3 命中 blue outpost  -20HP  p97%
+13:50:43.540 red_robot_7 命中 blue outpost  -20HP  p77%
+13:50:43.705 red_robot_7 命中 blue outpost  -20HP  p76%
+13:50:44.179 blue_robot_1 命中 red outpost  -200HP  p80%
+13:50:44.531 red_robot_7 命中 blue outpost  -20HP  p93%
+13:50:45.421 red_robot_3 命中 blue outpost  -20HP  p78%
+13:50:45.854 red_robot_7 命中 blue outpost  -20HP  p93%
+13:50:52.158 red_robot_1 命中 blue outpost  -200HP  p80%
+13:51:01.915 red_robot_3 命中 blue outpost  -20HP  p100%
+13:51:10.453 Energy  小能量机关开始激活：请按随机顺序命中己方 5 个待激活圆盘。
+13:51:14.061 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+13:51:17.653 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+13:51:21.213 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+13:51:21.940 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p100%
+13:51:21.941 Energy  命中能量机关：已完成 1/5，本次环数 2。
+13:51:23.524 red_robot_7 命中 blue outpost  -20HP  p93%
+13:51:23.716 red_robot_7 命中 blue outpost  -20HP  p93%
+13:51:23.812 blue_robot_3 命中 red outpost  -20HP  p95%
+13:51:25.196 red_robot_7 命中 blue outpost  -20HP  p93%
+13:51:27.654 Energy  能量机关激活失败：当前目标超时，平均环数 2.0，进度已清零并重新随机目标。
+13:51:28.681 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p100%
+13:51:28.682 Energy  命中能量机关：已完成 1/5，本次环数 1。
+14:03:00.466 red_robot_7 命中 blue outpost  -20HP  p76%
+14:03:01.230 blue_robot_3 命中 red outpost  -20HP  p94%
+14:03:01.231 red_robot_7 命中 blue outpost  -20HP  p93%
+14:03:01.328 blue_robot_3 命中 red outpost  -20HP  p95%
+14:03:02.631 red_robot_7 命中 blue outpost  -20HP  p94%
+14:03:08.948 red_robot_1 命中 blue outpost  -200HP  p80%
+14:03:28.890 Energy  小能量机关开始激活：请按随机顺序命中己方 5 个待激活圆盘。
+14:03:32.141 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+14:03:32.580 red_robot_3 命中 blue outpost  -20HP  p100%
+14:03:36.002 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+14:03:38.637 red_robot_3 命中 blue outpost  -20HP  p100%
+14:03:39.785 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+14:03:41.087 red_robot_7 命中 blue outpost  -20HP  p94%
+14:03:43.923 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+14:07:39.905 red_robot_7 命中 blue outpost  -20HP  p78%
+14:07:41.167 blue_robot_3 命中 red outpost  -20HP  p95%
+14:07:47.595 Energy  小能量机关开始激活：请按随机顺序命中己方 5 个待激活圆盘。
+14:07:48.337 red_robot_1 命中 blue outpost  -200HP  p80%
+14:07:50.181 red_robot_3 命中 blue outpost  -20HP  p100%
+14:07:51.236 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+14:07:55.429 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+14:07:59.321 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+14:08:03.091 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+14:08:06.748 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+14:08:10.589 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+14:08:14.043 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+14:08:17.888 Energy  能量机关激活失败：20 秒激活窗口结束，已熄灭并回到初始相位。
+14:08:20.483 red_robot_3 命中 blue outpost  -20HP  p100%
+14:08:22.971 red_robot_7 命中 blue outpost  -20HP  p94%
+14:08:35.504 red_robot_3 命中 blue outpost  -20HP  p100%
+14:08:46.714 red_robot_4 命中 blue_robot_7  -25HP  p39%
+14:08:46.767 red_robot_4 命中 blue_robot_7  -25HP  p48%
+14:08:47.435 red_robot_4 命中 blue_robot_7  -25HP  p29%
+14:08:47.519 red_robot_4 命中 blue_robot_7  -25HP  p96%
+14:08:47.833 red_robot_4 命中 blue_robot_7  -25HP  p77%
+14:08:47.928 red_robot_4 命中 blue_robot_7  -25HP  p76%
+14:08:49.588 red_robot_3 命中 blue outpost  -20HP  p100%
+14:08:52.242 blue_robot_3 命中 red outpost  -20HP  p95%
+14:14:21.285 red_robot_7 命中 blue outpost  -20HP  p96%
+14:14:21.908 blue_robot_1 命中 red outpost  -200HP  p80%
+14:14:21.945 blue_robot_3 命中 red outpost  -20HP  p94%
+14:14:23.026 blue_robot_3 命中 red outpost  -20HP  p93%
+14:14:29.803 red_robot_1 命中 blue outpost  -200HP  p80%
+14:14:31.096 blue_robot_3 命中 red outpost  -20HP  p94%
+14:14:31.568 red_robot_3 命中 blue outpost  -20HP  p100%
+14:14:34.236 Energy  小能量机关开始激活：请按随机顺序命中己方 5 个待激活圆盘。
+14:14:36.846 blue_robot_3 命中 red outpost  -20HP  p93%
+14:14:38.192 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+14:14:41.838 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+14:14:45.812 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+14:14:49.738 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+14:14:53.298 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+14:14:55.439 red_robot_3 命中 blue outpost  -20HP  p100%
+14:14:56.869 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+14:14:59.812 Activated terrain_fly_slope_blue
+14:15:00.946 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+14:15:03.917 red_robot_7 命中 blue outpost  -20HP  p93%
+14:15:04.435 red_robot_7 命中 blue outpost  -20HP  p93%
+14:15:04.567 Energy  能量机关激活失败：20 秒激活窗口结束，已熄灭并回到初始相位。
+14:15:06.135 red_robot_7 命中 blue outpost  -20HP  p92%
+14:15:06.325 red_robot_7 命中 blue outpost  -20HP  p93%
+14:15:10.758 blue_robot_3 命中 red outpost  -20HP  p94%
+14:15:12.155 red_robot_4 命中 blue_robot_7  -19HP  p77%
+14:15:12.322 red_robot_4 命中 blue_robot_7  -19HP  p76%
+14:15:13.362 red_robot_4 命中 blue_robot_7  -19HP  p36%
+14:15:20.027 red_robot_4 命中 blue_robot_7  -19HP  p79%
+14:15:22.969 blue_robot_3 命中 red outpost  -20HP  p93%
+14:15:23.127 blue_robot_7 命中 red_robot_3  -20HP  p100%
+14:15:23.296 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:15:25.893 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:15:28.325 blue_robot_7 命中 red_robot_3  -20HP  p100%
+14:15:28.643 blue_robot_7 命中 red_robot_3  -20HP  p100%
+14:15:31.007 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:15:31.094 blue_robot_7 命中 red_robot_3  -20HP  p100%
+14:15:36.484 blue_robot_7 命中 red_robot_3  -15HP  p100%
+14:15:38.017 blue_robot_3 命中 red outpost  -20HP  p93%
+14:15:38.576 red_robot_3 命中 blue outpost  -20HP  p100%
+14:15:44.081 blue_robot_3 命中 red outpost  -20HP  p94%
+14:15:46.920 red_robot_7 命中 blue outpost  -20HP  p92%
+14:15:47.310 red_robot_7 命中 blue outpost  -20HP  p93%
+14:15:47.703 red_robot_3 命中 blue outpost  -20HP  p100%
+14:15:48.427 red_robot_7 命中 blue outpost  -20HP  p93%
+14:15:52.403 blue_robot_7 命中 red_robot_1  -15HP  p100%
+14:15:52.625 blue_robot_7 命中 red_robot_1  -15HP  p100%
+14:15:52.722 blue_robot_7 命中 red_robot_1  -15HP  p100%
+14:15:52.814 blue_robot_7 命中 red_robot_1  -15HP  p100%
+14:15:52.969 blue_robot_7 命中 red_robot_1  -15HP  p100%
+14:15:53.056 blue_robot_7 命中 red_robot_1  -15HP  p100%
+14:15:53.280 blue_robot_7 命中 red_robot_1  -15HP  p100%
+14:15:53.472 blue_robot_7 命中 red_robot_1  -15HP  p100%
+14:15:53.807 blue_robot_7 命中 red_robot_1  -15HP  p100%
+14:15:53.908 blue_robot_7 命中 red_robot_1  -15HP  p100%
+14:15:53.910 DOWN  blue_robot_7 eliminated red_robot_1
+14:15:57.399 red_robot_4 命中 blue_robot_7  -25HP  p100%
+14:16:02.816 red_robot_3 命中 blue outpost  -20HP  p100%
+14:16:05.716 blue_robot_7 命中 red outpost  -20HP  p100%
+14:16:06.044 blue_robot_7 命中 red outpost  -20HP  p100%
+14:16:06.045 red_robot_4 命中 blue_robot_7  -19HP  p100%
+14:16:06.563 blue_robot_7 命中 red outpost  -20HP  p100%
+14:16:07.655 blue_robot_7 命中 red outpost  -20HP  p100%
+14:16:07.872 blue_robot_3 命中 red outpost  -20HP  p93%
+14:16:09.526 blue_robot_7 命中 red outpost  -20HP  p100%
+14:16:10.196 blue_robot_7 命中 red outpost  -20HP  p100%
+14:16:10.283 blue_robot_7 命中 red outpost  -20HP  p100%
+14:16:10.522 blue_robot_7 命中 red outpost  -20HP  p100%
+14:16:10.734 blue_robot_7 命中 red outpost  -20HP  p100%
+14:16:12.115 red_robot_3 命中 blue outpost  -20HP  p100%
+14:26:24.694 red_robot_3 命中 blue outpost  -20HP  p78%
+14:26:25.934 red_robot_3 命中 blue outpost  -20HP  p93%
+14:26:26.164 red_robot_7 命中 blue outpost  -20HP  p97%
+14:26:26.201 blue_robot_3 命中 red outpost  -20HP  p94%
+14:26:26.921 red_robot_7 命中 blue outpost  -20HP  p97%
+14:26:27.154 red_robot_7 命中 blue outpost  -20HP  p97%
+14:26:27.426 red_robot_7 命中 blue outpost  -20HP  p97%
+14:26:27.714 red_robot_7 命中 blue outpost  -20HP  p97%
+14:26:30.932 blue_robot_3 命中 red outpost  -20HP  p94%
+14:26:31.483 red_robot_1 命中 blue outpost  -200HP  p80%
+14:26:33.814 blue_robot_3 命中 red outpost  -20HP  p94%
+14:26:45.044 red_robot_3 命中 blue outpost  -20HP  p93%
+14:26:47.171 Energy  小能量机关开始激活：请按随机顺序命中己方 5 个待激活圆盘。
+14:26:50.761 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+14:26:53.577 blue_robot_3 命中 red outpost  -20HP  p93%
+14:26:54.410 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+14:26:58.048 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+14:26:59.301 red_robot_3 命中 blue outpost  -20HP  p93%
+14:27:01.757 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+14:27:05.444 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+14:27:06.813 red_robot_7 命中 blue outpost  -20HP  p97%
+14:27:06.992 red_robot_7 命中 blue outpost  -20HP  p97%
+14:27:07.809 red_robot_7 命中 blue outpost  -20HP  p98%
+14:27:08.051 red_robot_7 命中 blue outpost  -20HP  p97%
+14:27:08.336 red_robot_7 命中 blue outpost  -20HP  p97%
+14:27:09.407 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+14:27:14.087 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+14:27:14.654 blue_robot_7 命中 red_robot_2  -10HP  p74%
+14:27:14.825 blue_robot_7 命中 red_robot_2  -10HP  p73%
+14:27:15.977 blue_robot_7 命中 red_robot_2  -10HP  p72%
+14:27:16.172 blue_robot_7 命中 red_robot_2  -10HP  p72%
+14:27:16.281 blue_robot_7 命中 red_robot_2  -10HP  p72%
+14:27:16.574 blue_robot_7 命中 red_robot_2  -10HP  p71%
+14:27:16.680 blue_robot_7 命中 red_robot_2  -10HP  p100%
+14:27:16.826 blue_robot_7 命中 red_robot_2  -10HP  p100%
+14:27:17.101 blue_robot_7 命中 red_robot_2  -10HP  p100%
+14:27:17.331 blue_robot_7 命中 red_robot_2  -10HP  p100%
+14:27:17.420 blue_robot_7 命中 red_robot_2  -10HP  p100%
+14:27:17.553 blue_robot_7 命中 red_robot_2  -10HP  p100%
+14:27:17.639 blue_robot_7 命中 red_robot_2  -10HP  p100%
+14:27:18.413 Energy  能量机关激活失败：20 秒激活窗口结束，已熄灭并回到初始相位。
+14:27:27.962 red_robot_3 命中 blue outpost  -20HP  p94%
+14:27:33.516 red_robot_3 命中 blue outpost  -20HP  p93%
+14:27:44.264 red_robot_3 命中 blue outpost  -20HP  p93%
+14:27:47.798 red_robot_7 命中 blue outpost  -20HP  p97%
+14:27:47.887 red_robot_7 命中 blue outpost  -20HP  p97%
+14:27:48.597 red_robot_7 命中 blue outpost  -20HP  p98%
+14:27:49.364 red_robot_7 命中 blue outpost  -20HP  p97%
+14:27:49.666 red_robot_7 命中 blue outpost  -20HP  p97%
+14:27:50.962 red_robot_7 命中 blue outpost  -20HP  p97%
+14:27:55.256 blue_robot_7 命中 red_robot_2  -10HP  p100%
+14:27:55.659 blue_robot_7 命中 red_robot_2  -10HP  p100%
+14:27:55.848 blue_robot_7 命中 blue_robot_3  -20HP  p100%
+14:27:56.035 blue_robot_7 命中 blue_robot_3  -20HP  p100%
+14:27:56.459 blue_robot_7 命中 red_robot_2  -10HP  p100%
+14:27:56.640 blue_robot_7 命中 red_robot_2  -10HP  p100%
+14:27:57.097 blue_robot_7 命中 red_robot_2  -10HP  p100%
+14:27:57.659 blue_robot_7 命中 red outpost  -20HP  p100%
+14:27:57.793 blue_robot_7 命中 red outpost  -20HP  p100%
+14:27:59.313 red_robot_4 命中 blue_robot_3  -20HP  p38%
+14:27:59.598 red_robot_3 命中 blue outpost  -20HP  p93%
+14:28:02.296 red_robot_4 命中 blue_robot_3  -20HP  p48%
+14:28:14.671 blue_robot_3 命中 red_robot_7  -8HP  p100%
+14:28:14.748 blue_robot_3 命中 red_robot_7  -8HP  p100%
+14:28:14.828 blue_robot_3 命中 red_robot_7  -8HP  p100%
+14:28:22.666 red_robot_4 命中 blue_robot_3  -20HP  p100%
+14:28:23.008 blue_robot_3 命中 red_robot_7  -8HP  p100%
+14:28:23.098 blue_robot_3 命中 red_robot_7  -8HP  p100%
+14:28:23.187 blue_robot_3 命中 red_robot_7  -8HP  p100%
+14:28:23.274 blue_robot_3 命中 red_robot_7  -8HP  p100%
+14:28:23.489 blue_robot_3 命中 red_robot_7  -8HP  p100%
+14:28:23.572 blue_robot_3 命中 red_robot_7  -8HP  p100%
+14:28:23.729 blue_robot_3 命中 red_robot_7  -8HP  p100%
+14:28:23.812 blue_robot_3 命中 red_robot_7  -8HP  p100%
+14:28:26.778 blue_robot_3 命中 red_robot_7  -8HP  p100%
+14:28:26.867 blue_robot_3 命中 red_robot_7  -8HP  p100%
+14:28:26.969 blue_robot_3 命中 red_robot_7  -8HP  p100%
+14:28:30.198 red_robot_7 命中 blue outpost  -20HP  p98%
+14:28:30.469 red_robot_7 命中 blue outpost  -20HP  p98%
+14:28:31.544 red_robot_7 命中 blue outpost  -20HP  p97%
+14:28:32.473 red_robot_7 命中 blue outpost  -20HP  p97%
+14:28:32.752 red_robot_3 命中 blue outpost  -20HP  p93%
+14:28:38.448 blue_robot_7 命中 red outpost  -20HP  p100%
+14:28:41.348 blue_robot_7 命中 red outpost  -20HP  p100%
+14:28:45.139 red_robot_3 命中 blue outpost  -20HP  p93%
+14:29:42.937 red_robot_3 命中 blue outpost  -20HP  p75%
+14:29:43.344 red_robot_7 命中 blue outpost  -20HP  p79%
+14:29:43.654 blue_robot_7 命中 red outpost  -20HP  p78%
+14:29:43.757 blue_robot_7 命中 red outpost  -20HP  p78%
+14:29:43.864 red_robot_7 命中 blue outpost  -20HP  p97%
+14:29:43.930 blue_robot_7 命中 red outpost  -20HP  p77%
+14:29:44.498 blue_robot_7 命中 red outpost  -20HP  p93%
+14:29:44.909 red_robot_7 命中 blue outpost  -20HP  p98%
+14:29:45.366 red_robot_7 命中 blue outpost  -20HP  p97%
+14:29:45.463 red_robot_7 命中 blue outpost  -20HP  p97%
+14:29:45.521 blue_robot_7 命中 red outpost  -20HP  p93%
+14:29:45.616 blue_robot_7 命中 red outpost  -20HP  p93%
+14:29:45.881 blue_robot_7 命中 red outpost  -20HP  p93%
+14:29:46.164 red_robot_7 命中 blue outpost  -20HP  p97%
+14:29:46.270 red_robot_7 命中 blue outpost  -20HP  p98%
+14:29:49.730 red_robot_1 命中 blue outpost  -200HP  p80%
+14:29:52.207 red_robot_3 命中 blue outpost  -20HP  p93%
+14:29:54.887 Activated terrain_highland_blue
+14:30:04.182 red_robot_3 命中 blue outpost  -20HP  p93%
+14:30:07.011 red_robot_3 命中 blue outpost  -20HP  p93%
+14:30:12.931 red_robot_3 命中 blue outpost  -20HP  p93%
+14:30:15.709 red_robot_3 命中 blue outpost  -20HP  p94%
+14:30:18.587 red_robot_3 命中 blue outpost  -20HP  p93%
+14:33:22.852 red_robot_3 命中 blue outpost  -20HP  p76%
+14:33:23.187 red_robot_3 命中 blue outpost  -20HP  p94%
+14:33:23.835 blue_robot_7 命中 red outpost  -20HP  p78%
+14:33:23.846 red_robot_3 命中 blue outpost  -20HP  p93%
+14:33:24.001 blue_robot_7 命中 red outpost  -20HP  p77%
+14:33:24.296 blue_robot_7 命中 red outpost  -20HP  p75%
+14:33:24.346 red_robot_3 命中 blue outpost  -20HP  p93%
+14:33:24.510 red_robot_3 命中 blue outpost  -20HP  p93%
+14:33:25.515 blue_robot_7 命中 red outpost  -20HP  p93%
+14:33:25.743 blue_robot_7 命中 red outpost  -20HP  p93%
+14:33:25.987 red_robot_7 命中 blue outpost  -20HP  p97%
+14:33:30.068 red_robot_1 命中 blue outpost  -200HP  p80%
+14:33:43.845 red_robot_3 命中 blue outpost  -20HP  p93%
+14:34:00.842 red_robot_3 命中 blue outpost  -20HP  p93%
+14:34:05.211 blue_robot_7 命中 red outpost  -20HP  p93%
+14:34:06.308 red_robot_7 命中 blue outpost  -20HP  p97%
+14:35:02.442 red_robot_3 命中 blue outpost  -20HP  p93%
+14:35:19.555 red_robot_7 命中 blue outpost  -20HP  p97%
+14:35:19.611 blue_robot_7 命中 red outpost  -20HP  p93%
+14:35:19.796 blue_robot_7 命中 red outpost  -20HP  p93%
+14:35:19.886 blue_robot_7 命中 red outpost  -20HP  p93%
+14:35:19.984 blue_robot_7 命中 red outpost  -20HP  p93%
+14:35:21.264 red_robot_7 命中 blue outpost  -20HP  p97%
+14:35:21.663 blue_robot_7 命中 red outpost  -20HP  p93%
+14:35:21.765 blue_robot_7 命中 red outpost  -20HP  p94%
+14:35:21.865 red_robot_7 命中 blue outpost  -20HP  p97%
+14:44:20.446 Activated terrain_highland_blue
+14:44:25.658 red_robot_3 命中 blue_robot_3  -15HP  p77%
+14:44:25.816 red_robot_7 命中 blue_robot_3  -15HP  p77%
+14:44:25.939 red_robot_3 命中 blue_robot_3  -15HP  p75%
+14:44:26.153 red_robot_3 命中 blue_robot_3  -15HP  p73%
+14:44:26.715 red_robot_7 命中 blue_robot_3  -15HP  p54%
+14:44:27.578 red_robot_7 命中 blue_robot_3  -15HP  p26%
+14:44:27.679 red_robot_7 命中 blue_robot_3  -15HP  p26%
+14:44:28.494 red_robot_3 命中 blue_robot_3  -15HP  p50%
+14:44:43.800 Activated terrain_highland_blue
+14:45:41.603 blue_robot_4 命中 red outpost  -20HP  p92%
+14:45:41.840 blue_robot_4 命中 red outpost  -20HP  p92%
+14:45:43.170 blue_robot_4 命中 red outpost  -20HP  p64%
+14:45:53.073 blue_robot_4 命中 red outpost  -20HP  p70%
+14:45:55.450 blue_robot_4 命中 red outpost  -20HP  p71%
+14:46:00.423 blue_robot_4 命中 red outpost  -20HP  p72%
+14:46:05.484 blue_robot_4 命中 red outpost  -20HP  p70%
+14:46:07.936 blue_robot_4 命中 red outpost  -20HP  p71%
+14:46:16.240 Activated terrain_highland_blue
+14:46:17.883 blue_robot_4 命中 red outpost  -20HP  p70%
+14:46:20.297 blue_robot_4 命中 red outpost  -20HP  p71%
+14:46:26.201 Activated terrain_highland_blue
+14:46:30.196 blue_robot_4 命中 red outpost  -20HP  p70%
+14:54:30.009 blue_robot_1 命中 red outpost  -200HP  p80%
+14:55:14.669 Activated terrain_highland_blue
+14:55:17.473 red_robot_7 命中 blue_robot_7  -19HP  p78%
+14:55:17.674 red_robot_7 命中 blue_robot_7  -19HP  p76%
+14:55:17.922 red_robot_7 命中 blue_robot_7  -19HP  p75%
+14:55:18.076 red_robot_7 命中 blue_robot_7  -19HP  p73%
+14:55:18.255 red_robot_7 命中 blue_robot_7  -19HP  p72%
+14:55:18.767 red_robot_3 命中 blue_robot_7  -19HP  p29%
+14:55:19.468 red_robot_7 命中 blue_robot_7  -19HP  p56%
+14:55:19.519 red_robot_3 命中 blue_robot_7  -19HP  p59%
+14:55:19.612 red_robot_3 命中 blue_robot_7  -19HP  p60%
+14:55:22.229 red_robot_3 命中 blue_robot_7  -19HP  p30%
+14:55:23.912 red_robot_3 命中 blue_robot_7  -19HP  p59%
+14:55:25.561 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:25.730 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:25.817 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:26.320 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:26.460 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:26.888 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:27.086 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:27.274 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:27.528 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:27.611 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:27.697 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:27.791 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:28.076 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:28.164 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:28.250 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:28.427 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:28.784 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:29.053 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:29.234 red_robot_3 命中 blue_robot_7  -19HP  p28%
+14:55:29.327 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:29.781 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:29.869 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:29.963 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:30.052 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:30.273 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:30.464 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:30.559 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:30.917 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:31.009 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:31.097 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:31.258 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:31.931 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:32.018 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:32.206 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:32.290 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:32.791 blue_robot_7 命中 red_robot_7  -10HP  p100%
+14:55:39.799 red_robot_3 命中 blue_robot_7  -19HP  p37%
+14:55:47.319 Activated terrain_fly_slope_blue
+14:55:52.365 red_robot_4 命中 blue_robot_7  -19HP  p37%
+14:55:52.802 red_robot_4 命中 blue_robot_7  -19HP  p47%
+14:59:58.324 Activated terrain_highland_blue
+15:00:02.556 red_robot_7 命中 blue_robot_3  -15HP  p54%
+15:00:02.790 red_robot_7 命中 blue_robot_3  -15HP  p52%
+15:00:03.189 red_robot_7 命中 blue_robot_3  -15HP  p49%
+15:00:29.090 Activated terrain_fly_slope_blue
+15:18:01.757 blue_robot_7 命中 red outpost  -20HP  p93%
+15:18:01.835 blue_robot_7 命中 red outpost  -20HP  p93%
+15:18:01.904 blue_robot_7 命中 red outpost  -20HP  p93%
+15:18:01.964 blue_robot_7 命中 red outpost  -20HP  p93%
+15:18:02.027 blue_robot_7 命中 red outpost  -20HP  p93%
+15:18:02.923 blue_robot_7 命中 red outpost  -20HP  p94%
+15:18:29.414 blue_robot_7 命中 red outpost  -20HP  p93%
+15:18:29.815 blue_robot_7 命中 red outpost  -20HP  p94%
+15:18:30.586 blue_robot_7 命中 red outpost  -20HP  p94%
+15:18:37.016 red_robot_7 命中 blue_robot_3  -20HP  p75%
+15:18:37.179 red_robot_7 命中 blue_robot_3  -20HP  p72%
+15:18:37.738 red_robot_7 命中 blue_robot_3  -20HP  p52%
+15:18:38.015 red_robot_7 命中 blue_robot_3  -20HP  p51%
+15:18:58.347 blue_robot_7 命中 red outpost  -20HP  p93%
+15:35:35.507 blue_robot_7 命中 red outpost  -20HP  p93%
+15:35:35.711 blue_robot_7 命中 red outpost  -20HP  p93%
+15:35:35.905 blue_robot_7 命中 red outpost  -20HP  p94%
+15:35:37.055 blue_robot_7 命中 red outpost  -20HP  p93%
+15:36:03.144 blue_robot_7 命中 red outpost  -20HP  p93%
+15:36:03.343 blue_robot_7 命中 red outpost  -20HP  p93%
+15:36:04.116 blue_robot_7 命中 red outpost  -20HP  p93%
+15:36:04.306 blue_robot_7 命中 red outpost  -20HP  p94%
+15:36:04.622 blue_robot_7 命中 red outpost  -20HP  p93%
+15:36:09.567 red_robot_7 命中 blue_robot_3  -20HP  p73%
+15:36:10.246 red_robot_7 命中 blue_robot_3  -20HP  p48%
+15:36:17.714 blue_robot_3 底盘超功率犯规，断电 5s
+15:36:26.561 blue_robot_3 底盘超功率犯规，断电 5s
+15:36:31.270 blue_robot_7 命中 red outpost  -20HP  p94%
+15:36:32.277 blue_robot_7 命中 red outpost  -20HP  p93%
+15:36:32.550 blue_robot_7 命中 red outpost  -20HP  p93%
+15:36:33.253 blue_robot_7 命中 red outpost  -20HP  p93%
+15:36:38.872 red_robot_7 命中 blue_robot_3  -20HP  p29%
+15:36:39.899 red_robot_7 命中 blue_robot_3  -20HP  p100%
+15:36:40.211 red_robot_7 命中 blue_robot_3  -20HP  p100%
+15:36:40.301 red_robot_7 命中 blue_robot_3  -20HP  p100%
+15:36:44.484 blue_robot_3 底盘超功率犯规，断电 5s
+15:36:54.338 blue_robot_3 底盘超功率犯规，断电 5s
+15:36:59.334 blue_robot_7 命中 red outpost  -20HP  p93%
+15:36:59.396 blue_robot_7 命中 red outpost  -20HP  p94%
+15:36:59.764 blue_robot_7 命中 red outpost  -20HP  p93%
+15:36:59.895 blue_robot_7 命中 red outpost  -20HP  p93%
+15:37:00.531 blue_robot_7 命中 red outpost  -20HP  p93%
+15:37:00.744 blue_robot_7 命中 red outpost  -20HP  p93%
+15:37:00.920 blue_robot_7 命中 red outpost  -20HP  p93%
+15:37:12.755 blue_robot_3 底盘超功率犯规，断电 5s
+15:37:31.430 blue_robot_7 底盘超功率犯规，断电 5s
+15:37:46.668 Activated terrain_fly_slope_blue
+15:37:47.081 blue_robot_7 底盘超功率犯规，断电 5s
+15:37:47.818 red_robot_7 命中 blue_robot_7  -8HP  p100%
+15:37:47.881 red_robot_7 命中 blue_robot_7  -8HP  p100%
+15:37:48.005 red_robot_7 命中 blue_robot_7  -8HP  p100%
+15:37:48.073 red_robot_7 命中 blue_robot_7  -8HP  p100%
+15:37:48.145 red_robot_7 命中 blue_robot_7  -8HP  p100%
+15:37:48.202 red_robot_7 命中 blue_robot_7  -8HP  p100%
+15:37:48.265 red_robot_7 命中 blue_robot_7  -8HP  p100%
+15:37:48.327 red_robot_7 命中 blue_robot_7  -8HP  p100%
+15:37:48.393 red_robot_7 命中 blue_robot_7  -8HP  p100%
+15:37:48.466 red_robot_7 命中 blue_robot_7  -8HP  p100%
+15:40:30.800 blue_robot_7 底盘超功率犯规，断电 5s
+15:41:13.406 Activated terrain_fly_slope_blue
+15:41:14.007 blue_robot_7 底盘超功率犯规，断电 5s
+15:41:14.426 red_robot_7 命中 blue_robot_7  -19HP  p42%
+15:41:14.552 red_robot_7 命中 blue_robot_7  -19HP  p42%
+15:41:14.683 red_robot_7 命中 blue_robot_7  -19HP  p100%
+15:41:14.751 red_robot_7 命中 blue_robot_7  -19HP  p100%
+15:41:14.819 red_robot_7 命中 blue_robot_7  -19HP  p100%
+15:41:14.875 red_robot_7 命中 blue_robot_7  -19HP  p100%
+15:41:15.001 red_robot_7 命中 blue_robot_7  -19HP  p100%
+15:41:15.065 red_robot_7 命中 blue_robot_7  -19HP  p100%
+15:41:15.132 red_robot_7 命中 blue_robot_7  -19HP  p100%
+15:41:15.190 red_robot_7 命中 blue_robot_7  -19HP  p100%
+15:41:15.257 red_robot_7 命中 blue_robot_7  -19HP  p100%
+15:41:15.319 red_robot_7 命中 blue_robot_7  -19HP  p100%
+15:41:15.655 red_robot_7 命中 blue_robot_7  -19HP  p100%
+15:41:24.573 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:26.166 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:26.233 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:26.295 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:26.363 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:26.427 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:26.489 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:27.211 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:27.531 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:27.592 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:27.665 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:27.719 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:36.124 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:37.055 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:37.225 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:38.123 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:38.951 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:39.019 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:39.083 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:39.210 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:39.277 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:39.337 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:39.400 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:39.462 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:39.532 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:39.599 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:39.658 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:39.723 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:39.785 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:39.851 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:39.919 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:39.978 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:40.041 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:40.104 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:40.168 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:40.235 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:40.294 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:40.359 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:40.425 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:40.488 blue_robot_7 命中 red_robot_7  -10HP  p100%
+15:41:40.488 DOWN  blue_robot_7 eliminated red_robot_7
+15:41:42.152 red_robot_3 命中 blue_robot_7  -19HP  p59%
+15:41:42.215 red_robot_3 命中 blue_robot_7  -19HP  p78%
+15:41:42.279 red_robot_3 命中 blue_robot_7  -19HP  p77%
+15:41:42.392 red_robot_3 命中 blue_robot_7  -19HP  p76%
+15:41:42.594 red_robot_3 命中 blue_robot_7  -19HP  p75%
+15:41:57.974 RESPAWN  red_robot_7 respawned
+15:42:03.974 red_robot_3 命中 blue_robot_7  -25HP  p34%
+15:46:55.615 blue_robot_7 底盘超功率犯规，断电 5s
+15:47:19.950 Activated terrain_fly_slope_blue
+15:47:20.638 red_robot_7 命中 blue_robot_7  -19HP  p34%
+15:47:20.704 red_robot_7 命中 blue_robot_7  -19HP  p34%
+15:47:20.763 red_robot_7 命中 blue_robot_7  -19HP  p33%
+15:47:21.623 red_robot_3 命中 blue_robot_7  -19HP  p37%
+15:47:27.563 blue_robot_7 命中 red_robot_3  -20HP  p100%
+15:47:27.698 blue_robot_7 命中 red_robot_3  -20HP  p100%
+15:47:27.753 blue_robot_7 命中 red_robot_3  -20HP  p100%
+15:47:27.804 blue_robot_7 命中 red_robot_3  -20HP  p100%
+15:47:27.882 blue_robot_7 命中 red_robot_3  -20HP  p100%
+15:47:28.199 blue_robot_7 命中 red_robot_3  -20HP  p100%
+15:47:28.584 blue_robot_7 命中 red_robot_3  -20HP  p100%
+15:47:28.974 blue_robot_7 命中 red_robot_3  -20HP  p100%
+15:47:28.974 DOWN  blue_robot_7 eliminated red_robot_3
+15:48:46.176 RESPAWN  red_robot_3 respawned
+15:48:47.873 red_robot_7 命中 blue_robot_7  -19HP  p78%
+15:48:48.007 red_robot_7 命中 blue_robot_7  -19HP  p49%
+15:48:48.061 red_robot_7 命中 blue_robot_7  -19HP  p49%
+15:48:48.641 red_robot_7 命中 blue_robot_7  -19HP  p39%
+15:48:48.975 red_robot_7 命中 blue_robot_7  -25HP  p39%
+15:53:34.906 blue_robot_7 底盘超功率犯规，断电 5s
+15:53:50.813 blue_robot_7 底盘超功率犯规，断电 5s
+15:54:04.974 blue_robot_7 底盘超功率犯规，断电 5s
+15:54:27.006 blue_robot_7 底盘超功率犯规，断电 5s
+15:59:32.524 blue_robot_4 底盘超功率犯规，断电 5s
+15:59:51.526 Activated terrain_highland_blue
+15:59:53.092 red_robot_7 命中 blue_robot_4  -15HP  p27%
+15:59:53.131 red_robot_7 命中 blue_robot_4  -15HP  p27%
+15:59:53.667 red_robot_7 命中 blue_robot_4  -15HP  p45%
+15:59:53.858 red_robot_7 命中 blue_robot_4  -15HP  p54%
+15:59:53.957 red_robot_7 命中 blue_robot_4  -15HP  p54%
+15:59:54.044 red_robot_7 命中 blue_robot_4  -15HP  p100%
+15:59:54.239 red_robot_7 命中 blue_robot_4  -15HP  p54%
+16:00:01.648 blue_robot_4 底盘超功率犯规，断电 5s
+16:00:50.502 blue_robot_4 底盘超功率犯规，断电 5s
+16:47:09.681 Energy  小能量机关开始激活：请按随机顺序命中己方 5 个待激活圆盘。
+16:47:12.217 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+16:47:12.992 blue_robot_3 命中 center_energy_mechanism_poly_1  -0HP  p100%
+16:47:12.993 Energy  命中能量机关：已完成 1/5，本次环数 7。
+16:47:14.990 blue_robot_3 命中 center_energy_mechanism_poly_1  -0HP  p100%
+16:47:14.990 Energy  命中能量机关：已完成 2/5，本次环数 5。
+16:47:18.509 Energy  能量机关激活失败：当前目标超时，平均环数 6.0，进度已清零并重新随机目标。
+16:47:19.881 blue_robot_3 命中 center_energy_mechanism_poly_1  -0HP  p100%
+16:47:19.882 Energy  命中能量机关：已完成 1/5，本次环数 5。
+16:47:21.744 blue_robot_3 命中 center_energy_mechanism_poly_1  -0HP  p100%
+16:47:21.745 Energy  命中能量机关：已完成 2/5，本次环数 8。
+16:47:23.392 blue_robot_3 命中 center_energy_mechanism_poly_1  -0HP  p100%
+16:47:23.393 Energy  命中能量机关：已完成 3/5，本次环数 3。
+16:47:26.951 Energy  能量机关激活失败：当前目标超时，平均环数 5.3，进度已清零并重新随机目标。
+16:47:29.496 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+16:47:29.839 Energy  能量机关激活失败：20 秒激活窗口结束，已熄灭并回到初始相位。
+16:49:48.071 Energy  小能量机关开始激活：请按随机顺序命中己方 5 个待激活圆盘。
+16:49:49.274 blue_robot_3 命中 center_energy_mechanism_poly_1  -0HP  p100%
+16:49:49.274 Energy  命中能量机关：已完成 1/5，本次环数 10。
+16:49:51.040 blue_robot_3 命中 center_energy_mechanism_poly_1  -0HP  p100%
+16:49:51.041 Energy  命中能量机关：已完成 2/5，本次环数 5。
+16:49:52.667 blue_robot_3 命中 center_energy_mechanism_poly_1  -0HP  p100%
+16:49:52.668 Energy  命中能量机关：已完成 3/5，本次环数 5。
+16:49:54.970 blue_robot_3 命中 center_energy_mechanism_poly_1  -0HP  p100%
+16:49:54.971 Energy  命中能量机关：已完成 4/5，本次环数 6。
+16:49:57.395 blue_robot_3 命中 center_energy_mechanism_poly_1  -0HP  p100%
+16:49:57.396 Energy  小能量机关激活成功：全队获得 25% 防御增益，持续 45 秒。
+16:52:54.917 blue_robot_3 命中 red outpost  -20HP  p80%
+16:52:54.969 blue_robot_3 命中 red outpost  -20HP  p80%
+16:52:55.161 blue_robot_3 命中 red outpost  -20HP  p81%
+16:52:55.743 blue_robot_3 命中 red outpost  -20HP  p80%
+16:52:55.876 blue_robot_3 命中 red outpost  -20HP  p80%
+16:52:56.023 blue_robot_3 命中 red outpost  -20HP  p81%
+16:53:00.945 blue_robot_3 命中 red outpost  -20HP  p80%
+17:00:48.585 blue_robot_3 命中 red outpost  -20HP  p80%
+17:00:48.769 blue_robot_3 命中 red outpost  -20HP  p80%
+17:00:51.013 blue_robot_3 命中 red outpost  -20HP  p80%
+17:00:58.896 blue_robot_3 命中 red outpost  -20HP  p100%
+17:00:59.764 Energy  小能量机关开始激活：请按随机顺序命中己方 5 个待激活圆盘。
+17:01:02.270 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+17:01:03.739 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p100%
+17:01:03.740 Energy  命中能量机关：已完成 1/5，本次环数 2。
+17:01:05.936 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p100%
+17:01:05.937 Energy  命中能量机关：已完成 2/5，本次环数 2。
+17:01:08.738 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p100%
+17:01:08.739 Energy  命中能量机关：已完成 3/5，本次环数 7。
+17:01:08.959 blue_robot_3 命中 red outpost  -20HP  p100%
+17:01:10.659 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p100%
+17:01:10.660 Energy  命中能量机关：已完成 4/5，本次环数 7。
+17:01:12.119 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p100%
+17:01:12.120 Energy  小能量机关激活成功：全队获得 25% 防御增益，持续 45 秒。
+17:01:12.946 blue_robot_3 命中 red outpost  -20HP  p100%
+17:01:28.982 blue_robot_3 命中 red outpost  -20HP  p100%
+17:01:38.988 blue_robot_3 命中 red outpost  -20HP  p100%
+17:01:39.099 red_robot_7 命中 blue_robot_7  -10HP  p40%
+17:01:39.287 red_robot_7 命中 blue_robot_7  -10HP  p39%
+17:01:39.354 red_robot_7 命中 blue_robot_7  -10HP  p78%
+17:01:39.842 red_robot_7 命中 blue_robot_7  -10HP  p56%
+17:01:40.295 red_robot_7 命中 blue_robot_7  -10HP  p54%
+17:01:40.361 red_robot_7 命中 blue_robot_7  -10HP  p54%
+17:01:40.539 red_robot_7 命中 blue_robot_7  -10HP  p52%
+17:01:40.608 red_robot_7 命中 blue_robot_7  -10HP  p52%
+17:01:41.003 red_robot_7 命中 blue_robot_7  -10HP  p25%
+17:01:48.973 blue_robot_3 命中 red outpost  -20HP  p100%
+17:01:49.422 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:01:58.974 blue_robot_3 命中 red outpost  -20HP  p100%
+17:02:07.117 red_robot_7 命中 blue_robot_7  -10HP  p100%
+17:02:07.308 red_robot_7 命中 blue_robot_7  -10HP  p100%
+17:02:07.489 red_robot_7 命中 blue_robot_7  -10HP  p78%
+17:02:07.557 red_robot_7 命中 blue_robot_7  -10HP  p78%
+17:02:07.745 red_robot_7 命中 blue_robot_7  -10HP  p59%
+17:02:07.869 red_robot_7 命中 blue_robot_7  -10HP  p78%
+17:02:08.017 red_robot_7 命中 blue_robot_7  -10HP  p39%
+17:02:08.127 red_robot_7 命中 blue_robot_7  -10HP  p30%
+17:02:08.193 red_robot_7 命中 blue_robot_7  -10HP  p30%
+17:02:08.447 red_robot_7 命中 blue_robot_7  -10HP  p30%
+17:02:08.510 red_robot_7 命中 blue_robot_7  -10HP  p60%
+17:02:08.707 red_robot_7 命中 blue_robot_7  -10HP  p59%
+17:02:08.764 red_robot_7 命中 blue_robot_7  -10HP  p59%
+17:02:08.975 blue_robot_3 命中 red outpost  -20HP  p100%
+17:02:20.178 blue_robot_7 命中 blue_robot_1  -10HP  p100%
+17:02:20.520 blue_robot_7 命中 blue_robot_1  -10HP  p100%
+17:02:21.546 blue_robot_7 命中 blue_robot_1  -10HP  p100%
+17:02:21.821 blue_robot_7 命中 blue_robot_1  -10HP  p100%
+17:02:28.129 red_robot_3 命中 blue_robot_7  -25HP  p78%
+17:02:28.257 red_robot_3 命中 blue_robot_7  -25HP  p58%
+17:02:28.614 red_robot_3 命中 blue_robot_7  -25HP  p73%
+17:02:28.739 red_robot_3 命中 blue_robot_7  -25HP  p71%
+17:02:28.986 blue_robot_3 命中 red outpost  -20HP  p100%
+17:02:29.792 red_robot_3 命中 blue_robot_7  -25HP  p21%
+17:02:31.795 red_robot_3 命中 blue_robot_7  -25HP  p42%
+17:02:32.992 blue_robot_3 命中 red outpost  -20HP  p100%
+17:02:34.850 red_robot_7 命中 blue_robot_7  -25HP  p33%
+17:02:35.570 red_robot_7 命中 blue_robot_7  -25HP  p34%
+17:02:35.571 DOWN  red_robot_7 eliminated blue_robot_7
+17:03:24.881 blue_robot_3 命中 red outpost  -20HP  p100%
+17:27:20.489 Activated terrain_highland_blue
+17:27:55.105 Activated terrain_fly_slope_blue
+17:27:55.771 red_robot_7 命中 blue_robot_7  -15HP  p36%
+17:28:05.774 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:05.844 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:05.907 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:05.966 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:06.040 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:06.097 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:06.160 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:06.243 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:06.307 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:06.376 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:06.438 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:06.508 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:06.576 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:06.629 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:06.692 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:06.761 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:06.830 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:06.898 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:06.950 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:07.012 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:07.080 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:07.154 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:07.216 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:07.269 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:07.332 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:07.400 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:07.469 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:07.532 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:07.589 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:07.658 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:07.721 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:07.792 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:07.850 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:07.914 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:07.975 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:08.044 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:08.113 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:08.181 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:08.230 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:08.300 blue_robot_7 命中 red_robot_7  -10HP  p100%
+17:28:08.301 DOWN  blue_robot_7 eliminated red_robot_7
+17:28:08.650 blue_robot_7 命中 red_robot_2  -10HP  p100%
+17:28:22.996 red_robot_3 命中 blue_robot_7  -15HP  p79%
+17:28:23.993 red_robot_3 命中 blue_robot_7  -15HP  p51%
+17:28:25.274 blue_robot_7 底盘超功率犯规，断电 5s
+17:28:25.397 RESPAWN  red_robot_7 respawned
+17:28:29.981 red_robot_3 命中 blue_robot_7  -25HP  p100%
+17:28:36.373 blue_robot_7 底盘超功率犯规，断电 5s
+17:41:52.793 red_robot_7 命中 blue_robot_7  -25HP  p59%
+17:41:55.852 blue_robot_7 底盘超功率犯规，断电 5s
+17:42:02.077 blue_robot_7 底盘超功率犯规，断电 5s
+17:42:20.993 Activated terrain_road_blue
+17:43:59.561 Activated terrain_highland_blue
+17:44:08.029 Activated terrain_highland_blue
+17:56:15.347 blue_robot_7 底盘超功率犯规，断电 5s
+17:56:25.645 Activated terrain_highland_blue
+17:56:38.023 Activated terrain_highland_blue
+17:57:16.355 Activated terrain_highland_blue
+17:57:19.006 Energy  小能量机关开始激活：请按随机顺序命中己方 5 个待激活圆盘。
+17:57:21.516 Energy  能量机关激活失败：当前目标超时，进度已清零并重新随机目标。
+17:57:21.790 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p100%
+17:57:21.791 Energy  命中能量机关：已完成 1/5，本次环数 5。
+17:57:23.351 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p100%
+17:57:23.351 Energy  命中能量机关：已完成 2/5，本次环数 1。
+17:57:24.866 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p100%
+17:57:24.866 Energy  命中能量机关：已完成 3/5，本次环数 7。
+17:57:26.652 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p100%
+17:57:26.652 Energy  命中能量机关：已完成 4/5，本次环数 7。
+17:57:28.215 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p100%
+17:57:28.216 Energy  小能量机关激活成功：全队获得 25% 防御增益，持续 45 秒。
+17:57:53.809 red_robot_7 命中 blue_robot_7  -15HP  p59%
+17:57:53.976 red_robot_3 命中 blue_robot_7  -15HP  p58%
+17:57:54.036 red_robot_7 命中 blue_robot_7  -15HP  p57%
+17:57:54.157 red_robot_7 命中 blue_robot_7  -15HP  p57%
+17:57:54.271 red_robot_7 命中 blue_robot_7  -15HP  p74%
+17:57:54.391 red_robot_7 命中 blue_robot_7  -15HP  p73%
+17:57:54.810 red_robot_3 命中 blue_robot_7  -15HP  p55%
+17:57:54.903 red_robot_7 命中 blue_robot_7  -15HP  p27%
+17:57:55.099 red_robot_7 命中 blue_robot_7  -15HP  p27%
+17:57:55.166 red_robot_7 命中 blue_robot_7  -15HP  p27%
+17:57:58.584 red_robot_4 命中 blue_robot_7  -15HP  p77%
+17:57:58.861 red_robot_4 命中 blue_robot_7  -15HP  p29%
+17:58:02.376 red_robot_4 命中 blue_robot_7  -15HP  p59%
+18:00:06.334 red_robot_4 命中 blue_robot_7  -25HP  p39%
+18:00:31.303 red_robot_7 命中 blue_robot_7  -25HP  p77%
+18:00:32.417 red_robot_7 命中 blue_robot_7  -25HP  p54%
+18:00:33.005 red_robot_7 命中 blue_robot_7  -25HP  p53%
+18:00:34.340 red_robot_3 命中 blue_robot_7  -15HP  p29%
+18:00:34.746 red_robot_3 命中 blue_robot_7  -15HP  p29%
+18:00:40.719 Activated terrain_highland_blue
+18:00:54.289 Activated terrain_highland_blue
+18:00:54.314 Activated terrain_highland_blue
+18:00:54.321 Activated terrain_highland_blue
+18:00:54.335 Activated terrain_highland_blue
+18:00:54.355 Activated terrain_highland_blue
+18:00:54.369 Activated terrain_highland_blue
+18:00:54.383 Activated terrain_highland_blue
+18:22:56.336 Activated terrain_highland_blue
+18:23:04.221 red_robot_7 命中 blue_robot_7  -15HP  p38%
+18:23:04.287 red_robot_7 命中 blue_robot_7  -15HP  p38%
+18:23:05.612 red_robot_7 命中 blue_robot_7  -15HP  p52%
+18:23:06.450 red_robot_3 命中 blue_robot_7  -15HP  p30%
+18:26:06.942 Energy  小能量机关开始激活：请按随机顺序命中己方 5 个待激活圆盘。
+18:26:08.718 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p100%
+18:26:08.718 Energy  命中能量机关：已完成 1/5，本次环数 4。
+18:26:10.955 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p100%
+18:26:10.955 Energy  命中能量机关：已完成 2/5，本次环数 1。
+18:26:13.960 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p100%
+18:26:13.961 Energy  命中能量机关：已完成 3/5，本次环数 9。
+18:26:15.724 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p100%
+18:26:15.724 Energy  命中能量机关：已完成 4/5，本次环数 9。
+18:26:17.318 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p100%
+18:26:17.318 Energy  小能量机关激活成功：全队获得 25% 防御增益，持续 45 秒。
+18:55:00.761 Activated terrain_highland_blue
+18:55:13.605 Activated terrain_fly_slope_blue
+18:55:14.537 red_robot_7 命中 blue_robot_7  -15HP  p26%
+18:55:14.712 red_robot_7 命中 blue_robot_7  -15HP  p25%
+18:55:14.827 red_robot_7 命中 blue_robot_7  -15HP  p25%
+18:55:17.478 red_robot_4 命中 blue_robot_7  -15HP  p76%
+18:57:05.431 red_robot_7 命中 blue_robot_7  -15HP  p76%
+18:57:05.668 red_robot_7 命中 blue_robot_7  -15HP  p73%
+18:57:05.800 red_robot_7 命中 blue_robot_7  -15HP  p72%
+18:57:05.924 red_robot_7 命中 blue_robot_7  -15HP  p71%
+18:57:06.043 red_robot_7 命中 blue_robot_7  -15HP  p70%
+18:57:06.108 red_robot_7 命中 blue_robot_7  -15HP  p69%
+18:57:06.165 red_robot_7 命中 blue_robot_7  -15HP  p69%
+18:57:06.268 red_robot_3 命中 blue_robot_7  -15HP  p79%
+18:57:06.455 red_robot_3 命中 blue_robot_7  -15HP  p78%
+18:57:06.479 red_robot_7 命中 blue_robot_7  -15HP  p66%
+18:57:06.563 red_robot_7 命中 blue_robot_7  -15HP  p66%
+18:57:06.595 red_robot_3 命中 blue_robot_7  -15HP  p77%
+18:57:06.621 red_robot_7 命中 blue_robot_7  -15HP  p66%
+18:57:06.695 red_robot_7 命中 blue_robot_7  -15HP  p66%
+18:57:06.770 red_robot_7 命中 blue_robot_7  -15HP  p66%
+18:57:06.810 red_robot_7 命中 blue_robot_7  -15HP  p50%
+18:57:07.399 red_robot_7 命中 blue_robot_7  -25HP  p50%
+19:03:41.764 Activated terrain_highland_blue
+19:03:41.906 Activated terrain_highland_blue
+19:03:41.927 Activated terrain_highland_blue
+19:03:41.941 Activated terrain_highland_blue
+19:03:41.955 Activated terrain_highland_blue
+19:03:41.975 Activated terrain_highland_blue
+19:03:41.989 Activated terrain_highland_blue
+19:03:42.010 Activated terrain_highland_blue
+19:03:42.017 Activated terrain_highland_blue
+19:03:42.043 Activated terrain_highland_blue
+19:03:43.354 blue_robot_7 命中 red outpost  -20HP  p52%
+19:03:43.416 blue_robot_7 命中 red outpost  -20HP  p52%
+19:03:43.543 blue_robot_7 命中 red outpost  -20HP  p65%
+19:03:43.732 blue_robot_7 命中 red outpost  -20HP  p51%
+19:03:44.601 blue_robot_7 命中 red outpost  -20HP  p60%
+19:03:44.670 blue_robot_7 命中 red outpost  -20HP  p59%
+19:03:44.851 blue_robot_7 命中 red outpost  -20HP  p59%
+19:03:51.716 red_robot_7 命中 blue_robot_7  -15HP  p58%
+19:03:51.916 red_robot_7 命中 blue_robot_7  -15HP  p74%
+19:03:52.198 red_robot_7 命中 blue_robot_7  -15HP  p27%
+19:09:57.380 Activated terrain_road_blue
+19:10:07.741 red_robot_3 命中 blue_robot_7  -25HP  p59%
+19:10:07.791 red_robot_3 命中 blue_robot_7  -25HP  p78%
+19:10:07.870 red_robot_7 命中 blue_robot_7  -25HP  p39%
+19:10:08.191 red_robot_7 命中 blue_robot_7  -25HP  p39%
+19:10:08.271 red_robot_7 命中 blue_robot_7  -25HP  p39%
+19:10:08.420 red_robot_3 命中 blue_robot_7  -25HP  p77%
+19:10:08.479 red_robot_3 命中 blue_robot_7  -25HP  p77%
+19:10:08.627 red_robot_3 命中 blue_robot_7  -25HP  p76%
+19:10:09.634 red_robot_4 命中 blue_robot_7  -25HP  p59%
+19:10:10.020 red_robot_4 命中 blue_robot_7  -25HP  p29%
+19:10:49.283 blue_robot_7 命中 red outpost  -20HP  p81%
+19:10:49.352 blue_robot_7 命中 red outpost  -20HP  p81%
+19:10:49.555 blue_robot_7 命中 red outpost  -20HP  p81%
+19:10:49.679 blue_robot_7 命中 red outpost  -20HP  p81%
+19:10:50.051 blue_robot_7 命中 red outpost  -20HP  p81%
+19:10:50.177 blue_robot_7 命中 red outpost  -20HP  p81%
+19:10:50.239 blue_robot_7 命中 red outpost  -20HP  p81%
+19:10:50.314 blue_robot_7 命中 red outpost  -20HP  p81%
+19:10:57.119 blue_robot_7 命中 red outpost  -20HP  p81%
+19:10:57.201 blue_robot_7 命中 red outpost  -20HP  p81%
+19:10:58.003 blue_robot_7 命中 red outpost  -20HP  p81%
+19:10:58.837 blue_robot_7 命中 red outpost  -20HP  p81%
+19:11:02.481 blue_robot_7 命中 red outpost  -20HP  p81%
+19:11:03.009 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:03.970 blue_robot_7 命中 red outpost  -20HP  p81%
+19:11:04.896 blue_robot_7 命中 red outpost  -20HP  p81%
+19:11:04.963 blue_robot_7 命中 red outpost  -20HP  p81%
+19:11:05.333 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:05.459 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:05.523 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:05.740 blue_robot_7 命中 red outpost  -20HP  p81%
+19:11:06.977 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:07.181 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:07.234 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:07.316 blue_robot_7 命中 red outpost  -20HP  p81%
+19:11:07.829 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:08.017 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:08.083 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:08.291 blue_robot_7 命中 red outpost  -20HP  p81%
+19:11:08.658 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:08.787 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:08.860 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:09.507 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:09.910 blue_robot_7 命中 red outpost  -20HP  p81%
+19:11:10.593 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:10.853 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:11.396 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:12.103 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:12.225 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:12.313 blue_robot_7 命中 red outpost  -20HP  p81%
+19:11:12.375 blue_robot_7 命中 red outpost  -20HP  p81%
+19:11:12.903 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:13.026 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:13.617 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:13.680 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:13.750 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:13.813 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:14.386 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:14.454 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:14.513 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:15.158 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:15.542 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:15.925 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:16.055 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:16.598 blue_robot_7 命中 red outpost  -20HP  p81%
+19:11:16.706 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:16.775 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:16.836 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:16.968 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:17.399 blue_robot_7 命中 red outpost  -20HP  p81%
+19:11:18.297 blue_robot_7 命中 red outpost  -20HP  p81%
+19:11:18.338 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:19.168 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:19.485 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:19.540 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:19.601 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:20.347 blue_robot_7 命中 red outpost  -20HP  p80%
+19:11:24.714 Energy  小能量机关开始激活：请按随机顺序命中己方 5 个待激活圆盘。
+19:11:25.940 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p100%
+19:11:25.941 Energy  命中能量机关：已完成 1/5，本次环数 6。
+19:11:27.445 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p100%
+19:11:27.445 Energy  命中能量机关：已完成 2/5，本次环数 8。
+19:11:29.013 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p100%
+19:11:29.013 Energy  命中能量机关：已完成 3/5，本次环数 7。
+19:11:30.822 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p100%
+19:11:30.822 Energy  命中能量机关：已完成 4/5，本次环数 7。
+19:11:32.490 blue_robot_7 命中 center_energy_mechanism_poly_1  -0HP  p100%
+19:11:32.491 Energy  小能量机关激活成功：全队获得 25% 防御增益，持续 45 秒。

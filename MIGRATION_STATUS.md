@@ -25,8 +25,8 @@
 
 ## 已迁移目录与文件
 - 编辑器与配置：
-  - `appearance_editor.py`
-  - `terrain_editor.py`
+  - `py_client/appearance_editor.py`
+  - `py_client/terrain_editor.py`
   - `CommonSetting.json`
   - `config.json`
   - `settings.json`

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Simulator.Core;
 using Simulator.Core.Map;
@@ -115,6 +116,32 @@ public sealed class MapPresetService
             }
         }
 
+        HashSet<string> knownKeys = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "id",
+            "type",
+            "team",
+            "shape",
+            "x1",
+            "y1",
+            "x2",
+            "y2",
+            "thickness",
+            "height_m",
+            "points",
+        };
+        Dictionary<string, JsonElement> additionalProperties = new(StringComparer.OrdinalIgnoreCase);
+        foreach (KeyValuePair<string, JsonNode?> property in node)
+        {
+            if (knownKeys.Contains(property.Key) || property.Value is null)
+            {
+                continue;
+            }
+
+            using JsonDocument document = JsonDocument.Parse(property.Value.ToJsonString());
+            additionalProperties[property.Key] = document.RootElement.Clone();
+        }
+
         return new FacilityRegion
         {
             Id = ReadString(node, Guid.NewGuid().ToString("N"), "id"),
@@ -128,6 +155,7 @@ public sealed class MapPresetService
             Thickness = ReadDouble(node, 12, "thickness"),
             HeightM = ReadDouble(node, 0, "height_m"),
             Points = points,
+            AdditionalProperties = additionalProperties.Count == 0 ? null : additionalProperties,
         };
     }
 
