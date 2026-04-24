@@ -1,21 +1,3 @@
-#include "Window.h"
-
-namespace rm26::engine::core {
-
-Window::Window(WindowDesc desc) : desc_(std::move(desc)) {
-}
-
-bool Window::initialize() {
-    initialized_ = true;
-    return true;
-}
-
-bool Window::initialized() const {
-    return initialized_;
-}
-
-const WindowDesc& Window::desc() const {
-    return desc_;
-}
-
-}  // namespace rm26::engine::core
+version https://git-lfs.github.com/spec/v1
+oid sha256:02670f1ec5899711ac577d3abf60d7a7c0594ff2c9ae01f57119fd0783ce04d5
+size 348

@@ -1,22 +1,3 @@
-#include "Texture.h"
-
-#include <fstream>
-
-namespace rm26::engine::renderer {
-
-bool Texture::load(const std::string& path) {
-    std::ifstream input(path, std::ios::binary);
-    path_ = path;
-    ready_ = input.good();
-    return ready_;
-}
-
-const std::string& Texture::path() const {
-    return path_;
-}
-
-bool Texture::ready() const {
-    return ready_;
-}
-
-}  // namespace rm26::engine::renderer
+version https://git-lfs.github.com/spec/v1
+oid sha256:527ff65174d6ff04626ff46a9c142f3a1573d8b5522078dcd1668081996a5f74
+size 395

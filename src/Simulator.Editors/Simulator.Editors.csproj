@@ -1,14 +1,3 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
-
-  <ItemGroup>
-    <ProjectReference Include="..\Simulator.Core\Simulator.Core.csproj" />
-    <ProjectReference Include="..\Simulator.Assets\Simulator.Assets.csproj" />
-  </ItemGroup>
-
-  <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-  </PropertyGroup>
-
-</Project>
+version https://git-lfs.github.com/spec/v1
+oid sha256:3067e647f6a8c0f01bcffede89cd8441d6a2859ab61c1ee46fe388ac077f93c3
+size 394

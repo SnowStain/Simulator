@@ -1,34 +1,3 @@
-{
-  "version": 1,
-  "name": "blankCanvas.terrain_surface",
-  "descriptor_path": "blankCanvas.terrain_surface.json",
-  "map_type": "terrain_surface_map",
-  "storage_kind": "runtime_triangle_grid",
-  "topology": "triangle_grid",
-  "merge_mode": "merged_exposed_faces",
-  "split_mode": "diag_forward",
-  "render_profile": "top_png_orthographic_side_solid",
-  "top_face_mode": "orthographic_png",
-  "side_face_mode": "solid_color",
-  "side_color": "#4B4F55",
-  "top_normal_threshold": 0.9,
-  "side_normal_threshold": 0.1,
-  "coordinate_space": "world",
-  "base_color_image_path": "场地-俯视图.png",
-  "resolution_m": 0.01,
-  "shape": [
-    1500,
-    2800
-  ],
-  "height_scale_baked_in": 1.0,
-  "channels": {
-    "height_map": "blankCanvas.height_map.npy",
-    "terrain_type_map": "blankCanvas.terrain_type_map.npy",
-    "movement_block_map": "blankCanvas.movement_block_map.npy",
-    "vision_block_map": "blankCanvas.vision_block_map.npy",
-    "vision_block_height_map": "blankCanvas.vision_block_height_map.npy",
-    "priority_map": "blankCanvas.priority_map.npy",
-    "function_pass_map": "blankCanvas.function_pass_map.npy",
-    "function_heading_map": "blankCanvas.function_heading_map.npy"
-  }
-}
+version https://git-lfs.github.com/spec/v1
+oid sha256:55ccc35ee6a7ec33a440582224c337ca4f00d19c8af57236e9d11e9ee482e104
+size 2284

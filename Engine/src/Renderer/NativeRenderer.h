@@ -1,9 +1,3 @@
-#pragma once
-
-#include <pybind11/pybind11.h>
-
-namespace rm26_native {
-
-void register_renderer_bindings(pybind11::module_& module);
-
-}  // namespace rm26_native
+version https://git-lfs.github.com/spec/v1
+oid sha256:a230df679abfebf5491730d821a103fe7d828bd5cdecd3f3ee6a87db911adcba
+size 159

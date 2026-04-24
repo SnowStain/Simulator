@@ -1,22 +1,3 @@
-#include "Application.h"
-
-namespace rm26::engine {
-
-bool Application::initialize() {
-    initialized_ = true;
-    last_dt_ = 0.0;
-    return true;
-}
-
-void Application::update(double dt) {
-    last_dt_ = dt;
-}
-
-void Application::render() {
-}
-
-bool Application::initialized() const {
-    return initialized_;
-}
-
-}  // namespace rm26::engine
+version https://git-lfs.github.com/spec/v1
+oid sha256:d7893e7085e6d0afb42d31c4b4845555ab0cf4aa2a7c35da7797f4321535eb41
+size 339

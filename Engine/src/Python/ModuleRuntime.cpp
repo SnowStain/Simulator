@@ -1,16 +1,3 @@
-#include "ModuleRuntime.h"
-
-#include "Core/NativeRuntimeShared.h"
-#include "Physics/NativePhysics.h"
-#include "Renderer/NativeRenderer.h"
-
-namespace rm26_native {
-
-void register_module(py::module_& module) {
-    module.doc() = "RM26 native OpenGL renderer and Bullet bridge";
-    module.def("build_info", &build_info);
-    register_renderer_bindings(module);
-    register_physics_bindings(module);
-}
-
-}  // namespace rm26_native
+version https://git-lfs.github.com/spec/v1
+oid sha256:577d17e7d0ce295ee6c0750add7d11eba91eab69caa5fc68128f081aee1ed54c
+size 428

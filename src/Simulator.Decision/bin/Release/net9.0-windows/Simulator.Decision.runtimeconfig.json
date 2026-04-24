@@ -1,20 +1,3 @@
-{
-  "runtimeOptions": {
-    "tfm": "net9.0",
-    "frameworks": [
-      {
-        "name": "Microsoft.NETCore.App",
-        "version": "9.0.0"
-      },
-      {
-        "name": "Microsoft.WindowsDesktop.App",
-        "version": "9.0.0"
-      }
-    ],
-    "configProperties": {
-      "System.Reflection.Metadata.MetadataUpdater.IsSupported": false,
-      "System.Runtime.Serialization.EnableUnsafeBinaryFormatterSerialization": false,
-      "CSWINRT_USE_WINDOWS_UI_XAML_PROJECTIONS": false
-    }
-  }
-}
+version https://git-lfs.github.com/spec/v1
+oid sha256:0927ab269d96809b2ebc2eb7142fb4bb91433ec3bc6e46f34e48f0c67d86edae
+size 497
