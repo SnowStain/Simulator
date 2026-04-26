@@ -1,3 +1,22 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:927b98a80c3fa548b9d3a9a2cdb562e49ec67de885ed79d0a80e67f17a0e7221
-size 2437
+E:\Artinx\260111new\Simulator\src\Simulator.Decision\bin\Debug\net10.0-windows\Simulator.Decision.exe
+E:\Artinx\260111new\Simulator\src\Simulator.Decision\bin\Debug\net10.0-windows\Simulator.Decision.deps.json
+E:\Artinx\260111new\Simulator\src\Simulator.Decision\bin\Debug\net10.0-windows\Simulator.Decision.runtimeconfig.json
+E:\Artinx\260111new\Simulator\src\Simulator.Decision\bin\Debug\net10.0-windows\Simulator.Decision.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Decision\bin\Debug\net10.0-windows\Simulator.Decision.pdb
+E:\Artinx\260111new\Simulator\src\Simulator.Decision\bin\Debug\net10.0-windows\Simulator.Core.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Decision\bin\Debug\net10.0-windows\Simulator.Core.pdb
+E:\Artinx\260111new\Simulator\src\Simulator.Decision\obj\Debug\net10.0-windows\Simulator.Decision.csproj.AssemblyReference.cache
+E:\Artinx\260111new\Simulator\src\Simulator.Decision\obj\Debug\net10.0-windows\Simulator.Decision.GeneratedMSBuildEditorConfig.editorconfig
+E:\Artinx\260111new\Simulator\src\Simulator.Decision\obj\Debug\net10.0-windows\Simulator.Decision.AssemblyInfoInputs.cache
+E:\Artinx\260111new\Simulator\src\Simulator.Decision\obj\Debug\net10.0-windows\Simulator.Decision.AssemblyInfo.cs
+E:\Artinx\260111new\Simulator\src\Simulator.Decision\obj\Debug\net10.0-windows\Simulator.Decision.csproj.CoreCompileInputs.cache
+E:\Artinx\260111new\Simulator\src\Simulator.Decision\obj\Debug\net10.0-windows\Simulator.Decision.sourcelink.json
+E:\Artinx\260111new\Simulator\src\Simulator.Decision\obj\Debug\net10.0-windows\Simulato.D19E7893.Up2Date
+E:\Artinx\260111new\Simulator\src\Simulator.Decision\obj\Debug\net10.0-windows\Simulator.Decision.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Decision\obj\Debug\net10.0-windows\refint\Simulator.Decision.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Decision\obj\Debug\net10.0-windows\Simulator.Decision.pdb
+E:\Artinx\260111new\Simulator\src\Simulator.Decision\obj\Debug\net10.0-windows\Simulator.Decision.genruntimeconfig.cache
+E:\Artinx\260111new\Simulator\src\Simulator.Decision\obj\Debug\net10.0-windows\ref\Simulator.Decision.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Decision\bin\Debug\net10.0-windows\K4os.Compression.LZ4.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Decision\bin\Debug\net10.0-windows\K4os.Compression.LZ4.Streams.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Decision\bin\Debug\net10.0-windows\K4os.Hash.xxHash.dll

@@ -1,3 +1,18 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:61a23351c4e72ff893fd18644b50272f45a93b616f10d0f428d9c6905bf625aa
-size 295
+#pragma once
+
+#include <string>
+
+namespace rm26::engine::renderer {
+
+class Texture {
+public:
+    bool load(const std::string& path);
+    const std::string& path() const;
+    bool ready() const;
+
+private:
+    std::string path_;
+    bool ready_ = false;
+};
+
+}  // namespace rm26::engine::renderer

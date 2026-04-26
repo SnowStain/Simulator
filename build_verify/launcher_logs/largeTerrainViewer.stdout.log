@@ -1,3 +1,6 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:e80cc8c2d96fd906be4ccfe05ce48150cf5e8c9fcb1e9fd6b7072e05496e28b3
-size 607
+正在启动内嵌 LoadLargeTerrain：
+dotnet run --project E:\Artinx\260111new\Simulator\src\Simulator.LoadLargeTerrain\LoadLargeTerrain.csproj -- --build-cache-only E:\Artinx\260111new\Simulator\maps\rmuc26map\RMUC2026_MAP.glb --annotations E:\Artinx\260111new\Simulator\maps\rmuc26map\try.json
+模型文件：E:\Artinx\260111new\Simulator\maps\rmuc26map\RMUC2026_MAP.glb
+缓存文件：E:\Artinx\260111new\Simulator\maps\rmuc26map\RMUC2026_MAP.terraincache.lz4
+已读取压缩缓存，共 243 个合并分块。
+仅构建缓存完成。组件 421,133，分块 243，顶点 10,403,171，索引 31,535,976

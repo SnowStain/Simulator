@@ -1,3 +1,25 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:8f9376a397bedb661762de1fae7e1edb2d9de8ce46081225b9da4ca495d61577
-size 1787
+18:59:01.067 enter sustained_low_latency no_gc_region=True
+18:59:32.349 enter sustained_low_latency no_gc_region=True
+19:06:12.081 end_no_gc_failed InvalidOperationException:NoGCRegion mode must be set.
+19:06:40.627 enter sustained_low_latency no_gc_region=True
+19:08:26.160 end_no_gc_failed InvalidOperationException:NoGCRegion mode must be set.
+19:23:24.432 enter sustained_low_latency no_gc_region=True
+19:24:44.444 end_no_gc_failed InvalidOperationException:NoGCRegion mode must be set.
+19:24:57.468 enter sustained_low_latency no_gc_region=True
+19:26:10.567 end_no_gc_failed InvalidOperationException:NoGCRegion mode must be set.
+19:32:29.583 enter sustained_low_latency no_gc_region=True
+19:33:27.765 end_no_gc_failed InvalidOperationException:NoGCRegion mode must be set.
+19:52:52.356 enter sustained_low_latency no_gc_region=True
+19:53:29.732 end_no_gc_failed InvalidOperationException:NoGCRegion mode must be set.
+19:59:42.506 enter sustained_low_latency no_gc_region=True
+20:04:43.716 end_no_gc_failed InvalidOperationException:NoGCRegion mode must be set.
+20:18:35.291 enter sustained_low_latency no_gc_region=True
+20:19:23.538 end_no_gc_failed InvalidOperationException:NoGCRegion mode must be set.
+20:56:59.426 enter sustained_low_latency no_gc_region=True
+21:00:34.569 end_no_gc_failed InvalidOperationException:NoGCRegion mode must be set.
+21:01:50.520 enter sustained_low_latency no_gc_region=True
+21:09:16.120 end_no_gc_failed InvalidOperationException:NoGCRegion mode must be set.
+21:14:54.286 enter sustained_low_latency no_gc_region=True
+21:15:55.669 end_no_gc_failed InvalidOperationException:NoGCRegion mode must be set.
+21:16:05.361 enter sustained_low_latency no_gc_region=True
+21:16:16.285 end_no_gc_failed InvalidOperationException:NoGCRegion mode must be set.

@@ -1,3 +1,24 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:df079176b7be9e0f32158a6ffce599cf637b2ba6ec428e1d5523316141589963
-size 2485
+e:\Artinx\260111new\Simulator\build_verify\facility_probe\bin\Debug\net10.0\FacilityProbe.exe
+e:\Artinx\260111new\Simulator\build_verify\facility_probe\bin\Debug\net10.0\FacilityProbe.deps.json
+e:\Artinx\260111new\Simulator\build_verify\facility_probe\bin\Debug\net10.0\FacilityProbe.runtimeconfig.json
+e:\Artinx\260111new\Simulator\build_verify\facility_probe\bin\Debug\net10.0\FacilityProbe.dll
+e:\Artinx\260111new\Simulator\build_verify\facility_probe\bin\Debug\net10.0\FacilityProbe.pdb
+e:\Artinx\260111new\Simulator\build_verify\facility_probe\bin\Debug\net10.0\K4os.Compression.LZ4.dll
+e:\Artinx\260111new\Simulator\build_verify\facility_probe\bin\Debug\net10.0\K4os.Compression.LZ4.Streams.dll
+e:\Artinx\260111new\Simulator\build_verify\facility_probe\bin\Debug\net10.0\K4os.Hash.xxHash.dll
+e:\Artinx\260111new\Simulator\build_verify\facility_probe\bin\Debug\net10.0\Simulator.Assets.dll
+e:\Artinx\260111new\Simulator\build_verify\facility_probe\bin\Debug\net10.0\Simulator.Core.dll
+e:\Artinx\260111new\Simulator\build_verify\facility_probe\bin\Debug\net10.0\Simulator.Core.pdb
+e:\Artinx\260111new\Simulator\build_verify\facility_probe\bin\Debug\net10.0\Simulator.Assets.pdb
+e:\Artinx\260111new\Simulator\build_verify\facility_probe\obj\Debug\net10.0\FacilityProbe.csproj.AssemblyReference.cache
+e:\Artinx\260111new\Simulator\build_verify\facility_probe\obj\Debug\net10.0\FacilityProbe.GeneratedMSBuildEditorConfig.editorconfig
+e:\Artinx\260111new\Simulator\build_verify\facility_probe\obj\Debug\net10.0\FacilityProbe.AssemblyInfoInputs.cache
+e:\Artinx\260111new\Simulator\build_verify\facility_probe\obj\Debug\net10.0\FacilityProbe.AssemblyInfo.cs
+e:\Artinx\260111new\Simulator\build_verify\facility_probe\obj\Debug\net10.0\FacilityProbe.csproj.CoreCompileInputs.cache
+e:\Artinx\260111new\Simulator\build_verify\facility_probe\obj\Debug\net10.0\FacilityProbe.sourcelink.json
+e:\Artinx\260111new\Simulator\build_verify\facility_probe\obj\Debug\net10.0\Facility.EADC4C39.Up2Date
+e:\Artinx\260111new\Simulator\build_verify\facility_probe\obj\Debug\net10.0\FacilityProbe.dll
+e:\Artinx\260111new\Simulator\build_verify\facility_probe\obj\Debug\net10.0\refint\FacilityProbe.dll
+e:\Artinx\260111new\Simulator\build_verify\facility_probe\obj\Debug\net10.0\FacilityProbe.pdb
+e:\Artinx\260111new\Simulator\build_verify\facility_probe\obj\Debug\net10.0\FacilityProbe.genruntimeconfig.cache
+e:\Artinx\260111new\Simulator\build_verify\facility_probe\obj\Debug\net10.0\ref\FacilityProbe.dll

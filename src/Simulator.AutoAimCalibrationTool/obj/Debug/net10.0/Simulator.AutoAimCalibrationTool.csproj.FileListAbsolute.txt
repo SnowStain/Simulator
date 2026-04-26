@@ -1,3 +1,20 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:f0f0285cd6eb1c3eeacc91dd7cc786edddef48c9c163ef1a0d34c21813b9187e
-size 2587
+E:\Artinx\260111new\Simulator\src\Simulator.AutoAimCalibrationTool\bin\Debug\net10.0\Simulator.AutoAimCalibrationTool.exe
+E:\Artinx\260111new\Simulator\src\Simulator.AutoAimCalibrationTool\bin\Debug\net10.0\Simulator.AutoAimCalibrationTool.deps.json
+E:\Artinx\260111new\Simulator\src\Simulator.AutoAimCalibrationTool\bin\Debug\net10.0\Simulator.AutoAimCalibrationTool.runtimeconfig.json
+E:\Artinx\260111new\Simulator\src\Simulator.AutoAimCalibrationTool\bin\Debug\net10.0\Simulator.AutoAimCalibrationTool.dll
+E:\Artinx\260111new\Simulator\src\Simulator.AutoAimCalibrationTool\bin\Debug\net10.0\Simulator.AutoAimCalibrationTool.pdb
+E:\Artinx\260111new\Simulator\src\Simulator.AutoAimCalibrationTool\obj\Debug\net10.0\Simulator.AutoAimCalibrationTool.GeneratedMSBuildEditorConfig.editorconfig
+E:\Artinx\260111new\Simulator\src\Simulator.AutoAimCalibrationTool\obj\Debug\net10.0\Simulator.AutoAimCalibrationTool.AssemblyInfoInputs.cache
+E:\Artinx\260111new\Simulator\src\Simulator.AutoAimCalibrationTool\obj\Debug\net10.0\Simulator.AutoAimCalibrationTool.AssemblyInfo.cs
+E:\Artinx\260111new\Simulator\src\Simulator.AutoAimCalibrationTool\obj\Debug\net10.0\Simulator.AutoAimCalibrationTool.csproj.CoreCompileInputs.cache
+E:\Artinx\260111new\Simulator\src\Simulator.AutoAimCalibrationTool\obj\Debug\net10.0\Simulator.AutoAimCalibrationTool.sourcelink.json
+E:\Artinx\260111new\Simulator\src\Simulator.AutoAimCalibrationTool\obj\Debug\net10.0\Simulator.AutoAimCalibrationTool.dll
+E:\Artinx\260111new\Simulator\src\Simulator.AutoAimCalibrationTool\obj\Debug\net10.0\refint\Simulator.AutoAimCalibrationTool.dll
+E:\Artinx\260111new\Simulator\src\Simulator.AutoAimCalibrationTool\obj\Debug\net10.0\Simulator.AutoAimCalibrationTool.pdb
+E:\Artinx\260111new\Simulator\src\Simulator.AutoAimCalibrationTool\obj\Debug\net10.0\Simulator.AutoAimCalibrationTool.genruntimeconfig.cache
+E:\Artinx\260111new\Simulator\src\Simulator.AutoAimCalibrationTool\obj\Debug\net10.0\ref\Simulator.AutoAimCalibrationTool.dll
+E:\Artinx\260111new\Simulator\artifacts\buildcheck\AutoAimCalibrationTool\Simulator.AutoAimCalibrationTool.exe
+E:\Artinx\260111new\Simulator\artifacts\buildcheck\AutoAimCalibrationTool\Simulator.AutoAimCalibrationTool.deps.json
+E:\Artinx\260111new\Simulator\artifacts\buildcheck\AutoAimCalibrationTool\Simulator.AutoAimCalibrationTool.runtimeconfig.json
+E:\Artinx\260111new\Simulator\artifacts\buildcheck\AutoAimCalibrationTool\Simulator.AutoAimCalibrationTool.dll
+E:\Artinx\260111new\Simulator\artifacts\buildcheck\AutoAimCalibrationTool\Simulator.AutoAimCalibrationTool.pdb

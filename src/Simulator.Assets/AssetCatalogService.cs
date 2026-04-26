@@ -1,3 +1,77 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:488c52d35536fb7fbd83b79cb22bbc633ebead61de74473dab112a00a4f43930
-size 2257
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using Simulator.Core;
+
+namespace Simulator.Assets;
+
+public sealed record AssetCategoryStatus(string Name, string RelativePath, bool Exists, int FileCount);
+
+public sealed record AssetCatalog(IReadOnlyList<AssetCategoryStatus> Categories)
+{
+    public bool IsComplete => Categories.All(item => item.Exists && item.FileCount > 0);
+
+    public int TotalFileCount => Categories.Sum(item => item.FileCount);
+}
+
+public sealed class AssetCatalogService
+{
+    private readonly MapPresetService _mapPresetService = new();
+
+    private static readonly string[] RequiredFolders =
+    {
+        "appearance_presets",
+        "map",
+        "map_presets",
+        "maps",
+        "robot_venue_map_asset",
+        "rules",
+        "规则",
+        "simulator3d",
+        "Engine",
+        "cpp",
+    };
+
+    public AssetCatalog BuildCatalog(ProjectLayout layout)
+    {
+        var rows = new List<AssetCategoryStatus>(RequiredFolders.Length);
+        foreach (string folder in RequiredFolders)
+        {
+            string absolute = layout.ResolvePath(folder);
+            bool exists = Directory.Exists(absolute);
+            int count = exists
+                ? Directory.EnumerateFiles(absolute, "*", SearchOption.AllDirectories).Count()
+                : 0;
+            rows.Add(new AssetCategoryStatus(folder, folder, exists, count));
+        }
+
+        return new AssetCatalog(rows);
+    }
+
+    public IReadOnlyList<string> ListMapPresets(ProjectLayout layout)
+    {
+        return _mapPresetService.ListPresetNames(layout);
+    }
+
+    public IReadOnlyList<string> ListRuleFiles(ProjectLayout layout)
+    {
+        var files = new List<string>();
+        foreach (string folder in new[] { "rules", "规则" })
+        {
+            string absolute = layout.ResolvePath(folder);
+            if (!Directory.Exists(absolute))
+            {
+                continue;
+            }
+
+            foreach (string path in Directory.EnumerateFiles(absolute, "*", SearchOption.AllDirectories))
+            {
+                files.Add(Path.GetRelativePath(layout.RootPath, path));
+            }
+        }
+
+        files.Sort(StringComparer.OrdinalIgnoreCase);
+        return files;
+    }
+}

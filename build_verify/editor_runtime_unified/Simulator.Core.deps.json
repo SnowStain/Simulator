@@ -1,3 +1,23 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:cc04d32839dd7f4308c36e5fe641ae0d202f23a82ba4c44f7432e3518a0ce65e
-size 414
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "Simulator.Core/1.0.0": {
+        "runtime": {
+          "Simulator.Core.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "Simulator.Core/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

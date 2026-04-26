@@ -1,3 +1,4 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:3db01872d3418d2225621b784df62da40da378fea79904f22e06cce7ead93f92
-size 63
+newmtl default
+Kd 0.75 0.75 0.75
+Ka 0.2 0.2 0.2
+Ks 0.0 0.0 0.0

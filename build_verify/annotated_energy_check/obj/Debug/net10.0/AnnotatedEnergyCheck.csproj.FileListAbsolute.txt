@@ -1,3 +1,24 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:2b8bc3e6744527ff4e92b61a6df59d103f26962dcb31b7abc5548afaa3bb255d
-size 2789
+E:\Artinx\260111new\Simulator\build_verify\annotated_energy_check\bin\Debug\net10.0\AnnotatedEnergyCheck.exe
+E:\Artinx\260111new\Simulator\build_verify\annotated_energy_check\bin\Debug\net10.0\AnnotatedEnergyCheck.deps.json
+E:\Artinx\260111new\Simulator\build_verify\annotated_energy_check\bin\Debug\net10.0\AnnotatedEnergyCheck.runtimeconfig.json
+E:\Artinx\260111new\Simulator\build_verify\annotated_energy_check\bin\Debug\net10.0\AnnotatedEnergyCheck.dll
+E:\Artinx\260111new\Simulator\build_verify\annotated_energy_check\bin\Debug\net10.0\AnnotatedEnergyCheck.pdb
+E:\Artinx\260111new\Simulator\build_verify\annotated_energy_check\bin\Debug\net10.0\K4os.Compression.LZ4.dll
+E:\Artinx\260111new\Simulator\build_verify\annotated_energy_check\bin\Debug\net10.0\K4os.Compression.LZ4.Streams.dll
+E:\Artinx\260111new\Simulator\build_verify\annotated_energy_check\bin\Debug\net10.0\K4os.Hash.xxHash.dll
+E:\Artinx\260111new\Simulator\build_verify\annotated_energy_check\bin\Debug\net10.0\Simulator.Assets.dll
+E:\Artinx\260111new\Simulator\build_verify\annotated_energy_check\bin\Debug\net10.0\Simulator.Core.dll
+E:\Artinx\260111new\Simulator\build_verify\annotated_energy_check\bin\Debug\net10.0\Simulator.Core.pdb
+E:\Artinx\260111new\Simulator\build_verify\annotated_energy_check\bin\Debug\net10.0\Simulator.Assets.pdb
+E:\Artinx\260111new\Simulator\build_verify\annotated_energy_check\obj\Debug\net10.0\AnnotatedEnergyCheck.csproj.AssemblyReference.cache
+E:\Artinx\260111new\Simulator\build_verify\annotated_energy_check\obj\Debug\net10.0\AnnotatedEnergyCheck.GeneratedMSBuildEditorConfig.editorconfig
+E:\Artinx\260111new\Simulator\build_verify\annotated_energy_check\obj\Debug\net10.0\AnnotatedEnergyCheck.AssemblyInfoInputs.cache
+E:\Artinx\260111new\Simulator\build_verify\annotated_energy_check\obj\Debug\net10.0\AnnotatedEnergyCheck.AssemblyInfo.cs
+E:\Artinx\260111new\Simulator\build_verify\annotated_energy_check\obj\Debug\net10.0\AnnotatedEnergyCheck.csproj.CoreCompileInputs.cache
+E:\Artinx\260111new\Simulator\build_verify\annotated_energy_check\obj\Debug\net10.0\AnnotatedEnergyCheck.sourcelink.json
+E:\Artinx\260111new\Simulator\build_verify\annotated_energy_check\obj\Debug\net10.0\Annotate.330BA8A3.Up2Date
+E:\Artinx\260111new\Simulator\build_verify\annotated_energy_check\obj\Debug\net10.0\AnnotatedEnergyCheck.dll
+E:\Artinx\260111new\Simulator\build_verify\annotated_energy_check\obj\Debug\net10.0\refint\AnnotatedEnergyCheck.dll
+E:\Artinx\260111new\Simulator\build_verify\annotated_energy_check\obj\Debug\net10.0\AnnotatedEnergyCheck.pdb
+E:\Artinx\260111new\Simulator\build_verify\annotated_energy_check\obj\Debug\net10.0\AnnotatedEnergyCheck.genruntimeconfig.cache
+E:\Artinx\260111new\Simulator\build_verify\annotated_energy_check\obj\Debug\net10.0\ref\AnnotatedEnergyCheck.dll

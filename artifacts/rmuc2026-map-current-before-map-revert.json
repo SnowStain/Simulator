@@ -1,3 +1,916 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:ec074dd7af8600c6881493f91f5eb0f1adb02c45d934e4289a76fd15ff68e704
-size 52896
+﻿{
+    "version":  1,
+    "name":  "rmuc2026",
+    "saved_at":  "2026-04-25T19:18:52",
+    "map":  {
+                "map_type":  "terrain_cache_map",
+                "image_path":  "",
+                "origin_x":  0,
+                "origin_y":  0,
+                "unit":  "px",
+                "width":  1576,
+                "height":  873,
+                "source_width":  1576,
+                "source_height":  873,
+                "strict_scale":  false,
+                "coordinate_space":  "world",
+                "coordinate_system":  {
+                                          "coordinate_space":  "world",
+                                          "unit":  "px",
+                                          "origin_x":  0,
+                                          "origin_y":  0,
+                                          "field_length_m":  28,
+                                          "field_width_m":  15
+                                      },
+                "annotation_path":  "..\\rmuc26map\\try.json",
+                "facilities":  [
+                                   {
+                                       "id":  "red_outpost",
+                                       "type":  "outpost",
+                                       "team":  "red",
+                                       "shape":  "rect",
+                                       "x1":  615.7334594726562,
+                                       "y1":  618.9877319335938,
+                                       "x2":  652.930908203125,
+                                       "y2":  656.1851806640625,
+                                       "thickness":  12,
+                                       "height_m":  1.578,
+                                       "body_height_m":  1.578,
+                                       "body_width_m":  0.65,
+                                       "body_length_m":  0.65
+                                   },
+                                   {
+                                       "id":  "blue_outpost",
+                                       "type":  "outpost",
+                                       "team":  "blue",
+                                       "shape":  "rect",
+                                       "x1":  947.6033935546875,
+                                       "y1":  205.4396514892578,
+                                       "x2":  984.8008422851562,
+                                       "y2":  242.63711547851562,
+                                       "thickness":  12,
+                                       "height_m":  1.578,
+                                       "body_height_m":  1.578,
+                                       "body_width_m":  0.65,
+                                       "body_length_m":  0.65
+                                   },
+                                   {
+                                       "id":  "red_base",
+                                       "type":  "base",
+                                       "team":  "red",
+                                       "shape":  "rect",
+                                       "x1":  116.83660888671875,
+                                       "y1":  383.6597900390625,
+                                       "x2":  224.4803466796875,
+                                       "y2":  475.73779296875,
+                                       "thickness":  12,
+                                       "height_m":  1.181,
+                                       "body_height_m":  1.181,
+                                       "body_width_m":  1.609,
+                                       "body_length_m":  1.881
+                                   },
+                                   {
+                                       "id":  "blue_base",
+                                       "type":  "base",
+                                       "team":  "blue",
+                                       "shape":  "rect",
+                                       "x1":  1377.9495849609375,
+                                       "y1":  384.2320556640625,
+                                       "x2":  1485.59326171875,
+                                       "y2":  476.31005859375,
+                                       "thickness":  12,
+                                       "height_m":  1.181,
+                                       "body_height_m":  1.181,
+                                       "body_width_m":  1.609,
+                                       "body_length_m":  1.881
+                                   },
+                                   {
+                                       "id":  "annotated_energy_mechanism",
+                                       "type":  "energy_mechanism",
+                                       "team":  "neutral",
+                                       "shape":  "rect",
+                                       "x1":  717.7977905273438,
+                                       "y1":  347.80194091796875,
+                                       "x2":  883.7556762695312,
+                                       "y2":  513.7598266601562,
+                                       "thickness":  12,
+                                       "height_m":  2.3,
+                                       "body_height_m":  2.3,
+                                       "body_width_m":  1.3,
+                                       "body_length_m":  2.06
+                                   },
+                                   {
+                                       "id":  "buff_outpost_red_poly_1",
+                                       "type":  "buff_outpost",
+                                       "team":  "red",
+                                       "shape":  "polygon",
+                                       "x1":  590,
+                                       "y1":  597,
+                                       "x2":  670,
+                                       "y2":  695,
+                                       "thickness":  12,
+                                       "height_m":  0.0,
+                                       "points":  [
+                                                      [
+                                                          596,
+                                                          597
+                                                      ],
+                                                      [
+                                                          640,
+                                                          597
+                                                      ],
+                                                      [
+                                                          670,
+                                                          625
+                                                      ],
+                                                      [
+                                                          670,
+                                                          665
+                                                      ],
+                                                      [
+                                                          639,
+                                                          695
+                                                      ],
+                                                      [
+                                                          590,
+                                                          695
+                                                      ],
+                                                      [
+                                                          608,
+                                                          669
+                                                      ],
+                                                      [
+                                                          628,
+                                                          669
+                                                      ],
+                                                      [
+                                                          641,
+                                                          653
+                                                      ],
+                                                      [
+                                                          641,
+                                                          640
+                                                      ],
+                                                      [
+                                                          629,
+                                                          624
+                                                      ],
+                                                      [
+                                                          608,
+                                                          624
+                                                      ]
+                                                  ]
+                                   },
+                                   {
+                                       "id":  "buff_base_red_poly_1",
+                                       "type":  "buff_base",
+                                       "team":  "red",
+                                       "shape":  "polygon",
+                                       "x1":  77,
+                                       "y1":  330,
+                                       "x2":  262,
+                                       "y2":  545,
+                                       "thickness":  12,
+                                       "height_m":  0.0,
+                                       "points":  [
+                                                      [
+                                                          77,
+                                                          373
+                                                      ],
+                                                      [
+                                                          77,
+                                                          499
+                                                      ],
+                                                      [
+                                                          152,
+                                                          545
+                                                      ],
+                                                      [
+                                                          262,
+                                                          483
+                                                      ],
+                                                      [
+                                                          262,
+                                                          391
+                                                      ],
+                                                      [
+                                                          155,
+                                                          330
+                                                      ]
+                                                  ]
+                                   },
+                                   {
+                                       "id":  "buff_fort_red_poly_1",
+                                       "type":  "buff_fort",
+                                       "team":  "red",
+                                       "shape":  "polygon",
+                                       "x1":  326,
+                                       "y1":  379,
+                                       "x2":  457,
+                                       "y2":  495,
+                                       "thickness":  12,
+                                       "height_m":  0.0,
+                                       "points":  [
+                                                      [
+                                                          359,
+                                                          379
+                                                      ],
+                                                      [
+                                                          326,
+                                                          438
+                                                      ],
+                                                      [
+                                                          359,
+                                                          495
+                                                      ],
+                                                      [
+                                                          423,
+                                                          495
+                                                      ],
+                                                      [
+                                                          457,
+                                                          438
+                                                      ],
+                                                      [
+                                                          423,
+                                                          379
+                                                      ]
+                                                  ]
+                                   },
+                                   {
+                                       "id":  "buff_supply_red_poly_1",
+                                       "type":  "buff_supply",
+                                       "team":  "red",
+                                       "shape":  "polygon",
+                                       "x1":  87,
+                                       "y1":  679,
+                                       "x2":  215,
+                                       "y2":  736,
+                                       "thickness":  12,
+                                       "height_m":  0.0,
+                                       "points":  [
+                                                      [
+                                                          87,
+                                                          682
+                                                      ],
+                                                      [
+                                                          87,
+                                                          736
+                                                      ],
+                                                      [
+                                                          215,
+                                                          736
+                                                      ],
+                                                      [
+                                                          215,
+                                                          693
+                                                      ],
+                                                      [
+                                                          201,
+                                                          679
+                                                      ]
+                                                  ]
+                                   },
+                                   {
+                                       "id":  "buff_supply_red_poly_2",
+                                       "type":  "buff_supply",
+                                       "team":  "red",
+                                       "shape":  "polygon",
+                                       "x1":  107,
+                                       "y1":  742,
+                                       "x2":  217,
+                                       "y2":  838,
+                                       "thickness":  12,
+                                       "height_m":  0.0,
+                                       "points":  [
+                                                      [
+                                                          107,
+                                                          743
+                                                      ],
+                                                      [
+                                                          107,
+                                                          838
+                                                      ],
+                                                      [
+                                                          217,
+                                                          838
+                                                      ],
+                                                      [
+                                                          217,
+                                                          742
+                                                      ]
+                                                  ]
+                                   },
+                                   {
+                                       "id":  "buff_trapezoid_highland_red_poly_1",
+                                       "type":  "buff_trapezoid_highland",
+                                       "team":  "red",
+                                       "shape":  "polygon",
+                                       "x1":  200,
+                                       "y1":  202,
+                                       "x2":  322,
+                                       "y2":  261,
+                                       "thickness":  12,
+                                       "height_m":  0.0,
+                                       "points":  [
+                                                      [
+                                                          200,
+                                                          202
+                                                      ],
+                                                      [
+                                                          322,
+                                                          202
+                                                      ],
+                                                      [
+                                                          297,
+                                                          261
+                                                      ],
+                                                      [
+                                                          201,
+                                                          261
+                                                      ]
+                                                  ]
+                                   },
+                                   {
+                                       "id":  "buff_base_blue_poly_1",
+                                       "type":  "buff_base",
+                                       "team":  "blue",
+                                       "shape":  "polygon",
+                                       "x1":  1319,
+                                       "y1":  334,
+                                       "x2":  1500,
+                                       "y2":  543,
+                                       "thickness":  12,
+                                       "height_m":  0.0,
+                                       "points":  [
+                                                      [
+                                                          1427,
+                                                          334
+                                                      ],
+                                                      [
+                                                          1500,
+                                                          376
+                                                      ],
+                                                      [
+                                                          1500,
+                                                          501
+                                                      ],
+                                                      [
+                                                          1427,
+                                                          543
+                                                      ],
+                                                      [
+                                                          1319,
+                                                          481
+                                                      ],
+                                                      [
+                                                          1319,
+                                                          393
+                                                      ]
+                                                  ]
+                                   },
+                                   {
+                                       "id":  "buff_outpost_blue_poly_1",
+                                       "type":  "buff_outpost",
+                                       "team":  "blue",
+                                       "shape":  "polygon",
+                                       "x1":  911,
+                                       "y1":  179,
+                                       "x2":  992,
+                                       "y2":  280,
+                                       "thickness":  12,
+                                       "height_m":  0.0,
+                                       "points":  [
+                                                      [
+                                                          940,
+                                                          179
+                                                      ],
+                                                      [
+                                                          992,
+                                                          179
+                                                      ],
+                                                      [
+                                                          972,
+                                                          207
+                                                      ],
+                                                      [
+                                                          951,
+                                                          207
+                                                      ],
+                                                      [
+                                                          940,
+                                                          220
+                                                      ],
+                                                      [
+                                                          939,
+                                                          234
+                                                      ],
+                                                      [
+                                                          950,
+                                                          249
+                                                      ],
+                                                      [
+                                                          971,
+                                                          249
+                                                      ],
+                                                      [
+                                                          985,
+                                                          280
+                                                      ],
+                                                      [
+                                                          940,
+                                                          280
+                                                      ],
+                                                      [
+                                                          911,
+                                                          251
+                                                      ],
+                                                      [
+                                                          911,
+                                                          207
+                                                      ]
+                                                  ]
+                                   },
+                                   {
+                                       "id":  "buff_fort_blue_poly_1",
+                                       "type":  "buff_fort",
+                                       "team":  "blue",
+                                       "shape":  "polygon",
+                                       "x1":  1121,
+                                       "y1":  378,
+                                       "x2":  1257,
+                                       "y2":  498,
+                                       "thickness":  12,
+                                       "height_m":  0.0,
+                                       "points":  [
+                                                      [
+                                                          1157,
+                                                          378
+                                                      ],
+                                                      [
+                                                          1223,
+                                                          379
+                                                      ],
+                                                      [
+                                                          1257,
+                                                          438
+                                                      ],
+                                                      [
+                                                          1222,
+                                                          498
+                                                      ],
+                                                      [
+                                                          1155,
+                                                          498
+                                                      ],
+                                                      [
+                                                          1121,
+                                                          438
+                                                      ]
+                                                  ]
+                                   },
+                                   {
+                                       "id":  "buff_supply_blue",
+                                       "type":  "buff_supply",
+                                       "team":  "blue",
+                                       "shape":  "rect",
+                                       "x1":  1362,
+                                       "y1":  33,
+                                       "x2":  1475,
+                                       "y2":  131,
+                                       "thickness":  12,
+                                       "height_m":  0.0
+                                   },
+                                   {
+                                       "id":  "buff_supply_blue_poly_1",
+                                       "type":  "buff_supply",
+                                       "team":  "blue",
+                                       "shape":  "polygon",
+                                       "x1":  1362,
+                                       "y1":  134,
+                                       "x2":  1493,
+                                       "y2":  190,
+                                       "thickness":  12,
+                                       "height_m":  0.0,
+                                       "points":  [
+                                                      [
+                                                          1362,
+                                                          134
+                                                      ],
+                                                      [
+                                                          1493,
+                                                          134
+                                                      ],
+                                                      [
+                                                          1493,
+                                                          190
+                                                      ],
+                                                      [
+                                                          1378,
+                                                          190
+                                                      ],
+                                                      [
+                                                          1364,
+                                                          178
+                                                      ]
+                                                  ]
+                                   },
+                                   {
+                                       "id":  "buff_trapezoid_highland_blue_poly_1",
+                                       "type":  "buff_trapezoid_highland",
+                                       "team":  "blue",
+                                       "shape":  "polygon",
+                                       "x1":  1254,
+                                       "y1":  610,
+                                       "x2":  1377,
+                                       "y2":  675,
+                                       "thickness":  12,
+                                       "height_m":  0.0,
+                                       "points":  [
+                                                      [
+                                                          1281,
+                                                          610
+                                                      ],
+                                                      [
+                                                          1377,
+                                                          610
+                                                      ],
+                                                      [
+                                                          1377,
+                                                          675
+                                                      ],
+                                                      [
+                                                          1254,
+                                                          675
+                                                      ]
+                                                  ]
+                                   },
+                                   {
+                                       "id":  "buff_terrain_highland_red_start_poly_1",
+                                       "type":  "buff_terrain_highland_red_start",
+                                       "team":  "red",
+                                       "shape":  "polygon",
+                                       "x1":  483,
+                                       "y1":  359,
+                                       "x2":  550,
+                                       "y2":  511,
+                                       "thickness":  12,
+                                       "height_m":  0.0,
+                                       "points":  [
+                                                      [
+                                                          483,
+                                                          372
+                                                      ],
+                                                      [
+                                                          483,
+                                                          500
+                                                      ],
+                                                      [
+                                                          495,
+                                                          511
+                                                      ],
+                                                      [
+                                                          548,
+                                                          511
+                                                      ],
+                                                      [
+                                                          529,
+                                                          471
+                                                      ],
+                                                      [
+                                                          529,
+                                                          392
+                                                      ],
+                                                      [
+                                                          550,
+                                                          359
+                                                      ],
+                                                      [
+                                                          498,
+                                                          359
+                                                      ]
+                                                  ]
+                                   },
+                                   {
+                                       "id":  "buff_terrain_highland_red_end_poly_1",
+                                       "type":  "buff_terrain_highland_red_end",
+                                       "team":  "red",
+                                       "shape":  "polygon",
+                                       "x1":  582,
+                                       "y1":  360,
+                                       "x2":  638,
+                                       "y2":  512,
+                                       "thickness":  12,
+                                       "height_m":  0.0,
+                                       "points":  [
+                                                      [
+                                                          582,
+                                                          360
+                                                      ],
+                                                      [
+                                                          638,
+                                                          360
+                                                      ],
+                                                      [
+                                                          638,
+                                                          500
+                                                      ],
+                                                      [
+                                                          628,
+                                                          512
+                                                      ],
+                                                      [
+                                                          583,
+                                                          512
+                                                      ]
+                                                  ]
+                                   },
+                                   {
+                                       "id":  "buff_terrain_highland_blue_start_poly_1",
+                                       "type":  "buff_terrain_highland_blue_start",
+                                       "team":  "blue",
+                                       "shape":  "polygon",
+                                       "x1":  1030,
+                                       "y1":  362,
+                                       "x2":  1095,
+                                       "y2":  512,
+                                       "thickness":  12,
+                                       "height_m":  0.0,
+                                       "points":  [
+                                                      [
+                                                          1030,
+                                                          362
+                                                      ],
+                                                      [
+                                                          1083,
+                                                          362
+                                                      ],
+                                                      [
+                                                          1095,
+                                                          375
+                                                      ],
+                                                      [
+                                                          1095,
+                                                          501
+                                                      ],
+                                                      [
+                                                          1084,
+                                                          512
+                                                      ],
+                                                      [
+                                                          1030,
+                                                          511
+                                                      ],
+                                                      [
+                                                          1051,
+                                                          481
+                                                      ],
+                                                      [
+                                                          1051,
+                                                          405
+                                                      ]
+                                                  ]
+                                   },
+                                   {
+                                       "id":  "buff_terrain_highland_blue_end_poly_1",
+                                       "type":  "buff_terrain_highland_blue_end",
+                                       "team":  "blue",
+                                       "shape":  "polygon",
+                                       "x1":  943,
+                                       "y1":  359,
+                                       "x2":  987,
+                                       "y2":  514,
+                                       "thickness":  12,
+                                       "height_m":  0.0,
+                                       "points":  [
+                                                      [
+                                                          944,
+                                                          370
+                                                      ],
+                                                      [
+                                                          954,
+                                                          359
+                                                      ],
+                                                      [
+                                                          987,
+                                                          359
+                                                      ],
+                                                      [
+                                                          987,
+                                                          514
+                                                      ],
+                                                      [
+                                                          943,
+                                                          514
+                                                      ]
+                                                  ]
+                                   },
+                                   {
+                                       "id":  "buff_terrain_road_red_start",
+                                       "type":  "buff_terrain_road_red_start",
+                                       "team":  "red",
+                                       "shape":  "rect",
+                                       "x1":  453,
+                                       "y1":  694,
+                                       "x2":  506,
+                                       "y2":  730,
+                                       "thickness":  12,
+                                       "height_m":  0.0
+                                   },
+                                   {
+                                       "id":  "buff_terrain_road_red_end",
+                                       "type":  "buff_terrain_road_red_end",
+                                       "team":  "red",
+                                       "shape":  "rect",
+                                       "x1":  452,
+                                       "y1":  734,
+                                       "x2":  506,
+                                       "y2":  769,
+                                       "thickness":  12,
+                                       "height_m":  0.0
+                                   },
+                                   {
+                                       "id":  "buff_terrain_road_blue_start",
+                                       "type":  "buff_terrain_road_blue_start",
+                                       "team":  "blue",
+                                       "shape":  "rect",
+                                       "x1":  1074,
+                                       "y1":  148,
+                                       "x2":  1129,
+                                       "y2":  182,
+                                       "thickness":  12,
+                                       "height_m":  0.0
+                                   },
+                                   {
+                                       "id":  "buff_terrain_road_blue_end",
+                                       "type":  "buff_terrain_road_blue_end",
+                                       "team":  "blue",
+                                       "shape":  "rect",
+                                       "x1":  1076,
+                                       "y1":  106,
+                                       "x2":  1129,
+                                       "y2":  142,
+                                       "thickness":  12,
+                                       "height_m":  0.0
+                                   },
+                                   {
+                                       "id":  "buff_terrain_fly_slope_red_start",
+                                       "type":  "buff_terrain_fly_slope_red_start",
+                                       "team":  "red",
+                                       "shape":  "rect",
+                                       "x1":  572,
+                                       "y1":  788,
+                                       "x2":  636,
+                                       "y2":  838,
+                                       "thickness":  12,
+                                       "height_m":  0.0
+                                   },
+                                   {
+                                       "id":  "buff_terrain_fly_slope_red_end",
+                                       "type":  "buff_terrain_fly_slope_red_end",
+                                       "team":  "red",
+                                       "shape":  "rect",
+                                       "x1":  886,
+                                       "y1":  787,
+                                       "x2":  946,
+                                       "y2":  841,
+                                       "thickness":  12,
+                                       "height_m":  0.0
+                                   },
+                                   {
+                                       "id":  "buff_terrain_fly_slope_blue_start",
+                                       "type":  "buff_terrain_fly_slope_blue_start",
+                                       "team":  "blue",
+                                       "shape":  "rect",
+                                       "x1":  945,
+                                       "y1":  40,
+                                       "x2":  1007,
+                                       "y2":  87,
+                                       "thickness":  12,
+                                       "height_m":  0.0
+                                   },
+                                   {
+                                       "id":  "buff_terrain_fly_slope_blue_end",
+                                       "type":  "buff_terrain_fly_slope_blue_end",
+                                       "team":  "blue",
+                                       "shape":  "rect",
+                                       "x1":  636,
+                                       "y1":  37,
+                                       "x2":  694,
+                                       "y2":  88,
+                                       "thickness":  12,
+                                       "height_m":  0.0
+                                   },
+                                   {
+                                       "id":  "buff_central_highland_poly_1",
+                                       "type":  "buff_central_highland",
+                                       "team":  "neutral",
+                                       "shape":  "polygon",
+                                       "x1":  864,
+                                       "y1":  516,
+                                       "x2":  986,
+                                       "y2":  706,
+                                       "thickness":  12,
+                                       "height_m":  0.0,
+                                       "points":  [
+                                                      [
+                                                          864,
+                                                          635
+                                                      ],
+                                                      [
+                                                          864,
+                                                          706
+                                                      ],
+                                                      [
+                                                          986,
+                                                          537
+                                                      ],
+                                                      [
+                                                          986,
+                                                          516
+                                                      ],
+                                                      [
+                                                          944,
+                                                          516
+                                                      ],
+                                                      [
+                                                          944,
+                                                          522
+                                                      ]
+                                                  ]
+                                   },
+                                   {
+                                       "id":  "buff_central_highland_poly_2",
+                                       "type":  "buff_central_highland",
+                                       "team":  "neutral",
+                                       "shape":  "polygon",
+                                       "x1":  588,
+                                       "y1":  170,
+                                       "x2":  711,
+                                       "y2":  357,
+                                       "thickness":  12,
+                                       "height_m":  0.0,
+                                       "points":  [
+                                                      [
+                                                          588,
+                                                          357
+                                                      ],
+                                                      [
+                                                          636,
+                                                          357
+                                                      ],
+                                                      [
+                                                          636,
+                                                          348
+                                                      ],
+                                                      [
+                                                          711,
+                                                          238
+                                                      ],
+                                                      [
+                                                          711,
+                                                          170
+                                                      ],
+                                                      [
+                                                          594,
+                                                          333
+                                                      ]
+                                                  ]
+                                   },
+                                   {
+                                       "id":  "buff_hero_deployment_red",
+                                       "type":  "buff_hero_deployment",
+                                       "team":  "red",
+                                       "shape":  "rect",
+                                       "x1":  35,
+                                       "y1":  28,
+                                       "x2":  337,
+                                       "y2":  552,
+                                       "thickness":  12,
+                                       "height_m":  0.0
+                                   },
+                                   {
+                                       "id":  "buff_hero_deployment_blue",
+                                       "type":  "buff_hero_deployment",
+                                       "team":  "blue",
+                                       "shape":  "rect",
+                                       "x1":  1245,
+                                       "y1":  324,
+                                       "x2":  1550,
+                                       "y2":  850,
+                                       "thickness":  12,
+                                       "height_m":  0.0
+                                   }
+                               ],
+                "runtime_grid":  {
+                                     "resolution_m":  0.02,
+                                     "shape":  [
+                                                   873,
+                                                   1576
+                                               ],
+                                     "storage_kind":  "terrain_cache_lz4",
+                                     "source_path":  "..\\rmuc26map\\RMUC2026_MAP.terraincache.lz4",
+                                     "render_profile":  "terrain_cache_runtime"
+                                 }
+            }
+}

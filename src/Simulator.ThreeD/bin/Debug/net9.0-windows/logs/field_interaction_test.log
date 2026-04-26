@@ -1,3 +1,18 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:4b962acac7853021e33d2aeb7d6d7e9a8ff0cce5dc81546a6b610ea6c6f9e8e4
-size 3060
+08:32:11.522 composite_test=enabled source=LoadLargeTerrain_matrix_semantics components=6 interaction_units=2 participates_in_rules=false participates_in_collision=false
+08:39:22.122 composite_test=enabled source=LoadLargeTerrain_matrix_semantics components=6 interaction_units=2 participates_in_rules=false participates_in_collision=false
+08:49:46.589 composite_test=enabled source=LoadLargeTerrain_matrix_semantics components=6 interaction_units=2 participates_in_rules=false participates_in_collision=false
+09:06:32.171 composite_test=enabled source=LoadLargeTerrain_matrix_semantics components=6 interaction_units=2 participates_in_rules=false participates_in_collision=false
+09:14:00.712 composite_test=enabled source=LoadLargeTerrain_matrix_semantics components=6 interaction_units=2 participates_in_rules=false participates_in_collision=false
+18:24:23.122 composite_test=enabled source=LoadLargeTerrain_matrix_semantics components=6 interaction_units=2 participates_in_rules=false participates_in_collision=false
+18:25:33.437 composite_test=enabled source=LoadLargeTerrain_matrix_semantics components=6 interaction_units=2 participates_in_rules=false participates_in_collision=false
+18:44:34.622 composite_test=enabled source=LoadLargeTerrain_matrix_semantics components=6 interaction_units=2 participates_in_rules=false participates_in_collision=false
+18:58:55.915 composite_test=enabled source=LoadLargeTerrain_matrix_semantics components=6 interaction_units=2 participates_in_rules=false participates_in_collision=false
+19:06:35.360 composite_test=enabled source=LoadLargeTerrain_matrix_semantics components=6 interaction_units=2 participates_in_rules=false participates_in_collision=false
+19:23:19.495 composite_test=enabled source=LoadLargeTerrain_matrix_semantics components=6 interaction_units=2 participates_in_rules=false participates_in_collision=false
+19:32:24.533 composite_test=enabled source=LoadLargeTerrain_matrix_semantics components=6 interaction_units=2 participates_in_rules=false participates_in_collision=false
+19:52:47.359 composite_test=enabled source=LoadLargeTerrain_matrix_semantics components=6 interaction_units=2 participates_in_rules=false participates_in_collision=false
+19:59:36.967 composite_test=enabled source=LoadLargeTerrain_matrix_semantics components=6 interaction_units=2 participates_in_rules=false participates_in_collision=false
+20:18:32.142 composite_test=enabled source=LoadLargeTerrain_matrix_semantics components=6 interaction_units=2 participates_in_rules=false participates_in_collision=false
+20:56:54.663 composite_test=enabled source=LoadLargeTerrain_matrix_semantics components=6 interaction_units=2 participates_in_rules=false participates_in_collision=false
+21:01:47.412 composite_test=enabled source=LoadLargeTerrain_matrix_semantics components=6 interaction_units=2 participates_in_rules=false participates_in_collision=false
+21:14:49.981 composite_test=enabled source=LoadLargeTerrain_matrix_semantics components=6 interaction_units=2 participates_in_rules=false participates_in_collision=false

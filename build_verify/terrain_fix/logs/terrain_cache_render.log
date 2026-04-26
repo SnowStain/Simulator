@@ -1,3 +1,2 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:325da7cf379d52c1fafc2a1b355566dd5052c4da6541e0605c715719940a269a
-size 172
+21:14:20.121 source=RMUC2026_MAP.terraincache.lz4 original_triangle_gpu_stream=enabled
+21:14:20.139 source=RMUC2026_MAP.terraincache.lz4 gpu_chunk_build=background_started

@@ -1,3 +1,299 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:063024d838d6c57cbaef39bea09b118ab66aada05011616805a79be9b36ec8cd
-size 41892
+02:07:29.473 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+02:09:56.907 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+02:19:43.078 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+02:29:22.148 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+02:44:34.646 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+02:45:49.948 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+03:13:57.822 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+03:23:04.125 load_fail annotation missing for preset=map.json path=
+03:51:06.706 load_fail annotation missing for preset=map.json path=
+03:52:45.835 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+04:09:04.113 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+04:10:59.327 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+04:11:59.179 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+04:19:51.885 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+04:22:27.028 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+04:51:55.682 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+05:13:17.163 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+05:26:10.652 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+05:32:40.852 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+05:47:11.360 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+11:50:30.369 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+12:06:15.953 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+12:12:36.872 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+12:19:03.580 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+12:21:05.888 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+12:21:53.290 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+12:24:21.029 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+12:26:19.962 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+12:28:00.720 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+12:29:18.540 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+12:36:03.529 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+13:07:44.487 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+13:13:07.632 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+13:18:06.549 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+13:19:46.953 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+13:26:08.090 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+13:26:42.790 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+13:29:33.413 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+13:33:24.718 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+13:41:38.507 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+14:14:47.565 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+14:23:15.180 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+14:27:30.003 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+14:28:45.467 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+14:39:54.967 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+14:42:36.364 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+14:53:48.677 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+15:07:44.063 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+15:15:15.930 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+15:24:02.543 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+15:35:05.608 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+16:31:15.172 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+16:43:38.386 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+16:50:27.732 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+17:01:33.850 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+17:10:24.199 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+17:28:38.714 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+17:53:25.400 item team=red kind=RotatingArmor name=红方前哨站旋转装甲板 components=13779 body_triangles=156924 pivot=(3.099,-0.098,-5.521)
+17:53:25.401 unit team=red plate=outpost_ring_1 light=False components=64 center=(2.943,-0.134,-5.253) normal=(-0.505,0,0.863) size=(0.122,0.113)
+17:53:25.402 unit team=red plate=outpost_ring_2 light=False components=68 center=(3.34,-0.236,-5.518) normal=(1,0,0.009) size=(0.128,0.113)
+17:53:25.402 unit team=red plate=outpost_ring_3 light=False components=69 center=(2.914,-0.032,-5.73) normal=(-0.663,0,-0.749) size=(0.124,0.113)
+17:53:25.403 unit team=red plate=outpost_ring_1 light=True components=12 center=(2.947,-0.133,-5.262) normal=(-0.506,0,0.862) size=(0.129,0.054)
+17:53:25.403 unit team=red plate=outpost_ring_2 light=True components=14 center=(3.333,-0.234,-5.518) normal=(1,0,0.012) size=(0.129,0.054)
+17:53:25.404 item team=blue kind=RotatingArmor name=蓝方前哨站旋转装甲板 components=13645 body_triangles=153289 pivot=(-3.065,-0.104,2.212)
+17:53:25.405 unit team=blue plate=outpost_ring_1 light=False components=70 center=(-2.928,-0.134,1.974) normal=(0.501,0,-0.866) size=(0.12,0.113)
+17:53:25.405 unit team=blue plate=outpost_ring_3 light=False components=69 center=(-2.928,-0.032,2.45) normal=(0.499,0,0.867) size=(0.122,0.113)
+17:53:25.405 unit team=blue plate=outpost_ring_2 light=False components=70 center=(-3.34,-0.236,2.212) normal=(-1,0,0) size=(0.126,0.113)
+17:53:25.406 unit team=blue plate=outpost_ring_3 light=True components=20 center=(-2.932,-0.03,2.443) normal=(0.499,0,0.867) size=(0.124,0.054)
+17:53:25.406 unit team=blue plate=outpost_ring_1 light=True components=19 center=(-2.932,-0.133,1.981) normal=(0.499,0,-0.867) size=(0.124,0.054)
+17:53:25.407 unit team=blue plate=outpost_ring_2 light=True components=20 center=(-3.333,-0.234,2.212) normal=(-1,0,0) size=(0.128,0.054)
+17:53:25.407 item team=blue kind=TopArmor name=蓝方前哨站顶部交互组件 components=35 body_triangles=18 pivot=(-2.992,0.174,2.212)
+17:53:25.408 unit team=blue plate=outpost_top light=False components=20 center=(-2.992,0.173,2.212) normal=(-1,0,0) size=(0.126,0.057)
+17:53:25.408 unit team=blue plate=outpost_top light=False components=1 center=(-2.901,0.095,2.212) normal=(1,0,0) size=(0.053,0.052)
+17:53:25.409 unit team=blue plate=outpost_top light=True components=13 center=(-2.993,0.171,2.212) normal=(-1,0,0) size=(0.129,0.025)
+17:53:25.409 item team=red kind=TopArmor name=红方前哨站顶部交互组件 components=47 body_triangles=0 pivot=(2.992,0.174,-5.496)
+17:53:25.409 unit team=red plate=outpost_top light=False components=19 center=(2.992,0.174,-5.496) normal=(1,0,0) size=(0.132,0.054)
+17:53:25.410 unit team=red plate=outpost_top light=True components=27 center=(2.996,0.171,-5.497) normal=(0.995,0,-0.097) size=(0.132,0.025)
+17:53:25.417 unit team=red plate=outpost_top light=False components=1 center=(2.901,0.095,-5.491) normal=(-0.998,0,0.062) size=(0.054,0.052)
+17:53:25.418 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+18:04:39.081 item team=red kind=RotatingArmor name=红方前哨站旋转装甲板 components=13779 body_triangles=156924 pivot=(3.099,-0.098,-5.521)
+18:04:39.083 unit team=red plate=outpost_ring_1 light=False components=64 center=(2.943,-0.134,-5.253) normal=(-0.505,0,0.863) size=(0.122,0.113)
+18:04:39.083 unit team=red plate=outpost_ring_2 light=False components=68 center=(3.34,-0.236,-5.518) normal=(1,0,0.009) size=(0.128,0.113)
+18:04:39.084 unit team=red plate=outpost_ring_3 light=False components=69 center=(2.914,-0.032,-5.73) normal=(-0.663,0,-0.749) size=(0.124,0.113)
+18:04:39.084 unit team=red plate=outpost_ring_1 light=True components=12 center=(2.947,-0.133,-5.262) normal=(-0.506,0,0.862) size=(0.129,0.054)
+18:04:39.085 unit team=red plate=outpost_ring_2 light=True components=14 center=(3.333,-0.234,-5.518) normal=(1,0,0.012) size=(0.129,0.054)
+18:04:39.086 item team=blue kind=RotatingArmor name=蓝方前哨站旋转装甲板 components=13645 body_triangles=153289 pivot=(-3.065,-0.104,2.212)
+18:04:39.087 unit team=blue plate=outpost_ring_1 light=False components=70 center=(-2.928,-0.134,1.974) normal=(0.501,0,-0.866) size=(0.12,0.113)
+18:04:39.087 unit team=blue plate=outpost_ring_3 light=False components=69 center=(-2.928,-0.032,2.45) normal=(0.499,0,0.867) size=(0.122,0.113)
+18:04:39.088 unit team=blue plate=outpost_ring_2 light=False components=70 center=(-3.34,-0.236,2.212) normal=(-1,0,0) size=(0.126,0.113)
+18:04:39.094 unit team=blue plate=outpost_ring_3 light=True components=20 center=(-2.932,-0.03,2.443) normal=(0.499,0,0.867) size=(0.124,0.054)
+18:04:39.095 unit team=blue plate=outpost_ring_1 light=True components=19 center=(-2.932,-0.133,1.981) normal=(0.499,0,-0.867) size=(0.124,0.054)
+18:04:39.095 unit team=blue plate=outpost_ring_2 light=True components=20 center=(-3.333,-0.234,2.212) normal=(-1,0,0) size=(0.128,0.054)
+18:04:39.096 item team=blue kind=TopArmor name=蓝方前哨站顶部交互组件 components=35 body_triangles=18 pivot=(-2.992,0.174,2.212)
+18:04:39.097 unit team=blue plate=outpost_top light=False components=20 center=(-2.992,0.173,2.212) normal=(-1,0,0) size=(0.126,0.057)
+18:04:39.098 unit team=blue plate=outpost_top light=False components=1 center=(-2.901,0.095,2.212) normal=(1,0,0) size=(0.053,0.052)
+18:04:39.098 unit team=blue plate=outpost_top light=True components=13 center=(-2.993,0.171,2.212) normal=(-1,0,0) size=(0.129,0.025)
+18:04:39.098 item team=red kind=TopArmor name=红方前哨站顶部交互组件 components=47 body_triangles=0 pivot=(2.992,0.174,-5.496)
+18:04:39.099 unit team=red plate=outpost_top light=False components=19 center=(2.992,0.174,-5.496) normal=(1,0,0) size=(0.132,0.054)
+18:04:39.099 unit team=red plate=outpost_top light=True components=27 center=(2.996,0.171,-5.497) normal=(0.995,0,-0.097) size=(0.132,0.025)
+18:04:39.100 unit team=red plate=outpost_top light=False components=1 center=(2.901,0.095,-5.491) normal=(-0.998,0,0.062) size=(0.054,0.052)
+18:04:39.100 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+18:25:57.840 item team=red kind=RotatingArmor name=红方前哨站旋转装甲板 components=13779 body_triangles=156924 pivot=(3.099,-0.098,-5.521)
+18:25:57.842 unit team=red plate=outpost_ring_1 light=False components=64 center=(2.943,-0.134,-5.253) normal=(-0.505,0,0.863) size=(0.122,0.113)
+18:25:57.842 unit team=red plate=outpost_ring_2 light=False components=68 center=(3.34,-0.236,-5.518) normal=(1,0,0.009) size=(0.128,0.113)
+18:25:57.843 unit team=red plate=outpost_ring_3 light=False components=69 center=(2.914,-0.032,-5.73) normal=(-0.663,0,-0.749) size=(0.124,0.113)
+18:25:57.843 unit team=red plate=outpost_ring_1 light=True components=12 center=(2.947,-0.133,-5.262) normal=(-0.506,0,0.862) size=(0.129,0.054)
+18:25:57.848 unit team=red plate=outpost_ring_2 light=True components=14 center=(3.333,-0.234,-5.518) normal=(1,0,0.012) size=(0.129,0.054)
+18:25:57.849 item team=blue kind=RotatingArmor name=蓝方前哨站旋转装甲板 components=13645 body_triangles=153289 pivot=(-3.065,-0.104,2.212)
+18:25:57.849 unit team=blue plate=outpost_ring_1 light=False components=70 center=(-2.928,-0.134,1.974) normal=(0.501,0,-0.866) size=(0.12,0.113)
+18:25:57.850 unit team=blue plate=outpost_ring_3 light=False components=69 center=(-2.928,-0.032,2.45) normal=(0.499,0,0.867) size=(0.122,0.113)
+18:25:57.850 unit team=blue plate=outpost_ring_2 light=False components=70 center=(-3.34,-0.236,2.212) normal=(-1,0,0) size=(0.126,0.113)
+18:25:57.851 unit team=blue plate=outpost_ring_3 light=True components=20 center=(-2.932,-0.03,2.443) normal=(0.499,0,0.867) size=(0.124,0.054)
+18:25:57.851 unit team=blue plate=outpost_ring_1 light=True components=19 center=(-2.932,-0.133,1.981) normal=(0.499,0,-0.867) size=(0.124,0.054)
+18:25:57.851 unit team=blue plate=outpost_ring_2 light=True components=20 center=(-3.333,-0.234,2.212) normal=(-1,0,0) size=(0.128,0.054)
+18:25:57.852 item team=blue kind=TopArmor name=蓝方前哨站顶部交互组件 components=35 body_triangles=18 pivot=(-2.992,0.174,2.212)
+18:25:57.852 unit team=blue plate=outpost_top light=False components=20 center=(-2.992,0.173,2.212) normal=(-1,0,0) size=(0.126,0.057)
+18:25:57.853 unit team=blue plate=outpost_top light=False components=1 center=(-2.901,0.095,2.212) normal=(1,0,0) size=(0.053,0.052)
+18:25:57.853 unit team=blue plate=outpost_top light=True components=13 center=(-2.993,0.171,2.212) normal=(-1,0,0) size=(0.129,0.025)
+18:25:57.853 item team=red kind=TopArmor name=红方前哨站顶部交互组件 components=47 body_triangles=0 pivot=(2.992,0.174,-5.496)
+18:25:57.854 unit team=red plate=outpost_top light=False components=19 center=(2.992,0.174,-5.496) normal=(1,0,0) size=(0.132,0.054)
+18:25:57.854 unit team=red plate=outpost_top light=True components=27 center=(2.996,0.171,-5.497) normal=(0.995,0,-0.097) size=(0.132,0.025)
+18:25:57.855 unit team=red plate=outpost_top light=False components=1 center=(2.901,0.095,-5.491) normal=(-0.998,0,0.062) size=(0.054,0.052)
+18:25:57.855 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+20:24:33.551 item team=red kind=RotatingArmor name=红方前哨站旋转装甲板 components=13779 body_triangles=156924 pivot=(3.099,-0.098,-5.521)
+20:24:33.552 unit team=red plate=outpost_ring_1 light=False components=64 center=(2.943,-0.134,-5.253) normal=(-0.505,0,0.863) size=(0.122,0.113)
+20:24:33.553 unit team=red plate=outpost_ring_2 light=False components=68 center=(3.34,-0.236,-5.518) normal=(1,0,0.009) size=(0.128,0.113)
+20:24:33.553 unit team=red plate=outpost_ring_3 light=False components=69 center=(2.914,-0.032,-5.73) normal=(-0.663,0,-0.749) size=(0.124,0.113)
+20:24:33.553 unit team=red plate=outpost_ring_1 light=True components=12 center=(2.947,-0.133,-5.262) normal=(-0.506,0,0.862) size=(0.129,0.054)
+20:24:33.554 unit team=red plate=outpost_ring_2 light=True components=14 center=(3.333,-0.234,-5.518) normal=(1,0,0.012) size=(0.129,0.054)
+20:24:33.554 item team=blue kind=RotatingArmor name=蓝方前哨站旋转装甲板 components=13645 body_triangles=153289 pivot=(-3.065,-0.104,2.212)
+20:24:33.555 unit team=blue plate=outpost_ring_1 light=False components=70 center=(-2.928,-0.134,1.974) normal=(0.501,0,-0.866) size=(0.12,0.113)
+20:24:33.555 unit team=blue plate=outpost_ring_3 light=False components=69 center=(-2.928,-0.032,2.45) normal=(0.499,0,0.867) size=(0.122,0.113)
+20:24:33.556 unit team=blue plate=outpost_ring_2 light=False components=70 center=(-3.34,-0.236,2.212) normal=(-1,0,0) size=(0.126,0.113)
+20:24:33.556 unit team=blue plate=outpost_ring_3 light=True components=20 center=(-2.932,-0.03,2.443) normal=(0.499,0,0.867) size=(0.124,0.054)
+20:24:33.561 unit team=blue plate=outpost_ring_1 light=True components=19 center=(-2.932,-0.133,1.981) normal=(0.499,0,-0.867) size=(0.124,0.054)
+20:24:33.561 unit team=blue plate=outpost_ring_2 light=True components=20 center=(-3.333,-0.234,2.212) normal=(-1,0,0) size=(0.128,0.054)
+20:24:33.562 item team=blue kind=TopArmor name=蓝方前哨站顶部交互组件 components=35 body_triangles=18 pivot=(-2.992,0.174,2.212)
+20:24:33.562 unit team=blue plate=outpost_top light=False components=20 center=(-2.992,0.173,2.212) normal=(-1,0,0) size=(0.126,0.057)
+20:24:33.562 unit team=blue plate=outpost_top light=False components=1 center=(-2.901,0.095,2.212) normal=(1,0,0) size=(0.053,0.052)
+20:24:33.563 unit team=blue plate=outpost_top light=True components=13 center=(-2.993,0.171,2.212) normal=(-1,0,0) size=(0.129,0.025)
+20:24:33.563 item team=red kind=TopArmor name=红方前哨站顶部交互组件 components=47 body_triangles=0 pivot=(2.992,0.174,-5.496)
+20:24:33.564 unit team=red plate=outpost_top light=False components=19 center=(2.992,0.174,-5.496) normal=(1,0,0) size=(0.132,0.054)
+20:24:33.564 unit team=red plate=outpost_top light=True components=27 center=(2.996,0.171,-5.497) normal=(0.995,0,-0.097) size=(0.132,0.025)
+20:24:33.565 unit team=red plate=outpost_top light=False components=1 center=(2.901,0.095,-5.491) normal=(-0.998,0,0.062) size=(0.054,0.052)
+20:24:33.566 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+20:35:11.807 item team=red kind=RotatingArmor name=红方前哨站旋转装甲板 components=13779 body_triangles=156924 pivot=(3.099,-0.098,-5.521)
+20:35:11.809 unit team=red plate=outpost_ring_1 light=False components=64 center=(2.943,-0.134,-5.253) normal=(-0.505,0,0.863) size=(0.122,0.113)
+20:35:11.810 unit team=red plate=outpost_ring_2 light=False components=68 center=(3.34,-0.236,-5.518) normal=(1,0,0.009) size=(0.128,0.113)
+20:35:11.811 unit team=red plate=outpost_ring_3 light=False components=69 center=(2.914,-0.032,-5.73) normal=(-0.663,0,-0.749) size=(0.124,0.113)
+20:35:11.813 unit team=red plate=outpost_ring_1 light=True components=12 center=(2.947,-0.133,-5.262) normal=(-0.506,0,0.862) size=(0.129,0.054)
+20:35:11.813 unit team=red plate=outpost_ring_2 light=True components=14 center=(3.333,-0.234,-5.518) normal=(1,0,0.012) size=(0.129,0.054)
+20:35:11.814 item team=blue kind=RotatingArmor name=蓝方前哨站旋转装甲板 components=13645 body_triangles=153289 pivot=(-3.065,-0.104,2.212)
+20:35:11.815 unit team=blue plate=outpost_ring_1 light=False components=70 center=(-2.928,-0.134,1.974) normal=(0.501,0,-0.866) size=(0.12,0.113)
+20:35:11.815 unit team=blue plate=outpost_ring_3 light=False components=69 center=(-2.928,-0.032,2.45) normal=(0.499,0,0.867) size=(0.122,0.113)
+20:35:11.816 unit team=blue plate=outpost_ring_2 light=False components=70 center=(-3.34,-0.236,2.212) normal=(-1,0,0) size=(0.126,0.113)
+20:35:11.817 unit team=blue plate=outpost_ring_3 light=True components=20 center=(-2.932,-0.03,2.443) normal=(0.499,0,0.867) size=(0.124,0.054)
+20:35:11.817 unit team=blue plate=outpost_ring_1 light=True components=19 center=(-2.932,-0.133,1.981) normal=(0.499,0,-0.867) size=(0.124,0.054)
+20:35:11.818 unit team=blue plate=outpost_ring_2 light=True components=20 center=(-3.333,-0.234,2.212) normal=(-1,0,0) size=(0.128,0.054)
+20:35:11.818 item team=blue kind=TopArmor name=蓝方前哨站顶部交互组件 components=35 body_triangles=18 pivot=(-2.992,0.174,2.212)
+20:35:11.819 unit team=blue plate=outpost_top light=False components=20 center=(-2.992,0.173,2.212) normal=(-1,0,0) size=(0.126,0.057)
+20:35:11.819 unit team=blue plate=outpost_top light=False components=1 center=(-2.901,0.095,2.212) normal=(1,0,0) size=(0.053,0.052)
+20:35:11.820 unit team=blue plate=outpost_top light=True components=13 center=(-2.993,0.171,2.212) normal=(-1,0,0) size=(0.129,0.025)
+20:35:11.821 item team=red kind=TopArmor name=红方前哨站顶部交互组件 components=47 body_triangles=0 pivot=(2.992,0.174,-5.496)
+20:35:11.821 unit team=red plate=outpost_top light=False components=19 center=(2.992,0.174,-5.496) normal=(1,0,0) size=(0.132,0.054)
+20:35:11.822 unit team=red plate=outpost_top light=True components=27 center=(2.996,0.171,-5.497) normal=(0.995,0,-0.097) size=(0.132,0.025)
+20:35:11.823 unit team=red plate=outpost_top light=False components=1 center=(2.901,0.095,-5.491) normal=(-0.998,0,0.062) size=(0.054,0.052)
+20:35:11.824 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+20:52:48.516 item team=red kind=RotatingArmor name=红方前哨站旋转装甲板 components=13779 body_triangles=156924 pivot=(3.099,-0.098,-5.521)
+20:52:48.517 unit team=red plate=outpost_ring_1 light=False components=64 center=(2.943,-0.134,-5.253) normal=(-0.505,0,0.863) size=(0.122,0.113)
+20:52:48.517 unit team=red plate=outpost_ring_2 light=False components=68 center=(3.34,-0.236,-5.518) normal=(1,0,0.009) size=(0.128,0.113)
+20:52:48.518 unit team=red plate=outpost_ring_3 light=False components=69 center=(2.914,-0.032,-5.73) normal=(-0.663,0,-0.749) size=(0.124,0.113)
+20:52:48.518 unit team=red plate=outpost_ring_1 light=True components=12 center=(2.947,-0.133,-5.262) normal=(-0.506,0,0.862) size=(0.129,0.054)
+20:52:48.519 unit team=red plate=outpost_ring_2 light=True components=14 center=(3.333,-0.234,-5.518) normal=(1,0,0.012) size=(0.129,0.054)
+20:52:48.519 item team=blue kind=RotatingArmor name=蓝方前哨站旋转装甲板 components=13645 body_triangles=153289 pivot=(-3.065,-0.104,2.212)
+20:52:48.522 unit team=blue plate=outpost_ring_1 light=False components=70 center=(-2.928,-0.134,1.974) normal=(0.501,0,-0.866) size=(0.12,0.113)
+20:52:48.523 unit team=blue plate=outpost_ring_3 light=False components=69 center=(-2.928,-0.032,2.45) normal=(0.499,0,0.867) size=(0.122,0.113)
+20:52:48.523 unit team=blue plate=outpost_ring_2 light=False components=70 center=(-3.34,-0.236,2.212) normal=(-1,0,0) size=(0.126,0.113)
+20:52:48.524 unit team=blue plate=outpost_ring_3 light=True components=20 center=(-2.932,-0.03,2.443) normal=(0.499,0,0.867) size=(0.124,0.054)
+20:52:48.524 unit team=blue plate=outpost_ring_1 light=True components=19 center=(-2.932,-0.133,1.981) normal=(0.499,0,-0.867) size=(0.124,0.054)
+20:52:48.525 unit team=blue plate=outpost_ring_2 light=True components=20 center=(-3.333,-0.234,2.212) normal=(-1,0,0) size=(0.128,0.054)
+20:52:48.525 item team=blue kind=TopArmor name=蓝方前哨站顶部交互组件 components=35 body_triangles=18 pivot=(-2.992,0.174,2.212)
+20:52:48.526 unit team=blue plate=outpost_top light=False components=20 center=(-2.992,0.173,2.212) normal=(-1,0,0) size=(0.126,0.057)
+20:52:48.526 unit team=blue plate=outpost_top light=False components=1 center=(-2.901,0.095,2.212) normal=(1,0,0) size=(0.053,0.052)
+20:52:48.536 unit team=blue plate=outpost_top light=True components=13 center=(-2.993,0.171,2.212) normal=(-1,0,0) size=(0.129,0.025)
+20:52:48.537 item team=red kind=TopArmor name=红方前哨站顶部交互组件 components=47 body_triangles=0 pivot=(2.992,0.174,-5.496)
+20:52:48.537 unit team=red plate=outpost_top light=False components=19 center=(2.992,0.174,-5.496) normal=(1,0,0) size=(0.132,0.054)
+20:52:48.538 unit team=red plate=outpost_top light=True components=27 center=(2.996,0.171,-5.497) normal=(0.995,0,-0.097) size=(0.132,0.025)
+20:52:48.538 unit team=red plate=outpost_top light=False components=1 center=(2.901,0.095,-5.491) normal=(-0.998,0,0.062) size=(0.054,0.052)
+20:52:48.538 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+21:05:12.964 item team=red kind=RotatingArmor name=红方前哨站旋转装甲板 components=13779 body_triangles=156924 pivot=(3.099,-0.098,-5.521)
+21:05:12.965 unit team=red plate=outpost_ring_1 light=False components=64 center=(2.943,-0.134,-5.253) normal=(-0.505,0,0.863) size=(0.122,0.113)
+21:05:12.966 unit team=red plate=outpost_ring_2 light=False components=68 center=(3.34,-0.236,-5.518) normal=(1,0,0.009) size=(0.128,0.113)
+21:05:12.966 unit team=red plate=outpost_ring_3 light=False components=69 center=(2.914,-0.032,-5.73) normal=(-0.663,0,-0.749) size=(0.124,0.113)
+21:05:12.970 unit team=red plate=outpost_ring_1 light=True components=12 center=(2.947,-0.133,-5.262) normal=(-0.506,0,0.862) size=(0.129,0.054)
+21:05:12.970 unit team=red plate=outpost_ring_2 light=True components=14 center=(3.333,-0.234,-5.518) normal=(1,0,0.012) size=(0.129,0.054)
+21:05:12.971 item team=blue kind=RotatingArmor name=蓝方前哨站旋转装甲板 components=13645 body_triangles=153289 pivot=(-3.065,-0.104,2.212)
+21:05:12.971 unit team=blue plate=outpost_ring_1 light=False components=70 center=(-2.928,-0.134,1.974) normal=(0.501,0,-0.866) size=(0.12,0.113)
+21:05:12.972 unit team=blue plate=outpost_ring_3 light=False components=69 center=(-2.928,-0.032,2.45) normal=(0.499,0,0.867) size=(0.122,0.113)
+21:05:12.972 unit team=blue plate=outpost_ring_2 light=False components=70 center=(-3.34,-0.236,2.212) normal=(-1,0,0) size=(0.126,0.113)
+21:05:12.973 unit team=blue plate=outpost_ring_3 light=True components=20 center=(-2.932,-0.03,2.443) normal=(0.499,0,0.867) size=(0.124,0.054)
+21:05:12.973 unit team=blue plate=outpost_ring_1 light=True components=19 center=(-2.932,-0.133,1.981) normal=(0.499,0,-0.867) size=(0.124,0.054)
+21:05:12.974 unit team=blue plate=outpost_ring_2 light=True components=20 center=(-3.333,-0.234,2.212) normal=(-1,0,0) size=(0.128,0.054)
+21:05:12.974 item team=blue kind=TopArmor name=蓝方前哨站顶部交互组件 components=35 body_triangles=18 pivot=(-2.992,0.174,2.212)
+21:05:12.975 unit team=blue plate=outpost_top light=False components=20 center=(-2.992,0.173,2.212) normal=(-1,0,0) size=(0.126,0.057)
+21:05:12.975 unit team=blue plate=outpost_top light=False components=1 center=(-2.901,0.095,2.212) normal=(1,0,0) size=(0.053,0.052)
+21:05:12.976 unit team=blue plate=outpost_top light=True components=13 center=(-2.993,0.171,2.212) normal=(-1,0,0) size=(0.129,0.025)
+21:05:12.976 item team=red kind=TopArmor name=红方前哨站顶部交互组件 components=47 body_triangles=0 pivot=(2.992,0.174,-5.496)
+21:05:12.980 unit team=red plate=outpost_top light=False components=19 center=(2.992,0.174,-5.496) normal=(1,0,0) size=(0.132,0.054)
+21:05:12.981 unit team=red plate=outpost_top light=True components=27 center=(2.996,0.171,-5.497) normal=(0.995,0,-0.097) size=(0.132,0.025)
+21:05:12.981 unit team=red plate=outpost_top light=False components=1 center=(2.901,0.095,-5.491) normal=(-0.998,0,0.062) size=(0.054,0.052)
+21:05:12.982 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+21:19:10.065 item team=red kind=RotatingArmor name=红方前哨站旋转装甲板 components=13779 body_triangles=156924 pivot=(3.099,-0.098,-5.521)
+21:19:10.066 unit team=red plate=outpost_ring_1 light=False components=64 center=(2.943,-0.134,-5.253) normal=(-0.505,0,0.863) size=(0.122,0.113)
+21:19:10.067 unit team=red plate=outpost_ring_2 light=False components=68 center=(3.34,-0.236,-5.518) normal=(1,0,0.009) size=(0.128,0.113)
+21:19:10.068 unit team=red plate=outpost_ring_3 light=False components=69 center=(2.914,-0.032,-5.73) normal=(-0.663,0,-0.749) size=(0.124,0.113)
+21:19:10.068 unit team=red plate=outpost_ring_1 light=True components=12 center=(2.947,-0.133,-5.262) normal=(-0.506,0,0.862) size=(0.129,0.054)
+21:19:10.069 unit team=red plate=outpost_ring_2 light=True components=14 center=(3.333,-0.234,-5.518) normal=(1,0,0.012) size=(0.129,0.054)
+21:19:10.069 item team=blue kind=RotatingArmor name=蓝方前哨站旋转装甲板 components=13645 body_triangles=153289 pivot=(-3.065,-0.104,2.212)
+21:19:10.070 unit team=blue plate=outpost_ring_1 light=False components=70 center=(-2.928,-0.134,1.974) normal=(0.501,0,-0.866) size=(0.12,0.113)
+21:19:10.070 unit team=blue plate=outpost_ring_3 light=False components=69 center=(-2.928,-0.032,2.45) normal=(0.499,0,0.867) size=(0.122,0.113)
+21:19:10.070 unit team=blue plate=outpost_ring_2 light=False components=70 center=(-3.34,-0.236,2.212) normal=(-1,0,0) size=(0.126,0.113)
+21:19:10.071 unit team=blue plate=outpost_ring_3 light=True components=20 center=(-2.932,-0.03,2.443) normal=(0.499,0,0.867) size=(0.124,0.054)
+21:19:10.071 unit team=blue plate=outpost_ring_1 light=True components=19 center=(-2.932,-0.133,1.981) normal=(0.499,0,-0.867) size=(0.124,0.054)
+21:19:10.072 unit team=blue plate=outpost_ring_2 light=True components=20 center=(-3.333,-0.234,2.212) normal=(-1,0,0) size=(0.128,0.054)
+21:19:10.072 item team=blue kind=TopArmor name=蓝方前哨站顶部交互组件 components=35 body_triangles=18 pivot=(-2.992,0.174,2.212)
+21:19:10.073 unit team=blue plate=outpost_top light=False components=20 center=(-2.992,0.173,2.212) normal=(-1,0,0) size=(0.126,0.057)
+21:19:10.073 unit team=blue plate=outpost_top light=False components=1 center=(-2.901,0.095,2.212) normal=(1,0,0) size=(0.053,0.052)
+21:19:10.074 unit team=blue plate=outpost_top light=True components=13 center=(-2.993,0.171,2.212) normal=(-1,0,0) size=(0.129,0.025)
+21:19:10.074 item team=red kind=TopArmor name=红方前哨站顶部交互组件 components=47 body_triangles=0 pivot=(2.992,0.174,-5.496)
+21:19:10.075 unit team=red plate=outpost_top light=False components=19 center=(2.992,0.174,-5.496) normal=(1,0,0) size=(0.132,0.054)
+21:19:10.075 unit team=red plate=outpost_top light=True components=27 center=(2.996,0.171,-5.497) normal=(0.995,0,-0.097) size=(0.132,0.025)
+21:19:10.076 unit team=red plate=outpost_top light=False components=1 center=(2.901,0.095,-5.491) normal=(-0.998,0,0.062) size=(0.054,0.052)
+21:19:10.076 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+21:51:31.749 item team=red kind=RotatingArmor name=红方前哨站旋转装甲板 components=13779 body_triangles=156924 pivot=(3.099,-0.098,-5.521)
+21:51:31.750 unit team=red plate=outpost_ring_1 light=False components=64 center=(2.943,-0.134,-5.253) normal=(-0.505,0,0.863) size=(0.122,0.113)
+21:51:31.751 unit team=red plate=outpost_ring_2 light=False components=68 center=(3.34,-0.236,-5.518) normal=(1,0,0.009) size=(0.128,0.113)
+21:51:31.751 unit team=red plate=outpost_ring_3 light=False components=69 center=(2.914,-0.032,-5.73) normal=(-0.663,0,-0.749) size=(0.124,0.113)
+21:51:31.752 unit team=red plate=outpost_ring_1 light=True components=12 center=(2.947,-0.133,-5.262) normal=(-0.506,0,0.862) size=(0.129,0.054)
+21:51:31.753 unit team=red plate=outpost_ring_2 light=True components=14 center=(3.333,-0.234,-5.518) normal=(1,0,0.012) size=(0.129,0.054)
+21:51:31.753 item team=blue kind=RotatingArmor name=蓝方前哨站旋转装甲板 components=13645 body_triangles=153289 pivot=(-3.065,-0.104,2.212)
+21:51:31.754 unit team=blue plate=outpost_ring_1 light=False components=70 center=(-2.928,-0.134,1.974) normal=(0.501,0,-0.866) size=(0.12,0.113)
+21:51:31.754 unit team=blue plate=outpost_ring_3 light=False components=69 center=(-2.928,-0.032,2.45) normal=(0.499,0,0.867) size=(0.122,0.113)
+21:51:31.755 unit team=blue plate=outpost_ring_2 light=False components=70 center=(-3.34,-0.236,2.212) normal=(-1,0,0) size=(0.126,0.113)
+21:51:31.755 unit team=blue plate=outpost_ring_3 light=True components=20 center=(-2.932,-0.03,2.443) normal=(0.499,0,0.867) size=(0.124,0.054)
+21:51:31.755 unit team=blue plate=outpost_ring_1 light=True components=19 center=(-2.932,-0.133,1.981) normal=(0.499,0,-0.867) size=(0.124,0.054)
+21:51:31.756 unit team=blue plate=outpost_ring_2 light=True components=20 center=(-3.333,-0.234,2.212) normal=(-1,0,0) size=(0.128,0.054)
+21:51:31.759 item team=blue kind=TopArmor name=蓝方前哨站顶部交互组件 components=35 body_triangles=18 pivot=(-2.992,0.174,2.212)
+21:51:31.760 unit team=blue plate=outpost_top light=False components=20 center=(-2.992,0.173,2.212) normal=(-1,0,0) size=(0.126,0.057)
+21:51:31.760 unit team=blue plate=outpost_top light=False components=1 center=(-2.901,0.095,2.212) normal=(1,0,0) size=(0.053,0.052)
+21:51:31.761 unit team=blue plate=outpost_top light=True components=13 center=(-2.993,0.171,2.212) normal=(-1,0,0) size=(0.129,0.025)
+21:51:31.761 item team=red kind=TopArmor name=红方前哨站顶部交互组件 components=47 body_triangles=0 pivot=(2.992,0.174,-5.496)
+21:51:31.761 unit team=red plate=outpost_top light=False components=19 center=(2.992,0.174,-5.496) normal=(1,0,0) size=(0.132,0.054)
+21:51:31.762 unit team=red plate=outpost_top light=True components=27 center=(2.996,0.171,-5.497) normal=(0.995,0,-0.097) size=(0.132,0.025)
+21:51:31.762 unit team=red plate=outpost_top light=False components=1 center=(2.901,0.095,-5.491) normal=(-0.998,0,0.062) size=(0.054,0.052)
+21:51:31.763 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+21:54:50.636 item team=red kind=RotatingArmor name=红方前哨站旋转装甲板 components=13779 body_triangles=156924 pivot=(3.099,-0.098,-5.521)
+21:54:50.637 unit team=red plate=outpost_ring_1 light=False components=64 center=(2.943,-0.134,-5.253) normal=(-0.505,0,0.863) size=(0.122,0.113)
+21:54:50.637 unit team=red plate=outpost_ring_2 light=False components=68 center=(3.34,-0.236,-5.518) normal=(1,0,0.009) size=(0.128,0.113)
+21:54:50.638 unit team=red plate=outpost_ring_3 light=False components=69 center=(2.914,-0.032,-5.73) normal=(-0.663,0,-0.749) size=(0.124,0.113)
+21:54:50.638 unit team=red plate=outpost_ring_1 light=True components=12 center=(2.947,-0.133,-5.262) normal=(-0.506,0,0.862) size=(0.129,0.054)
+21:54:50.639 unit team=red plate=outpost_ring_2 light=True components=14 center=(3.333,-0.234,-5.518) normal=(1,0,0.012) size=(0.129,0.054)
+21:54:50.639 item team=blue kind=RotatingArmor name=蓝方前哨站旋转装甲板 components=13645 body_triangles=153289 pivot=(-3.065,-0.104,2.212)
+21:54:50.640 unit team=blue plate=outpost_ring_1 light=False components=70 center=(-2.928,-0.134,1.974) normal=(0.501,0,-0.866) size=(0.12,0.113)
+21:54:50.640 unit team=blue plate=outpost_ring_3 light=False components=69 center=(-2.928,-0.032,2.45) normal=(0.499,0,0.867) size=(0.122,0.113)
+21:54:50.641 unit team=blue plate=outpost_ring_2 light=False components=70 center=(-3.34,-0.236,2.212) normal=(-1,0,0) size=(0.126,0.113)
+21:54:50.641 unit team=blue plate=outpost_ring_3 light=True components=20 center=(-2.932,-0.03,2.443) normal=(0.499,0,0.867) size=(0.124,0.054)
+21:54:50.641 unit team=blue plate=outpost_ring_1 light=True components=19 center=(-2.932,-0.133,1.981) normal=(0.499,0,-0.867) size=(0.124,0.054)
+21:54:50.642 unit team=blue plate=outpost_ring_2 light=True components=20 center=(-3.333,-0.234,2.212) normal=(-1,0,0) size=(0.128,0.054)
+21:54:50.642 item team=blue kind=TopArmor name=蓝方前哨站顶部交互组件 components=35 body_triangles=18 pivot=(-2.992,0.174,2.212)
+21:54:50.643 unit team=blue plate=outpost_top light=False components=20 center=(-2.992,0.173,2.212) normal=(-1,0,0) size=(0.126,0.057)
+21:54:50.643 unit team=blue plate=outpost_top light=False components=1 center=(-2.901,0.095,2.212) normal=(1,0,0) size=(0.053,0.052)
+21:54:50.646 unit team=blue plate=outpost_top light=True components=13 center=(-2.993,0.171,2.212) normal=(-1,0,0) size=(0.129,0.025)
+21:54:50.647 item team=red kind=TopArmor name=红方前哨站顶部交互组件 components=47 body_triangles=0 pivot=(2.992,0.174,-5.496)
+21:54:50.647 unit team=red plate=outpost_top light=False components=19 center=(2.992,0.174,-5.496) normal=(1,0,0) size=(0.132,0.054)
+21:54:50.648 unit team=red plate=outpost_top light=True components=27 center=(2.996,0.171,-5.497) normal=(0.995,0,-0.097) size=(0.132,0.025)
+21:54:50.648 unit team=red plate=outpost_top light=False components=1 center=(2.901,0.095,-5.491) normal=(-0.998,0,0.062) size=(0.054,0.052)
+21:54:50.649 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
+22:02:40.581 item team=red kind=RotatingArmor name=红方前哨站旋转装甲板 components=13779 body_triangles=156924 pivot=(3.099,-0.098,-5.521)
+22:02:40.583 unit team=red plate=outpost_ring_1 light=False components=64 center=(2.943,-0.134,-5.253) normal=(-0.505,0,0.863) size=(0.122,0.113)
+22:02:40.584 unit team=red plate=outpost_ring_2 light=False components=68 center=(3.34,-0.236,-5.518) normal=(1,0,0.009) size=(0.128,0.113)
+22:02:40.584 unit team=red plate=outpost_ring_3 light=False components=69 center=(2.914,-0.032,-5.73) normal=(-0.663,0,-0.749) size=(0.124,0.113)
+22:02:40.585 unit team=red plate=outpost_ring_1 light=True components=12 center=(2.947,-0.133,-5.262) normal=(-0.506,0,0.862) size=(0.129,0.054)
+22:02:40.586 unit team=red plate=outpost_ring_2 light=True components=14 center=(3.333,-0.234,-5.518) normal=(1,0,0.012) size=(0.129,0.054)
+22:02:40.587 item team=blue kind=RotatingArmor name=蓝方前哨站旋转装甲板 components=13645 body_triangles=153289 pivot=(-3.065,-0.104,2.212)
+22:02:40.587 unit team=blue plate=outpost_ring_1 light=False components=70 center=(-2.928,-0.134,1.974) normal=(0.501,0,-0.866) size=(0.12,0.113)
+22:02:40.588 unit team=blue plate=outpost_ring_3 light=False components=69 center=(-2.928,-0.032,2.45) normal=(0.499,0,0.867) size=(0.122,0.113)
+22:02:40.588 unit team=blue plate=outpost_ring_2 light=False components=70 center=(-3.34,-0.236,2.212) normal=(-1,0,0) size=(0.126,0.113)
+22:02:40.589 unit team=blue plate=outpost_ring_3 light=True components=20 center=(-2.932,-0.03,2.443) normal=(0.499,0,0.867) size=(0.124,0.054)
+22:02:40.589 unit team=blue plate=outpost_ring_1 light=True components=19 center=(-2.932,-0.133,1.981) normal=(0.499,0,-0.867) size=(0.124,0.054)
+22:02:40.590 unit team=blue plate=outpost_ring_2 light=True components=20 center=(-3.333,-0.234,2.212) normal=(-1,0,0) size=(0.128,0.054)
+22:02:40.591 item team=blue kind=TopArmor name=蓝方前哨站顶部交互组件 components=35 body_triangles=18 pivot=(-2.992,0.174,2.212)
+22:02:40.591 unit team=blue plate=outpost_top light=False components=20 center=(-2.992,0.173,2.212) normal=(-1,0,0) size=(0.126,0.057)
+22:02:40.592 unit team=blue plate=outpost_top light=False components=1 center=(-2.901,0.095,2.212) normal=(1,0,0) size=(0.053,0.052)
+22:02:40.593 unit team=blue plate=outpost_top light=True components=13 center=(-2.993,0.171,2.212) normal=(-1,0,0) size=(0.129,0.025)
+22:02:40.594 item team=red kind=TopArmor name=红方前哨站顶部交互组件 components=47 body_triangles=0 pivot=(2.992,0.174,-5.496)
+22:02:40.595 unit team=red plate=outpost_top light=False components=19 center=(2.992,0.174,-5.496) normal=(1,0,0) size=(0.132,0.054)
+22:02:40.595 unit team=red plate=outpost_top light=True components=27 center=(2.996,0.171,-5.497) normal=(0.995,0,-0.097) size=(0.132,0.025)
+22:02:40.596 unit team=red plate=outpost_top light=False components=1 center=(2.901,0.095,-5.491) normal=(-0.998,0,0.062) size=(0.054,0.052)
+22:02:40.597 load_ok annotation=try.json terrain=RMUC2026_MAP.terraincache.lz4 items=4 units=17 body_triangles=310231 unit_triangles=9125
