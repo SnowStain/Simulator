@@ -1,3 +1,6 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:113e23705bb9172ed34de3e56d668f5d75c0e3c74d9c1aec565e1f26dd96de1e
-size 1020
+22:13:11.030 composite_test=enabled source=LoadLargeTerrain_matrix_semantics components=6 interaction_units=2 participates_in_rules=false participates_in_collision=false
+22:24:55.640 composite_test=enabled source=LoadLargeTerrain_matrix_semantics components=6 interaction_units=2 participates_in_rules=false participates_in_collision=false
+22:36:41.450 composite_test=enabled source=LoadLargeTerrain_matrix_semantics components=6 interaction_units=2 participates_in_rules=false participates_in_collision=false
+22:47:09.379 composite_test=enabled source=LoadLargeTerrain_matrix_semantics components=6 interaction_units=2 participates_in_rules=false participates_in_collision=false
+23:06:44.414 composite_test=enabled source=LoadLargeTerrain_matrix_semantics components=6 interaction_units=2 participates_in_rules=false participates_in_collision=false
+23:08:18.321 composite_test=enabled source=LoadLargeTerrain_matrix_semantics components=6 interaction_units=2 participates_in_rules=false participates_in_collision=false

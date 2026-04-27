@@ -1,3 +1,20 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:01f366c4e53b12f83a02bf82ffeed6b921456345508d9c63175ae0f32be4109b
-size 446
+#pragma once
+
+#include <string>
+
+namespace rm26::engine::renderer {
+
+class Shader {
+public:
+    bool load_from_files(const std::string& vertex_path, const std::string& fragment_path);
+    bool ready() const;
+    const std::string& vertex_source() const;
+    const std::string& fragment_source() const;
+
+private:
+    std::string vertex_source_;
+    std::string fragment_source_;
+    bool ready_ = false;
+};
+
+}  // namespace rm26::engine::renderer

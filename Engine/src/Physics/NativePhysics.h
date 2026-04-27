@@ -1,3 +1,9 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:ab0a02e6c585b979418adc86e024ba572240192678982b9e326ef5f44ba8a620
-size 158
+#pragma once
+
+#include <pybind11/pybind11.h>
+
+namespace rm26_native {
+
+void register_physics_bindings(pybind11::module_& module);
+
+}  // namespace rm26_native

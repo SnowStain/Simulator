@@ -1,3 +1,16 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:82acde16836c5540bed384b7fbfc1d93ff2a6b0e548111743bd7a6bb2f3c93a8
-size 369
+namespace LoadLargeTerrain;
+
+internal sealed class ComponentData
+{
+    public required int Id { get; init; }
+
+    public required int NodeIndex { get; init; }
+
+    public required int MeshIndex { get; init; }
+
+    public required int PrimitiveIndex { get; init; }
+
+    public required string Name { get; init; }
+
+    public required BoundingBox Bounds { get; init; }
+}

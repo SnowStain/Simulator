@@ -1,3 +1,35 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:57e70947d1a3378707328bce987b99d7c413d7e2db4673d0e212611a4ff5c5b7
-size 2913
+21:51:31.749 item team=red name=红方基地顶部交互组件 components=9098 body_triangles=217761 pivot=(11.591,-0.323,-1.644)
+21:51:31.750 unit team=red plate=base_top_slide light=False components=19 center=(11.591,-0.323,-1.644) normal=(1,0,0) size=(0.126,0.054)
+21:51:31.751 unit team=red plate=base_top_slide light=True components=20 center=(11.591,-0.333,-1.644) normal=(-0.053,-0.999,-0) size=(0.131,0.066)
+21:51:31.751 item team=blue name=蓝方基地顶部交互组件 components=9188 body_triangles=221545 pivot=(-11.593,-0.325,-1.644)
+21:51:31.752 unit team=blue plate=base_top_slide light=False components=20 center=(-11.592,-0.324,-1.644) normal=(0.462,0.887,0) size=(0.126,0.057)
+21:51:31.753 unit team=blue plate=base_top_slide light=True components=19 center=(-11.593,-0.33,-1.644) normal=(-0.136,-0.991,0) size=(0.131,0.055)
+21:51:31.753 load_ok annotation=RMUC2026_MAP.component_roles.json terrain=RMUC2026_MAP.terraincache.lz4 items=2 units=4 body_triangles=439306 unit_triangles=2503
+21:54:50.580 item team=red name=红方基地顶部交互组件 components=9098 body_triangles=0 pivot=(11.591,-0.323,-1.644)
+21:54:50.581 unit team=red plate=base_top_slide light=False components=19 center=(11.591,-0.323,-1.644) normal=(1,0,0) size=(0.126,0.054)
+21:54:50.582 unit team=red plate=base_top_slide light=True components=20 center=(11.591,-0.333,-1.644) normal=(-0.053,-0.999,-0) size=(0.131,0.066)
+21:54:50.582 item team=blue name=蓝方基地顶部交互组件 components=9188 body_triangles=0 pivot=(-11.593,-0.325,-1.644)
+21:54:50.583 unit team=blue plate=base_top_slide light=False components=20 center=(-11.592,-0.324,-1.644) normal=(0.462,0.887,0) size=(0.126,0.057)
+21:54:50.583 unit team=blue plate=base_top_slide light=True components=19 center=(-11.593,-0.33,-1.644) normal=(-0.136,-0.991,0) size=(0.131,0.055)
+21:54:50.584 load_ok annotation=RMUC2026_MAP.component_roles.json terrain=RMUC2026_MAP.terraincache.lz4 items=2 units=4 body_triangles=0 unit_triangles=2503
+22:02:40.548 item team=red name=红方基地顶部交互组件 components=9098 body_triangles=0 pivot=(11.591,-0.323,-1.644)
+22:02:40.550 unit team=red plate=base_top_slide light=False components=19 center=(11.591,-0.323,-1.644) normal=(1,0,0) size=(0.126,0.054)
+22:02:40.550 unit team=red plate=base_top_slide light=True components=20 center=(11.591,-0.333,-1.644) normal=(-0.053,-0.999,-0) size=(0.131,0.066)
+22:02:40.551 item team=blue name=蓝方基地顶部交互组件 components=9188 body_triangles=0 pivot=(-11.593,-0.325,-1.644)
+22:02:40.551 unit team=blue plate=base_top_slide light=False components=20 center=(-11.592,-0.324,-1.644) normal=(0.462,0.887,0) size=(0.126,0.057)
+22:02:40.552 unit team=blue plate=base_top_slide light=True components=19 center=(-11.593,-0.33,-1.644) normal=(-0.136,-0.991,0) size=(0.131,0.055)
+22:02:40.552 load_ok annotation=RMUC2026_MAP.component_roles.json terrain=RMUC2026_MAP.terraincache.lz4 items=2 units=4 body_triangles=0 unit_triangles=2503
+05:37:13.160 item team=red name=红方基地顶部交互组件 components=9098 body_triangles=217761 pivot=(11.591,-0.323,-1.644)
+05:37:13.160 unit team=red plate=base_top_slide light=False components=19 center=(11.591,-0.323,-1.644) normal=(1,0,0) size=(0.126,0.054)
+05:37:13.160 unit team=red plate=base_top_slide light=True components=20 center=(11.591,-0.333,-1.644) normal=(-0.053,-0.999,-0) size=(0.131,0.066)
+05:37:13.160 item team=blue name=蓝方基地顶部交互组件 components=9188 body_triangles=221545 pivot=(-11.593,-0.325,-1.644)
+05:37:13.160 unit team=blue plate=base_top_slide light=False components=20 center=(-11.592,-0.324,-1.644) normal=(0.462,0.887,0) size=(0.126,0.057)
+05:37:13.160 unit team=blue plate=base_top_slide light=True components=19 center=(-11.593,-0.33,-1.644) normal=(-0.136,-0.991,0) size=(0.131,0.055)
+05:37:13.160 load_ok annotation=RMUC2026_MAP.component_roles.json terrain=RMUC2026_MAP.terraincache.lz4 items=2 units=4 body_triangles=439306 unit_triangles=2503
+05:39:12.784 item team=red name=红方基地顶部交互组件 components=9098 body_triangles=217761 pivot=(11.591,-0.323,-1.644)
+05:39:12.784 unit team=red plate=base_top_slide light=False components=19 center=(11.591,-0.323,-1.644) normal=(1,0,0) size=(0.126,0.054)
+05:39:12.785 unit team=red plate=base_top_slide light=True components=20 center=(11.591,-0.333,-1.644) normal=(-0.053,-0.999,-0) size=(0.131,0.066)
+05:39:12.785 item team=blue name=蓝方基地顶部交互组件 components=9188 body_triangles=221545 pivot=(-11.593,-0.325,-1.644)
+05:39:12.785 unit team=blue plate=base_top_slide light=False components=20 center=(-11.592,-0.324,-1.644) normal=(0.462,0.887,0) size=(0.126,0.057)
+05:39:12.785 unit team=blue plate=base_top_slide light=True components=19 center=(-11.593,-0.33,-1.644) normal=(-0.136,-0.991,0) size=(0.131,0.055)
+05:39:12.785 load_ok annotation=RMUC2026_MAP.component_roles.json terrain=RMUC2026_MAP.terraincache.lz4 items=2 units=4 body_triangles=439306 unit_triangles=2503

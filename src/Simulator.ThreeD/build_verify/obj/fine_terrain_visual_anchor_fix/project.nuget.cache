@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:58852a50431612876a7ba06aef45a76748311610b321e5093f8cd64836408b6b
-size 2048
+{
+  "version": 2,
+  "dgSpecHash": "u90zCvMWQ4s=",
+  "success": true,
+  "projectFilePath": "E:\\Artinx\\260111new\\Simulator\\src\\Simulator.ThreeD\\Simulator.ThreeD.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\kylin\\.nuget\\packages\\bepuphysics\\2.4.0\\bepuphysics.2.4.0.nupkg.sha512",
+    "C:\\Users\\kylin\\.nuget\\packages\\bepuutilities\\2.4.0\\bepuutilities.2.4.0.nupkg.sha512",
+    "C:\\Users\\kylin\\.nuget\\packages\\imgui.net\\1.90.0\\imgui.net.1.90.0.nupkg.sha512",
+    "C:\\Users\\kylin\\.nuget\\packages\\k4os.compression.lz4\\1.3.8\\k4os.compression.lz4.1.3.8.nupkg.sha512",
+    "C:\\Users\\kylin\\.nuget\\packages\\k4os.compression.lz4.streams\\1.3.8\\k4os.compression.lz4.streams.1.3.8.nupkg.sha512",
+    "C:\\Users\\kylin\\.nuget\\packages\\k4os.hash.xxhash\\1.0.8\\k4os.hash.xxhash.1.0.8.nupkg.sha512",
+    "C:\\Users\\kylin\\.nuget\\packages\\opentk\\4.9.3\\opentk.4.9.3.nupkg.sha512",
+    "C:\\Users\\kylin\\.nuget\\packages\\opentk.audio.openal\\4.9.3\\opentk.audio.openal.4.9.3.nupkg.sha512",
+    "C:\\Users\\kylin\\.nuget\\packages\\opentk.compute\\4.9.3\\opentk.compute.4.9.3.nupkg.sha512",
+    "C:\\Users\\kylin\\.nuget\\packages\\opentk.core\\4.9.3\\opentk.core.4.9.3.nupkg.sha512",
+    "C:\\Users\\kylin\\.nuget\\packages\\opentk.graphics\\4.9.3\\opentk.graphics.4.9.3.nupkg.sha512",
+    "C:\\Users\\kylin\\.nuget\\packages\\opentk.input\\4.9.3\\opentk.input.4.9.3.nupkg.sha512",
+    "C:\\Users\\kylin\\.nuget\\packages\\opentk.mathematics\\4.9.3\\opentk.mathematics.4.9.3.nupkg.sha512",
+    "C:\\Users\\kylin\\.nuget\\packages\\opentk.redist.glfw\\3.3.8.39\\opentk.redist.glfw.3.3.8.39.nupkg.sha512",
+    "C:\\Users\\kylin\\.nuget\\packages\\opentk.windowing.common\\4.9.3\\opentk.windowing.common.4.9.3.nupkg.sha512",
+    "C:\\Users\\kylin\\.nuget\\packages\\opentk.windowing.desktop\\4.9.3\\opentk.windowing.desktop.4.9.3.nupkg.sha512",
+    "C:\\Users\\kylin\\.nuget\\packages\\opentk.windowing.graphicslibraryframework\\4.9.3\\opentk.windowing.graphicslibraryframework.4.9.3.nupkg.sha512"
+  ],
+  "logs": []
+}

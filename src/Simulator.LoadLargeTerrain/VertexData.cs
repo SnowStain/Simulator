@@ -1,3 +1,19 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:5919e5a9a2c3b22a8ebf09649d0fe981c94f48aa2556a5d2380162a90477ca54
-size 407
+using System.Numerics;
+using System.Runtime.InteropServices;
+
+namespace LoadLargeTerrain;
+
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+internal struct VertexData
+{
+    public Vector3 Position;
+    public Vector3 Normal;
+    public uint Color;
+
+    public VertexData(Vector3 position, Vector3 normal, uint color)
+    {
+        Position = position;
+        Normal = normal;
+        Color = color;
+    }
+}

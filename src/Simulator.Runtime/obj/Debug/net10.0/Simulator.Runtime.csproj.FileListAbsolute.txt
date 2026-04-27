@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:a4c675c64cc3e25da315e208bd8789eaf501416eeca7df96258c3524e7bad29c
-size 2589
+E:\Artinx\260111new\Simulator\src\Simulator.Runtime\bin\Debug\net10.0\Simulator.Runtime.exe
+E:\Artinx\260111new\Simulator\src\Simulator.Runtime\bin\Debug\net10.0\Simulator.Runtime.deps.json
+E:\Artinx\260111new\Simulator\src\Simulator.Runtime\bin\Debug\net10.0\Simulator.Runtime.runtimeconfig.json
+E:\Artinx\260111new\Simulator\src\Simulator.Runtime\bin\Debug\net10.0\Simulator.Runtime.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Runtime\bin\Debug\net10.0\Simulator.Runtime.pdb
+E:\Artinx\260111new\Simulator\src\Simulator.Runtime\bin\Debug\net10.0\K4os.Compression.LZ4.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Runtime\bin\Debug\net10.0\K4os.Compression.LZ4.Streams.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Runtime\bin\Debug\net10.0\K4os.Hash.xxHash.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Runtime\bin\Debug\net10.0\Simulator.Assets.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Runtime\bin\Debug\net10.0\Simulator.Core.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Runtime\bin\Debug\net10.0\Simulator.Editors.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Runtime\bin\Debug\net10.0\Simulator.Core.pdb
+E:\Artinx\260111new\Simulator\src\Simulator.Runtime\bin\Debug\net10.0\Simulator.Assets.pdb
+E:\Artinx\260111new\Simulator\src\Simulator.Runtime\bin\Debug\net10.0\Simulator.Editors.pdb
+E:\Artinx\260111new\Simulator\src\Simulator.Runtime\obj\Debug\net10.0\Simulator.Runtime.csproj.AssemblyReference.cache
+E:\Artinx\260111new\Simulator\src\Simulator.Runtime\obj\Debug\net10.0\Simulator.Runtime.GeneratedMSBuildEditorConfig.editorconfig
+E:\Artinx\260111new\Simulator\src\Simulator.Runtime\obj\Debug\net10.0\Simulator.Runtime.AssemblyInfoInputs.cache
+E:\Artinx\260111new\Simulator\src\Simulator.Runtime\obj\Debug\net10.0\Simulator.Runtime.AssemblyInfo.cs
+E:\Artinx\260111new\Simulator\src\Simulator.Runtime\obj\Debug\net10.0\Simulator.Runtime.csproj.CoreCompileInputs.cache
+E:\Artinx\260111new\Simulator\src\Simulator.Runtime\obj\Debug\net10.0\Simulator.Runtime.sourcelink.json
+E:\Artinx\260111new\Simulator\src\Simulator.Runtime\obj\Debug\net10.0\Simulato.12E5848C.Up2Date
+E:\Artinx\260111new\Simulator\src\Simulator.Runtime\obj\Debug\net10.0\Simulator.Runtime.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Runtime\obj\Debug\net10.0\refint\Simulator.Runtime.dll
+E:\Artinx\260111new\Simulator\src\Simulator.Runtime\obj\Debug\net10.0\Simulator.Runtime.pdb
+E:\Artinx\260111new\Simulator\src\Simulator.Runtime\obj\Debug\net10.0\Simulator.Runtime.genruntimeconfig.cache
+E:\Artinx\260111new\Simulator\src\Simulator.Runtime\obj\Debug\net10.0\ref\Simulator.Runtime.dll

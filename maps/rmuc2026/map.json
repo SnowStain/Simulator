@@ -1,3 +1,916 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:baaa09c71e28fbbdaca91b04e41825108f03de38f1fa3f9819769664b55035fd
-size 19313
+{
+  "version": 1,
+  "name": "rmuc2026",
+  "saved_at": "2026-04-25T19:18:52",
+  "map": {
+    "map_type": "terrain_cache_map",
+    "image_path": "",
+    "origin_x": 0,
+    "origin_y": 0,
+    "unit": "px",
+    "width": 1576,
+    "height": 873,
+    "source_width": 1576,
+    "source_height": 873,
+    "strict_scale": false,
+    "coordinate_space": "world",
+    "coordinate_system": {
+      "coordinate_space": "world",
+      "unit": "px",
+      "origin_x": 0,
+      "origin_y": 0,
+      "field_length_m": 28,
+      "field_width_m": 15
+    },
+    "annotation_path": "..\\rmuc26map\\RMUC2026_MAP.component_roles.json",
+    "facilities": [
+      {
+        "id": "red_outpost",
+        "type": "outpost",
+        "team": "red",
+        "shape": "rect",
+        "x1": 615.7334594726562,
+        "y1": 618.9877319335938,
+        "x2": 652.930908203125,
+        "y2": 656.1851806640625,
+        "thickness": 12,
+        "height_m": 1.578,
+        "body_height_m": 1.578,
+        "body_width_m": 0.65,
+        "body_length_m": 0.65
+      },
+      {
+        "id": "blue_outpost",
+        "type": "outpost",
+        "team": "blue",
+        "shape": "rect",
+        "x1": 947.6033935546875,
+        "y1": 205.4396514892578,
+        "x2": 984.8008422851562,
+        "y2": 242.63711547851562,
+        "thickness": 12,
+        "height_m": 1.578,
+        "body_height_m": 1.578,
+        "body_width_m": 0.65,
+        "body_length_m": 0.65
+      },
+      {
+        "id": "red_base",
+        "type": "base",
+        "team": "red",
+        "shape": "rect",
+        "x1": 116.83660888671875,
+        "y1": 383.6597900390625,
+        "x2": 224.4803466796875,
+        "y2": 475.73779296875,
+        "thickness": 12,
+        "height_m": 1.181,
+        "body_height_m": 1.181,
+        "body_width_m": 1.609,
+        "body_length_m": 1.881
+      },
+      {
+        "id": "blue_base",
+        "type": "base",
+        "team": "blue",
+        "shape": "rect",
+        "x1": 1377.9495849609375,
+        "y1": 384.2320556640625,
+        "x2": 1485.59326171875,
+        "y2": 476.31005859375,
+        "thickness": 12,
+        "height_m": 1.181,
+        "body_height_m": 1.181,
+        "body_width_m": 1.609,
+        "body_length_m": 1.881
+      },
+      {
+        "id": "annotated_energy_mechanism",
+        "type": "energy_mechanism",
+        "team": "neutral",
+        "shape": "rect",
+        "x1": 717.7977905273438,
+        "y1": 347.80194091796875,
+        "x2": 883.7556762695312,
+        "y2": 513.7598266601562,
+        "thickness": 12,
+        "height_m": 2.3,
+        "body_height_m": 2.3,
+        "body_width_m": 1.3,
+        "body_length_m": 2.06
+      },
+      {
+        "id": "buff_outpost_red_poly_1",
+        "type": "buff_outpost",
+        "team": "red",
+        "shape": "polygon",
+        "x1": 590,
+        "y1": 597,
+        "x2": 670,
+        "y2": 695,
+        "thickness": 12,
+        "height_m": 0,
+        "points": [
+          [
+            595.991,
+            596.994
+          ],
+          [
+            639.995,
+            596.994
+          ],
+          [
+            670.02,
+            625.006
+          ],
+          [
+            670.02,
+            664.984
+          ],
+          [
+            638.989,
+            695.009
+          ],
+          [
+            590.007,
+            695.009
+          ],
+          [
+            608.011,
+            669.009
+          ],
+          [
+            627.975,
+            669.009
+          ],
+          [
+            641.001,
+            653.018
+          ],
+          [
+            641.001,
+            640.018
+          ],
+          [
+            628.981,
+            624.027
+          ],
+          [
+            608.011,
+            624.027
+          ]
+        ]
+      },
+      {
+        "id": "buff_base_red_poly_1",
+        "type": "buff_base",
+        "team": "red",
+        "shape": "polygon",
+        "x1": 77,
+        "y1": 330,
+        "x2": 262,
+        "y2": 545,
+        "thickness": 12,
+        "height_m": 0,
+        "points": [
+          [
+            76.994,
+            373.005
+          ],
+          [
+            76.994,
+            498.978
+          ],
+          [
+            151.976,
+            544.994
+          ],
+          [
+            262.014,
+            482.987
+          ],
+          [
+            262.014,
+            391.009
+          ],
+          [
+            154.995,
+            329.981
+          ]
+        ]
+      },
+      {
+        "id": "buff_fort_red_poly_1",
+        "type": "buff_fort",
+        "team": "red",
+        "shape": "polygon",
+        "x1": 326,
+        "y1": 379,
+        "x2": 456.9999694824219,
+        "y2": 495,
+        "thickness": 12,
+        "height_m": 0,
+        "points": [
+          [
+            359.024,
+            378.988
+          ],
+          [
+            325.981,
+            438.004
+          ],
+          [
+            359.024,
+            495.008
+          ],
+          [
+            422.992,
+            495.008
+          ],
+          [
+            456.988,
+            438.004
+          ],
+          [
+            422.992,
+            378.988
+          ]
+        ]
+      },
+      {
+        "id": "buff_supply_red_poly_1",
+        "type": "buff_supply",
+        "team": "red",
+        "shape": "polygon",
+        "x1": 87,
+        "y1": 679,
+        "x2": 215,
+        "y2": 736,
+        "thickness": 12,
+        "height_m": 0,
+        "points": [
+          [
+            87.002,
+            682.009
+          ],
+          [
+            87.002,
+            736.021
+          ],
+          [
+            214.991,
+            736.021
+          ],
+          [
+            214.991,
+            692.996
+          ],
+          [
+            201.011,
+            679.018
+          ]
+        ]
+      },
+      {
+        "id": "buff_supply_red_poly_2",
+        "type": "buff_supply",
+        "team": "red",
+        "shape": "polygon",
+        "x1": 107,
+        "y1": 742,
+        "x2": 217,
+        "y2": 838,
+        "thickness": 12,
+        "height_m": 0,
+        "points": [
+          [
+            107.019,
+            742.983
+          ],
+          [
+            107.019,
+            838.007
+          ],
+          [
+            217.003,
+            838.007
+          ],
+          [
+            217.003,
+            742.004
+          ]
+        ]
+      },
+      {
+        "id": "buff_trapezoid_highland_red_poly_1",
+        "type": "buff_trapezoid_highland",
+        "team": "red",
+        "shape": "polygon",
+        "x1": 200,
+        "y1": 202,
+        "x2": 322,
+        "y2": 261,
+        "thickness": 12,
+        "height_m": 0,
+        "points": [
+          [
+            200.005,
+            201.995
+          ],
+          [
+            322.01,
+            201.995
+          ],
+          [
+            297.016,
+            261.011
+          ],
+          [
+            201.011,
+            261.011
+          ]
+        ]
+      },
+      {
+        "id": "buff_base_blue_poly_1",
+        "type": "buff_base",
+        "team": "blue",
+        "shape": "polygon",
+        "x1": 1319,
+        "y1": 334,
+        "x2": 1500,
+        "y2": 543,
+        "thickness": 12,
+        "height_m": 0,
+        "points": [
+          [
+            1426.989,
+            334.006
+          ],
+          [
+            1500.012,
+            375.997
+          ],
+          [
+            1500.012,
+            500.991
+          ],
+          [
+            1426.989,
+            542.982
+          ],
+          [
+            1319.017,
+            480.974
+          ],
+          [
+            1319.017,
+            393.022
+          ]
+        ]
+      },
+      {
+        "id": "buff_outpost_blue_poly_1",
+        "type": "buff_outpost",
+        "team": "blue",
+        "shape": "polygon",
+        "x1": 911,
+        "y1": 179,
+        "x2": 992,
+        "y2": 280,
+        "thickness": 12,
+        "height_m": 0,
+        "points": [
+          [
+            939.976,
+            178.987
+          ],
+          [
+            991.977,
+            178.987
+          ],
+          [
+            972.013,
+            206.999
+          ],
+          [
+            950.991,
+            206.999
+          ],
+          [
+            939.976,
+            219.999
+          ],
+          [
+            939.023,
+            233.978
+          ],
+          [
+            949.985,
+            248.99
+          ],
+          [
+            971.007,
+            248.99
+          ],
+          [
+            984.987,
+            279.994
+          ],
+          [
+            939.976,
+            279.994
+          ],
+          [
+            911.011,
+            251.003
+          ],
+          [
+            911.011,
+            206.999
+          ]
+        ]
+      },
+      {
+        "id": "buff_fort_blue_poly_1",
+        "type": "buff_fort",
+        "team": "blue",
+        "shape": "polygon",
+        "x1": 1121,
+        "y1": 378,
+        "x2": 1257,
+        "y2": 498,
+        "thickness": 12,
+        "height_m": 0,
+        "points": [
+          [
+            1156.979,
+            378.009
+          ],
+          [
+            1223.012,
+            378.988
+          ],
+          [
+            1257.009,
+            438.004
+          ],
+          [
+            1222.006,
+            497.999
+          ],
+          [
+            1155.02,
+            497.999
+          ],
+          [
+            1121.024,
+            438.004
+          ]
+        ]
+      },
+      {
+        "id": "buff_supply_blue",
+        "type": "buff_supply",
+        "team": "blue",
+        "shape": "rect",
+        "x1": 1362,
+        "y1": 32.99993896484375,
+        "x2": 1475,
+        "y2": 131,
+        "thickness": 12,
+        "height_m": 0
+      },
+      {
+        "id": "buff_supply_blue_poly_1",
+        "type": "buff_supply",
+        "team": "blue",
+        "shape": "polygon",
+        "x1": 1362,
+        "y1": 134,
+        "x2": 1493,
+        "y2": 190.00001525878906,
+        "thickness": 12,
+        "height_m": 0,
+        "points": [
+          [
+            1362.015,
+            134.004
+          ],
+          [
+            1493.022,
+            134.004
+          ],
+          [
+            1493.022,
+            189.974
+          ],
+          [
+            1378.007,
+            189.974
+          ],
+          [
+            1363.974,
+            178.008
+          ]
+        ]
+      },
+      {
+        "id": "buff_trapezoid_highland_blue_poly_1",
+        "type": "buff_trapezoid_highland",
+        "team": "blue",
+        "shape": "polygon",
+        "x1": 1254,
+        "y1": 610,
+        "x2": 1377,
+        "y2": 675,
+        "thickness": 12,
+        "height_m": 0,
+        "points": [
+          [
+            1280.996,
+            609.993
+          ],
+          [
+            1377.001,
+            609.993
+          ],
+          [
+            1377.001,
+            674.992
+          ],
+          [
+            1253.99,
+            674.992
+          ]
+        ]
+      },
+      {
+        "id": "buff_terrain_highland_red_start_poly_1",
+        "type": "buff_terrain_highland_red_start",
+        "team": "red",
+        "shape": "polygon",
+        "x1": 483,
+        "y1": 359,
+        "x2": 550,
+        "y2": 511,
+        "thickness": 12,
+        "height_m": 0,
+        "points": [
+          [
+            482.988,
+            372.026
+          ],
+          [
+            482.988,
+            500.012
+          ],
+          [
+            495.009,
+            510.999
+          ],
+          [
+            548.015,
+            510.999
+          ],
+          [
+            529.005,
+            471.021
+          ],
+          [
+            529.005,
+            391.988
+          ],
+          [
+            549.974,
+            359.026
+          ],
+          [
+            497.974,
+            359.026
+          ]
+        ]
+      },
+      {
+        "id": "buff_terrain_highland_red_end_poly_1",
+        "type": "buff_terrain_highland_red_end",
+        "team": "red",
+        "shape": "polygon",
+        "x1": 582,
+        "y1": 360,
+        "x2": 638,
+        "y2": 512,
+        "thickness": 12,
+        "height_m": 0,
+        "points": [
+          [
+            582.011,
+            360.005
+          ],
+          [
+            637.983,
+            360.005
+          ],
+          [
+            637.983,
+            500.012
+          ],
+          [
+            627.975,
+            511.978
+          ],
+          [
+            583.017,
+            511.978
+          ]
+        ]
+      },
+      {
+        "id": "buff_terrain_highland_blue_start_poly_1",
+        "type": "buff_terrain_highland_blue_start",
+        "team": "blue",
+        "shape": "polygon",
+        "x1": 1030,
+        "y1": 362,
+        "x2": 1095,
+        "y2": 512,
+        "thickness": 12,
+        "height_m": 0,
+        "points": [
+          [
+            1029.997,
+            362.018
+          ],
+          [
+            1083.004,
+            362.018
+          ],
+          [
+            1095.024,
+            375.018
+          ],
+          [
+            1095.024,
+            500.991
+          ],
+          [
+            1084.01,
+            511.978
+          ],
+          [
+            1029.997,
+            510.999
+          ],
+          [
+            1051.02,
+            480.974
+          ],
+          [
+            1051.02,
+            404.988
+          ]
+        ]
+      },
+      {
+        "id": "buff_terrain_highland_blue_end_poly_1",
+        "type": "buff_terrain_highland_blue_end",
+        "team": "blue",
+        "shape": "polygon",
+        "x1": 943,
+        "y1": 359,
+        "x2": 987,
+        "y2": 514,
+        "thickness": 12,
+        "height_m": 0,
+        "points": [
+          [
+            944.001,
+            370.014
+          ],
+          [
+            954.009,
+            359.026
+          ],
+          [
+            986.999,
+            359.026
+          ],
+          [
+            986.999,
+            513.991
+          ],
+          [
+            942.995,
+            513.991
+          ]
+        ]
+      },
+      {
+        "id": "buff_terrain_road_red_start",
+        "type": "buff_terrain_road_red_start",
+        "team": "red",
+        "shape": "rect",
+        "x1": 453,
+        "y1": 694,
+        "x2": 506,
+        "y2": 730,
+        "thickness": 12,
+        "height_m": 0
+      },
+      {
+        "id": "buff_terrain_road_red_end",
+        "type": "buff_terrain_road_red_end",
+        "team": "red",
+        "shape": "rect",
+        "x1": 452,
+        "y1": 734,
+        "x2": 506,
+        "y2": 769,
+        "thickness": 12,
+        "height_m": 0
+      },
+      {
+        "id": "buff_terrain_road_blue_start",
+        "type": "buff_terrain_road_blue_start",
+        "team": "blue",
+        "shape": "rect",
+        "x1": 1074,
+        "y1": 148,
+        "x2": 1129,
+        "y2": 181.99998474121094,
+        "thickness": 12,
+        "height_m": 0
+      },
+      {
+        "id": "buff_terrain_road_blue_end",
+        "type": "buff_terrain_road_blue_end",
+        "team": "blue",
+        "shape": "rect",
+        "x1": 1076,
+        "y1": 106,
+        "x2": 1129,
+        "y2": 142,
+        "thickness": 12,
+        "height_m": 0
+      },
+      {
+        "id": "buff_terrain_fly_slope_red_start",
+        "type": "buff_terrain_fly_slope_red_start",
+        "team": "red",
+        "shape": "rect",
+        "x1": 572,
+        "y1": 788,
+        "x2": 636,
+        "y2": 838,
+        "thickness": 12,
+        "height_m": 0
+      },
+      {
+        "id": "buff_terrain_fly_slope_red_end",
+        "type": "buff_terrain_fly_slope_red_end",
+        "team": "red",
+        "shape": "rect",
+        "x1": 886,
+        "y1": 787,
+        "x2": 946,
+        "y2": 841,
+        "thickness": 12,
+        "height_m": 0
+      },
+      {
+        "id": "buff_terrain_fly_slope_blue_start",
+        "type": "buff_terrain_fly_slope_blue_start",
+        "team": "blue",
+        "shape": "rect",
+        "x1": 945,
+        "y1": 40,
+        "x2": 1007,
+        "y2": 87,
+        "thickness": 12,
+        "height_m": 0
+      },
+      {
+        "id": "buff_terrain_fly_slope_blue_end",
+        "type": "buff_terrain_fly_slope_blue_end",
+        "team": "blue",
+        "shape": "rect",
+        "x1": 636,
+        "y1": 37,
+        "x2": 694,
+        "y2": 87.99996948242188,
+        "thickness": 12,
+        "height_m": 0
+      },
+      {
+        "id": "buff_central_highland_poly_1",
+        "type": "buff_central_highland",
+        "team": "neutral",
+        "shape": "polygon",
+        "x1": 864,
+        "y1": 516,
+        "x2": 986,
+        "y2": 706,
+        "thickness": 12,
+        "height_m": 0,
+        "points": [
+          [
+            863.988,
+            635.014
+          ],
+          [
+            863.988,
+            705.996
+          ],
+          [
+            985.993,
+            536.999
+          ],
+          [
+            985.993,
+            516.003
+          ],
+          [
+            944.001,
+            516.003
+          ],
+          [
+            944.001,
+            521.986
+          ]
+        ]
+      },
+      {
+        "id": "buff_central_highland_poly_2",
+        "type": "buff_central_highland",
+        "team": "neutral",
+        "shape": "polygon",
+        "x1": 588,
+        "y1": 170,
+        "x2": 711,
+        "y2": 357,
+        "thickness": 12,
+        "height_m": 0,
+        "points": [
+          [
+            587.995,
+            357.014
+          ],
+          [
+            636.024,
+            357.014
+          ],
+          [
+            636.024,
+            347.985
+          ],
+          [
+            711.006,
+            238.003
+          ],
+          [
+            711.006,
+            170.012
+          ],
+          [
+            593.979,
+            333.027
+          ]
+        ]
+      },
+      {
+        "id": "buff_hero_deployment_red",
+        "type": "buff_hero_deployment",
+        "team": "red",
+        "shape": "rect",
+        "x1": 35,
+        "y1": 27.999969482421875,
+        "x2": 337,
+        "y2": 552,
+        "thickness": 12,
+        "height_m": 0
+      },
+      {
+        "id": "buff_hero_deployment_blue",
+        "type": "buff_hero_deployment",
+        "team": "blue",
+        "shape": "rect",
+        "x1": 1245,
+        "y1": 324,
+        "x2": 1550,
+        "y2": 850,
+        "thickness": 12,
+        "height_m": 0
+      }
+    ],
+    "runtime_grid": {
+      "resolution_m": 0.02,
+      "shape": [
+        873,
+        1576
+      ],
+      "storage_kind": "terrain_cache_lz4",
+      "source_path": "..\\rmuc26map\\RMUC2026_MAP.terraincache.lz4",
+      "render_profile": "terrain_cache_runtime"
+    }
+  }
+}

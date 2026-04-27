@@ -1,3 +1,27 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:e13aadaa407cc3703f361e7e35f9a45e2f11489895b1a97ca83f1146d04f1303
-size 913
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Simulator.Core\Simulator.Core.csproj" />
+    <ProjectReference Include="..\Simulator.Assets\Simulator.Assets.csproj" />
+    <ProjectReference Include="..\Simulator.Editors\Simulator.Editors.csproj" />
+    <ProjectReference Include="..\Simulator.LoadLargeTerrain\LoadLargeTerrain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BepuPhysics" Version="2.4.0" />
+    <PackageReference Include="BepuUtilities" Version="2.4.0" />
+    <PackageReference Include="OpenCvSharp4" Version="4.10.0.20240616" />
+    <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.10.0.20240616" />
+    <PackageReference Include="OpenTK" Version="4.9.3" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+</Project>

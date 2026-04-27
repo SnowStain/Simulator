@@ -1,3 +1,19 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:62f07835ae91aa8de2f38f7566b475ee1b9336b13bc5fe97e28c743af68a2ed8
-size 429
+{
+  "runtimeOptions": {
+    "tfm": "net10.0",
+    "frameworks": [
+      {
+        "name": "Microsoft.NETCore.App",
+        "version": "10.0.0"
+      },
+      {
+        "name": "Microsoft.WindowsDesktop.App",
+        "version": "10.0.0"
+      }
+    ],
+    "configProperties": {
+      "System.Runtime.Serialization.EnableUnsafeBinaryFormatterSerialization": false,
+      "CSWINRT_USE_WINDOWS_UI_XAML_PROJECTIONS": false
+    }
+  }
+}

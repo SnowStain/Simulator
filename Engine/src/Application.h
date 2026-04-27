@@ -1,3 +1,17 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:e304b7dc2d8d0041dce9bfee6b3f2c1a68afdd352f3ea8719ad790037256dc58
-size 269
+#pragma once
+
+namespace rm26::engine {
+
+class Application {
+public:
+    bool initialize();
+    void update(double dt);
+    void render();
+    bool initialized() const;
+
+private:
+    bool initialized_ = false;
+    double last_dt_ = 0.0;
+};
+
+}  // namespace rm26::engine

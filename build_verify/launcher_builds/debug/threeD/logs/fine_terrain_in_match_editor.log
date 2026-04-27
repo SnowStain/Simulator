@@ -1,3 +1,5 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:6e4d8ecd5966ae67d22dbd8452b10dfe363d3eeb58ec69bb97d44a7ee9205684
-size 328
+02:25:46.860 收到 F9，正在切换局内组合体编辑。
+02:25:48.210 当前组合体：红方基地外板-右（ID 3）
+02:25:48.211 F9 编辑已开启，当前组合体：红方基地外板-右
+02:25:51.374 收到 F9，正在切换局内组合体编辑。
+02:25:52.239 已保存到 RMUC2026_MAP.component_roles.json，已退出 F9 编辑。

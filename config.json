@@ -1,3 +1,261 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:24882d326e5b7c9871e8f53d926a98207820f75c4df01d318592a67fea49e7a0
-size 6258
+{
+  "simulator": {
+    "window_width": 1560,
+    "window_height": 920,
+    "fps": 50,
+    "scale": 1.0,
+    "gpu_preferred": true,
+    "debug": true,
+    "show_facilities": true,
+    "show_aim_fov": true,
+    "enable_entity_movement": true,
+    "sim3d_map_preset": "rmuc2026",
+    "sim3d_renderer_backend": "gpu",
+    "terrain_scene_backend": "wgl_opengl",
+    "sim3d_selected_team": "red",
+    "sim3d_selected_entity_id": "red_robot_1",
+    "player_projectile_ricochet_enabled": true,
+    "match_mode": "full",
+    "single_unit_test_team": "red",
+    "single_unit_test_entity_key": "robot_7",
+    "sim3d_infantry_mode": "balance",
+    "sim3d_hero_performance_mode": "ranged_priority",
+    "sim3d_infantry_durability_mode": "hp_priority",
+    "sim3d_infantry_weapon_mode": "burst_priority",
+    "sim3d_sentry_control_mode": "full_auto",
+    "sim3d_sentry_stance": "attack",
+    "sim3d_autoaim_accuracy_scale": 1,
+    "sim3d_projectile_entity_rendering": true,
+    "sim3d_projectile_physics_backend": "native",
+    "sim3d_ai_enabled": true,
+    "sim3d_autoaim_self_calibration_enabled": true,
+    "sim3d_unit_test_energy_force_large": false,
+    "sim3d_duel_round_limit": 5
+  },
+  "map": {
+    "preset": "rmuc2026",
+    "image_path": "场地-俯视图.png",
+    "origin_x": 0,
+    "origin_y": 0,
+    "unit": "px",
+    "width": 1576,
+    "height": 873,
+    "source_width": 1576,
+    "source_height": 873,
+    "strict_scale": false,
+    "field_length_m": 28.0,
+    "field_width_m": 15.0,
+    "facilities": [],
+    "terrain_grid": {
+      "cell_size": 8,
+      "cells": []
+    }
+  },
+  "entities": {
+    "initial_positions": {
+      "red": {
+        "robot_1": {
+          "x": 320,
+          "y": 180,
+          "angle": 0
+        },
+        "robot_2": {
+          "x": 300,
+          "y": 180,
+          "angle": 0
+        },
+        "robot_3": {
+          "x": 280,
+          "y": 180,
+          "angle": 0
+        },
+        "robot_4": {
+          "x": 260,
+          "y": 180,
+          "angle": 0
+        },
+        "robot_7": {
+          "x": 340,
+          "y": 180,
+          "angle": 0
+        }
+      },
+      "blue": {
+        "robot_1": {
+          "x": 480,
+          "y": 180,
+          "angle": 180
+        },
+        "robot_2": {
+          "x": 500,
+          "y": 180,
+          "angle": 180
+        },
+        "robot_3": {
+          "x": 520,
+          "y": 180,
+          "angle": 180
+        },
+        "robot_4": {
+          "x": 540,
+          "y": 180,
+          "angle": 180
+        },
+        "robot_7": {
+          "x": 460,
+          "y": 180,
+          "angle": 180
+        }
+      }
+    },
+    "robot_levels": {
+      "robot_1": 1,
+      "robot_2": 1,
+      "robot_3": 1,
+      "robot_4": 1,
+      "robot_7": 1
+    },
+    "robot_types": {
+      "robot_1": "英雄",
+      "robot_2": "工程",
+      "robot_3": "步兵",
+      "robot_4": "步兵",
+      "robot_7": "哨兵"
+    }
+  },
+  "physics": {
+    "max_speed": 3.5,
+    "max_acceleration": 2.0,
+    "max_angular_speed": 180,
+    "friction": 0.1,
+    "collision_damping": 0.8,
+    "step_height": 15,
+    "slope_limit": 30,
+    "normal_max_terrain_step_height_m": 0.08,
+    "power_system": {
+      "hero": {
+        "max_power": 100,
+        "power_recovery_rate": 1.0
+      },
+      "engineer": {
+        "max_power": 80,
+        "power_recovery_rate": 1.2
+      },
+      "infantry": {
+        "max_power": 60,
+        "power_recovery_rate": 1.5
+      },
+      "sentry": {
+        "max_power": 120,
+        "power_recovery_rate": 2.0
+      }
+    },
+    "heat_system": {
+      "hero": {
+        "max_heat": 100,
+        "heat_gain_per_shot": 10,
+        "heat_dissipation_rate": 5
+      },
+      "engineer": {
+        "max_heat": 80,
+        "heat_gain_per_shot": 8,
+        "heat_dissipation_rate": 4
+      },
+      "infantry": {
+        "max_heat": 60,
+        "heat_gain_per_shot": 6,
+        "heat_dissipation_rate": 3
+      },
+      "sentry": {
+        "max_heat": 150,
+        "heat_gain_per_shot": 12,
+        "heat_dissipation_rate": 6
+      }
+    }
+  },
+  "rules": {
+    "damage_system": "伤害机制.png",
+    "health_system": "血量机制.png",
+    "game_duration": 420
+  },
+  "ai": {
+    "decision_deployment": {
+      "roles": {
+        "hero": "aggressive",
+        "engineer": "support",
+        "infantry": "aggressive",
+        "sentry": "hold"
+      }
+    },
+    "update_interval_sec": 0.16,
+    "path_replan_interval_sec": 0.9,
+    "path_stale_recheck_interval_sec": 0.9,
+    "controller_worker_threads": 4,
+    "controller_shards_per_frame": 2,
+    "auto_aim_worker_threads": 2,
+    "path_replans_per_update": 1,
+    "pathfinder_time_budget_ms": 1.8,
+    "pathfinder_total_budget_ms": 5.0,
+    "pathfinder_max_iterations": 320,
+    "pathfinder_max_attempts": 3,
+    "pathfinder_max_candidates": 1,
+    "strategy": {
+      "infantry": {
+        "behavior": "patrol",
+        "waypoints": [
+          {
+            "x": 5000,
+            "y": 1500
+          },
+          {
+            "x": 5500,
+            "y": 2000
+          },
+          {
+            "x": 5000,
+            "y": 2500
+          }
+        ],
+        "attack_range": 800,
+        "retreat_health": 30
+      },
+      "engineer": {
+        "behavior": "support",
+        "repair_targets": [
+          "outpost",
+          "base"
+        ],
+        "recharge_rate": 10
+      },
+      "sentry": {
+        "behavior": "defend",
+        "guard_area": {
+          "center": {
+            "x": 4000,
+            "y": 1000
+          },
+          "radius": 500
+        },
+        "priority_targets": [
+          "sentry",
+          "robot"
+        ],
+        "low_ammo_threshold": 40,
+        "retreat_health_ratio": 0.35,
+        "high_heat_ratio": 0.78,
+        "engage_distance_m": 10.0,
+        "ideal_distance_m": 5.5,
+        "firing_distance_m": 9.0,
+        "patrol_speed_mps": 1.2,
+        "engage_speed_mps": 1.8,
+        "retreat_speed_mps": 1.6
+      },
+      "uav": {
+        "behavior": "scout",
+        "scan_pattern": "spiral",
+        "altitude": 500,
+        "detection_range": 1000
+      }
+    }
+  }
+}

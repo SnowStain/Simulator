@@ -1,3 +1,12 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:7bc4f47766c7ecf78b795c7c484c1953d8d28babd1b20ee62298e35574b264ea
-size 560
+{
+  "version": 2,
+  "dgSpecHash": "99mUxPnFTYo=",
+  "success": true,
+  "projectFilePath": "E:\\Artinx\\260111new\\Simulator\\src\\Simulator.Core\\Simulator.Core.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\kylin\\.nuget\\packages\\k4os.compression.lz4\\1.3.8\\k4os.compression.lz4.1.3.8.nupkg.sha512",
+    "C:\\Users\\kylin\\.nuget\\packages\\k4os.compression.lz4.streams\\1.3.8\\k4os.compression.lz4.streams.1.3.8.nupkg.sha512",
+    "C:\\Users\\kylin\\.nuget\\packages\\k4os.hash.xxhash\\1.0.8\\k4os.hash.xxhash.1.0.8.nupkg.sha512"
+  ],
+  "logs": []
+}

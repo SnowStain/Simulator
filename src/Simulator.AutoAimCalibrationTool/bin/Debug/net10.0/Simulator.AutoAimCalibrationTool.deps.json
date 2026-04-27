@@ -1,3 +1,23 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:c0ccc348ded370eb78ef4178fc11dd1e28a5547c9a10a5b75896cd2beed6c2b8
-size 490
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "Simulator.AutoAimCalibrationTool/1.0.0": {
+        "runtime": {
+          "Simulator.AutoAimCalibrationTool.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "Simulator.AutoAimCalibrationTool/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

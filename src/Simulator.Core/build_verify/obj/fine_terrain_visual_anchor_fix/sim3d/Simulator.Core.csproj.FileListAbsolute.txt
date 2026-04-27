@@ -1,3 +1,6 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:4060587fb35df0c4de26b539c5d15e4307ce54d2f5626a5a2e3b90cbf0801d7e
-size 869
+E:\Artinx\260111new\Simulator\src\Simulator.Core\build_verify\obj\fine_terrain_visual_anchor_fix\sim3d\Simulator.Core.csproj.AssemblyReference.cache
+E:\Artinx\260111new\Simulator\src\Simulator.Core\build_verify\obj\fine_terrain_visual_anchor_fix\sim3d\Simulator.Core.GeneratedMSBuildEditorConfig.editorconfig
+E:\Artinx\260111new\Simulator\src\Simulator.Core\build_verify\obj\fine_terrain_visual_anchor_fix\sim3d\Simulator.Core.AssemblyInfoInputs.cache
+E:\Artinx\260111new\Simulator\src\Simulator.Core\build_verify\obj\fine_terrain_visual_anchor_fix\sim3d\Simulator.Core.AssemblyInfo.cs
+E:\Artinx\260111new\Simulator\src\Simulator.Core\build_verify\obj\fine_terrain_visual_anchor_fix\sim3d\Simulator.Core.csproj.CoreCompileInputs.cache
+E:\Artinx\260111new\Simulator\src\Simulator.Core\build_verify\obj\fine_terrain_visual_anchor_fix\sim3d\Simulator.Core.sourcelink.json

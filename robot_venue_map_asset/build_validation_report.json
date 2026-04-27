@@ -1,3 +1,113 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:36bc86ed9cd6747bd173160258708a74571041751390f4f76d3b4318bfdc46f8
-size 2298
+{
+  "generated_at": "2026-04-19T18:42:17",
+  "status": "passed",
+  "checks": [
+    {
+      "name": "exists:venue_map.glb",
+      "passed": true
+    },
+    {
+      "name": "exists:venue_map_ursina.glb",
+      "passed": true
+    },
+    {
+      "name": "exists:venue_map_pybullet.obj",
+      "passed": true
+    },
+    {
+      "name": "exists:venue_map_pybullet.mtl",
+      "passed": true
+    },
+    {
+      "name": "exists:venue_map_moderngl_data.npz",
+      "passed": true
+    },
+    {
+      "name": "exists:venue_map_metadata.json",
+      "passed": true
+    },
+    {
+      "name": "exists:build_execution_report.md",
+      "passed": true
+    },
+    {
+      "name": "exists:build_validation_report.json",
+      "passed": true
+    },
+    {
+      "name": "trimesh_load_glb",
+      "passed": true
+    },
+    {
+      "name": "trimesh_load_ursina_glb",
+      "passed": true
+    },
+    {
+      "name": "trimesh_load_obj",
+      "passed": true
+    },
+    {
+      "name": "numpy_load_npz",
+      "passed": true
+    },
+    {
+      "name": "json_load_metadata",
+      "passed": true
+    },
+    {
+      "name": "scene_width_match",
+      "passed": true
+    },
+    {
+      "name": "scene_depth_match",
+      "passed": true
+    },
+    {
+      "name": "main_glb_size_le_5mb",
+      "passed": true
+    },
+    {
+      "name": "glb_load_ms_le_10",
+      "passed": true
+    },
+    {
+      "name": "face_count_le_10000",
+      "passed": true
+    },
+    {
+      "name": "facility_count_preserved",
+      "passed": true
+    }
+  ],
+  "metrics": {
+    "glb_load_ms": 4.133,
+    "moderngl_vertex_count": 674,
+    "scene_size_xyz_m": [
+      28.0,
+      1.5913,
+      15.0
+    ],
+    "file_sizes_bytes": {
+      "venue_map.glb": 67764,
+      "venue_map_ursina.glb": 14124,
+      "venue_map_pybullet.obj": 6234,
+      "venue_map_moderngl_data.npz": 15862
+    },
+    "face_count": 1144,
+    "elapsed_sec": 5.347,
+    "peak_memory_mb": 38.113,
+    "current_memory_mb": 34.387
+  },
+  "warnings": [
+    {
+      "severity": "info",
+      "message": "输入不是任务书标准 schema，已按项目地图格式自动适配。"
+    },
+    {
+      "severity": "info",
+      "message": "boundary 设施由基础边界墙体统一表示，单独设施网格跳过。",
+      "facility_id": "boundary_outer"
+    }
+  ],
+  "errors": []
+}

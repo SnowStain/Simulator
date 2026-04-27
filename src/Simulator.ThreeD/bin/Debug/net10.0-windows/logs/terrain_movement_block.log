@@ -1,3 +1,24 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:2923ea5b48922ef1f75f12739a978a16e9c62b213b535c63c546d542a02444b3
-size 4346
+22:14:51.400 id=red_robot_1 reason=terrain_footprint pos=(157.01,386.82) height=0.372->0.372 rise=0.000 allowed=0.300 direct_step=0.080 max_step=0.300 airborne=0.000 speed=0.00mps
+22:25:13.380 id=red_robot_1 reason=terrain_footprint pos=(157.01,386.82) height=0.372->0.372 rise=0.000 allowed=0.300 direct_step=0.080 max_step=0.300 airborne=0.000 speed=0.00mps
+00:26:10.671 id=blue_robot_3 reason=terrain_footprint pos=(1323.69,153.89) height=0.599->0.599 rise=0.000 allowed=0.350 direct_step=0.060 max_step=0.350 airborne=0.000 speed=0.00mps
+13:10:47.415 id=blue_robot_3 reason=terrain_footprint pos=(1448.05,115.07) height=0.190->0.190 rise=0.000 allowed=0.500 direct_step=0.060 max_step=0.500 airborne=0.000 speed=0.00mps
+13:51:51.752 id=blue_robot_7 reason=terrain_footprint pos=(831.73,449.09) height=0.563->0.563 rise=0.000 allowed=0.300 direct_step=0.050 max_step=0.300 airborne=0.000 speed=0.00mps
+13:51:53.586 id=blue_robot_7 reason=terrain_footprint pos=(827.02,455.88) height=0.563->0.563 rise=0.000 allowed=0.300 direct_step=0.050 max_step=0.300 airborne=0.000 speed=0.00mps
+13:51:56.090 id=blue_robot_7 reason=terrain_footprint pos=(805.21,484.29) height=0.563->0.563 rise=0.000 allowed=0.300 direct_step=0.050 max_step=0.300 airborne=0.000 speed=0.00mps
+13:52:03.106 id=blue_robot_7 reason=terrain_footprint pos=(654.08,637.61) height=0.469->0.469 rise=-0.000 allowed=0.300 direct_step=0.050 max_step=0.300 airborne=0.000 speed=0.00mps
+13:52:30.834 id=blue_robot_7 reason=terrain_footprint pos=(211.82,166.50) height=0.375->0.375 rise=-0.000 allowed=0.300 direct_step=0.050 max_step=0.300 airborne=0.000 speed=0.00mps
+14:40:42.103 id=blue_robot_7 reason=terrain_footprint pos=(828.06,455.23) height=0.563->0.563 rise=0.000 allowed=0.300 direct_step=0.050 max_step=0.300 airborne=0.000 speed=0.00mps
+16:46:09.386 id=blue_robot_7 reason=terrain_footprint pos=(258.41,685.52) height=0.375->0.375 rise=0.000 allowed=0.300 direct_step=0.050 max_step=0.300 airborne=0.000 speed=0.00mps
+16:52:58.272 id=blue_robot_3 reason=terrain_footprint pos=(954.65,617.20) height=0.188->0.188 rise=0.000 allowed=0.140 direct_step=0.080 max_step=0.140 airborne=0.000 speed=0.00mps
+16:52:59.025 id=blue_robot_3 reason=terrain_footprint pos=(954.88,617.37) height=0.188->0.188 rise=0.000 allowed=0.140 direct_step=0.080 max_step=0.140 airborne=0.000 speed=0.00mps
+16:53:00.133 id=blue_robot_3 reason=terrain_footprint pos=(999.46,551.15) height=0.188->0.188 rise=0.000 allowed=0.140 direct_step=0.080 max_step=0.140 airborne=0.000 speed=0.00mps
+16:53:00.890 id=blue_robot_3 reason=terrain_footprint pos=(1000.96,550.24) height=0.188->0.188 rise=0.000 allowed=0.140 direct_step=0.080 max_step=0.140 airborne=0.000 speed=0.00mps
+16:53:34.850 id=blue_robot_3 reason=terrain_footprint pos=(724.08,114.89) height=0.188->0.188 rise=0.000 allowed=0.140 direct_step=0.080 max_step=0.140 airborne=0.000 speed=0.00mps
+17:12:20.691 id=blue_robot_3 reason=terrain_footprint pos=(946.03,625.51) height=0.188->0.188 rise=0.000 allowed=0.140 direct_step=0.080 max_step=0.140 airborne=0.000 speed=0.00mps
+17:12:22.598 id=blue_robot_3 reason=terrain_footprint pos=(899.41,695.32) height=0.188->0.188 rise=0.000 allowed=0.140 direct_step=0.080 max_step=0.140 airborne=0.000 speed=0.00mps
+17:12:23.348 id=blue_robot_3 reason=terrain_footprint pos=(899.52,695.58) height=0.188->0.188 rise=0.000 allowed=0.140 direct_step=0.080 max_step=0.140 airborne=0.000 speed=0.00mps
+17:12:24.102 id=blue_robot_3 reason=terrain_footprint pos=(899.55,695.66) height=0.188->0.188 rise=0.000 allowed=0.140 direct_step=0.080 max_step=0.140 airborne=0.000 speed=0.00mps
+17:12:24.871 id=blue_robot_3 reason=terrain_footprint pos=(899.51,695.61) height=0.188->0.188 rise=0.000 allowed=0.140 direct_step=0.080 max_step=0.140 airborne=0.000 speed=0.00mps
+17:14:27.868 id=blue_robot_7 reason=terrain_footprint pos=(333.17,19.86) height=0.188->0.188 rise=0.000 allowed=0.300 direct_step=0.050 max_step=0.300 airborne=0.000 speed=0.00mps
+17:16:32.005 id=blue_robot_3 reason=terrain_footprint pos=(498.19,863.34) height=0.188->0.188 rise=0.000 allowed=0.500 direct_step=0.060 max_step=0.500 airborne=0.000 speed=0.00mps
+22:12:11.587 id=blue_robot_1 reason=terrain_footprint pos=(833.02,440.78) height=0.563->0.563 rise=0.000 allowed=0.300 direct_step=0.080 max_step=0.300 airborne=0.000 speed=0.00mps
