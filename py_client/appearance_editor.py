@@ -2443,26 +2443,42 @@ class AppearanceEditorApp:
         if key is None:
             return []
         profile = self._current_profile()
-        _normalize_custom_collections(profile)
         return profile.setdefault(key, [])
 
     def _ensure_custom_item_for_editing(self, part=None):
         target_part = part or self.selected_part
         if target_part not in {'custom_primitive', 'custom_anchor', 'custom_link'}:
             return True
-        collection = self._current_custom_collection(target_part)
-        if collection:
-            self._clamp_selected_component_index()
+        profile = self._current_profile()
+        key = self._custom_collection_key(target_part)
+        if key is None:
             return True
-        if target_part == 'custom_link' and len(self._current_profile().get('custom_anchors', [])) < 2:
-            self.status_text = '至少需要两个锚点后才能编辑连杆'
-            return False
-        collection.append(self._custom_item_default(target_part))
+        if target_part == 'custom_link':
+            self._ensure_minimum_custom_anchors(2, profile=profile)
+        collection = profile.setdefault(key, [])
+        if collection:
+            self._clamp_selected_component_index(profile)
+            return True
+        collection.append(self._custom_item_default(target_part, profile=profile))
         self.selected_component_index = 0
-        _normalize_custom_collections(self._current_profile())
+        _normalize_custom_collections(profile)
+        self._persist_current_profile(profile)
         return True
 
-    def _custom_choice_options(self, spec):
+    def _ensure_minimum_custom_anchors(self, count, profile=None):
+        should_persist = profile is None
+        profile = profile or self._current_profile()
+        anchors = profile.setdefault('custom_anchors', [])
+        while len(anchors) < count:
+            anchors.append(_normalize_custom_anchor({
+                'parent_part': 'body',
+                'offset_m': [0.0, 0.04 * len(anchors), 0.0],
+            }, len(anchors)))
+        if should_persist:
+            _normalize_custom_collections(profile)
+            self._persist_current_profile(profile)
+
+    def _custom_choice_options(self, spec, profile=None):
         if spec.get('choice_key') == 'parent_part':
             return CUSTOM_PARENT_PART_OPTIONS
         if spec.get('choice_key') == 'component_scope':
@@ -2470,12 +2486,13 @@ class AppearanceEditorApp:
         if spec.get('choice_key') == 'primitive_type':
             return CUSTOM_PRIMITIVE_TYPE_OPTIONS
         if spec.get('choice_key') in {'start_anchor_id', 'end_anchor_id'}:
-            anchors = self._current_profile().get('custom_anchors', [])
+            profile = profile or self._current_profile()
+            anchors = profile.get('custom_anchors', [])
             return [(str(anchor.get('id', '')), str(anchor.get('name') or anchor.get('id') or '锚点')) for anchor in anchors]
         return []
 
-    def _custom_item_default(self, part):
-        profile = self._current_profile()
+    def _custom_item_default(self, part, profile=None):
+        profile = profile or self._current_profile()
         if part == 'custom_primitive':
             return _normalize_custom_primitive({}, len(profile.get('custom_primitives', [])))
         if part == 'custom_anchor':
@@ -2486,13 +2503,17 @@ class AppearanceEditorApp:
         return {}
 
     def _mutate_custom_collection(self, part, action):
-        collection = self._current_custom_collection(part)
+        key = self._custom_collection_key(part)
+        if key is None:
+            return
+        profile = self._current_profile()
+        if part == 'custom_link':
+            self._ensure_minimum_custom_anchors(2, profile=profile)
+        collection = profile.setdefault(key, [])
         if action == 'add':
-            if part == 'custom_link' and len(self._current_profile().get('custom_anchors', [])) < 2:
-                self.status_text = '至少需要两个锚点才能创建连杆'
-                return
-            collection.append(self._custom_item_default(part))
+            collection.append(self._custom_item_default(part, profile=profile))
             self.selected_component_index = max(0, len(collection) - 1)
+            self.status_text = f'已新建 {PART_LABELS.get(part, "部件")}'
         elif action == 'duplicate' and collection:
             index = max(0, min(self.selected_component_index, len(collection) - 1))
             duplicate = deepcopy(collection[index])
@@ -2504,8 +2525,9 @@ class AppearanceEditorApp:
             index = max(0, min(self.selected_component_index, len(collection) - 1))
             del collection[index]
             self.selected_component_index = max(0, min(index, len(collection) - 1))
-        profile = self._current_profile()
         _normalize_custom_collections(profile)
+        self._persist_current_profile(profile)
+        self._clamp_selected_component_index(profile)
 
     def _clamp_selected_component_index(self, profile=None):
         if profile is None:
@@ -2685,6 +2707,9 @@ class AppearanceEditorApp:
         if self.selected_part is None:
             return []
         profile = self._current_profile()
+        if self.selected_part in {'custom_primitive', 'custom_anchor', 'custom_link'}:
+            self._ensure_custom_item_for_editing()
+            profile = self._current_profile()
         self._clamp_selected_component_index(profile)
         if self.selected_part == 'custom_primitive':
             fields = [
@@ -2768,36 +2793,58 @@ class AppearanceEditorApp:
         _normalize_custom_collections(profile)
         return profile
 
+    def _persist_current_profile(self, profile):
+        if self.current_role == 'infantry':
+            store = self._ensure_infantry_profile_store()
+            store['subtype_profiles'][self.current_infantry_subtype] = profile
+            store['default_chassis_subtype'] = self.current_infantry_subtype
+            self.profiles[self.current_role] = store
+            return
+        self.profiles[self.current_role] = profile
+
+    def _custom_item_for_spec(self, spec, profile=None, create=False):
+        profile = profile or self._current_profile()
+        part = spec.get('part') or self.selected_part
+        key = self._custom_collection_key(part)
+        if key is None:
+            return None
+        if part == 'custom_link':
+            self._ensure_minimum_custom_anchors(2, profile=profile)
+        collection = profile.setdefault(key, [])
+        if not collection and create:
+            collection.append(self._custom_item_default(part, profile=profile))
+            self.selected_component_index = 0
+        if not collection:
+            return None
+        index = max(0, min(self.selected_component_index, len(collection) - 1))
+        return collection[index]
+
     def _field_value(self, spec):
         profile = self._current_profile()
         if spec['kind'] == 'choice':
-            collection = self._current_custom_collection()
-            if not collection:
+            item = self._custom_item_for_spec(spec, profile=profile)
+            if item is None:
                 return 0
-            item = collection[max(0, min(self.selected_component_index, len(collection) - 1))]
-            options = self._custom_choice_options(spec)
+            options = self._custom_choice_options(spec, profile=profile)
             current = str(item.get(spec['choice_key'], options[0][0] if options else ''))
             for index, (option_key, _label) in enumerate(options):
                 if option_key == current:
                     return index
             return 0
         if spec['kind'] == 'custom_number':
-            collection = self._current_custom_collection()
-            if not collection:
+            item = self._custom_item_for_spec(spec, profile=profile)
+            if item is None:
                 return float(spec.get('min', 0.0))
-            item = collection[max(0, min(self.selected_component_index, len(collection) - 1))]
             return float(item.get(spec['key'], 0.0))
         if spec['kind'] == 'custom_vector':
-            collection = self._current_custom_collection()
-            if not collection:
+            item = self._custom_item_for_spec(spec, profile=profile)
+            if item is None:
                 return 0.0
-            item = collection[max(0, min(self.selected_component_index, len(collection) - 1))]
             return float(item.get(spec['key'], [0.0, 0.0, 0.0])[spec['axis']])
         if spec['kind'] == 'custom_color':
-            collection = self._current_custom_collection()
-            if not collection:
+            item = self._custom_item_for_spec(spec, profile=profile)
+            if item is None:
                 return 0
-            item = collection[max(0, min(self.selected_component_index, len(collection) - 1))]
             return int(item.get(spec['key'], [0, 0, 0])[spec['channel']])
         if spec['kind'] == 'number':
             return float(profile.get(spec['key'], 0.0))
@@ -2831,48 +2878,48 @@ class AppearanceEditorApp:
         clamped = self._clamp_field_value(spec, value)
         profile = self._current_profile()
         if spec['kind'] == 'choice':
-            collection = self._current_custom_collection()
-            if not collection:
+            item = self._custom_item_for_spec(spec, profile=profile, create=True)
+            if item is None:
                 return
-            item = collection[max(0, min(self.selected_component_index, len(collection) - 1))]
-            options = self._custom_choice_options(spec)
+            options = self._custom_choice_options(spec, profile=profile)
             if not options:
                 return
             option_index = max(0, min(int(round(clamped)), len(options) - 1))
             item[spec['choice_key']] = options[option_index][0]
             _normalize_custom_collections(profile)
+            self._persist_current_profile(profile)
             return
         if spec['kind'] == 'custom_number':
-            collection = self._current_custom_collection()
-            if not collection:
+            item = self._custom_item_for_spec(spec, profile=profile, create=True)
+            if item is None:
                 return
-            item = collection[max(0, min(self.selected_component_index, len(collection) - 1))]
             item[spec['key']] = int(round(clamped)) if spec['step'] >= 1 else round(float(clamped), 3)
             _normalize_custom_collections(profile)
+            self._persist_current_profile(profile)
             return
         if spec['kind'] == 'custom_vector':
-            collection = self._current_custom_collection()
-            if not collection:
+            item = self._custom_item_for_spec(spec, profile=profile, create=True)
+            if item is None:
                 return
-            item = collection[max(0, min(self.selected_component_index, len(collection) - 1))]
             values = list(item.get(spec['key'], [0.0, 0.0, 0.0]))
             while len(values) < 3:
                 values.append(0.0)
             values[spec['axis']] = round(float(clamped), 3)
             item[spec['key']] = values
             _normalize_custom_collections(profile)
+            self._persist_current_profile(profile)
             return
         if spec['kind'] == 'custom_color':
-            collection = self._current_custom_collection()
-            if not collection:
+            item = self._custom_item_for_spec(spec, profile=profile, create=True)
+            if item is None:
                 return
-            item = collection[max(0, min(self.selected_component_index, len(collection) - 1))]
             values = list(item.get(spec['key'], [0, 0, 0]))
             while len(values) < 3:
                 values.append(0)
             values[spec['channel']] = int(round(clamped))
             item[spec['key']] = values
             _normalize_custom_collections(profile)
+            self._persist_current_profile(profile)
             return
         if spec['kind'] == 'number':
             profile[spec['key']] = round(float(clamped), 3)
@@ -2986,7 +3033,11 @@ class AppearanceEditorApp:
                 buffer_text = f'{float(current_value):.3f}'.rstrip('0').rstrip('.')
         if initial_text:
             buffer_text = initial_text
-        self.active_numeric_input = {'field_index': self.selected_field_index, 'buffer': buffer_text}
+        self.active_numeric_input = {
+            'field_index': self.selected_field_index,
+            'buffer': buffer_text,
+            'replace_on_next_text': not bool(initial_text),
+        }
         return True
 
     def _begin_field_editor(self, field_index):
@@ -3011,7 +3062,19 @@ class AppearanceEditorApp:
         double_click = self.last_field_click_index == field_index and (now_ticks - self.last_field_click_ticks) <= 360
         self.last_field_click_index = field_index
         self.last_field_click_ticks = now_ticks
-        if double_click and self._begin_field_editor(field_index):
+        visible_fields = self._visible_field_specs()
+        spec = visible_fields[field_index] if 0 <= field_index < len(visible_fields) else None
+        begin_on_single_click = spec is not None and spec.get('kind') in {
+            'choice',
+            'number',
+            'color',
+            'custom_number',
+            'custom_vector',
+            'custom_color',
+            'wheel_component',
+            'component_angle',
+        }
+        if (double_click or begin_on_single_click) and self._begin_field_editor(field_index):
             return
         self.active_numeric_input = None
 
@@ -3053,11 +3116,15 @@ class AppearanceEditorApp:
         text = str(getattr(event, 'unicode', '') or '')
         if text and text in '0123456789.-':
             buffer_text = str(self.active_numeric_input.get('buffer', ''))
+            replace_buffer = bool(self.active_numeric_input.get('replace_on_next_text'))
+            if replace_buffer:
+                buffer_text = ''
             if text == '-' and buffer_text:
                 return True
             if text == '.' and '.' in buffer_text:
                 return True
             self.active_numeric_input['buffer'] = buffer_text + text
+            self.active_numeric_input['replace_on_next_text'] = False
             return True
         return False
 
@@ -3891,6 +3958,43 @@ class AppearanceEditorApp:
         hint = self.tiny_font.render('拖动鼠标旋转 3D 预览；上方可切换静态、上台阶、跳跃动作', True, self.colors['muted'])
         self.screen.blit(hint, (content_rect.x + 14, content_rect.bottom - 24))
 
+    def _custom_tab_rects_for_panel(self, rect):
+        custom_tab_x = rect.right - 228
+        return [
+            (part_key, pygame.Rect(custom_tab_x + index * 72, rect.y + 12, 64, 24))
+            for index, part_key in enumerate(('custom_primitive', 'custom_anchor', 'custom_link'))
+        ]
+
+    def _custom_action_rects_for_panel(self, rect):
+        if self.selected_part not in {'custom_primitive', 'custom_anchor', 'custom_link'}:
+            return []
+        control_y = rect.y + 80
+        return [
+            ('custom:add', pygame.Rect(rect.x + 12, control_y, 68, 28)),
+            ('custom:duplicate', pygame.Rect(rect.x + 88, control_y, 68, 28)),
+            ('custom:delete', pygame.Rect(rect.x + 164, control_y, 68, 28)),
+        ]
+
+    def _select_custom_part(self, part):
+        self.selected_part = part
+        self.selected_field_index = 0
+        self.field_scroll = 0
+        self.active_numeric_input = None
+        self._ensure_custom_item_for_editing(part)
+        self._clamp_selected_component_index()
+
+    def _handle_custom_control_click(self, pos, rect):
+        for part_key, tab_rect in self._custom_tab_rects_for_panel(rect):
+            if tab_rect.collidepoint(pos):
+                self._select_custom_part(part_key)
+                return True
+        for action, button_rect in self._custom_action_rects_for_panel(rect):
+            if button_rect.collidepoint(pos):
+                self._mutate_custom_collection(self.selected_part, action.split(':', 1)[1])
+                self.active_numeric_input = None
+                return True
+        return False
+
     def _draw_fields_panel(self, rect):
         pygame.draw.rect(self.screen, self.colors['panel'], rect, border_radius=12)
         pygame.draw.rect(self.screen, self.colors['panel_border'], rect, 1, border_radius=12)
@@ -4053,6 +4157,16 @@ class AppearanceEditorApp:
         self._draw_text(self.status_text, self.small_font, self.colors['muted'], footer_rect.topleft)
 
     def _handle_click(self, pos):
+        if isinstance(self.active_numeric_input, dict):
+            field_panel_for_commit, _ = self._layout_panels()
+            rows_for_commit, _ = self._field_rows(field_panel_for_commit, scroll_offset=self.field_scroll)
+            clicked_active_field = any(
+                row_type == 'field'
+                and field_index == int(self.active_numeric_input.get('field_index', -1))
+                and row_rect.collidepoint(pos)
+                for row_type, _, row_rect, field_index in rows_for_commit)
+            if not clicked_active_field:
+                self._commit_numeric_input()
         for action, _, rect in self.runtime_preview_buttons:
             if rect.collidepoint(pos):
                 self._launch_runtime_preview(refresh=action == 'refresh')
@@ -4089,6 +4203,9 @@ class AppearanceEditorApp:
                 store = self._ensure_infantry_profile_store()
                 store['default_chassis_subtype'] = subtype
                 return
+        field_panel, _ = self._layout_panels()
+        if self._handle_custom_control_click(pos, field_panel):
+            return
         for action_rect, action in self.component_control_actions:
             if action_rect.collidepoint(pos):
                 if action.startswith('component_scope:'):
@@ -4101,12 +4218,7 @@ class AppearanceEditorApp:
             if action_rect.collidepoint(pos):
                 verb, payload = action.split(':', 1)
                 if verb == 'select':
-                    self.selected_part = payload
-                    self.selected_field_index = 0
-                    self.field_scroll = 0
-                    self.active_numeric_input = None
-                    self._ensure_custom_item_for_editing(payload)
-                    self._clamp_selected_component_index()
+                    self._select_custom_part(payload)
                     return
                 self._mutate_custom_collection(self.selected_part, payload)
                 self.active_numeric_input = None
@@ -4123,7 +4235,6 @@ class AppearanceEditorApp:
                             self._set_field_value(spec_copy, channel_value)
                 self.active_numeric_input = None
                 return
-        field_panel, _ = self._layout_panels()
         if self.field_scrollbar_thumb_rect is not None and self.field_scrollbar_thumb_rect.collidepoint(pos):
             self.field_scroll_drag_active = True
             return

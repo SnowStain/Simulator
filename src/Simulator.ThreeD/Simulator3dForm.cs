@@ -1036,6 +1036,7 @@ internal sealed partial class Simulator3dForm : Form
         }
         else if (_appState == SimulatorAppState.InMatch && !_paused && !_sharedHostSimulation)
         {
+            SyncFineTerrainRuntimeTargetsIfNeeded();
             simulatedSteps = AdvanceSimulationClock();
             UpdateProjectileTrailCache();
         }
@@ -2400,7 +2401,7 @@ internal sealed partial class Simulator3dForm : Form
                 "模型",
                 new[]
                 {
-                    ("完整", "lobby_infantry_mode:full", _host.InfantryMode == "full"),
+                    ("全向轮", "lobby_infantry_mode:full", _host.InfantryMode == "full"),
                     ("平衡", "lobby_infantry_mode:balance", _host.InfantryMode == "balance"),
                 });
             nextConfigY += 42;
@@ -4631,15 +4632,41 @@ internal sealed partial class Simulator3dForm : Form
             return;
         }
 
-        if (!TryResolveVisualArmorPlatePose(target, shooter.AutoAimPlateId, out VisualArmorPlatePose visualPlate))
+        bool heroLobStructureLeadFrame = IsHeroLobModeActive(shooter)
+            && IsHeroLobStructureTargetKind(shooter.AutoAimTargetKind);
+        double visualPlateLeadTimeSec = Math.Max(0.0, shooter.AutoAimLeadTimeSec);
+        if (heroLobStructureLeadFrame
+            && TryResolveAutoAimPlate(shooter, target, shooter.AutoAimPlateId!, out ArmorPlateTarget highlightPlate))
+        {
+            visualPlateLeadTimeSec = ResolveEffectiveAutoAimDisplayLeadTimeSec(shooter, target, highlightPlate);
+        }
+
+        double visualPlateTimeSec = heroLobStructureLeadFrame
+            ? _host.World.GameTimeSec + visualPlateLeadTimeSec
+            : _host.World.GameTimeSec;
+        if (!TryResolveVisualArmorPlatePose(target, shooter.AutoAimPlateId, visualPlateTimeSec, out VisualArmorPlatePose visualPlate))
         {
             return;
         }
 
-        Vector3 p1 = visualPlate.Center + visualPlate.Right * visualPlate.HalfSide + visualPlate.Up * visualPlate.HalfSide;
-        Vector3 p2 = visualPlate.Center - visualPlate.Right * visualPlate.HalfSide + visualPlate.Up * visualPlate.HalfSide;
-        Vector3 p3 = visualPlate.Center - visualPlate.Right * visualPlate.HalfSide - visualPlate.Up * visualPlate.HalfSide;
-        Vector3 p4 = visualPlate.Center + visualPlate.Right * visualPlate.HalfSide - visualPlate.Up * visualPlate.HalfSide;
+        Vector3 frameCenter = visualPlate.Center;
+        if (heroLobStructureLeadFrame
+            && double.IsFinite(shooter.AutoAimAimPointX)
+            && double.IsFinite(shooter.AutoAimAimPointY)
+            && double.IsFinite(shooter.AutoAimAimPointHeightM)
+            && shooter.AutoAimAimPointHeightM > 1e-6
+            && Math.Abs(shooter.AutoAimAimPointX) + Math.Abs(shooter.AutoAimAimPointY) > 1e-8)
+        {
+            frameCenter = ToScenePoint(
+                shooter.AutoAimAimPointX,
+                shooter.AutoAimAimPointY,
+                (float)shooter.AutoAimAimPointHeightM);
+        }
+
+        Vector3 p1 = frameCenter + visualPlate.Right * visualPlate.HalfSide + visualPlate.Up * visualPlate.HalfSide;
+        Vector3 p2 = frameCenter - visualPlate.Right * visualPlate.HalfSide + visualPlate.Up * visualPlate.HalfSide;
+        Vector3 p3 = frameCenter - visualPlate.Right * visualPlate.HalfSide - visualPlate.Up * visualPlate.HalfSide;
+        Vector3 p4 = frameCenter + visualPlate.Right * visualPlate.HalfSide - visualPlate.Up * visualPlate.HalfSide;
         if (!TryProject(p1, out PointF s1, out _)
             || !TryProject(p2, out PointF s2, out _)
             || !TryProject(p3, out PointF s3, out _)
@@ -4649,9 +4676,18 @@ internal sealed partial class Simulator3dForm : Form
         }
 
         PointF[] polygon = { s1, s2, s3, s4 };
-        using var glowBrush = new SolidBrush(Color.FromArgb(40, 255, 224, 96));
-        using var glowPen = new Pen(Color.FromArgb(210, 255, 216, 92), 3.2f) { LineJoin = System.Drawing.Drawing2D.LineJoin.Round };
-        using var outlinePen = new Pen(Color.FromArgb(255, 255, 245, 196), 1.3f) { DashStyle = DashStyle.Dash, LineJoin = System.Drawing.Drawing2D.LineJoin.Round };
+        Color fillColor = heroLobStructureLeadFrame
+            ? Color.FromArgb(48, 64, 174, 255)
+            : Color.FromArgb(40, 255, 224, 96);
+        Color glowColor = heroLobStructureLeadFrame
+            ? Color.FromArgb(228, 80, 190, 255)
+            : Color.FromArgb(210, 255, 216, 92);
+        Color outlineColor = heroLobStructureLeadFrame
+            ? Color.FromArgb(255, 190, 236, 255)
+            : Color.FromArgb(255, 255, 245, 196);
+        using var glowBrush = new SolidBrush(fillColor);
+        using var glowPen = new Pen(glowColor, heroLobStructureLeadFrame ? 3.6f : 3.2f) { LineJoin = System.Drawing.Drawing2D.LineJoin.Round };
+        using var outlinePen = new Pen(outlineColor, 1.3f) { DashStyle = DashStyle.Dash, LineJoin = System.Drawing.Drawing2D.LineJoin.Round };
         graphics.FillPolygon(glowBrush, polygon);
         graphics.DrawPolygon(glowPen, polygon);
         graphics.DrawPolygon(outlinePen, polygon);
@@ -4660,12 +4696,15 @@ internal sealed partial class Simulator3dForm : Form
             (s1.X + s2.X + s3.X + s4.X) * 0.25f,
             Math.Min(Math.Min(s1.Y, s2.Y), Math.Min(s3.Y, s4.Y)) - 16f);
         using var shadowBrush = new SolidBrush(Color.FromArgb(180, 0, 0, 0));
-        using var textBrush = new SolidBrush(Color.FromArgb(255, 255, 236, 150));
+        using var textBrush = new SolidBrush(heroLobStructureLeadFrame ? Color.FromArgb(255, 204, 242, 255) : Color.FromArgb(255, 255, 236, 150));
         string direction = string.IsNullOrWhiteSpace(shooter.AutoAimPlateDirection)
             ? visualPlate.Label
             : shooter.AutoAimPlateDirection;
-        graphics.DrawString($"\u9501\u5b9a {direction}", _tinyHudFont, shadowBrush, label.X + 1f, label.Y + 1f);
-        graphics.DrawString($"\u9501\u5b9a {direction}", _tinyHudFont, textBrush, label);
+        string labelText = heroLobStructureLeadFrame
+            ? $"提前 {visualPlateLeadTimeSec:0.000}s {direction}"
+            : $"\u9501\u5b9a {direction}";
+        graphics.DrawString(labelText, _tinyHudFont, shadowBrush, label.X + 1f, label.Y + 1f);
+        graphics.DrawString(labelText, _tinyHudFont, textBrush, label);
     }
 
     private void DrawVisionPoseSolveOverlay(Graphics graphics)
@@ -4706,7 +4745,10 @@ internal sealed partial class Simulator3dForm : Form
             && SimulationCombatMath.IsArmorAutoAimTargetKind(shooter.AutoAimTargetKind)
             && !string.IsNullOrWhiteSpace(currentPlate.Id))
         {
-            if (TryResolveVisualArmorPlatePose(target, currentPlate.Id, _host.World.GameTimeSec, out VisualArmorPlatePose visualPlate))
+            double aimDebugPlateTimeSec = IsHeroLobModeActive(shooter) && IsHeroLobStructureTargetKind(shooter.AutoAimTargetKind)
+                ? _host.World.GameTimeSec + ResolveEffectiveAutoAimDisplayLeadTimeSec(shooter, target, currentPlate)
+                : _host.World.GameTimeSec;
+            if (TryResolveVisualArmorPlatePose(target, currentPlate.Id, aimDebugPlateTimeSec, out VisualArmorPlatePose visualPlate))
             {
                 aimPointM = visualPlate.Center;
             }
@@ -4836,6 +4878,21 @@ internal sealed partial class Simulator3dForm : Form
         plate = SimulationCombatMath.GetAttackableArmorPlateTargets(target, metersPerWorldUnit, _host.World.GameTimeSec)
             .FirstOrDefault(candidate => string.Equals(candidate.Id, plateId, StringComparison.OrdinalIgnoreCase));
         return !string.IsNullOrWhiteSpace(plate.Id);
+    }
+
+    private double ResolveEffectiveAutoAimDisplayLeadTimeSec(
+        SimulationEntity shooter,
+        SimulationEntity target,
+        ArmorPlateTarget plate)
+    {
+        double leadTimeSec = Math.Max(0.0, shooter.AutoAimLeadTimeSec);
+        if (!IsHeroLobModeActive(shooter) || !IsHeroLobStructureTargetKind(shooter.AutoAimTargetKind))
+        {
+            return leadTimeSec;
+        }
+
+        AutoAimCompensationProfile compensation = SimulationCombatMath.ResolveAutoAimCompensationProfile(_host.World, shooter, target, plate);
+        return Math.Clamp(leadTimeSec + compensation.TimeBiasSec, 0.0, 2.35);
     }
 
     private void DrawInferredVisionArmorModel(
@@ -5363,8 +5420,8 @@ internal sealed partial class Simulator3dForm : Form
 
     private Rectangle GetPlayerStatusPanelRect()
     {
-        int panelWidth = Math.Min(470, Math.Max(380, ClientSize.Width / 4));
-        int panelHeight = 126;
+        int panelWidth = Math.Min(680, Math.Max(560, ClientSize.Width / 3));
+        int panelHeight = 244;
         return new Rectangle(22, ClientSize.Height - panelHeight - 22, panelWidth, panelHeight);
     }
 
@@ -5380,15 +5437,15 @@ internal sealed partial class Simulator3dForm : Form
         Color teamColor = ResolveTeamColor(entity.Team);
         using var titleBrush = new SolidBrush(Color.FromArgb(238, 244, 248));
 
-        PointF portraitCenter = new(panel.X + 76, panel.Y + 60);
-        DrawExperienceArcNeo(graphics, entity, portraitCenter, 58f);
-        DrawRobotPortraitNeo(graphics, entity, portraitCenter, 50f, teamColor);
+        PointF portraitCenter = new(panel.X + 126, panel.Y + 120);
+        DrawExperienceArcNeo(graphics, entity, portraitCenter, 116f);
+        DrawRobotPortraitNeo(graphics, entity, portraitCenter, 100f, teamColor);
 
-        float rightX = panel.X + 146f;
+        float rightX = panel.X + 254f;
         float rightWidth = panel.Right - rightX - 18f;
-        graphics.DrawString(ResolveHudRoleTitle(entity), _smallHudFont, titleBrush, rightX, panel.Y + 10f);
-        DrawTrapezoidHealthBarNeo(graphics, new RectangleF(rightX, panel.Y + 42f, rightWidth, 24f), entity, teamColor);
-        DrawBufferEnergyBarNeo(graphics, new RectangleF(rightX, panel.Y + 76f, rightWidth * 0.75f, 16f), entity);
+        graphics.DrawString(ResolveHudRoleTitle(entity), _smallHudFont, titleBrush, rightX, panel.Y + 54f);
+        DrawTrapezoidHealthBarNeo(graphics, new RectangleF(rightX, panel.Y + 92f, rightWidth, 28f), entity, teamColor);
+        DrawBufferEnergyBarNeo(graphics, new RectangleF(rightX, panel.Y + 136f, rightWidth * 0.75f, 18f), entity);
     }
 
     private void DrawUnitTestScenarioOverlay(Graphics graphics)
@@ -8139,10 +8196,19 @@ internal sealed partial class Simulator3dForm : Form
                 + pitchedForward * heroForwardCameraBiasM
                 + pitchedUp * cameraHeightOffsetM;
             Vector3 sightConvergence = eye + pitchedForward * FirstPersonSightConvergenceM;
+            Vector3 firstPersonUp = pitchedUp.LengthSquared() > 1e-8f ? pitchedUp : Vector3.UnitY;
+            ApplySuspensionCameraVibration(
+                selected,
+                turretRight,
+                firstPersonUp,
+                ref eye,
+                ref sightConvergence,
+                ref firstPersonUp,
+                1.0f);
 
             _cameraPositionM = eye;
             _cameraTargetM = sightConvergence;
-            _viewMatrix = Matrix4x4.CreateLookAt(_cameraPositionM, _cameraTargetM, pitchedUp.LengthSquared() > 1e-8f ? pitchedUp : Vector3.UnitY);
+            _viewMatrix = Matrix4x4.CreateLookAt(_cameraPositionM, _cameraTargetM, firstPersonUp);
 
             float aspectFirstPerson = Math.Max(1f, ClientSize.Width / (float)Math.Max(ClientSize.Height, 1));
             float firstPersonFov = FirstPersonVerticalFovRad;
@@ -8174,9 +8240,121 @@ internal sealed partial class Simulator3dForm : Form
             MathF.Sin(_cameraPitchRad) * _cameraDistanceM,
             MathF.Sin(_cameraYawRad) * horizontalDistance);
 
-        _viewMatrix = Matrix4x4.CreateLookAt(_cameraPositionM, _cameraTargetM, Vector3.UnitY);
+        Vector3 cameraUp = Vector3.UnitY;
+        if (_followSelection && selected is not null)
+        {
+            Vector3 viewForward = _cameraTargetM - _cameraPositionM;
+            Vector3 viewRight = viewForward.LengthSquared() <= 1e-8f
+                ? Vector3.UnitX
+                : Vector3.Cross(Vector3.Normalize(viewForward), Vector3.UnitY);
+            if (viewRight.LengthSquared() <= 1e-8f)
+            {
+                viewRight = Vector3.UnitX;
+            }
+
+            ApplySuspensionCameraVibration(
+                selected,
+                Vector3.Normalize(viewRight),
+                cameraUp,
+                ref _cameraPositionM,
+                ref _cameraTargetM,
+                ref cameraUp,
+                0.45f);
+        }
+
+        _viewMatrix = Matrix4x4.CreateLookAt(_cameraPositionM, _cameraTargetM, cameraUp);
         float aspect = Math.Max(1f, ClientSize.Width / (float)Math.Max(ClientSize.Height, 1));
         _projectionMatrix = Matrix4x4.CreatePerspectiveFieldOfView(1.0f, aspect, 0.06f, 1500f);
+    }
+
+    private void ApplySuspensionCameraVibration(
+        SimulationEntity entity,
+        Vector3 localRight,
+        Vector3 localUp,
+        ref Vector3 cameraPosition,
+        ref Vector3 cameraTarget,
+        ref Vector3 cameraUp,
+        float strengthScale)
+    {
+        if (strengthScale <= 1e-4f)
+        {
+            return;
+        }
+
+        float compression = (float)Math.Clamp(entity.LandingCompressionM, -0.018, 0.040);
+        float velocity = (float)Math.Clamp(entity.LandingCompressionVelocityMps, -3.2, 3.2);
+        float crouchCompression = 0f;
+        double crouchDuration = Math.Max(1e-6, entity.JumpCrouchDurationSec);
+        if (entity.JumpCrouchTimerSec > 1e-6 && crouchDuration > 1e-6)
+        {
+            double progress = Math.Clamp(1.0 - entity.JumpCrouchTimerSec / crouchDuration, 0.0, 1.0);
+            double eased = progress * progress * (3.0 - 2.0 * progress);
+            crouchCompression = (float)(0.020 * eased);
+        }
+
+        float landingIntensity = Math.Clamp(Math.Abs(compression) / 0.040f + Math.Abs(velocity) * 0.10f, 0f, 1.0f);
+        float crouchIntensity = Math.Clamp(crouchCompression / 0.020f, 0f, 1f);
+        float intensity = Math.Clamp(MathF.Max(landingIntensity, crouchIntensity * 0.55f) * strengthScale, 0f, 1f);
+        if (intensity <= 1e-4f)
+        {
+            return;
+        }
+
+        Vector3 forward = cameraTarget - cameraPosition;
+        if (forward.LengthSquared() <= 1e-8f)
+        {
+            forward = Vector3.UnitX;
+        }
+        else
+        {
+            forward = Vector3.Normalize(forward);
+        }
+
+        Vector3 up = localUp.LengthSquared() <= 1e-8f ? Vector3.UnitY : Vector3.Normalize(localUp);
+        Vector3 right = localRight.LengthSquared() <= 1e-8f ? Vector3.Cross(forward, up) : localRight;
+        if (right.LengthSquared() <= 1e-8f)
+        {
+            right = Vector3.UnitX;
+        }
+        else
+        {
+            right = Vector3.Normalize(right);
+        }
+
+        float phase = (float)(_host.World.GameTimeSec * 58.0 + ResolveCameraVibrationPhase(entity.Id));
+        float verticalShake =
+            -compression * 0.18f
+            - crouchCompression * 0.16f
+            + MathF.Sin(phase) * 0.0060f * landingIntensity
+            + MathF.Sin(phase * 0.47f + 1.35f) * 0.0028f * landingIntensity;
+        float lateralShake = MathF.Sin(phase * 0.73f + 0.55f) * 0.0032f * landingIntensity;
+        float forwardShake = MathF.Sin(phase * 0.41f + 2.10f) * 0.0024f * landingIntensity;
+        Vector3 offset = (up * verticalShake + right * lateralShake + forward * forwardShake) * strengthScale;
+        cameraPosition += offset;
+        cameraTarget += offset;
+
+        float rollRad =
+            MathF.Sin(phase * 0.62f + 0.35f) * 0.010f * landingIntensity
+            + MathF.Sin(phase * 0.31f + 1.10f) * 0.0025f * crouchIntensity;
+        if (MathF.Abs(rollRad) > 1e-5f)
+        {
+            Quaternion roll = Quaternion.CreateFromAxisAngle(forward, rollRad * strengthScale);
+            cameraUp = Vector3.Normalize(Vector3.Transform(cameraUp.LengthSquared() <= 1e-8f ? up : cameraUp, roll));
+        }
+    }
+
+    private static float ResolveCameraVibrationPhase(string id)
+    {
+        unchecked
+        {
+            int hash = 17;
+            foreach (char ch in id ?? string.Empty)
+            {
+                hash = hash * 31 + ch;
+            }
+
+            return (Math.Abs(hash) % 6283) / 1000.0f;
+        }
     }
 
     private void DrawFloor(Graphics graphics)
@@ -11416,19 +11594,14 @@ internal sealed partial class Simulator3dForm : Form
         PointF screenCenter = new(ClientSize.Width * 0.5f, ClientSize.Height * 0.5f);
         if (TryGetHeroLobCalibrationPreviewCached(entity, out HeroLobCalibrationPreview preview, includeFireWindowSuggestion: false))
         {
-            if (!preview.FireWindowReady)
-            {
-                return false;
-            }
-
-            float centerHorizontalToleranceM = Math.Max(0.040f, preview.PlateWidthM * 0.28f);
-            float centerVerticalToleranceM = Math.Max(0.040f, preview.PlateHeightM * 0.30f);
-            float depthToleranceM = 0.14f + Math.Clamp((float)entity.AutoAimLeadDistanceM * 0.020f, 0f, 0.16f);
-            bool impactNearCenter = preview.CrossedPlatePlane
-                && MathF.Abs(preview.HorizontalOffsetM) <= centerHorizontalToleranceM
-                && MathF.Abs(preview.VerticalOffsetM) <= centerVerticalToleranceM
+            float horizontalToleranceM = Math.Max(0.055f, preview.PlateWidthM * 0.58f);
+            float verticalToleranceM = Math.Max(0.055f, preview.PlateHeightM * 0.58f);
+            float depthToleranceM = 0.20f + Math.Clamp((float)entity.AutoAimLeadDistanceM * 0.024f, 0f, 0.22f);
+            bool impactInsidePlateWindow = preview.CrossedPlatePlane
+                && MathF.Abs(preview.HorizontalOffsetM) <= horizontalToleranceM
+                && MathF.Abs(preview.VerticalOffsetM) <= verticalToleranceM
                 && MathF.Abs(preview.DepthOffsetM) <= depthToleranceM;
-            if (!impactNearCenter)
+            if (!impactInsidePlateWindow)
             {
                 return false;
             }
@@ -11436,9 +11609,9 @@ internal sealed partial class Simulator3dForm : Form
             if (TryGetProjectedHeroLobPlatePolygon(entity, out PointF[] projectedPlateForWindow))
             {
                 float centerMarginPx = Math.Clamp(
-                    24f + (float)entity.AutoAimLeadDistanceM * 1.7f,
+                    30f + (float)entity.AutoAimLeadDistanceM * 1.9f,
                     24f,
-                    _firstPersonView ? 54f : 64f);
+                    _firstPersonView ? 64f : 78f);
                 return IsPointInsideOrNearConvexPolygon(screenCenter, projectedPlateForWindow, centerMarginPx);
             }
 
@@ -11498,7 +11671,16 @@ internal sealed partial class Simulator3dForm : Form
 
         SimulationEntity? target = _host.World.Entities.FirstOrDefault(candidate =>
             string.Equals(candidate.Id, shooter.AutoAimTargetId, StringComparison.OrdinalIgnoreCase));
-        double predictedPlateTimeSec = _host.World.GameTimeSec + Math.Max(0.0, shooter.AutoAimLeadTimeSec);
+        double predictedPlateLeadTimeSec = Math.Max(0.0, shooter.AutoAimLeadTimeSec);
+        if (target is not null
+            && IsHeroLobModeActive(shooter)
+            && IsHeroLobStructureTargetKind(shooter.AutoAimTargetKind)
+            && TryResolveAutoAimPlate(shooter, target, shooter.AutoAimPlateId!, out ArmorPlateTarget projectedPlate))
+        {
+            predictedPlateLeadTimeSec = ResolveEffectiveAutoAimDisplayLeadTimeSec(shooter, target, projectedPlate);
+        }
+
+        double predictedPlateTimeSec = _host.World.GameTimeSec + predictedPlateLeadTimeSec;
         if (target is null
             || !TryResolveVisualArmorPlatePose(target, shooter.AutoAimPlateId, predictedPlateTimeSec, out VisualArmorPlatePose visualPlate))
         {

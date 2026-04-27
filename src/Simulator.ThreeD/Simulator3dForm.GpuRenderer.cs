@@ -1102,10 +1102,10 @@ internal sealed partial class Simulator3dForm
             return false;
         }
 
-        int verticalSafetyPad = Math.Max(18, desiredSourceRect.Height / 3);
+        int verticalSafetyPad = Math.Max(56, desiredSourceRect.Height);
         int extraBottom = Math.Max(0, desiredSourceRect.Bottom + verticalSafetyPad - mainViewport.Height);
-        int maxUsefulExtra = Math.Max(desiredSourceRect.Height * 3, mainViewport.Height / 2);
-        int paddedExtra = Math.Min(extraBottom + 24, maxUsefulExtra);
+        int maxUsefulExtra = Math.Max(desiredSourceRect.Height * 5, mainViewport.Height);
+        int paddedExtra = Math.Min(extraBottom + 64, maxUsefulExtra);
         int renderHeight = AlignTo(Math.Max(mainViewport.Height, mainViewport.Height + paddedExtra), 16);
         renderTargetSize = new Size(mainViewport.Width, renderHeight);
         sourceRect = ClampSubviewSourceRect(desiredSourceRect, new Rectangle(0, 0, renderTargetSize.Width, renderTargetSize.Height));
@@ -1192,22 +1192,23 @@ internal sealed partial class Simulator3dForm
             RectangleF bounds = GetBounds(polygon);
             if (bounds.Width > 2f && bounds.Height > 2f)
             {
-                center = new PointF(bounds.Left + bounds.Width * 0.5f, bounds.Top + bounds.Height * 0.5f);
-                float paddingX = Math.Max(72f, bounds.Width * 2.6f);
-                float paddingY = Math.Max(58f, bounds.Height * 2.6f);
-                float paddedWidth = bounds.Width + paddingX * 2f;
-                float paddedHeight = bounds.Height + paddingY * 2f;
-                float targetArea = Math.Max(16f, paddedWidth * paddedHeight);
-                float targetFraction = 0.58f;
+                float targetFraction = 0.20f;
                 float aspect = Math.Max(0.6f, viewportSize.Width / (float)Math.Max(1, viewportSize.Height));
-                float desiredSourceArea = Math.Max(targetArea / targetFraction, 1024f);
+                float plateArea = Math.Max(16f, bounds.Width * bounds.Height);
+                float desiredSourceArea = Math.Max(plateArea / targetFraction, 1024f);
                 float sourceWidth = MathF.Sqrt(desiredSourceArea * aspect);
                 float sourceHeight = sourceWidth / aspect;
-                sourceWidth = Math.Max(sourceWidth, Math.Max(paddedWidth, viewportSize.Width / 1.75f));
-                sourceHeight = Math.Max(sourceHeight, Math.Max(paddedHeight, viewportSize.Height / 1.75f));
+                sourceWidth = Math.Max(sourceWidth, bounds.Width + Math.Max(28f, bounds.Width * 0.55f) * 2f);
+                sourceHeight = Math.Max(sourceHeight, bounds.Height + Math.Max(36f, bounds.Height * 0.85f) * 2f);
+                sourceWidth = Math.Min(sourceWidth, viewportSize.Width / 1.02f);
+                sourceHeight = Math.Min(sourceHeight, viewportSize.Height / 1.02f);
                 float zoomX = viewportSize.Width / Math.Max(8f, sourceWidth);
                 float zoomY = viewportSize.Height / Math.Max(8f, sourceHeight);
                 zoomScale = Math.Clamp(MathF.Min(zoomX, zoomY), 1.10f, 8f);
+                float bottomBias = Math.Min(sourceHeight * 0.22f, Math.Max(24f, bounds.Height * 1.35f));
+                center = new PointF(
+                    bounds.Left + bounds.Width * 0.5f,
+                    bounds.Top + bounds.Height * 0.5f + bottomBias);
                 return true;
             }
         }

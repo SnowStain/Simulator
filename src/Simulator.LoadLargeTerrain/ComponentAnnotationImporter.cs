@@ -69,6 +69,9 @@ internal static class ComponentAnnotationImporter
             SourcePath = Path.GetFullPath(path),
             ActorComponentIds = file.ActorComponentIds ?? [],
             Composites = composites,
+            ComponentTerrainLabels = file.Components?
+                .Where(item => item.Id.HasValue && !string.IsNullOrWhiteSpace(item.TerrainLabel))
+                .ToDictionary(item => item.Id!.Value, item => item.TerrainLabel!.Trim()) ?? new Dictionary<int, string>(),
             ComponentColorOverrides = file.ComponentColorOverrides?
                 .Where(item => item.ComponentId.HasValue)
                 .ToDictionary(
@@ -78,6 +81,27 @@ internal static class ComponentAnnotationImporter
                         Math.Clamp(item.G, 0.0f, 1.0f),
                         Math.Clamp(item.B, 0.0f, 1.0f),
                         Math.Clamp(item.A <= 0.0f ? 1.0f : item.A, 0.0f, 1.0f))) ?? new Dictionary<int, System.Numerics.Vector4>(),
+            CollisionShapes = file.CollisionShapes?
+                .Where(item => item.Id.HasValue)
+                .Select(item =>
+                {
+                    var shape = new ImportedCollisionShapeData
+                    {
+                        Id = item.Id!.Value,
+                        Name = string.IsNullOrWhiteSpace(item.Name) ? $"Collision {item.Id!.Value}" : item.Name!,
+                        ShapeType = ParseCollisionShapeType(item.ShapeType),
+                        PositionModel = item.PositionModel?.ToVector3() ?? System.Numerics.Vector3.Zero,
+                        SizeModel = item.SizeModel?.ToVector3() ?? System.Numerics.Vector3.One,
+                        RadiusModel = item.RadiusModel <= 0.0f ? 1.0f : item.RadiusModel,
+                        HeightModel = item.HeightModel <= 0.0f ? 1.0f : item.HeightModel,
+                        RotationYprDegrees = item.YprDegrees?.ToVector3() ?? System.Numerics.Vector3.Zero,
+                        TerrainLabel = item.TerrainLabel?.Trim() ?? string.Empty,
+                        VerticesModel = item.VerticesModel?.Select(vertex => vertex.ToVector3()).ToList() ?? [],
+                    };
+
+                    return shape;
+                })
+                .ToList() ?? [],
         };
     }
 
@@ -89,7 +113,11 @@ internal static class ComponentAnnotationImporter
 
         public required List<ImportedCompositeData> Composites { get; init; }
 
+        public required Dictionary<int, string> ComponentTerrainLabels { get; init; }
+
         public required Dictionary<int, System.Numerics.Vector4> ComponentColorOverrides { get; init; }
+
+        public required List<ImportedCollisionShapeData> CollisionShapes { get; init; }
     }
 
     internal sealed class ImportedCompositeData
@@ -124,13 +152,40 @@ internal static class ComponentAnnotationImporter
         public required int[] ComponentIds { get; init; }
     }
 
+    internal sealed class ImportedCollisionShapeData
+    {
+        public required int Id { get; init; }
+
+        public required string Name { get; init; }
+
+        public required CollisionShapeType ShapeType { get; init; }
+
+        public required System.Numerics.Vector3 PositionModel { get; init; }
+
+        public required System.Numerics.Vector3 SizeModel { get; init; }
+
+        public required float RadiusModel { get; init; }
+
+        public required float HeightModel { get; init; }
+
+        public required System.Numerics.Vector3 RotationYprDegrees { get; init; }
+
+        public required string TerrainLabel { get; init; }
+
+        public required List<System.Numerics.Vector3> VerticesModel { get; init; }
+    }
+
     private sealed class ComponentAnnotationFile
     {
         public int[]? ActorComponentIds { get; init; }
 
         public CompositeAnnotation[]? Composites { get; init; }
 
+        public ComponentAnnotation[]? Components { get; init; }
+
         public ComponentColorOverrideAnnotation[]? ComponentColorOverrides { get; init; }
+
+        public CollisionShapeAnnotation[]? CollisionShapes { get; init; }
     }
 
     private sealed class CompositeAnnotation
@@ -166,6 +221,16 @@ internal static class ComponentAnnotationImporter
             : CoordinateSystemMode.World;
     }
 
+    private static CollisionShapeType ParseCollisionShapeType(string? raw)
+    {
+        return raw?.Trim().ToLowerInvariant() switch
+        {
+            "cylinder" => CollisionShapeType.Cylinder,
+            "polyhedron" => CollisionShapeType.Polyhedron,
+            _ => CollisionShapeType.Box,
+        };
+    }
+
     private sealed class InteractionUnitAnnotation
     {
         public int? Id { get; init; }
@@ -173,6 +238,13 @@ internal static class ComponentAnnotationImporter
         public string? Name { get; init; }
 
         public int[]? ComponentIds { get; init; }
+    }
+
+    private sealed class ComponentAnnotation
+    {
+        public int? Id { get; init; }
+
+        public string? TerrainLabel { get; init; }
     }
 
     private sealed class ComponentColorOverrideAnnotation
@@ -186,6 +258,29 @@ internal static class ComponentAnnotationImporter
         public float B { get; init; }
 
         public float A { get; init; } = 1.0f;
+    }
+
+    private sealed class CollisionShapeAnnotation
+    {
+        public int? Id { get; init; }
+
+        public string? Name { get; init; }
+
+        public string? ShapeType { get; init; }
+
+        public VectorAnnotation? PositionModel { get; init; }
+
+        public VectorAnnotation? SizeModel { get; init; }
+
+        public float RadiusModel { get; init; }
+
+        public float HeightModel { get; init; }
+
+        public VectorAnnotation? YprDegrees { get; init; }
+
+        public string? TerrainLabel { get; init; }
+
+        public VectorAnnotation[]? VerticesModel { get; init; }
     }
 
     private sealed class VectorAnnotation

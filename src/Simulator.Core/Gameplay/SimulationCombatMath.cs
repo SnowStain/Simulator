@@ -1038,6 +1038,19 @@ public static bool TryAcquireEnergyMechanismTarget(
         plate = default;
 
         double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
+        if (IsHeroLobAutoAimMode(shooter)
+            && TryAcquireHeroLobPriorityStructureTarget(
+                world,
+                shooter,
+                maxDistanceM,
+                metersPerWorldUnit,
+                out target,
+                out plate,
+                canSeePlate))
+        {
+            return true;
+        }
+
         if (TryAcquireLockedAutoAimTarget(
                 world,
                 shooter,
@@ -1188,6 +1201,134 @@ public static bool TryAcquireEnergyMechanismTarget(
         }
 
         return target is not null;
+    }
+
+    private static bool TryAcquireHeroLobPriorityStructureTarget(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        double maxDistanceM,
+        double metersPerWorldUnit,
+        out SimulationEntity? target,
+        out ArmorPlateTarget plate,
+        Func<SimulationEntity, ArmorPlateTarget, bool>? canSeePlate)
+    {
+        target = null;
+        plate = default;
+
+        SimulationEntity? outpost = FindEnemyStructure(world, shooter, "outpost");
+        if (outpost is not null
+            && TrySelectHeroLobStructurePlate(world, shooter, outpost, maxDistanceM, metersPerWorldUnit, out plate, canSeePlate))
+        {
+            target = outpost;
+            return true;
+        }
+
+        if (outpost is not null)
+        {
+            return false;
+        }
+
+        SimulationEntity? enemyBase = FindEnemyStructure(world, shooter, "base");
+        if (enemyBase is not null
+            && TrySelectHeroLobStructurePlate(world, shooter, enemyBase, maxDistanceM, metersPerWorldUnit, out plate, canSeePlate))
+        {
+            target = enemyBase;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static SimulationEntity? FindEnemyStructure(SimulationWorldState world, SimulationEntity shooter, string entityType)
+        => world.Entities.FirstOrDefault(candidate =>
+            candidate.IsAlive
+            && !candidate.IsSimulationSuppressed
+            && !string.Equals(candidate.Team, shooter.Team, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(candidate.EntityType, entityType, StringComparison.OrdinalIgnoreCase));
+
+    private static bool TrySelectHeroLobStructurePlate(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        SimulationEntity structure,
+        double maxDistanceM,
+        double metersPerWorldUnit,
+        out ArmorPlateTarget selectedPlate,
+        Func<SimulationEntity, ArmorPlateTarget, bool>? canSeePlate)
+    {
+        selectedPlate = default;
+        double bestScore = double.MaxValue;
+        foreach (ArmorPlateTarget candidatePlate in GetAttackableArmorPlateTargets(structure, metersPerWorldUnit, world.GameTimeSec))
+        {
+            double dxWorld = candidatePlate.X - shooter.X;
+            double dyWorld = candidatePlate.Y - shooter.Y;
+            double distanceM = Math.Sqrt(dxWorld * dxWorld + dyWorld * dyWorld) * metersPerWorldUnit;
+            if (distanceM > maxDistanceM
+                || !IsHeroStructureAutoAimTargetPlate(world, shooter, structure, candidatePlate)
+                || !IsAutoAimArmorTargetEligible(world, shooter, structure, candidatePlate, distanceM)
+                || (canSeePlate is not null && !canSeePlate(structure, candidatePlate)))
+            {
+                continue;
+            }
+
+            bool facingOrEmerging = IsPlateFacingOrEmergingSoon(
+                world,
+                shooter,
+                structure,
+                candidatePlate,
+                metersPerWorldUnit,
+                out double lifetimeScore);
+            if (!facingOrEmerging && IsRotatingArmorPlate(world, structure, candidatePlate))
+            {
+                continue;
+            }
+
+            (double yawDeg, double pitchDeg) = ComputeAimAnglesToPoint(
+                world,
+                shooter,
+                candidatePlate.X,
+                candidatePlate.Y,
+                candidatePlate.HeightM,
+                preferHighArc: ShouldUseHeroLobStructureAxisAim(world, shooter, structure, candidatePlate));
+            double yawError = Math.Abs(NormalizeSignedDeg(yawDeg - shooter.TurretYawDeg));
+            double pitchError = Math.Abs(pitchDeg - shooter.GimbalPitchDeg);
+            if (!IsWithinAutoAimSearchCone(yawError, pitchError, lobMode: true))
+            {
+                continue;
+            }
+
+            double freshAppearanceBonus = ResolveRotatingArmorFreshAppearanceBonus(
+                world,
+                shooter,
+                structure,
+                candidatePlate,
+                metersPerWorldUnit);
+            double exitPenalty = ResolveRotatingArmorExitPenalty(
+                world,
+                shooter,
+                structure,
+                candidatePlate,
+                metersPerWorldUnit);
+            double sameLockBonus = string.Equals(shooter.AutoAimTargetId, structure.Id, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(shooter.AutoAimPlateId, candidatePlate.Id, StringComparison.OrdinalIgnoreCase)
+                    ? 72.0
+                    : 0.0;
+            double score = yawError * 1.35
+                + pitchError * 1.65
+                + distanceM * 0.05
+                - lifetimeScore
+                - freshAppearanceBonus * 0.70
+                + exitPenalty
+                - sameLockBonus;
+            if (score >= bestScore)
+            {
+                continue;
+            }
+
+            bestScore = score;
+            selectedPlate = candidatePlate;
+        }
+
+        return !string.IsNullOrWhiteSpace(selectedPlate.Id);
     }
 
     private static void AddRankedAutoAimCandidate(
@@ -1562,7 +1703,7 @@ public static bool TryAcquireEnergyMechanismTarget(
         return IsHeroStructureAutoAimTargetPlate(world, shooter, target, plate);
     }
 
-    private static bool HasLivingEnemyOutpost(SimulationWorldState world, SimulationEntity shooter)
+    public static bool HasLivingEnemyOutpost(SimulationWorldState world, SimulationEntity shooter)
     {
         string enemyTeam = string.Equals(shooter.Team, "red", StringComparison.OrdinalIgnoreCase)
             ? "blue"
@@ -2251,6 +2392,7 @@ public static bool TryAcquireEnergyMechanismTarget(
         double accuracy = Math.Clamp(distanceCoefficient * motionCoefficient * accuracyScale, 0.05, 1.0);
         bool heroStructureHighArcTarget = ShouldUseHeroLobStructureAxisAim(world, shooter, target, plate);
         bool criticalStructureTarget = ShouldAimStructureCriticalZone(world.GameTimeSec, target, plate);
+        double storedCenterHeightM = ResolveStoredAutoAimPointHeight(plate.HeightM, heightCompensationM, heroStructureHighArcTarget);
         if (IsAutoAimTargetEffectivelyStatic(world, shooter, target, plate))
         {
             (double centerYaw, double centerPitch) = ComputeAimAnglesToPoint(
@@ -2273,7 +2415,7 @@ public static bool TryAcquireEnergyMechanismTarget(
                 DescribeArmorPlateDirection(target, plate)),
                 plate.X,
                 plate.Y,
-                plate.HeightM + heightCompensationM,
+                storedCenterHeightM,
                 observedVxWorld,
                 observedVyWorld,
                 observedVzMps,
@@ -2303,7 +2445,7 @@ public static bool TryAcquireEnergyMechanismTarget(
                 DescribeArmorPlateDirection(target, plate)),
                 predictedX,
                 predictedY,
-                predictedHeightM + heightCompensationM,
+                ResolveStoredAutoAimPointHeight(predictedHeightM, heightCompensationM, heroStructureHighArcTarget),
                 observedVxWorld,
                 observedVyWorld,
                 observedVzMps,
@@ -2333,7 +2475,7 @@ public static bool TryAcquireEnergyMechanismTarget(
                 DescribeArmorPlateDirection(target, plate)),
                 predictedX,
                 predictedY,
-                predictedHeightM + heightCompensationM,
+                ResolveStoredAutoAimPointHeight(predictedHeightM, heightCompensationM, heroStructureHighArcTarget),
                 observedVxWorld,
                 observedVyWorld,
                 observedVzMps,
@@ -2379,7 +2521,9 @@ public static bool TryAcquireEnergyMechanismTarget(
             DescribeArmorPlateDirection(target, plate)),
             predictedX + sideXWorld,
             predictedY + sideYWorld,
-            predictedHeightM + heightCompensationM + heightErrorM,
+            heroStructureHighArcTarget
+                ? predictedHeightM
+                : predictedHeightM + heightCompensationM + heightErrorM,
             observedVxWorld,
             observedVyWorld,
             observedVzMps,
@@ -2441,6 +2585,7 @@ public static bool TryAcquireEnergyMechanismTarget(
         double accuracy = Math.Clamp(distanceCoefficient * motionCoefficient * accuracyScale, 0.08, 1.0);
         bool heroStructureHighArcTarget = ShouldUseHeroLobStructureAxisAim(world, shooter, target, plate);
         bool criticalStructureTarget = ShouldAimStructureCriticalZone(world.GameTimeSec, target, plate);
+        double storedObservedHeightM = ResolveStoredAutoAimPointHeight(observedHeightM, heightCompensationM, heroStructureHighArcTarget);
         if (IsObservationDrivenTargetEffectivelyStatic(
             world,
             shooter,
@@ -2471,7 +2616,7 @@ public static bool TryAcquireEnergyMechanismTarget(
                     DescribeArmorPlateDirection(target, plate)),
                 observedXWorld,
                 observedYWorld,
-                observedHeightM + heightCompensationM,
+                storedObservedHeightM,
                 observedVelocityXMps / metersPerWorldUnit,
                 observedVelocityYMps / metersPerWorldUnit,
                 observedVelocityZMps,
@@ -2501,7 +2646,7 @@ public static bool TryAcquireEnergyMechanismTarget(
                     DescribeArmorPlateDirection(target, plate)),
                 predictedX,
                 predictedY,
-                predictedHeightM + heightCompensationM,
+                ResolveStoredAutoAimPointHeight(predictedHeightM, heightCompensationM, heroStructureHighArcTarget),
                 observedVelocityXMps / metersPerWorldUnit,
                 observedVelocityYMps / metersPerWorldUnit,
                 observedVelocityZMps,
@@ -2545,7 +2690,9 @@ public static bool TryAcquireEnergyMechanismTarget(
                 DescribeArmorPlateDirection(target, plate)),
             predictedX + sideXWorld,
             predictedY + sideYWorld,
-            predictedHeightM + heightCompensationM + heightErrorM,
+            heroStructureHighArcTarget
+                ? predictedHeightM
+                : predictedHeightM + heightCompensationM + heightErrorM,
             observedVelocityXMps / metersPerWorldUnit,
             observedVelocityYMps / metersPerWorldUnit,
             observedVelocityZMps,
@@ -2619,6 +2766,7 @@ public static bool TryAcquireEnergyMechanismTarget(
         double accuracy = Math.Clamp(distanceCoefficient * motionCoefficient * accuracyScale, 0.08, 1.0);
         bool heroStructureHighArcTarget = ShouldUseHeroLobStructureAxisAim(world, shooter, target, plate);
         bool criticalStructureTarget = ShouldAimStructureCriticalZone(world.GameTimeSec, target, plate);
+        double storedObservedHeightM = ResolveStoredAutoAimPointHeight(observedHeightM, heightCompensationM, heroStructureHighArcTarget);
         bool effectivelyStatic = IsObservationDrivenTargetEffectivelyStatic(
                 world,
                 shooter,
@@ -2651,7 +2799,7 @@ public static bool TryAcquireEnergyMechanismTarget(
                     DescribeArmorPlateDirection(target, plate)),
                 observedXWorld,
                 observedYWorld,
-                observedHeightM + heightCompensationM,
+                storedObservedHeightM,
                 observedVelocityXMps / metersPerWorldUnit,
                 observedVelocityYMps / metersPerWorldUnit,
                 observedVelocityZMps,
@@ -2681,7 +2829,7 @@ public static bool TryAcquireEnergyMechanismTarget(
                     DescribeArmorPlateDirection(target, plate)),
                 predictedX,
                 predictedY,
-                predictedHeightM + heightCompensationM,
+                ResolveStoredAutoAimPointHeight(predictedHeightM, heightCompensationM, heroStructureHighArcTarget),
                 observedVelocityXMps / metersPerWorldUnit,
                 observedVelocityYMps / metersPerWorldUnit,
                 observedVelocityZMps,
@@ -2725,7 +2873,9 @@ public static bool TryAcquireEnergyMechanismTarget(
                 DescribeArmorPlateDirection(target, plate)),
             predictedX + sideXWorld,
             predictedY + sideYWorld,
-            predictedHeightM + heightCompensationM + heightErrorM,
+            heroStructureHighArcTarget
+                ? predictedHeightM
+                : predictedHeightM + heightCompensationM + heightErrorM,
             observedVelocityXMps / metersPerWorldUnit,
             observedVelocityYMps / metersPerWorldUnit,
             observedVelocityZMps,
@@ -2782,6 +2932,16 @@ public static bool TryAcquireEnergyMechanismTarget(
             ObservedVelocityZMps = observedVelocityZMps,
             ObservedAngularVelocityRadPerSec = observedAngularVelocityRadPerSec,
         };
+    }
+
+    private static double ResolveStoredAutoAimPointHeight(
+        double predictedCenterHeightM,
+        double heightCompensationM,
+        bool heroStructureHighArcTarget)
+    {
+        return heroStructureHighArcTarget
+            ? predictedCenterHeightM
+            : predictedCenterHeightM + heightCompensationM;
     }
 
     private static double ResolveLargeProjectileAutoAimHeightCompensation(SimulationEntity shooter, double distanceM)
@@ -3353,8 +3513,17 @@ public static bool TryAcquireEnergyMechanismTarget(
             return false;
         }
 
-        return string.Equals(target.EntityType, "outpost", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(target.EntityType, "base", StringComparison.OrdinalIgnoreCase);
+        if (string.Equals(target.EntityType, "outpost", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!string.Equals(target.EntityType, "base", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return !HasLivingEnemyOutpost(world, shooter);
     }
 
     public static bool IsHeroStructureAutoAimTargetPlate(
@@ -3896,6 +4065,17 @@ public static bool TryAcquireEnergyMechanismTarget(
             return (observedXWorld, observedYWorld, observedHeightM, 0.0);
         }
 
+        AutoAimCompensationProfile compensationProfile = ResolveAutoAimCompensationProfile(world, shooter, target, plate);
+        double compensatedLeadTimeSec = Math.Max(0.0, leadTimeSec + compensationProfile.TimeBiasSec);
+        if (TryResolveFutureHeroLobStructurePlate(world, shooter, target, plate, compensatedLeadTimeSec, out ArmorPlateTarget futurePlate))
+        {
+            double futureLeadDxM = (futurePlate.X - observedXWorld) * metersPerWorldUnit;
+            double futureLeadDyM = (futurePlate.Y - observedYWorld) * metersPerWorldUnit;
+            double futureLeadDzM = futurePlate.HeightM - observedHeightM;
+            double futureLeadDistanceM = Math.Sqrt(futureLeadDxM * futureLeadDxM + futureLeadDyM * futureLeadDyM + futureLeadDzM * futureLeadDzM);
+            return (futurePlate.X, futurePlate.Y, futurePlate.HeightM, futureLeadDistanceM);
+        }
+
         if (IsObservationDrivenTargetEffectivelyStatic(
             world,
             shooter,
@@ -3909,8 +4089,6 @@ public static bool TryAcquireEnergyMechanismTarget(
             return (observedXWorld, observedYWorld, observedHeightM, 0.0);
         }
 
-        AutoAimCompensationProfile compensationProfile = ResolveAutoAimCompensationProfile(world, shooter, target, plate);
-        double compensatedLeadTimeSec = Math.Max(0.0, leadTimeSec + compensationProfile.TimeBiasSec);
         bool suppressLateralLead = ShouldSuppressStructureTopLateralLead(shooter, plate)
             || (IsHeroLobAutoAimMode(shooter)
                 && string.Equals(shooter.RoleKey, "hero", StringComparison.OrdinalIgnoreCase)
@@ -3956,6 +4134,17 @@ public static bool TryAcquireEnergyMechanismTarget(
             return (observedXWorld, observedYWorld, observedHeightM, 0.0);
         }
 
+        AutoAimCompensationProfile compensationProfile = ResolveAutoAimCompensationProfile(world, shooter, target, plate);
+        double compensatedLeadTimeSec = Math.Max(0.0, leadTimeSec + compensationProfile.TimeBiasSec);
+        if (TryResolveFutureHeroLobStructurePlate(world, shooter, target, plate, compensatedLeadTimeSec, out ArmorPlateTarget futurePlate))
+        {
+            double futureLeadDxM = (futurePlate.X - observedXWorld) * metersPerWorldUnit;
+            double futureLeadDyM = (futurePlate.Y - observedYWorld) * metersPerWorldUnit;
+            double futureLeadDzM = futurePlate.HeightM - observedHeightM;
+            double futureLeadDistanceM = Math.Sqrt(futureLeadDxM * futureLeadDxM + futureLeadDyM * futureLeadDyM + futureLeadDzM * futureLeadDzM);
+            return (futurePlate.X, futurePlate.Y, futurePlate.HeightM, futureLeadDistanceM);
+        }
+
         double accelerationMagnitudeMps2 = Math.Sqrt(
             observedAccelerationXMps2 * observedAccelerationXMps2
             + observedAccelerationYMps2 * observedAccelerationYMps2
@@ -3974,8 +4163,6 @@ public static bool TryAcquireEnergyMechanismTarget(
             return (observedXWorld, observedYWorld, observedHeightM, 0.0);
         }
 
-        AutoAimCompensationProfile compensationProfile = ResolveAutoAimCompensationProfile(world, shooter, target, plate);
-        double compensatedLeadTimeSec = Math.Max(0.0, leadTimeSec + compensationProfile.TimeBiasSec);
         bool suppressLateralLead = ShouldSuppressStructureTopLateralLead(shooter, plate)
             || (IsHeroLobAutoAimMode(shooter)
                 && string.Equals(shooter.RoleKey, "hero", StringComparison.OrdinalIgnoreCase)
@@ -4020,6 +4207,17 @@ public static bool TryAcquireEnergyMechanismTarget(
             return (plate.X, plate.Y, plate.HeightM, 0.0);
         }
 
+        AutoAimCompensationProfile compensationProfile = ResolveAutoAimCompensationProfile(world, shooter, target, plate);
+        double compensatedLeadTimeSec = Math.Max(0.0, leadTimeSec + compensationProfile.TimeBiasSec);
+        if (TryResolveFutureHeroLobStructurePlate(world, shooter, target, plate, compensatedLeadTimeSec, out ArmorPlateTarget futurePlate))
+        {
+            return (
+                futurePlate.X,
+                futurePlate.Y,
+                futurePlate.HeightM,
+                DistanceBetweenPlatePointsM(metersPerWorldUnit, plate, futurePlate));
+        }
+
         if (IsAutoAimTargetEffectivelyStatic(world, shooter, target, plate))
         {
             return (plate.X, plate.Y, plate.HeightM, 0.0);
@@ -4041,10 +4239,8 @@ public static bool TryAcquireEnergyMechanismTarget(
             return (plate.X, plate.Y, plate.HeightM, 0.0);
         }
 
-        AutoAimCompensationProfile compensationProfile = ResolveAutoAimCompensationProfile(world, shooter, target, plate);
         double translationLeadScale = compensationProfile.TranslationLeadScale;
         double angularLeadScale = compensationProfile.AngularLeadScale;
-        double compensatedLeadTimeSec = Math.Max(0.0, leadTimeSec + compensationProfile.TimeBiasSec);
         double offsetXWorld = plate.X - target.X;
         double offsetYWorld = plate.Y - target.Y;
         double angularLeadRad = ResolveAutoAimAngularVelocityRadPerSec(world, target, plate) * compensatedLeadTimeSec * angularLeadScale;
@@ -4504,6 +4700,82 @@ public static bool TryAcquireEnergyMechanismTarget(
         double dyM = (predicted.Y - current.Y) * metersPerWorldUnit;
         double dzM = predicted.HeightM - current.HeightM;
         return Math.Sqrt(dxM * dxM + dyM * dyM + dzM * dzM);
+    }
+
+    public static bool TryPredictOutpostRingPlatePose(
+        SimulationWorldState world,
+        SimulationEntity target,
+        ArmorPlateTarget plate,
+        double leadTimeSec,
+        out ArmorPlateTarget predictedPlate)
+    {
+        predictedPlate = default;
+        if (leadTimeSec <= 1e-4
+            || !string.Equals(target.EntityType, "outpost", StringComparison.OrdinalIgnoreCase)
+            || !plate.Id.StartsWith("outpost_ring_", StringComparison.OrdinalIgnoreCase)
+            || !IsOutpostRingEffectivelyRotating(target, plate, world.GameTimeSec))
+        {
+            return false;
+        }
+
+        double currentTimeSec = Math.Max(0.0, world.GameTimeSec);
+        double predictedTimeSec = currentTimeSec + Math.Clamp(leadTimeSec, 0.0, 2.35);
+        double rotationDeltaRad =
+            ResolveOutpostRingRelativeRotationRad(target, predictedTimeSec)
+            - ResolveOutpostRingRelativeRotationRad(target, currentTimeSec);
+        if (!double.IsFinite(rotationDeltaRad))
+        {
+            return false;
+        }
+
+        double offsetXWorld = plate.X - target.X;
+        double offsetYWorld = plate.Y - target.Y;
+        if (offsetXWorld * offsetXWorld + offsetYWorld * offsetYWorld <= 1e-10)
+        {
+            return false;
+        }
+
+        double cos = Math.Cos(rotationDeltaRad);
+        double sin = Math.Sin(rotationDeltaRad);
+        predictedPlate = plate with
+        {
+            X = target.X + offsetXWorld * cos - offsetYWorld * sin,
+            Y = target.Y + offsetXWorld * sin + offsetYWorld * cos,
+            YawDeg = NormalizeDeg(plate.YawDeg + RadiansToDegrees(rotationDeltaRad)),
+        };
+        return true;
+    }
+
+    private static bool TryResolveFutureHeroLobStructurePlate(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        SimulationEntity target,
+        ArmorPlateTarget plate,
+        double leadTimeSec,
+        out ArmorPlateTarget futurePlate)
+    {
+        futurePlate = default;
+        if (leadTimeSec <= 1e-4
+            || !IsHeroLobAutoAimMode(shooter)
+            || !string.Equals(shooter.RoleKey, "hero", StringComparison.OrdinalIgnoreCase)
+            || !IsHeroStructureAutoAimTargetPlate(world, shooter, target, plate))
+        {
+            return false;
+        }
+
+        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
+        if (TryPredictOutpostRingPlatePose(world, target, plate, leadTimeSec, out futurePlate))
+        {
+            return true;
+        }
+
+        bool includeOutpostTopArmor = string.Equals(target.EntityType, "outpost", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(plate.Id, "outpost_top", StringComparison.OrdinalIgnoreCase);
+        double predictedGameTimeSec = world.GameTimeSec + Math.Clamp(leadTimeSec, 0.0, 2.35);
+        futurePlate = GetArmorPlateTargets(target, metersPerWorldUnit, predictedGameTimeSec, includeOutpostTopArmor)
+            .FirstOrDefault(candidate => string.Equals(candidate.Id, plate.Id, StringComparison.OrdinalIgnoreCase));
+
+        return !string.IsNullOrWhiteSpace(futurePlate.Id);
     }
 
     private static IReadOnlyList<ArmorPlateTarget> GetOutpostArmorPlateTargets(

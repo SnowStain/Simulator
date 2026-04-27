@@ -924,7 +924,14 @@ internal sealed partial class Simulator3dForm
             SimulationEntity? target = _host.World.Entities.FirstOrDefault(candidate =>
                 candidate.IsAlive
                 && string.Equals(candidate.Id, shooter.AutoAimTargetId, StringComparison.OrdinalIgnoreCase));
-            double predictedPlateTimeSec = _host.World.GameTimeSec + Math.Max(0.0, shooter.AutoAimLeadTimeSec);
+            double predictedPlateLeadTimeSec = Math.Max(0.0, shooter.AutoAimLeadTimeSec);
+            if (target is not null
+                && TryResolveAutoAimPlate(shooter, target, shooter.AutoAimPlateId!, out ArmorPlateTarget subviewPlate))
+            {
+                predictedPlateLeadTimeSec = ResolveEffectiveAutoAimDisplayLeadTimeSec(shooter, target, subviewPlate);
+            }
+
+            double predictedPlateTimeSec = _host.World.GameTimeSec + predictedPlateLeadTimeSec;
             if (target is not null
                 && TryResolveVisualArmorPlatePose(target, shooter.AutoAimPlateId!, predictedPlateTimeSec, out VisualArmorPlatePose visualPlate))
             {
@@ -982,7 +989,7 @@ internal sealed partial class Simulator3dForm
         float safeHeight = Math.Max(0.04f, plateHeightM);
         float aspect = Math.Max(0.6f, viewportWidth / (float)Math.Max(1, viewportHeight));
         float plateAspect = safeWidth / Math.Max(0.02f, safeHeight);
-        float targetAreaFraction = 0.15f;
+        float targetAreaFraction = 0.20f;
         float heightFraction = MathF.Sqrt(targetAreaFraction * aspect / Math.Max(0.1f, plateAspect));
         heightFraction = Math.Clamp(heightFraction, 0.20f, 0.78f);
 
@@ -1051,8 +1058,14 @@ internal sealed partial class Simulator3dForm
             return false;
         }
 
-        double predictedPlateTimeSec = _host.World.GameTimeSec + Math.Max(0.0, shooter.AutoAimLeadTimeSec);
         double metersPerWorldUnit = Math.Max(_host.World.MetersPerWorldUnit, 1e-6);
+        double predictedPlateLeadTimeSec = Math.Max(0.0, shooter.AutoAimLeadTimeSec);
+        if (TryResolveAutoAimPlate(shooter, target, shooter.AutoAimPlateId!, out ArmorPlateTarget currentPlate))
+        {
+            predictedPlateLeadTimeSec = ResolveEffectiveAutoAimDisplayLeadTimeSec(shooter, target, currentPlate);
+        }
+
+        double predictedPlateTimeSec = _host.World.GameTimeSec + predictedPlateLeadTimeSec;
         ArmorPlateTarget plate = SimulationCombatMath.GetAttackableArmorPlateTargets(target, metersPerWorldUnit, predictedPlateTimeSec)
             .FirstOrDefault(candidate => string.Equals(candidate.Id, shooter.AutoAimPlateId, StringComparison.OrdinalIgnoreCase));
         if (string.IsNullOrWhiteSpace(plate.Id))
@@ -1065,7 +1078,8 @@ internal sealed partial class Simulator3dForm
             return false;
         }
 
-        Vector3 plateCenterScene = visualPlate.Center;
+        ArmorPlateTarget aimPlate = ResolveHeroLobPreviewAimPlate(plate, shooter);
+        Vector3 plateCenterScene = ToScenePoint(aimPlate.X, aimPlate.Y, (float)aimPlate.HeightM);
         Vector3 plateNormalScene = Vector3.Normalize(visualPlate.Forward);
         Vector3 plateRightScene = Vector3.Normalize(visualPlate.Right);
         if (plateRightScene.LengthSquared() <= 1e-8f)
@@ -1075,6 +1089,15 @@ internal sealed partial class Simulator3dForm
 
         float plateWidthM = (float)(plate.WidthM > 1e-6 ? plate.WidthM : plate.SideLengthM);
         float plateHeightM = (float)(plate.HeightSpanM > 1e-6 ? plate.HeightSpanM : plate.SideLengthM);
+        bool crosshairProjectedToPlate = TryProjectCurrentCrosshairToPlateArea(
+            shooter,
+            plate.Id,
+            plateCenterScene,
+            plateNormalScene,
+            plateRightScene,
+            out float crosshairHorizontalOffsetM,
+            out float crosshairVerticalOffsetM,
+            out bool crosshairFrontFacing);
         if (!TrySimulateCurrentProjectileImpactPoint(shooter, plateCenterScene, plateNormalScene, out Vector3 impactScene, out bool crossedPlatePlane, out Vector3 impactDirectionScene))
         {
             return false;
@@ -1097,15 +1120,19 @@ internal sealed partial class Simulator3dForm
         float centerPlaneHeightErrorM = (float)SimulationCombatMath.EstimateProjectileHeightErrorAtPoint(
             _host.World,
             shooter,
-            plate.X,
-            plate.Y,
-            plate.HeightM,
+            aimPlate.X,
+            aimPlate.Y,
+            aimPlate.HeightM,
             shooter.GimbalPitchDeg);
-        float centerPlaneToleranceM = Math.Clamp(Math.Max(0.14f, plateHeightM * 0.72f), 0.14f, 0.24f);
-        bool fireWindowReady = hitsPlate
-            && normalAngleDeg <= 45f
-            && MathF.Abs(horizontalOffsetM) <= plateWidthM * 0.46f
-            && MathF.Abs(verticalOffsetM) <= plateHeightM * 0.48f
+        float projectileMarginM = Math.Clamp(
+            (float)(SimulationCombatMath.ProjectileDiameterM(shooter.AmmoType) * 0.75 + shooter.AutoAimLeadDistanceM * 0.0018),
+            0.012f,
+            0.055f);
+        float centerPlaneToleranceM = Math.Clamp(Math.Max(0.14f, plateHeightM * 0.72f + projectileMarginM), 0.14f, 0.26f);
+        bool fireWindowReady = crosshairProjectedToPlate
+            && crosshairFrontFacing
+            && MathF.Abs(crosshairHorizontalOffsetM) <= plateWidthM * 0.5f + projectileMarginM
+            && MathF.Abs(crosshairVerticalOffsetM) <= plateHeightM * 0.5f + projectileMarginM
             && MathF.Abs(centerPlaneHeightErrorM) <= centerPlaneToleranceM;
         bool hasSuggestedFireWindow = fireWindowReady;
         float secondsToFireWindow = 0f;
@@ -1122,7 +1149,7 @@ internal sealed partial class Simulator3dForm
 
         preview = new HeroLobCalibrationPreview(
             target.Id,
-            plate.Id,
+            aimPlate.Id,
             plateCenterScene,
             impactScene,
             HasImpactPoint: true,
@@ -1141,6 +1168,28 @@ internal sealed partial class Simulator3dForm
         return true;
     }
 
+    private static ArmorPlateTarget ResolveHeroLobPreviewAimPlate(
+        ArmorPlateTarget posePlate,
+        SimulationEntity shooter)
+    {
+        if (!double.IsFinite(shooter.AutoAimAimPointX)
+            || !double.IsFinite(shooter.AutoAimAimPointY)
+            || Math.Abs(shooter.AutoAimAimPointX) + Math.Abs(shooter.AutoAimAimPointY) <= 1e-8)
+        {
+            return posePlate;
+        }
+
+        double aimHeightM = double.IsFinite(shooter.AutoAimAimPointHeightM) && shooter.AutoAimAimPointHeightM > 1e-6
+            ? shooter.AutoAimAimPointHeightM
+            : posePlate.HeightM;
+        return posePlate with
+        {
+            X = shooter.AutoAimAimPointX,
+            Y = shooter.AutoAimAimPointY,
+            HeightM = aimHeightM,
+        };
+    }
+
     private bool TryEstimateHeroLobFireWindowDelay(
         SimulationEntity shooter,
         SimulationEntity target,
@@ -1151,6 +1200,11 @@ internal sealed partial class Simulator3dForm
     {
         secondsToFireWindow = 0f;
         double leadTimeSec = Math.Clamp(shooter.AutoAimLeadTimeSec, 0.0, 2.35);
+        if (TryResolveAutoAimPlate(shooter, target, plateId, out ArmorPlateTarget currentPlate))
+        {
+            leadTimeSec = ResolveEffectiveAutoAimDisplayLeadTimeSec(shooter, target, currentPlate);
+        }
+
         const double horizonSec = 2.40;
         const double stepSec = 0.08;
         for (double waitSec = stepSec; waitSec <= horizonSec + 1e-6; waitSec += stepSec)
@@ -1164,41 +1218,36 @@ internal sealed partial class Simulator3dForm
             Vector3 normalScene = visualPlate.Forward.LengthSquared() <= 1e-8f
                 ? Vector3.UnitX
                 : Vector3.Normalize(visualPlate.Forward);
-            if (!TrySimulateCurrentProjectileImpactPoint(
+            Vector3 rightScene = visualPlate.Right.LengthSquared() <= 1e-8f
+                ? Vector3.UnitX
+                : Vector3.Normalize(visualPlate.Right);
+            if (!TryProjectCurrentCrosshairToPlateArea(
                     shooter,
+                    plateId,
                     visualPlate.Center,
                     normalScene,
-                    out Vector3 impactScene,
-                    out bool crossedPlatePlane,
-                    out Vector3 impactDirectionScene))
+                    rightScene,
+                    out float horizontalOffsetM,
+                    out float verticalOffsetM,
+                    out bool frontFacing))
             {
                 continue;
             }
 
-            Vector3 rightScene = visualPlate.Right.LengthSquared() <= 1e-8f
-                ? Vector3.UnitX
-                : Vector3.Normalize(visualPlate.Right);
-            Vector3 delta = impactScene - visualPlate.Center;
-            float horizontalOffsetM = Vector3.Dot(delta, rightScene);
-            float verticalOffsetM = delta.Y;
-            float normalAngleDeg = 180f;
-            if (impactDirectionScene.LengthSquared() > 1e-8f)
-            {
-                float frontDot = Vector3.Dot(-Vector3.Normalize(impactDirectionScene), normalScene);
-                normalAngleDeg = MathF.Acos(Math.Clamp(frontDot, -1f, 1f)) * 180f / MathF.PI;
-            }
-
-            if (crossedPlatePlane
-                && normalAngleDeg <= 45f
-                && MathF.Abs(horizontalOffsetM) <= plateWidthM * 0.46f
-                && MathF.Abs(verticalOffsetM) <= plateHeightM * 0.48f
+            float projectileMarginM = Math.Clamp(
+                (float)(SimulationCombatMath.ProjectileDiameterM(shooter.AmmoType) * 0.75 + shooter.AutoAimLeadDistanceM * 0.0018),
+                0.012f,
+                0.055f);
+            if (frontFacing
+                && MathF.Abs(horizontalOffsetM) <= plateWidthM * 0.5f + projectileMarginM
+                && MathF.Abs(verticalOffsetM) <= plateHeightM * 0.5f + projectileMarginM
                 && Math.Abs(SimulationCombatMath.EstimateProjectileHeightErrorAtPoint(
                     _host.World,
                     shooter,
                     visualPlate.Center.X / Math.Max(_host.World.MetersPerWorldUnit, 1e-6),
                     visualPlate.Center.Z / Math.Max(_host.World.MetersPerWorldUnit, 1e-6),
                     visualPlate.Center.Y,
-                    shooter.GimbalPitchDeg)) <= Math.Clamp(Math.Max(0.14, plateHeightM * 0.72), 0.14, 0.24))
+                    shooter.GimbalPitchDeg)) <= Math.Clamp(Math.Max(0.14, plateHeightM * 0.72 + projectileMarginM), 0.14, 0.26))
             {
                 secondsToFireWindow = (float)waitSec;
                 return true;
@@ -1379,6 +1428,72 @@ internal sealed partial class Simulator3dForm
         }
 
         return count >= 2;
+    }
+
+    private bool TryProjectCurrentCrosshairToPlateArea(
+        SimulationEntity shooter,
+        string plateId,
+        Vector3 plateCenterScene,
+        Vector3 plateNormalScene,
+        Vector3 plateRightScene,
+        out float horizontalOffsetM,
+        out float verticalOffsetM,
+        out bool frontFacing)
+    {
+        horizontalOffsetM = 0f;
+        verticalOffsetM = 0f;
+        frontFacing = true;
+
+        if (plateNormalScene.LengthSquared() <= 1e-8f)
+        {
+            return false;
+        }
+
+        Vector3 normal = Vector3.Normalize(plateNormalScene);
+        Vector3 right = plateRightScene.LengthSquared() <= 1e-8f
+            ? Vector3.UnitX
+            : Vector3.Normalize(plateRightScene);
+        Vector3 up = plateId.Contains("top", StringComparison.OrdinalIgnoreCase)
+            ? Vector3.Cross(right, normal)
+            : Vector3.UnitY;
+        up = up.LengthSquared() <= 1e-8f ? Vector3.UnitY : Vector3.Normalize(up);
+
+        double yawRad = shooter.TurretYawDeg * Math.PI / 180.0;
+        double pitchRad = Math.Clamp(shooter.GimbalPitchDeg, -40.0, 40.0) * Math.PI / 180.0;
+        Vector3 direction = new(
+            (float)(Math.Cos(pitchRad) * Math.Cos(yawRad)),
+            (float)Math.Sin(pitchRad),
+            (float)(Math.Cos(pitchRad) * Math.Sin(yawRad)));
+        if (direction.LengthSquared() <= 1e-8f)
+        {
+            return false;
+        }
+
+        direction = Vector3.Normalize(direction);
+        double denom = Vector3.Dot(direction, normal);
+        if (Math.Abs(denom) <= 1e-6)
+        {
+            return false;
+        }
+
+        double metersPerWorldUnit = Math.Max(_host.World.MetersPerWorldUnit, 1e-6);
+        (double muzzleX, double muzzleY, double muzzleHeightM) = SimulationCombatMath.ComputeMuzzlePoint(_host.World, shooter, shooter.GimbalPitchDeg);
+        Vector3 start = new(
+            (float)(muzzleX * metersPerWorldUnit),
+            (float)muzzleHeightM,
+            (float)(muzzleY * metersPerWorldUnit));
+        double t = Vector3.Dot(plateCenterScene - start, normal) / denom;
+        if (t <= 0.02 || t > 200.0)
+        {
+            return false;
+        }
+
+        frontFacing = plateId.Contains("top", StringComparison.OrdinalIgnoreCase) || denom <= -0.03;
+        Vector3 crosshairPoint = start + direction * (float)t;
+        Vector3 delta = crosshairPoint - plateCenterScene;
+        horizontalOffsetM = Vector3.Dot(delta, right);
+        verticalOffsetM = Vector3.Dot(delta, up);
+        return true;
     }
 
     private bool TrySimulateCurrentProjectileImpactPoint(

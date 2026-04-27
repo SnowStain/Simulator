@@ -13,6 +13,8 @@ namespace LoadLargeTerrain;
 
 internal sealed class TerrainViewerWindow : GameWindow
 {
+    private static readonly string[] CollisionShapeTypeNames = ["长方体", "圆柱体", "多面体"];
+
     private enum AnchorPlacementSource
     {
         CoordinateOrigin,
@@ -47,6 +49,8 @@ internal sealed class TerrainViewerWindow : GameWindow
     private readonly Dictionary<int, List<ComponentRenderRef>> _componentRenderRefs = new();
     private readonly Dictionary<int, List<ComponentDrawBatch>> _compositeDrawBatches = new();
     private readonly Dictionary<int, System.Numerics.Vector4> _componentColorOverrides = new();
+    private readonly Dictionary<int, string> _componentTerrainLabels = new();
+    private readonly List<CollisionShapeObject> _collisionShapes = new();
     private readonly Dictionary<GizmoAxis, System.Numerics.Vector2> _lastGizmoAxisTips = new();
     private readonly WorldScale _worldScale;
     private readonly MapPresetEditingSession? _mapEditingSession;
@@ -76,6 +80,7 @@ internal sealed class TerrainViewerWindow : GameWindow
     private bool _loadPopupRequested;
     private bool _savePopupRequested;
     private bool _awaitingAnchorPlacementPoint;
+    private bool _collisionShapeEditUndoCaptured;
     private bool _topDownDraggingRect;
     private float _movementSpeed;
     private readonly float _minimumMovementSpeed;
@@ -84,6 +89,8 @@ internal sealed class TerrainViewerWindow : GameWindow
     private float _rotationNudgeDegrees = 1.0f;
     private bool _invertRotationDirection;
     private System.Numerics.Vector4 _componentColorDraft = new(0.12f, 0.42f, 1.0f, 1.0f);
+    private string _terrainLabelDraft = "terrain";
+    private string _collisionShapeNameDraft = "collision";
     private float _farPlane;
     private ViewMode _viewMode;
     private readonly List<int> _visibleChunkIndices = new();
@@ -118,6 +125,8 @@ internal sealed class TerrainViewerWindow : GameWindow
     private int? _focusedInteractionUnitCompositeId;
     private int? _focusedInteractionUnitId;
     private int _nextCompositeId = 1;
+    private int _nextCollisionShapeId = 1;
+    private int? _selectedCollisionShapeId;
     private int _boxSelectionAddCount;
     private int _sweepSelectionAddCount;
     private string _loadDialogPath;
@@ -565,6 +574,7 @@ internal sealed class TerrainViewerWindow : GameWindow
         DrawSweepSightOverlay();
         DrawBoxSelectionOverlay();
         DrawMapEditorOverlay();
+        DrawCollisionShapeOverlay();
         DrawCompositeGizmo();
         _imgui?.Render();
 
@@ -1013,7 +1023,16 @@ internal sealed class TerrainViewerWindow : GameWindow
         try
         {
             var resolvedPath = ResolveExportPath(targetPath ?? _currentExportPath);
-            ComponentAnnotationExporter.Export(resolvedPath, _modelName, _scene.Components, _actorComponentIds, _composites, _worldScale, _componentColorOverrides);
+            ComponentAnnotationExporter.Export(
+                resolvedPath,
+                _modelName,
+                _scene.Components,
+                _actorComponentIds,
+                _composites,
+                _worldScale,
+                _componentColorOverrides,
+                _componentTerrainLabels,
+                _collisionShapes);
             _currentExportPath = resolvedPath;
             _saveDialogPath = resolvedPath;
             _statusMessage = $"已保存到 {Path.GetFileName(resolvedPath)}";
@@ -2018,6 +2037,41 @@ internal sealed class TerrainViewerWindow : GameWindow
             }
         }
 
+        _componentTerrainLabels.Clear();
+        foreach (var (componentId, terrainLabel) in _importedAnnotations.ComponentTerrainLabels)
+        {
+            if (_componentsById.ContainsKey(componentId) && !string.IsNullOrWhiteSpace(terrainLabel))
+            {
+                _componentTerrainLabels[componentId] = terrainLabel.Trim();
+                _terrainLabelDraft = terrainLabel.Trim();
+            }
+        }
+
+        _collisionShapes.Clear();
+        var maxCollisionShapeId = 0;
+        foreach (var importedShape in _importedAnnotations.CollisionShapes.OrderBy(shape => shape.Id))
+        {
+            var shape = new CollisionShapeObject
+            {
+                Id = importedShape.Id,
+                Name = importedShape.Name,
+                ShapeType = importedShape.ShapeType,
+                PositionModel = importedShape.PositionModel,
+                SizeModel = importedShape.SizeModel,
+                RadiusModel = importedShape.RadiusModel,
+                HeightModel = importedShape.HeightModel,
+                RotationYprDegrees = importedShape.RotationYprDegrees,
+                TerrainLabel = importedShape.TerrainLabel,
+            };
+
+            shape.VerticesModel.AddRange(importedShape.VerticesModel);
+            _collisionShapes.Add(shape);
+            maxCollisionShapeId = Math.Max(maxCollisionShapeId, shape.Id);
+        }
+
+        _nextCollisionShapeId = Math.Max(_nextCollisionShapeId, maxCollisionShapeId + 1);
+        _selectedCollisionShapeId = _collisionShapes.LastOrDefault()?.Id;
+
         _composites.Clear();
         _componentToCompositeId.Clear();
         var maxCompositeId = 0;
@@ -2400,7 +2454,7 @@ internal sealed class TerrainViewerWindow : GameWindow
         }
 
         var drawList = ImGui.GetForegroundDrawList();
-        var (_, _, viewProjection) = BuildViewProjection();
+        var viewProjection = _lastViewProjection;
         for (int index = 0; index < _mapEditingSession.Document.Facilities.Count; index++)
         {
             FacilityRegionEditorModel facility = _mapEditingSession.Document.Facilities[index];
@@ -2435,6 +2489,169 @@ internal sealed class TerrainViewerWindow : GameWindow
                 }
             }
         }
+    }
+
+    private void DrawCollisionShapeOverlay()
+    {
+        if (_imgui is null || _collisionShapes.Count == 0)
+        {
+            return;
+        }
+
+        var drawList = ImGui.GetForegroundDrawList();
+        var (_, _, viewProjection) = BuildViewProjection();
+        foreach (var shape in _collisionShapes)
+        {
+            var selected = _selectedCollisionShapeId == shape.Id;
+            var color = ImGui.GetColorU32(selected
+                ? new System.Numerics.Vector4(1.0f, 0.68f, 0.18f, 0.95f)
+                : new System.Numerics.Vector4(0.18f, 0.82f, 1.0f, 0.82f));
+            var thickness = selected ? 3.0f : 1.8f;
+
+            if (shape.ShapeType == CollisionShapeType.Cylinder)
+            {
+                DrawCylinderCollisionOverlay(drawList, viewProjection, shape, color, thickness);
+            }
+            else
+            {
+                DrawBoxCollisionOverlay(drawList, viewProjection, shape, color, thickness);
+            }
+
+            if (TryProjectToScreen(shape.PositionModel, viewProjection, out var labelPoint))
+            {
+                drawList.AddText(labelPoint + new System.Numerics.Vector2(6.0f, -16.0f), color, shape.Name);
+            }
+        }
+    }
+
+    private void DrawPolyCollisionOverlay(
+        ImDrawListPtr drawList,
+        Matrix4 viewProjection,
+        IReadOnlyList<System.Numerics.Vector3> vertices,
+        uint color,
+        float thickness)
+    {
+        if (vertices.Count < 2)
+        {
+            return;
+        }
+
+        if (vertices.Count == 8)
+        {
+            ReadOnlySpan<int> edges =
+            [
+                0, 1, 1, 3, 3, 2, 2, 0,
+                4, 5, 5, 7, 7, 6, 6, 4,
+                0, 4, 1, 5, 2, 6, 3, 7,
+            ];
+            for (var index = 0; index < edges.Length; index += 2)
+            {
+                DrawCollisionEdge(drawList, viewProjection, vertices[edges[index]], vertices[edges[index + 1]], color, thickness);
+            }
+
+            return;
+        }
+
+        for (var index = 1; index < vertices.Count; index++)
+        {
+            DrawCollisionEdge(drawList, viewProjection, vertices[index - 1], vertices[index], color, thickness);
+        }
+
+        DrawCollisionEdge(drawList, viewProjection, vertices[^1], vertices[0], color, thickness);
+    }
+
+    private void DrawCylinderCollisionOverlay(
+        ImDrawListPtr drawList,
+        Matrix4 viewProjection,
+        CollisionShapeObject shape,
+        uint color,
+        float thickness)
+    {
+        const int segments = 24;
+        var halfHeight = shape.HeightModel * 0.5f;
+        Span<System.Numerics.Vector3> bottom = stackalloc System.Numerics.Vector3[segments];
+        Span<System.Numerics.Vector3> top = stackalloc System.Numerics.Vector3[segments];
+        for (var index = 0; index < segments; index++)
+        {
+            var radians = MathF.Tau * index / segments;
+            var offset = new System.Numerics.Vector3(MathF.Cos(radians) * shape.RadiusModel, 0.0f, MathF.Sin(radians) * shape.RadiusModel);
+            bottom[index] = shape.PositionModel + offset - new System.Numerics.Vector3(0.0f, halfHeight, 0.0f);
+            top[index] = shape.PositionModel + offset + new System.Numerics.Vector3(0.0f, halfHeight, 0.0f);
+        }
+
+        for (var index = 0; index < segments; index++)
+        {
+            var next = (index + 1) % segments;
+            DrawCollisionEdge(drawList, viewProjection, bottom[index], bottom[next], color, thickness);
+            DrawCollisionEdge(drawList, viewProjection, top[index], top[next], color, thickness);
+            if (index % 6 == 0)
+            {
+                DrawCollisionEdge(drawList, viewProjection, bottom[index], top[index], color, thickness);
+            }
+        }
+    }
+
+    private void DrawCollisionEdge(
+        ImDrawListPtr drawList,
+        Matrix4 viewProjection,
+        System.Numerics.Vector3 start,
+        System.Numerics.Vector3 end,
+        uint color,
+        float thickness)
+    {
+        if (TryProjectToScreen(start, viewProjection, out var startPoint) &&
+            TryProjectToScreen(end, viewProjection, out var endPoint))
+        {
+            drawList.AddLine(startPoint, endPoint, color, thickness);
+        }
+    }
+
+    private void DrawBoxCollisionOverlay(
+        ImDrawListPtr drawList,
+        Matrix4 viewProjection,
+        CollisionShapeObject shape,
+        uint color,
+        float thickness)
+    {
+        if (shape.ShapeType == CollisionShapeType.Polyhedron && shape.VerticesModel.Count >= 3)
+        {
+            DrawPolyCollisionOverlay(drawList, viewProjection, shape.VerticesModel, color, thickness);
+            return;
+        }
+
+        var half = shape.SizeModel * 0.5f;
+        Span<System.Numerics.Vector3> vertices = stackalloc System.Numerics.Vector3[8];
+        var yaw = MathF.PI / 180.0f * shape.RotationYprDegrees.X;
+        var pitch = MathF.PI / 180.0f * shape.RotationYprDegrees.Y;
+        var roll = MathF.PI / 180.0f * shape.RotationYprDegrees.Z;
+        var rotation = System.Numerics.Matrix4x4.CreateFromYawPitchRoll(yaw, pitch, roll);
+        vertices[0] = TransformCollisionCorner(new System.Numerics.Vector3(-half.X, -half.Y, -half.Z), rotation, shape.PositionModel);
+        vertices[1] = TransformCollisionCorner(new System.Numerics.Vector3(half.X, -half.Y, -half.Z), rotation, shape.PositionModel);
+        vertices[2] = TransformCollisionCorner(new System.Numerics.Vector3(-half.X, half.Y, -half.Z), rotation, shape.PositionModel);
+        vertices[3] = TransformCollisionCorner(new System.Numerics.Vector3(half.X, half.Y, -half.Z), rotation, shape.PositionModel);
+        vertices[4] = TransformCollisionCorner(new System.Numerics.Vector3(-half.X, -half.Y, half.Z), rotation, shape.PositionModel);
+        vertices[5] = TransformCollisionCorner(new System.Numerics.Vector3(half.X, -half.Y, half.Z), rotation, shape.PositionModel);
+        vertices[6] = TransformCollisionCorner(new System.Numerics.Vector3(-half.X, half.Y, half.Z), rotation, shape.PositionModel);
+        vertices[7] = TransformCollisionCorner(new System.Numerics.Vector3(half.X, half.Y, half.Z), rotation, shape.PositionModel);
+
+        ReadOnlySpan<int> edges =
+        [
+            0, 1, 1, 3, 3, 2, 2, 0,
+            4, 5, 5, 7, 7, 6, 6, 4,
+            0, 4, 1, 5, 2, 6, 3, 7,
+        ];
+        for (var index = 0; index < edges.Length; index += 2)
+        {
+            DrawCollisionEdge(drawList, viewProjection, vertices[edges[index]], vertices[edges[index + 1]], color, thickness);
+        }
+    }
+
+    private static System.Numerics.Vector3 TransformCollisionCorner(
+        System.Numerics.Vector3 localCorner,
+        System.Numerics.Matrix4x4 rotation,
+        System.Numerics.Vector3 position)
+    {
+        return System.Numerics.Vector3.TransformNormal(localCorner, rotation) + position;
     }
 
     private void DrawFacilityOverlay(ImDrawListPtr drawList, Matrix4 viewProjection, FacilityRegionEditorModel facility, bool selected)
@@ -2696,6 +2913,361 @@ internal sealed class TerrainViewerWindow : GameWindow
         return false;
     }
 
+    private void DrawTerrainLabelEditorUi()
+    {
+        ImGui.Separator();
+        if (!ImGui.CollapsingHeader("地形标签", ImGuiTreeNodeFlags.DefaultOpen))
+        {
+            return;
+        }
+
+        ImGui.InputText("标签##terrain-label", ref _terrainLabelDraft, 128);
+
+        var selectedCount = _selectedComponentIds.Count > 0
+            ? _selectedComponentIds.Count
+            : _selectedComponentId.HasValue ? 1 : 0;
+        if (selectedCount == 0)
+        {
+            ImGui.TextDisabled("先在场景中选择一个或多个组件，再分配地形标签。");
+            ImGui.Text($"已标记组件: {_componentTerrainLabels.Count}");
+            return;
+        }
+
+        var primaryLabel = _selectedComponentId is int selectedComponentId &&
+                           _componentTerrainLabels.TryGetValue(selectedComponentId, out var currentLabel)
+            ? currentLabel
+            : string.Empty;
+        ImGui.Text($"主选标签: {(string.IsNullOrWhiteSpace(primaryLabel) ? "(无)" : primaryLabel)}");
+
+        if (ImGui.Button("应用标签到选中组件", new System.Numerics.Vector2(-1, 0)))
+        {
+            ApplyTerrainLabelToSelection();
+        }
+
+        if (ImGui.Button("从主选组件读取标签", new System.Numerics.Vector2(-1, 0)))
+        {
+            PickTerrainLabelFromSelection();
+        }
+
+        if (ImGui.Button("清除选中组件标签", new System.Numerics.Vector2(-1, 0)))
+        {
+            ClearTerrainLabelsFromSelection();
+        }
+
+        ImGui.Text($"已标记组件: {_componentTerrainLabels.Count}");
+    }
+
+    private void ApplyTerrainLabelToSelection()
+    {
+        var selected = GetEditableSelectedComponentIds();
+        var label = _terrainLabelDraft.Trim();
+        if (selected.Count == 0 || string.IsNullOrWhiteSpace(label))
+        {
+            _statusMessage = "请先选择组件并输入地形标签。";
+            return;
+        }
+
+        PushUndoSnapshot();
+        foreach (var componentId in selected)
+        {
+            if (_componentsById.ContainsKey(componentId))
+            {
+                _componentTerrainLabels[componentId] = label;
+            }
+        }
+
+        _statusMessage = $"已将地形标签“{label}”应用到 {selected.Count} 个组件。";
+    }
+
+    private void PickTerrainLabelFromSelection()
+    {
+        int? selected = _selectedComponentId ?? _selectedComponentIds.OrderBy(componentId => componentId).FirstOrDefault();
+        if (selected is int componentId && _componentTerrainLabels.TryGetValue(componentId, out var label))
+        {
+            _terrainLabelDraft = label;
+            _statusMessage = $"已从组件 {componentId} 读取地形标签“{label}”。";
+        }
+    }
+
+    private void ClearTerrainLabelsFromSelection()
+    {
+        var selected = GetEditableSelectedComponentIds();
+        if (selected.Count == 0)
+        {
+            return;
+        }
+
+        PushUndoSnapshot();
+        foreach (var componentId in selected)
+        {
+            _componentTerrainLabels.Remove(componentId);
+        }
+
+        _statusMessage = $"已清除 {selected.Count} 个组件的地形标签。";
+    }
+
+    private void DrawCollisionShapeEditorUi()
+    {
+        ImGui.Separator();
+        if (!ImGui.CollapsingHeader("碰撞形状"))
+        {
+            return;
+        }
+
+        ImGui.InputText("新形状名称", ref _collisionShapeNameDraft, 128);
+
+        if (ImGui.Button("从选区新增长方体", new System.Numerics.Vector2(-1, 0)))
+        {
+            CreateCollisionShapeFromSelection(CollisionShapeType.Box);
+        }
+
+        if (ImGui.Button("从选区新增圆柱体", new System.Numerics.Vector2(-1, 0)))
+        {
+            CreateCollisionShapeFromSelection(CollisionShapeType.Cylinder);
+        }
+
+        if (ImGui.Button("从选区新增多面体", new System.Numerics.Vector2(-1, 0)))
+        {
+            CreateCollisionShapeFromSelection(CollisionShapeType.Polyhedron);
+        }
+
+        ImGui.BeginChild("CollisionShapeList", new System.Numerics.Vector2(0, 110), ImGuiChildFlags.Border);
+        foreach (var shape in _collisionShapes)
+        {
+            var selected = _selectedCollisionShapeId == shape.Id;
+            if (ImGui.Selectable($"{shape.Id}: {shape.Name} ({shape.ShapeType})", selected))
+            {
+                _selectedCollisionShapeId = shape.Id;
+            }
+        }
+
+        ImGui.EndChild();
+
+        var selectedShape = GetSelectedCollisionShape();
+        if (selectedShape is null)
+        {
+            ImGui.Text($"碰撞形状数量: {_collisionShapes.Count}");
+            return;
+        }
+
+        var name = selectedShape.Name;
+        var nameEdited = ImGui.InputText("形状名称", ref name, 128) && name != selectedShape.Name;
+        ApplyUndoableCollisionShapeEdit(nameEdited, () =>
+        {
+            selectedShape.Name = string.IsNullOrWhiteSpace(name) ? $"Collision {selectedShape.Id}" : name.Trim();
+        });
+
+        var shapeTypeIndex = selectedShape.ShapeType switch
+        {
+            CollisionShapeType.Cylinder => 1,
+            CollisionShapeType.Polyhedron => 2,
+            _ => 0,
+        };
+        if (ImGui.Combo("形状类型", ref shapeTypeIndex, CollisionShapeTypeNames, CollisionShapeTypeNames.Length))
+        {
+            PushUndoSnapshot();
+            selectedShape.ShapeType = shapeTypeIndex switch
+            {
+                1 => CollisionShapeType.Cylinder,
+                2 => CollisionShapeType.Polyhedron,
+                _ => CollisionShapeType.Box,
+            };
+        }
+
+        var terrainLabel = selectedShape.TerrainLabel;
+        var terrainLabelEdited = ImGui.InputText("形状地形标签", ref terrainLabel, 128) && terrainLabel != selectedShape.TerrainLabel;
+        ApplyUndoableCollisionShapeEdit(terrainLabelEdited, () =>
+        {
+            selectedShape.TerrainLabel = terrainLabel.Trim();
+        });
+
+        var position = selectedShape.PositionModel;
+        var positionEdited = ImGui.InputFloat3("模型位置", ref position, "%.3f");
+        ApplyUndoableCollisionShapeEdit(positionEdited, () =>
+        {
+            selectedShape.PositionModel = position;
+        });
+
+        var rotation = selectedShape.RotationYprDegrees;
+        var rotationEdited = ImGui.InputFloat3("YPR 角度", ref rotation, "%.2f");
+        ApplyUndoableCollisionShapeEdit(rotationEdited, () =>
+        {
+            selectedShape.RotationYprDegrees = rotation;
+        });
+
+        if (selectedShape.ShapeType == CollisionShapeType.Cylinder)
+        {
+            var radius = selectedShape.RadiusModel;
+            var height = selectedShape.HeightModel;
+            var radiusEdited = ImGui.InputFloat("模型半径", ref radius, 0.05f, 0.5f, "%.3f");
+            ApplyUndoableCollisionShapeEdit(radiusEdited, () =>
+            {
+                selectedShape.RadiusModel = Math.Max(0.001f, radius);
+            });
+
+            var heightEdited = ImGui.InputFloat("模型高度", ref height, 0.05f, 0.5f, "%.3f");
+            ApplyUndoableCollisionShapeEdit(heightEdited, () =>
+            {
+                selectedShape.HeightModel = Math.Max(0.001f, height);
+            });
+        }
+        else
+        {
+            var size = selectedShape.SizeModel;
+            var sizeEdited = ImGui.InputFloat3("模型尺寸", ref size, "%.3f");
+            ApplyUndoableCollisionShapeEdit(sizeEdited, () =>
+            {
+                selectedShape.SizeModel = new System.Numerics.Vector3(
+                    Math.Max(0.001f, size.X),
+                    Math.Max(0.001f, size.Y),
+                    Math.Max(0.001f, size.Z));
+            });
+        }
+
+        if (selectedShape.ShapeType == CollisionShapeType.Polyhedron)
+        {
+            ImGui.Text($"多面体顶点: {selectedShape.VerticesModel.Count}");
+            for (var index = 0; index < selectedShape.VerticesModel.Count; index++)
+            {
+                var vertex = selectedShape.VerticesModel[index];
+                var vertexEdited = ImGui.InputFloat3($"V{index}", ref vertex, "%.3f");
+                var vertexIndex = index;
+                ApplyUndoableCollisionShapeEdit(vertexEdited, () =>
+                {
+                    selectedShape.VerticesModel[vertexIndex] = vertex;
+                });
+            }
+
+            if (ImGui.Button("重置多面体为长方体顶点", new System.Numerics.Vector2(-1, 0)))
+            {
+                PushUndoSnapshot();
+                selectedShape.VerticesModel.Clear();
+                selectedShape.VerticesModel.AddRange(CreateBoxVertices(selectedShape.PositionModel, selectedShape.SizeModel));
+            }
+        }
+
+        if (ImGui.Button("删除选中的碰撞形状", new System.Numerics.Vector2(-1, 0)))
+        {
+            DeleteSelectedCollisionShape();
+        }
+    }
+
+    private CollisionShapeObject? GetSelectedCollisionShape()
+    {
+        return _selectedCollisionShapeId is int selectedId
+            ? _collisionShapes.FirstOrDefault(shape => shape.Id == selectedId)
+            : null;
+    }
+
+    private void ApplyUndoableCollisionShapeEdit(bool changed, Action apply)
+    {
+        if (changed)
+        {
+            if (!_collisionShapeEditUndoCaptured)
+            {
+                PushUndoSnapshot();
+                _collisionShapeEditUndoCaptured = true;
+            }
+
+            apply();
+        }
+
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
+            _collisionShapeEditUndoCaptured = false;
+        }
+    }
+
+    private void CreateCollisionShapeFromSelection(CollisionShapeType shapeType)
+    {
+        if (!TryComputeSelectedComponentBounds(out var bounds))
+        {
+            _statusMessage = "请先选择一个或多个组件再创建碰撞形状。";
+            return;
+        }
+
+        PushUndoSnapshot();
+        var id = _nextCollisionShapeId++;
+        var size = bounds.Size;
+        var shape = new CollisionShapeObject
+        {
+            Id = id,
+            Name = string.IsNullOrWhiteSpace(_collisionShapeNameDraft) ? $"碰撞 {id}" : $"{_collisionShapeNameDraft.Trim()} {id}",
+            ShapeType = shapeType,
+            PositionModel = bounds.Center,
+            SizeModel = new System.Numerics.Vector3(Math.Max(0.001f, size.X), Math.Max(0.001f, size.Y), Math.Max(0.001f, size.Z)),
+            RadiusModel = Math.Max(0.001f, MathF.Max(size.X, size.Z) * 0.5f),
+            HeightModel = Math.Max(0.001f, size.Y),
+            TerrainLabel = _terrainLabelDraft.Trim(),
+        };
+
+        if (shapeType == CollisionShapeType.Polyhedron)
+        {
+            shape.VerticesModel.AddRange(CreateBoxVertices(bounds.Center, shape.SizeModel));
+        }
+
+        _collisionShapes.Add(shape);
+        _selectedCollisionShapeId = shape.Id;
+        _statusMessage = $"已创建 {shape.ShapeType} 碰撞形状 {shape.Id}。";
+    }
+
+    private void DeleteSelectedCollisionShape()
+    {
+        if (_selectedCollisionShapeId is not int selectedId)
+        {
+            return;
+        }
+
+        var index = _collisionShapes.FindIndex(shape => shape.Id == selectedId);
+        if (index < 0)
+        {
+            return;
+        }
+
+        PushUndoSnapshot();
+        _collisionShapes.RemoveAt(index);
+        _selectedCollisionShapeId = _collisionShapes.LastOrDefault()?.Id;
+        _statusMessage = $"已删除碰撞形状 {selectedId}。";
+    }
+
+    private bool TryComputeSelectedComponentBounds(out BoundingBox bounds)
+    {
+        bounds = BoundingBox.CreateEmpty();
+        var selected = GetEditableSelectedComponentIds();
+        foreach (var componentId in selected)
+        {
+            if (!_componentsById.TryGetValue(componentId, out var component))
+            {
+                continue;
+            }
+
+            if (_componentToCompositeId.TryGetValue(componentId, out var compositeId) &&
+                _composites.FirstOrDefault(composite => composite.Id == compositeId) is { } composite)
+            {
+                bounds.Include(BoundingBox.Transform(component.Bounds, composite.ModelMatrix));
+            }
+            else
+            {
+                bounds.Include(component.Bounds);
+            }
+        }
+
+        return bounds.IsValid();
+    }
+
+    private static IEnumerable<System.Numerics.Vector3> CreateBoxVertices(System.Numerics.Vector3 center, System.Numerics.Vector3 size)
+    {
+        var half = size * 0.5f;
+        yield return center + new System.Numerics.Vector3(-half.X, -half.Y, -half.Z);
+        yield return center + new System.Numerics.Vector3(half.X, -half.Y, -half.Z);
+        yield return center + new System.Numerics.Vector3(-half.X, half.Y, -half.Z);
+        yield return center + new System.Numerics.Vector3(half.X, half.Y, -half.Z);
+        yield return center + new System.Numerics.Vector3(-half.X, -half.Y, half.Z);
+        yield return center + new System.Numerics.Vector3(half.X, -half.Y, half.Z);
+        yield return center + new System.Numerics.Vector3(-half.X, half.Y, half.Z);
+        yield return center + new System.Numerics.Vector3(half.X, half.Y, half.Z);
+    }
+
     private void BuildEditorUi()
     {
         if (_imgui is null)
@@ -2733,6 +3305,8 @@ internal sealed class TerrainViewerWindow : GameWindow
         ImGui.Text($"当前编辑组合体：{(_focusedCompositeId?.ToString() ?? "无")}");
         ImGui.TextWrapped(_statusMessage);
         DrawComponentColorEditorUi();
+        DrawTerrainLabelEditorUi();
+        DrawCollisionShapeEditorUi();
         ImGui.Separator();
 
         if (ImGui.Button("新建组合体 (N)", new System.Numerics.Vector2(-1, 0)))
@@ -4736,6 +5310,10 @@ internal sealed class TerrainViewerWindow : GameWindow
             CurrentExportPath = _currentExportPath,
             ManualActorComponentIds = _manualActorComponentIds.ToHashSet(),
             ComponentColorOverrides = _componentColorOverrides.ToDictionary(pair => pair.Key, pair => pair.Value),
+            ComponentTerrainLabels = _componentTerrainLabels.ToDictionary(pair => pair.Key, pair => pair.Value),
+            NextCollisionShapeId = _nextCollisionShapeId,
+            SelectedCollisionShapeId = _selectedCollisionShapeId,
+            CollisionShapes = _collisionShapes.Select(shape => shape.Clone()).ToList(),
             Composites = _composites.Select(composite => new CompositeState
             {
                 Id = composite.Id,
@@ -4788,6 +5366,17 @@ internal sealed class TerrainViewerWindow : GameWindow
         {
             _componentColorOverrides[componentId] = color;
         }
+
+        _componentTerrainLabels.Clear();
+        foreach (var (componentId, label) in snapshot.ComponentTerrainLabels)
+        {
+            _componentTerrainLabels[componentId] = label;
+        }
+
+        _nextCollisionShapeId = snapshot.NextCollisionShapeId;
+        _selectedCollisionShapeId = snapshot.SelectedCollisionShapeId;
+        _collisionShapes.Clear();
+        _collisionShapes.AddRange(snapshot.CollisionShapes.Select(shape => shape.Clone()));
 
         _composites.Clear();
         foreach (var state in snapshot.Composites)
@@ -5273,6 +5862,14 @@ internal sealed class TerrainViewerWindow : GameWindow
         public required HashSet<int> ManualActorComponentIds { get; init; }
 
         public required Dictionary<int, System.Numerics.Vector4> ComponentColorOverrides { get; init; }
+
+        public required Dictionary<int, string> ComponentTerrainLabels { get; init; }
+
+        public required int NextCollisionShapeId { get; init; }
+
+        public required int? SelectedCollisionShapeId { get; init; }
+
+        public required List<CollisionShapeObject> CollisionShapes { get; init; }
 
         public required List<CompositeState> Composites { get; init; }
     }

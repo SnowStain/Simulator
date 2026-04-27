@@ -1,6 +1,7 @@
-using System.Numerics;
+﻿using System.Numerics;
 using System.Threading.Tasks;
 using Simulator.Core;
+using Simulator.Core.Engine;
 using Simulator.Core.Gameplay;
 using Simulator.Core.Map;
 
@@ -42,7 +43,6 @@ internal sealed class TerrainMotionService
     private const double LargeProjectileAutoAimReuseSec = 0.10;
     private const double HeroLobStructureAutoAimReuseSec = 0.16;
     private const double TraversalAutoAimReuseSec = 0.12;
-    private const bool UseThirdOrderEkfAutoAimPoseChain = true;
     private const double AutoAimResidualMemorySec = 3.0;
     private const double AutoAimResidualPredictionClampSec = 1.20;
     private const double EnemyProbeIntervalSec = 0.75;
@@ -63,10 +63,10 @@ internal sealed class TerrainMotionService
     private readonly DecisionDeploymentConfig _decisionDeployment;
     private readonly IReadOnlyList<FacilityRegion> _facilities;
     private readonly bool _enableFieldCompositeInteractionTest;
+    private readonly AutoAimSolverService _autoAimSolver = new(useThirdOrderEkfPoseChain: true);
     private readonly Dictionary<string, NavigationPathState> _navigationStates = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, AutoAimSolveCache> _autoAimSolveCache = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, AutoAimObservationFilterState> _autoAimObservationFilters = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, AutoAimThirdOrderEkfPoseFilterState> _autoAimObservationEkf3Filters = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<TerrainFootprintOccupancyKey, bool> _terrainFootprintOccupancyCache = new();
     private readonly List<SimulationEntity> _visibleEnemyCandidateBuffer = new(8);
     private List<FacilityCollisionShape>? _facilityCollisionShapes;
     private double _facilityCollisionCellWidthWorld = -1.0;
@@ -84,6 +84,8 @@ internal sealed class TerrainMotionService
         double MaxStepClimbHeightM,
         double AirborneHeightM,
         double CollisionRadiusWorld,
+        double WheelRadiusM,
+        string WheelStyle,
         bool ChassisSupportsJump,
         bool RestrictStepHeightToThirtyCm);
 
@@ -113,6 +115,28 @@ internal sealed class TerrainMotionService
 
     private readonly record struct WheelContactSample(double LocalX, double LocalY, double HeightM);
 
+    private readonly record struct TerrainFootprintOccupancyKey(
+        string EntityId,
+        bool HasCollisionSurface,
+        int CenterX,
+        int CenterY,
+        int Yaw,
+        int ReferenceHeight,
+        int AllowedRise);
+
+    private struct MotionFramePerf
+    {
+        public long ControlTicks;
+
+        public long RotationTicks;
+
+        public long VerticalTicks;
+
+        public long TranslationTicks;
+
+        public int MovableCount;
+    }
+
     public TerrainMotionService(
         RuleSet rules,
         DecisionDeploymentConfig? decisionDeployment = null,
@@ -135,90 +159,141 @@ internal sealed class TerrainMotionService
 
         double dt = Math.Clamp(deltaTimeSec, 0.01, 0.2);
         _metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
-        long totalStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
-        long controlTicks = 0;
-        long rotationTicks = 0;
-        long verticalTicks = 0;
-        long translationTicks = 0;
-        int movableCount = 0;
+        _terrainFootprintOccupancyCache.Clear();
+        long totalStartTicks = SimulatorRuntimePerformance.Timestamp();
+        var perf = new MotionFramePerf();
         foreach (SimulationEntity entity in world.Entities)
         {
-            if (!IsMovableEntity(entity))
-            {
-                continue;
-            }
-
-            movableCount++;
-            if (!entity.IsAlive || entity.IsSimulationSuppressed)
-            {
-                ClearMotion(entity);
-                _navigationStates.Remove(entity.Id);
-                ClearAutoAimTracking(entity.Id);
-                continue;
-            }
-
-            ResetFramePowerTelemetry(entity);
-            AdvancePowerCutState(entity, dt);
-            if (!entity.IsPlayerControlled && !aiEnabled)
-            {
-                ClearMotion(entity);
-                entity.IsFireCommandActive = false;
-                entity.AutoAimRequested = false;
-                _navigationStates.Remove(entity.Id);
-                continue;
-            }
-
-            SimulationEntity? enemy = entity.IsPlayerControlled ? null : ResolveCachedNearestEnemy(world, entity);
-            double previousAimSpeedMps = entity.LastAimSpeedMps;
-            double previousAimHeightM = entity.LastAimHeightM;
-            double previousX = entity.X;
-            double previousY = entity.Y;
-            double previousAngleDeg = entity.AngleDeg;
-            long segmentStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
-            if (entity.IsPlayerControlled)
-            {
-                ApplyPlayerControl(world, runtimeGrid, entity, dt);
-            }
-            else
-            {
-                ApplyAutoControl(world, runtimeGrid, entity, enemy, dt);
-            }
-            controlTicks += System.Diagnostics.Stopwatch.GetTimestamp() - segmentStartTicks;
-
-            double chassisTargetYaw = entity.TraversalActive
-                ? entity.TraversalDirectionDeg
-                : entity.SmallGyroActive
-                    ? entity.AngleDeg + ResolveSmallGyroYawRateDegPerSec(entity) * dt
-                    : entity.ChassisTargetYawDeg;
-
-            segmentStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
-            ApplyVerticalMotion(entity, dt);
-            verticalTicks += System.Diagnostics.Stopwatch.GetTimestamp() - segmentStartTicks;
-            segmentStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
-            ApplyTranslationWithTerrain(world, runtimeGrid, entity, dt);
-            translationTicks += System.Diagnostics.Stopwatch.GetTimestamp() - segmentStartTicks;
-            if (!entity.IsPlayerControlled)
-            {
-                UpdateAiStuckState(world, entity, GetOrCreateNavigationState(entity.Id, world.GameTimeSec), previousX, previousY, dt);
-            }
-
-            segmentStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
-            ApplyRotation(entity, chassisTargetYaw, dt);
-            rotationTicks += System.Diagnostics.Stopwatch.GetTimestamp() - segmentStartTicks;
-            ApplyForcedSuperCapDischarge(entity, dt);
-            UpdateObservedKinematics(entity, previousX, previousY, previousAngleDeg, dt);
-            UpdateAutoAimInstability(world, entity, dt, previousAimSpeedMps, previousAimHeightM);
-
-            entity.JumpRequested = false;
+            StepEntityWithTerrain(world, runtimeGrid, entity, dt, aiEnabled, ref perf);
         }
 
         LogMotionPerfIfDue(
-            System.Diagnostics.Stopwatch.GetTimestamp() - totalStartTicks,
-            controlTicks,
-            rotationTicks,
-            verticalTicks,
-            translationTicks,
-            movableCount);
+            SimulatorRuntimePerformance.ElapsedTicksSince(totalStartTicks),
+            perf.ControlTicks,
+            perf.RotationTicks,
+            perf.VerticalTicks,
+            perf.TranslationTicks,
+            perf.MovableCount);
+    }
+
+    private void StepEntityWithTerrain(
+        SimulationWorldState world,
+        RuntimeGridData runtimeGrid,
+        SimulationEntity entity,
+        double dt,
+        bool aiEnabled,
+        ref MotionFramePerf perf)
+    {
+        if (!IsMovableEntity(entity))
+        {
+            return;
+        }
+
+        perf.MovableCount++;
+        if (!PrepareMovableEntityForFrame(entity, dt, aiEnabled, clearNavigationState: true))
+        {
+            return;
+        }
+
+        SimulationEntity? enemy = entity.IsPlayerControlled ? null : ResolveCachedNearestEnemy(world, entity);
+        double previousAimSpeedMps = entity.LastAimSpeedMps;
+        double previousAimHeightM = entity.LastAimHeightM;
+        double previousX = entity.X;
+        double previousY = entity.Y;
+        double previousAngleDeg = entity.AngleDeg;
+
+        long segmentStartTicks = SimulatorRuntimePerformance.Timestamp();
+        if (entity.IsPlayerControlled)
+        {
+            ApplyPlayerControl(world, runtimeGrid, entity, dt);
+        }
+        else
+        {
+            ApplyAutoControl(world, runtimeGrid, entity, enemy, dt);
+        }
+
+        perf.ControlTicks += SimulatorRuntimePerformance.ElapsedTicksSince(segmentStartTicks);
+
+        double chassisTargetYaw = ResolveChassisTargetYaw(entity, dt);
+
+        segmentStartTicks = SimulatorRuntimePerformance.Timestamp();
+        ApplyVerticalMotion(entity, dt);
+        perf.VerticalTicks += SimulatorRuntimePerformance.ElapsedTicksSince(segmentStartTicks);
+
+        segmentStartTicks = SimulatorRuntimePerformance.Timestamp();
+        ApplyTranslationWithTerrain(world, runtimeGrid, entity, dt);
+        perf.TranslationTicks += SimulatorRuntimePerformance.ElapsedTicksSince(segmentStartTicks);
+        if (!entity.IsPlayerControlled)
+        {
+            UpdateAiStuckState(world, entity, GetOrCreateNavigationState(entity.Id, world.GameTimeSec), previousX, previousY, dt);
+        }
+
+        segmentStartTicks = SimulatorRuntimePerformance.Timestamp();
+        ApplyRotation(entity, chassisTargetYaw, dt);
+        perf.RotationTicks += SimulatorRuntimePerformance.ElapsedTicksSince(segmentStartTicks);
+
+        CompleteMovableEntityFrame(world, entity, dt, previousX, previousY, previousAngleDeg, previousAimSpeedMps, previousAimHeightM);
+    }
+
+    private bool PrepareMovableEntityForFrame(
+        SimulationEntity entity,
+        double dt,
+        bool aiEnabled,
+        bool clearNavigationState)
+    {
+        if (!entity.IsAlive || entity.IsSimulationSuppressed)
+        {
+            ClearMotion(entity);
+            if (clearNavigationState)
+            {
+                _navigationStates.Remove(entity.Id);
+                ClearAutoAimTracking(entity.Id);
+            }
+
+            return false;
+        }
+
+        ResetFramePowerTelemetry(entity);
+        AdvancePowerCutState(entity, dt);
+        if (entity.IsPlayerControlled || aiEnabled)
+        {
+            return true;
+        }
+
+        ClearMotion(entity);
+        entity.IsFireCommandActive = false;
+        entity.AutoAimRequested = false;
+        if (clearNavigationState)
+        {
+            _navigationStates.Remove(entity.Id);
+        }
+
+        return false;
+    }
+
+    private static double ResolveChassisTargetYaw(SimulationEntity entity, double dt)
+    {
+        return entity.TraversalActive
+            ? entity.TraversalDirectionDeg
+            : entity.SmallGyroActive
+                ? entity.AngleDeg + ResolveSmallGyroYawRateDegPerSec(entity) * dt
+                : entity.ChassisTargetYawDeg;
+    }
+
+    private static void CompleteMovableEntityFrame(
+        SimulationWorldState world,
+        SimulationEntity entity,
+        double dt,
+        double previousX,
+        double previousY,
+        double previousAngleDeg,
+        double previousAimSpeedMps,
+        double previousAimHeightM)
+    {
+        ApplyForcedSuperCapDischarge(entity, dt);
+        UpdateObservedKinematics(entity, previousX, previousY, previousAngleDeg, dt);
+        UpdateAutoAimInstability(world, entity, dt, previousAimSpeedMps, previousAimHeightM);
+        entity.JumpRequested = false;
     }
 
     private void LogMotionPerfIfDue(
@@ -229,21 +304,18 @@ internal sealed class TerrainMotionService
         long translationTicks,
         int movableCount)
     {
-        long nowTicks = System.Diagnostics.Stopwatch.GetTimestamp();
-        if (_lastMotionPerfLogTicks > 0
-            && (nowTicks - _lastMotionPerfLogTicks) / (double)System.Diagnostics.Stopwatch.Frequency < 2.0)
+        if (!SimulatorRuntimePerformance.TryMarkInterval(ref _lastMotionPerfLogTicks, 2.0))
         {
             return;
         }
 
-        _lastMotionPerfLogTicks = nowTicks;
         string line =
-            $"{DateTime.Now:HH:mm:ss.fff} "
-            + $"total={TicksToMs(totalTicks):0.00}ms "
-            + $"control={TicksToMs(controlTicks):0.00}ms "
-            + $"rotation={TicksToMs(rotationTicks):0.00}ms "
-            + $"vertical={TicksToMs(verticalTicks):0.00}ms "
-            + $"translation={TicksToMs(translationTicks):0.00}ms "
+            $"{SimulatorRuntimePerformance.WallClockLabel()} "
+            + $"total={SimulatorRuntimePerformance.FormatMilliseconds(totalTicks)}ms "
+            + $"control={SimulatorRuntimePerformance.FormatMilliseconds(controlTicks)}ms "
+            + $"rotation={SimulatorRuntimePerformance.FormatMilliseconds(rotationTicks)}ms "
+            + $"vertical={SimulatorRuntimePerformance.FormatMilliseconds(verticalTicks)}ms "
+            + $"translation={SimulatorRuntimePerformance.FormatMilliseconds(translationTicks)}ms "
             + $"movable={movableCount}";
         SimulatorRuntimeLog.Append("motion_perf.log", line);
     }
@@ -437,7 +509,7 @@ internal sealed class TerrainMotionService
         }
 
         entity.AiDecisionSelected = "manual_control";
-        entity.AiDecision = "玩家控制";
+        entity.AiDecision = "鐜╁鎺у埗";
     }
 
     private void ApplyAutoControl(
@@ -447,7 +519,7 @@ internal sealed class TerrainMotionService
         SimulationEntity? enemy,
         double dt)
     {
-        long controlStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+        long controlStartTicks = SimulatorRuntimePerformance.Timestamp();
         long navigationTicks = 0;
         long autoAimTicks = 0;
         string controlBranch = "idle";
@@ -467,9 +539,9 @@ internal sealed class TerrainMotionService
         if (TryApplyAiUnstuckControl(world, runtimeGrid, entity, autoState, dt))
         {
             controlBranch = "unstuck";
-            long aimStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+            long aimStartTicks = SimulatorRuntimePerformance.Timestamp();
             MaybeUpdateAutoTurretAim(world, runtimeGrid, entity, dt, autoState, force: true);
-            autoAimTicks += System.Diagnostics.Stopwatch.GetTimestamp() - aimStartTicks;
+            autoAimTicks += SimulatorRuntimePerformance.ElapsedTicksSince(aimStartTicks);
             LogSlowAutoControlIfNeeded(entity, controlBranch, controlStartTicks, navigationTicks, autoAimTicks);
             return;
         }
@@ -487,26 +559,26 @@ internal sealed class TerrainMotionService
             entity.TraversalDirectionDeg = autoState.CachedDriveYawDeg;
             entity.ChassisTargetYawDeg = autoState.CachedDriveYawDeg;
             ApplyDriveControl(world, entity, autoState.CachedMoveForward, autoState.CachedMoveRight, dt, autoState.CachedDriveYawDeg);
-            long aimStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+            long aimStartTicks = SimulatorRuntimePerformance.Timestamp();
             MaybeUpdateAutoTurretAim(world, runtimeGrid, entity, dt, autoState);
-            autoAimTicks += System.Diagnostics.Stopwatch.GetTimestamp() - aimStartTicks;
+            autoAimTicks += SimulatorRuntimePerformance.ElapsedTicksSince(aimStartTicks);
             LogSlowAutoControlIfNeeded(entity, controlBranch, controlStartTicks, navigationTicks, autoAimTicks);
             return;
         }
 
         autoState.LastAutoDecisionSec = world.GameTimeSec;
-        long navigationStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+        long navigationStartTicks = SimulatorRuntimePerformance.Timestamp();
         if (TryApplyRespawnRecoveryNavigation(world, runtimeGrid, entity, dt))
         {
-            navigationTicks += System.Diagnostics.Stopwatch.GetTimestamp() - navigationStartTicks;
+            navigationTicks += SimulatorRuntimePerformance.ElapsedTicksSince(navigationStartTicks);
             controlBranch = "recover";
-            long aimStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+            long aimStartTicks = SimulatorRuntimePerformance.Timestamp();
             MaybeUpdateAutoTurretAim(world, runtimeGrid, entity, dt, autoState, force: true);
-            autoAimTicks += System.Diagnostics.Stopwatch.GetTimestamp() - aimStartTicks;
+            autoAimTicks += SimulatorRuntimePerformance.ElapsedTicksSince(aimStartTicks);
             LogSlowAutoControlIfNeeded(entity, controlBranch, controlStartTicks, navigationTicks, autoAimTicks);
             return;
         }
-        navigationTicks += System.Diagnostics.Stopwatch.GetTimestamp() - navigationStartTicks;
+        navigationTicks += SimulatorRuntimePerformance.ElapsedTicksSince(navigationStartTicks);
 
         bool hasNonAttackTacticalCommand = string.Equals(entity.TacticalCommand, "defend", StringComparison.OrdinalIgnoreCase)
             || string.Equals(entity.TacticalCommand, "patrol", StringComparison.OrdinalIgnoreCase);
@@ -519,20 +591,20 @@ internal sealed class TerrainMotionService
         }
 
         double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
-        navigationStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+        navigationStartTicks = SimulatorRuntimePerformance.Timestamp();
         SimulationEntity? tacticalTarget = ResolveTacticalAttackTarget(world, entity)
             ?? ResolveStrategicAttackTarget(world, entity)
             ?? enemy;
-        navigationTicks += System.Diagnostics.Stopwatch.GetTimestamp() - navigationStartTicks;
-        navigationStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+        navigationTicks += SimulatorRuntimePerformance.ElapsedTicksSince(navigationStartTicks);
+        navigationStartTicks = SimulatorRuntimePerformance.Timestamp();
         if (TryApplyTacticalNavigation(world, runtimeGrid, entity, autoState, tacticalTarget, dt, metersPerWorldUnit))
         {
-            navigationTicks += System.Diagnostics.Stopwatch.GetTimestamp() - navigationStartTicks;
+            navigationTicks += SimulatorRuntimePerformance.ElapsedTicksSince(navigationStartTicks);
             controlBranch = "tactical_nav";
             LogSlowAutoControlIfNeeded(entity, controlBranch, controlStartTicks, navigationTicks, autoAimTicks);
             return;
         }
-        navigationTicks += System.Diagnostics.Stopwatch.GetTimestamp() - navigationStartTicks;
+        navigationTicks += SimulatorRuntimePerformance.ElapsedTicksSince(navigationStartTicks);
 
         if (tacticalTarget is null)
         {
@@ -557,22 +629,22 @@ internal sealed class TerrainMotionService
             case "hold":
                 desiredDistanceM = 6.8;
                 aggressionScale = 0.45;
-                entity.AiDecision = "阵地驻守";
+                entity.AiDecision = "闃靛湴椹诲畧";
                 break;
             case "support":
                 desiredDistanceM = 5.8;
                 aggressionScale = 0.58;
-                entity.AiDecision = "协同支援";
+                entity.AiDecision = "鍗忓悓鏀彺";
                 break;
             case "flank":
                 desiredDistanceM = 4.8;
                 aggressionScale = 0.95;
-                entity.AiDecision = "侧向包抄";
+                entity.AiDecision = "渚у悜鍖呮妱";
                 break;
             default:
                 desiredDistanceM = 4.0;
                 aggressionScale = 0.88;
-                entity.AiDecision = "火力压制";
+                entity.AiDecision = "鐏姏鍘嬪埗";
                 break;
         }
 
@@ -647,7 +719,7 @@ internal sealed class TerrainMotionService
                 shouldUsePlannedNavigation = true;
             }
 
-            navigationStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+            navigationStartTicks = SimulatorRuntimePerformance.Timestamp();
             if (shouldUsePlannedNavigation
                 && TryApplyPlannedNavigation(
                     world,
@@ -692,7 +764,7 @@ internal sealed class TerrainMotionService
                     }
                 }
             }
-            navigationTicks += System.Diagnostics.Stopwatch.GetTimestamp() - navigationStartTicks;
+            navigationTicks += SimulatorRuntimePerformance.ElapsedTicksSince(navigationStartTicks);
         }
         else
         {
@@ -722,9 +794,9 @@ internal sealed class TerrainMotionService
 
         if (plannedNavigationApplied)
         {
-            long aimStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+            long aimStartTicks = SimulatorRuntimePerformance.Timestamp();
             MaybeUpdateAutoTurretAim(world, runtimeGrid, entity, dt, autoState);
-            autoAimTicks += System.Diagnostics.Stopwatch.GetTimestamp() - aimStartTicks;
+            autoAimTicks += SimulatorRuntimePerformance.ElapsedTicksSince(aimStartTicks);
             LogSlowAutoControlIfNeeded(entity, controlBranch, controlStartTicks, navigationTicks, autoAimTicks);
             return;
         }
@@ -732,9 +804,9 @@ internal sealed class TerrainMotionService
         entity.ChassisTargetYawDeg = entity.TraversalDirectionDeg;
         CacheAutoDrive(autoState, moveForward, moveRight, entity.TraversalDirectionDeg);
         ApplyDriveControl(world, entity, moveForward, moveRight, dt, entity.TraversalDirectionDeg);
-        long finalAimStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+        long finalAimStartTicks = SimulatorRuntimePerformance.Timestamp();
         MaybeUpdateAutoTurretAim(world, runtimeGrid, entity, dt, autoState);
-        autoAimTicks += System.Diagnostics.Stopwatch.GetTimestamp() - finalAimStartTicks;
+        autoAimTicks += SimulatorRuntimePerformance.ElapsedTicksSince(finalAimStartTicks);
         LogSlowAutoControlIfNeeded(entity, controlBranch, controlStartTicks, navigationTicks, autoAimTicks);
     }
 
@@ -1362,7 +1434,7 @@ internal sealed class TerrainMotionService
                 targetY = tacticalTarget.Y;
                 desiredDistanceM = 3.6;
                 entity.AiDecisionSelected = "tactical_attack";
-                entity.AiDecision = $"战术进攻 {tacticalTarget.Id}";
+                entity.AiDecision = $"鎴樻湳杩涙敾 {tacticalTarget.Id}";
                 bool hasCombatLineOfSight = HasCombatLineOfSight(world, runtimeGrid, entity, tacticalTarget, null);
                 if (!hasCombatLineOfSight
                     && TryResolveTargetResidualPoint(
@@ -1386,7 +1458,7 @@ internal sealed class TerrainMotionService
                 desiredDistanceM = 0.45;
                 drive = 0.72;
                 entity.AiDecisionSelected = "tactical_defend";
-                entity.AiDecision = "战术回防";
+                entity.AiDecision = "鎴樻湳鍥為槻";
                 break;
             case "patrol":
                 double radius = Math.Max(4.0, entity.TacticalPatrolRadiusWorld);
@@ -1396,7 +1468,7 @@ internal sealed class TerrainMotionService
                 desiredDistanceM = 0.65;
                 drive = 0.62;
                 entity.AiDecisionSelected = "tactical_patrol";
-                entity.AiDecision = "战术巡逻";
+                entity.AiDecision = "tactical patrol";
                 break;
             default:
                 return false;
@@ -2006,6 +2078,8 @@ internal sealed class TerrainMotionService
             entity.MaxStepClimbHeightM,
             entity.AirborneHeightM,
             radius,
+            entity.WheelRadiusM,
+            entity.WheelStyle,
             entity.ChassisSupportsJump,
             UsesThirtyCentimeterTraversalCap(entity));
     }
@@ -3365,8 +3439,8 @@ internal sealed class TerrainMotionService
             bool attackingOutpost = string.Equals(attackTarget.EntityType, "outpost", StringComparison.OrdinalIgnoreCase);
             decisionSelected = attackingOutpost ? "hero_deploy_outpost" : "hero_deploy_base";
             decisionText = entity.HeroDeploymentActive
-                ? (attackingOutpost ? "部署区吊射前哨站旋转装甲" : "部署区吊射基地顶部装甲")
-                : (attackingOutpost ? "前往部署区吊射前哨站" : "前往部署区吊射基地");
+                ? (attackingOutpost ? "deploy lob outpost armor" : "deploy lob base top armor")
+                : (attackingOutpost ? "move to deploy lob outpost" : "move to deploy lob base");
             return !entity.HeroDeploymentActive || distanceM > desiredDistanceM;
         }
 
@@ -3399,7 +3473,7 @@ internal sealed class TerrainMotionService
             aggressionScale = string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase) ? 0.74 : 0.90;
             navigationKey = $"highland_push:{highland.Id}:{attackTarget.Id}";
             decisionSelected = "highland_outpost_push";
-            decisionText = "上高地推前哨站";
+            decisionText = "highland outpost push";
             return true;
         }
 
@@ -3733,36 +3807,7 @@ internal sealed class TerrainMotionService
         double maxDistanceM,
         AutoAimObservedState observationState)
     {
-        return UseThirdOrderEkfAutoAimPoseChain
-            ? SimulationCombatMath.ComputeObservationDrivenAutoAimSolutionThirdOrderEkf(
-                world,
-                shooter,
-                target,
-                plate,
-                maxDistanceM,
-                observationState.AimPointXWorld,
-                observationState.AimPointYWorld,
-                observationState.AimPointHeightM,
-                observationState.VelocityXMps,
-                observationState.VelocityYMps,
-                observationState.VelocityZMps,
-                observationState.AccelerationXMps2,
-                observationState.AccelerationYMps2,
-                observationState.AccelerationZMps2,
-                observationState.AngularVelocityRadPerSec)
-            : SimulationCombatMath.ComputeObservationDrivenAutoAimSolution(
-                world,
-                shooter,
-                target,
-                plate,
-                maxDistanceM,
-                observationState.AimPointXWorld,
-                observationState.AimPointYWorld,
-                observationState.AimPointHeightM,
-                observationState.VelocityXMps,
-                observationState.VelocityYMps,
-                observationState.VelocityZMps,
-                observationState.AngularVelocityRadPerSec);
+        return _autoAimSolver.ComputeSolution(world, shooter, target, plate, maxDistanceM, observationState);
     }
 
     private static bool IsRetainedRotatingObservationTarget(string targetKind, double angularVelocityRadPerSec)
@@ -4094,8 +4139,7 @@ internal sealed class TerrainMotionService
     private void ClearAutoAimTracking(string entityId)
     {
         _autoAimSolveCache.Remove(entityId);
-        _autoAimObservationFilters.Remove(entityId);
-        _autoAimObservationEkf3Filters.Remove(entityId);
+        _autoAimSolver.ClearEntity(entityId);
     }
 
     private static ArmorPlateTarget ResolveAutoAimObservationPlate(
@@ -4146,291 +4190,10 @@ internal sealed class TerrainMotionService
         ArmorPlateTarget aimPlate,
         ArmorPlateTarget observationPlate)
     {
-        return UseThirdOrderEkfAutoAimPoseChain
-            ? UpdateAutoAimObservationStateThirdOrderEkf(world, shooter, target, aimPlate, observationPlate)
-            : UpdateAutoAimObservationState(world, shooter, target, aimPlate, observationPlate);
+        return _autoAimSolver.ResolveObservationState(world, shooter, target, aimPlate, observationPlate);
     }
 
-    // 保留旧的常速度 Kalman 链路，新的 3 阶 EKF 链路单独并行实现，避免旧链路被破坏。
-    private AutoAimObservedState UpdateAutoAimObservationState(
-        SimulationWorldState world,
-        SimulationEntity shooter,
-        SimulationEntity target,
-        ArmorPlateTarget aimPlate,
-        ArmorPlateTarget observationPlate)
-    {
-        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
-        string observationKey = $"{target.Id}:{aimPlate.Id}:{observationPlate.Id}";
-        string targetKind = SimulationCombatMath.ResolveAutoAimTargetKind(target, aimPlate);
-        double observedXWorld = observationPlate.X;
-        double observedYWorld = observationPlate.Y;
-        double observedHeightM = observationPlate.HeightM;
-
-        if (!_autoAimObservationFilters.TryGetValue(shooter.Id, out AutoAimObservationFilterState? filter)
-            || !string.Equals(filter.ObservationKey, observationKey, StringComparison.OrdinalIgnoreCase)
-            || world.GameTimeSec - filter.LastUpdateTimeSec > 0.30)
-        {
-            filter = AutoAimObservationFilterState.Create(observationKey, target.Id, aimPlate.Id, observationPlate.Id, targetKind);
-        }
-
-        double dtSec = filter.Initialized
-            ? Math.Clamp(world.GameTimeSec - filter.LastUpdateTimeSec, 1.0 / 240.0, 0.12)
-            : 1.0 / 60.0;
-        bool rotatingTarget =
-            string.Equals(targetKind, "energy_disk", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(targetKind, "outpost_armor", StringComparison.OrdinalIgnoreCase)
-            || target.SmallGyroActive;
-        double measurementNoiseM = rotatingTarget ? 0.010 : 0.016;
-        double accelerationNoiseMps2 = string.Equals(targetKind, "energy_disk", StringComparison.OrdinalIgnoreCase)
-            ? 14.0
-            : string.Equals(targetKind, "outpost_armor", StringComparison.OrdinalIgnoreCase)
-                ? 10.0
-                : target.SmallGyroActive
-                    ? 22.0
-                    : 8.0;
-
-        if (!filter.Initialized)
-        {
-            double initialVelocityXMps = 0.0;
-            double initialVelocityYMps = 0.0;
-            double initialVelocityZMps = 0.0;
-            if (filter.HasLastMeasurement)
-            {
-                double measurementDtSec = Math.Clamp(world.GameTimeSec - filter.LastMeasurementTimeSec, 1.0 / 240.0, 0.20);
-                initialVelocityXMps = (observedXWorld - filter.LastMeasurementXWorld) * metersPerWorldUnit / measurementDtSec;
-                initialVelocityYMps = (observedYWorld - filter.LastMeasurementYWorld) * metersPerWorldUnit / measurementDtSec;
-                initialVelocityZMps = (observedHeightM - filter.LastMeasurementHeightM) / measurementDtSec;
-            }
-
-            filter.Initialize(
-                observedXWorld,
-                observedYWorld,
-                observedHeightM,
-                initialVelocityXMps,
-                initialVelocityYMps,
-                initialVelocityZMps,
-                metersPerWorldUnit);
-        }
-        else
-        {
-            filter.Update(
-                observedXWorld,
-                observedYWorld,
-                observedHeightM,
-                dtSec,
-                metersPerWorldUnit,
-                measurementNoiseM,
-                accelerationNoiseMps2);
-        }
-
-        filter.LastMeasurementXWorld = observedXWorld;
-        filter.LastMeasurementYWorld = observedYWorld;
-        filter.LastMeasurementHeightM = observedHeightM;
-        filter.LastMeasurementTimeSec = world.GameTimeSec;
-        filter.HasLastMeasurement = true;
-        filter.LastUpdateTimeSec = world.GameTimeSec;
-
-        double angularVelocityRadPerSec = 0.0;
-        if (TryResolveObservedPlateAngularVelocity(world, target, aimPlate, observationPlate, filter, out double resolvedOmega))
-        {
-            angularVelocityRadPerSec = resolvedOmega;
-        }
-
-        _autoAimObservationFilters[shooter.Id] = filter;
-        return new AutoAimObservedState(
-            filter.FilteredXWorld,
-            filter.FilteredYWorld,
-            filter.FilteredHeightM,
-            filter.FilteredVelocityXMps,
-            filter.FilteredVelocityYMps,
-            filter.FilteredVelocityZMps,
-            0.0,
-            0.0,
-            0.0,
-            angularVelocityRadPerSec);
-    }
-
-    private AutoAimObservedState UpdateAutoAimObservationStateThirdOrderEkf(
-        SimulationWorldState world,
-        SimulationEntity shooter,
-        SimulationEntity target,
-        ArmorPlateTarget aimPlate,
-        ArmorPlateTarget observationPlate)
-    {
-        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
-        string observationKey = $"{target.Id}:{aimPlate.Id}:{observationPlate.Id}";
-        string targetKind = SimulationCombatMath.ResolveAutoAimTargetKind(target, aimPlate);
-        double observedXWorld = observationPlate.X;
-        double observedYWorld = observationPlate.Y;
-        double observedHeightM = observationPlate.HeightM;
-
-        if (!_autoAimObservationEkf3Filters.TryGetValue(shooter.Id, out AutoAimThirdOrderEkfPoseFilterState? filter)
-            || !string.Equals(filter.ObservationKey, observationKey, StringComparison.OrdinalIgnoreCase)
-            || world.GameTimeSec - filter.LastUpdateTimeSec > 0.30)
-        {
-            filter = AutoAimThirdOrderEkfPoseFilterState.Create(observationKey, target.Id, aimPlate.Id, observationPlate.Id, targetKind);
-        }
-
-        double dtSec = filter.Initialized
-            ? Math.Clamp(world.GameTimeSec - filter.LastUpdateTimeSec, 1.0 / 240.0, 0.12)
-            : 1.0 / 60.0;
-        bool rotatingTarget =
-            string.Equals(targetKind, "energy_disk", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(targetKind, "outpost_armor", StringComparison.OrdinalIgnoreCase)
-            || target.SmallGyroActive;
-        double measurementNoiseM = rotatingTarget ? 0.010 : 0.016;
-        double accelerationNoiseMps2 = string.Equals(targetKind, "energy_disk", StringComparison.OrdinalIgnoreCase)
-            ? 14.0
-            : string.Equals(targetKind, "outpost_armor", StringComparison.OrdinalIgnoreCase)
-                ? 10.0
-                : target.SmallGyroActive
-                    ? 22.0
-                    : 8.0;
-        double jerkNoiseMps3 = accelerationNoiseMps2 * (rotatingTarget ? 3.4 : 2.4);
-
-        if (!filter.Initialized)
-        {
-            double initialVelocityXMps = 0.0;
-            double initialVelocityYMps = 0.0;
-            double initialVelocityZMps = 0.0;
-            if (filter.HasLastMeasurement)
-            {
-                double measurementDtSec = Math.Clamp(world.GameTimeSec - filter.LastMeasurementTimeSec, 1.0 / 240.0, 0.20);
-                initialVelocityXMps = (observedXWorld - filter.LastMeasurementXWorld) * metersPerWorldUnit / measurementDtSec;
-                initialVelocityYMps = (observedYWorld - filter.LastMeasurementYWorld) * metersPerWorldUnit / measurementDtSec;
-                initialVelocityZMps = (observedHeightM - filter.LastMeasurementHeightM) / measurementDtSec;
-            }
-
-            filter.Initialize(
-                observedXWorld,
-                observedYWorld,
-                observedHeightM,
-                initialVelocityXMps,
-                initialVelocityYMps,
-                initialVelocityZMps,
-                metersPerWorldUnit);
-        }
-        else
-        {
-            filter.Update(
-                observedXWorld,
-                observedYWorld,
-                observedHeightM,
-                shooter.X,
-                shooter.Y,
-                dtSec,
-                metersPerWorldUnit,
-                measurementNoiseM,
-                jerkNoiseMps3);
-        }
-
-        filter.LastMeasurementXWorld = observedXWorld;
-        filter.LastMeasurementYWorld = observedYWorld;
-        filter.LastMeasurementHeightM = observedHeightM;
-        filter.LastMeasurementTimeSec = world.GameTimeSec;
-        filter.HasLastMeasurement = true;
-        filter.LastUpdateTimeSec = world.GameTimeSec;
-
-        double angularVelocityRadPerSec = 0.0;
-        if (TryResolveObservedPlateAngularVelocityFromFilteredState(
-                world,
-                target,
-                aimPlate,
-                filter.FilteredXWorld,
-                filter.FilteredYWorld,
-                filter.FilteredVelocityXMps,
-                filter.FilteredVelocityYMps,
-                out double resolvedOmega))
-        {
-            angularVelocityRadPerSec = resolvedOmega;
-        }
-
-        _autoAimObservationEkf3Filters[shooter.Id] = filter;
-        return new AutoAimObservedState(
-            filter.FilteredXWorld,
-            filter.FilteredYWorld,
-            filter.FilteredHeightM,
-            filter.FilteredVelocityXMps,
-            filter.FilteredVelocityYMps,
-            filter.FilteredVelocityZMps,
-            filter.FilteredAccelerationXMps2,
-            filter.FilteredAccelerationYMps2,
-            filter.FilteredAccelerationZMps2,
-            angularVelocityRadPerSec);
-    }
-
-    private static bool TryResolveObservedPlateAngularVelocity(
-        SimulationWorldState world,
-        SimulationEntity target,
-        ArmorPlateTarget aimPlate,
-        ArmorPlateTarget observationPlate,
-        AutoAimObservationFilterState filter,
-        out double angularVelocityRadPerSec)
-    {
-        angularVelocityRadPerSec = 0.0;
-        if (!filter.Initialized)
-        {
-            return false;
-        }
-
-        return TryResolveObservedPlateAngularVelocityFromFilteredState(
-            world,
-            target,
-            aimPlate,
-            filter.FilteredXWorld,
-            filter.FilteredYWorld,
-            filter.FilteredVelocityXMps,
-            filter.FilteredVelocityYMps,
-            out angularVelocityRadPerSec);
-    }
-
-    private static bool TryResolveObservedPlateAngularVelocityFromFilteredState(
-        SimulationWorldState world,
-        SimulationEntity target,
-        ArmorPlateTarget aimPlate,
-        double filteredXWorld,
-        double filteredYWorld,
-        double filteredVelocityXMps,
-        double filteredVelocityYMps,
-        out double angularVelocityRadPerSec)
-    {
-        angularVelocityRadPerSec = 0.0;
-        double pivotX = target.X;
-        double pivotY = target.Y;
-        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
-        double radialXM = (filteredXWorld - pivotX) * metersPerWorldUnit;
-        double radialYM = (filteredYWorld - pivotY) * metersPerWorldUnit;
-        double radialLengthSq = radialXM * radialXM + radialYM * radialYM;
-        if (radialLengthSq <= 1e-4)
-        {
-            return false;
-        }
-
-        angularVelocityRadPerSec =
-            (radialXM * filteredVelocityYMps - radialYM * filteredVelocityXMps)
-            / radialLengthSq;
-        if (!double.IsFinite(angularVelocityRadPerSec))
-        {
-            angularVelocityRadPerSec = 0.0;
-            return false;
-        }
-
-        if (string.Equals(target.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(target.EntityType, "outpost", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(aimPlate.Id, "outpost_top", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        if (Math.Abs(angularVelocityRadPerSec) < 0.02)
-        {
-            angularVelocityRadPerSec = 0.0;
-            return false;
-        }
-
-        return true;
-    }
-
+    // 淇濈暀鏃х殑甯搁€熷害 Kalman 閾捐矾锛屾柊鐨?3 闃?EKF 閾捐矾鍗曠嫭骞惰瀹炵幇锛岄伩鍏嶆棫閾捐矾琚牬鍧忋€?
     private static bool TryResolveLockedArmorTarget(
         SimulationWorldState world,
         SimulationEntity shooter,
@@ -4568,27 +4331,24 @@ internal sealed class TerrainMotionService
         long navigationTicks,
         long autoAimTicks)
     {
-        long totalTicks = System.Diagnostics.Stopwatch.GetTimestamp() - controlStartTicks;
-        double totalMs = TicksToMs(totalTicks);
+        long totalTicks = SimulatorRuntimePerformance.ElapsedTicksSince(controlStartTicks);
+        double totalMs = SimulatorRuntimePerformance.TicksToMilliseconds(totalTicks);
         if (totalMs < 4.0)
         {
             return;
         }
 
-        long nowTicks = System.Diagnostics.Stopwatch.GetTimestamp();
-        if (_lastSlowControlLogTicks > 0
-            && (nowTicks - _lastSlowControlLogTicks) / (double)System.Diagnostics.Stopwatch.Frequency < 0.35)
+        if (!SimulatorRuntimePerformance.TryMarkInterval(ref _lastSlowControlLogTicks, 0.35))
         {
             return;
         }
 
-        _lastSlowControlLogTicks = nowTicks;
         string line =
-            $"{DateTime.Now:HH:mm:ss.fff} "
+            $"{SimulatorRuntimePerformance.WallClockLabel()} "
             + $"entity={entity.Id} role={entity.RoleKey} team={entity.Team} "
             + $"branch={branch} total={totalMs:0.00}ms "
-            + $"nav={TicksToMs(navigationTicks):0.00}ms "
-            + $"aim={TicksToMs(autoAimTicks):0.00}ms "
+            + $"nav={SimulatorRuntimePerformance.FormatMilliseconds(navigationTicks)}ms "
+            + $"aim={SimulatorRuntimePerformance.FormatMilliseconds(autoAimTicks)}ms "
             + $"block={entity.MotionBlockReason}";
         SimulatorRuntimeLog.Append("motion_control_slow.log", line);
     }
@@ -4604,16 +4364,23 @@ internal sealed class TerrainMotionService
         string lockKey = $"{target.Id}:{plate.Id}";
         string targetKind = SimulationCombatMath.ResolveAutoAimTargetKind(target, plate);
         bool energyDiskTarget = string.Equals(targetKind, "energy_disk", StringComparison.OrdinalIgnoreCase);
-        bool heroLobStructureTarget = entity.IsPlayerControlled
-            && SimulationCombatMath.ShouldUseHeroLobStructureAxisAim(world, entity, target, plate);
+        bool heroLobAxisAimTarget = SimulationCombatMath.ShouldUseHeroLobStructureAxisAim(world, entity, target, plate);
+        bool heroLobPitchHoldTarget = SimulationCombatMath.IsHeroLobAutoAimMode(entity)
+            && SimulationCombatMath.IsHeroStructureAutoAimTargetPlate(world, entity, target, plate);
         bool playerHardLock = entity.IsPlayerControlled && !entity.AutoAimGuidanceOnly;
         double desiredYaw = SimulationCombatMath.NormalizeDeg(solution.YawDeg);
         double desiredPitch = Math.Clamp(solution.PitchDeg, -40.0, 40.0);
         bool lockChanged = !string.Equals(entity.AutoAimLockKey, lockKey, StringComparison.OrdinalIgnoreCase);
-        if (heroLobStructureTarget)
+        if (heroLobAxisAimTarget)
         {
             desiredYaw = SimulationCombatMath.NormalizeDeg(Math.Atan2(target.Y - entity.Y, target.X - entity.X) * 180.0 / Math.PI);
-            desiredPitch = ResolveHeroLobHeldPitch(world, entity, plate, solution, lockKey, dt, desiredPitch);
+        }
+
+        if (heroLobPitchHoldTarget)
+        {
+            string pitchHoldKey = $"hero_lob:{target.Id}";
+            bool allowPitchCorrection = IsHeroLobPlateFrontFacingShooter(world, entity, plate);
+            desiredPitch = ResolveHeroLobHeldPitch(world, entity, plate, solution, pitchHoldKey, dt, desiredPitch, allowPitchCorrection);
         }
         else
         {
@@ -4634,8 +4401,8 @@ internal sealed class TerrainMotionService
             double pitchDeadbandDeg = energyDiskTarget ? 0.08 : 0.04;
             if (playerHardLock)
             {
-                yawDeadbandDeg *= energyDiskTarget ? 1.20 : (heroLobStructureTarget ? 1.45 : 1.62);
-                pitchDeadbandDeg *= energyDiskTarget ? 1.16 : (heroLobStructureTarget ? 1.36 : 1.48);
+                yawDeadbandDeg *= energyDiskTarget ? 1.20 : (heroLobAxisAimTarget ? 1.45 : 1.62);
+                pitchDeadbandDeg *= energyDiskTarget ? 1.16 : (heroLobPitchHoldTarget ? 1.36 : 1.48);
             }
 
             desiredYaw = ApplyYawDeadbandDeg(entity.AutoAimSmoothedYawDeg, desiredYaw, yawDeadbandDeg);
@@ -4646,15 +4413,15 @@ internal sealed class TerrainMotionService
                 : (lockChanged ? (sameTargetSwitch ? 0.095 : 0.165) : 0.135);
             double maxYawRateDegPerSec = energyDiskTarget
                 ? 720.0
-                : (heroLobStructureTarget ? 260.0 : 420.0);
+                : (heroLobAxisAimTarget ? 260.0 : 420.0);
             double maxPitchRateDegPerSec = energyDiskTarget
                 ? 540.0
-                : (heroLobStructureTarget ? 190.0 : 320.0);
+                : (heroLobPitchHoldTarget ? 190.0 : 320.0);
             if (playerHardLock)
             {
-                tau *= energyDiskTarget ? 1.10 : (heroLobStructureTarget ? 1.22 : 1.30);
-                maxYawRateDegPerSec *= energyDiskTarget ? 0.94 : (heroLobStructureTarget ? 0.82 : 0.78);
-                maxPitchRateDegPerSec *= energyDiskTarget ? 0.94 : (heroLobStructureTarget ? 0.84 : 0.80);
+                tau *= energyDiskTarget ? 1.10 : (heroLobPitchHoldTarget ? 1.22 : 1.30);
+                maxYawRateDegPerSec *= energyDiskTarget ? 0.94 : (heroLobAxisAimTarget ? 0.82 : 0.78);
+                maxPitchRateDegPerSec *= energyDiskTarget ? 0.94 : (heroLobPitchHoldTarget ? 0.84 : 0.80);
             }
 
             if (lockChanged)
@@ -4679,21 +4446,23 @@ internal sealed class TerrainMotionService
         {
             double filteredPitchDeg = Math.Clamp(entity.GimbalPitchDeg, -40.0, 40.0);
             double outputDt = Math.Clamp(dt, 0.005, 0.08);
-            double outputTau = energyDiskTarget ? 0.090 : (heroLobStructureTarget ? 0.110 : 0.075);
-            double outputPitchRateDegPerSec = energyDiskTarget ? 210.0 : (heroLobStructureTarget ? 150.0 : 240.0);
+            double outputPitchTau = energyDiskTarget ? 0.090 : (heroLobPitchHoldTarget ? 0.110 : 0.075);
+            double outputYawTau = energyDiskTarget ? 0.090 : (heroLobAxisAimTarget ? 0.110 : 0.075);
+            double outputPitchRateDegPerSec = energyDiskTarget ? 210.0 : (heroLobPitchHoldTarget ? 150.0 : 240.0);
             double outputYawRateDegPerSec = energyDiskTarget ? 240.0 : 300.0;
             if (playerHardLock)
             {
-                outputTau *= energyDiskTarget ? 1.10 : (heroLobStructureTarget ? 1.20 : 1.28);
-                outputPitchRateDegPerSec *= energyDiskTarget ? 0.94 : (heroLobStructureTarget ? 0.86 : 0.80);
+                outputPitchTau *= energyDiskTarget ? 1.10 : (heroLobPitchHoldTarget ? 1.20 : 1.28);
+                outputYawTau *= energyDiskTarget ? 1.10 : (heroLobAxisAimTarget ? 1.20 : 1.28);
+                outputPitchRateDegPerSec *= energyDiskTarget ? 0.94 : (heroLobPitchHoldTarget ? 0.86 : 0.80);
                 outputYawRateDegPerSec *= energyDiskTarget ? 0.94 : 0.80;
             }
 
-            double outputResponse = 1.0 - Math.Exp(-outputDt / outputTau);
+            double outputPitchResponse = 1.0 - Math.Exp(-outputDt / outputPitchTau);
             double limitedPitchOutput = RateLimitScalar(filteredPitchDeg, entity.AutoAimSmoothedPitchDeg, outputPitchRateDegPerSec * outputDt);
-            filteredPitchDeg = Math.Clamp(Lerp(filteredPitchDeg, limitedPitchOutput, outputResponse), -40.0, 40.0);
+            filteredPitchDeg = Math.Clamp(Lerp(filteredPitchDeg, limitedPitchOutput, outputPitchResponse), -40.0, 40.0);
 
-            if (heroLobStructureTarget)
+            if (heroLobAxisAimTarget)
             {
                 double centerlineYawDeg = SimulationCombatMath.NormalizeDeg(Math.Atan2(target.Y - entity.Y, target.X - entity.X) * 180.0 / Math.PI);
                 entity.TurretYawDeg = centerlineYawDeg;
@@ -4703,7 +4472,8 @@ internal sealed class TerrainMotionService
             {
                 double filteredYawDeg = SimulationCombatMath.NormalizeDeg(entity.TurretYawDeg);
                 double limitedYawOutput = RateLimitYawDeg(filteredYawDeg, entity.AutoAimSmoothedYawDeg, outputYawRateDegPerSec * outputDt);
-                filteredYawDeg = SmoothYawDeg(filteredYawDeg, limitedYawOutput, outputResponse);
+                double outputYawResponse = 1.0 - Math.Exp(-outputDt / outputYawTau);
+                filteredYawDeg = SmoothYawDeg(filteredYawDeg, limitedYawOutput, outputYawResponse);
                 entity.TurretYawDeg = SimulationCombatMath.NormalizeDeg(filteredYawDeg);
                 entity.GimbalPitchDeg = filteredPitchDeg;
             }
@@ -4736,9 +4506,10 @@ internal sealed class TerrainMotionService
         AutoAimSolution solution,
         string lockKey,
         double dt,
-        double solvedPitchDeg)
+        double solvedPitchDeg,
+        bool allowPitchCorrection)
     {
-        double targetHeightM = solution.AimPointHeightM > 1e-6
+        double targetHeightM = double.IsFinite(solution.AimPointHeightM) && solution.AimPointHeightM > 1e-6
             ? solution.AimPointHeightM
             : plate.HeightM;
         bool resetHold = !string.Equals(entity.HeroLobPitchHoldLockKey, lockKey, StringComparison.OrdinalIgnoreCase)
@@ -4747,7 +4518,10 @@ internal sealed class TerrainMotionService
         if (resetHold)
         {
             entity.HeroLobPitchHoldLockKey = lockKey;
-            entity.HeroLobPitchHoldDeg = Math.Clamp(solvedPitchDeg, -40.0, 40.0);
+            entity.HeroLobPitchHoldDeg = Math.Clamp(
+                allowPitchCorrection ? solvedPitchDeg : entity.GimbalPitchDeg,
+                -40.0,
+                40.0);
             entity.HeroLobPitchHoldTargetHeightM = targetHeightM;
             return entity.HeroLobPitchHoldDeg;
         }
@@ -4764,7 +4538,8 @@ internal sealed class TerrainMotionService
             ? plate.HeightSpanM
             : Math.Max(0.10, plate.SideLengthM);
         double correctionToleranceM = Math.Clamp(Math.Max(0.14, plateHeightM * 0.72), 0.14, 0.24);
-        if (!double.IsFinite(heightErrorM) || Math.Abs(heightErrorM) > correctionToleranceM)
+        if (allowPitchCorrection
+            && (!double.IsFinite(heightErrorM) || Math.Abs(heightErrorM) > correctionToleranceM))
         {
             double outputDt = Math.Clamp(dt, 0.005, 0.08);
             double correctionRateDegPerSec = double.IsFinite(heightErrorM)
@@ -4778,6 +4553,41 @@ internal sealed class TerrainMotionService
         entity.HeroLobPitchHoldDeg = Math.Clamp(heldPitchDeg, -40.0, 40.0);
         entity.HeroLobPitchHoldTargetHeightM = targetHeightM;
         return entity.HeroLobPitchHoldDeg;
+    }
+
+    private static bool IsHeroLobPlateFrontFacingShooter(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        ArmorPlateTarget plate)
+    {
+        if (plate.Id.Contains("top", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
+        Vector3 normal = SimulationCombatMath.ResolveArmorPlateNormal(plate);
+        if (normal.LengthSquared() <= 1e-8f)
+        {
+            return true;
+        }
+
+        (double muzzleX, double muzzleY, double muzzleHeightM) = SimulationCombatMath.ComputeMuzzlePoint(world, shooter, shooter.GimbalPitchDeg);
+        Vector3 muzzle = new(
+            (float)(muzzleX * metersPerWorldUnit),
+            (float)muzzleHeightM,
+            (float)(muzzleY * metersPerWorldUnit));
+        Vector3 center = new(
+            (float)(plate.X * metersPerWorldUnit),
+            (float)plate.HeightM,
+            (float)(plate.Y * metersPerWorldUnit));
+        Vector3 toShooter = muzzle - center;
+        if (toShooter.LengthSquared() <= 1e-8f)
+        {
+            return true;
+        }
+
+        return Vector3.Dot(Vector3.Normalize(toShooter), Vector3.Normalize(normal)) >= 0.10f;
     }
 
     private static void ClearHeroLobPitchHold(SimulationEntity entity)
@@ -6105,10 +5915,14 @@ internal sealed class TerrainMotionService
         double maxStep = ResolveEffectiveTraversalStepHeightM(entity);
         double jumpClearance = ResolveTerrainClearanceAllowanceM(entity);
         double effectiveDirectStep = directStep + jumpClearance;
-        double supportHeight = ResolveFootprintSupportHeight(world, runtimeGrid, entity, nextX, nextY, currentHeight, maxStep + jumpClearance);
+        bool slopeTransition = IsTraversableSlopeTransition(runtimeGrid, entity, entity.X, entity.Y, nextX, nextY, currentHeight, targetHeight, maxStep, jumpClearance);
+        double footprintAllowedRise = slopeTransition
+            ? Math.Max(maxStep, Math.Max(0.0, heightDelta) + ResolveSlopeAllowanceM(entity))
+            : maxStep;
+        double supportHeight = ResolveFootprintSupportHeight(world, runtimeGrid, entity, nextX, nextY, currentHeight, footprintAllowedRise + jumpClearance);
         if (TryResolveStaticContactAt(world, runtimeGrid, entity, nextX, nextY, currentHeight, out StaticContactResolution trendContact))
         {
-            if (IsIgnorableStepLipContact(runtimeGrid, trendContact, currentHeight, targetHeight, supportHeight, maxStep, jumpClearance))
+            if (IsIgnorableStepLipContact(entity, runtimeGrid, trendContact, currentHeight, targetHeight, supportHeight, maxStep, jumpClearance, slopeTransition))
             {
                 trendContact = default;
             }
@@ -6129,7 +5943,7 @@ internal sealed class TerrainMotionService
             heightDelta = 0.0;
         }
 
-        if (blocked || heightDelta > maxStep + jumpClearance + 1e-6)
+        if (blocked || (!slopeTransition && heightDelta > maxStep + jumpClearance + 1e-6))
         {
             if (TryResolveStaticContactAt(world, runtimeGrid, entity, nextX, nextY, currentHeight, out StaticContactResolution staticContact)
                 && TryApplyStaticContactResolution(world, runtimeGrid, entity, staticContact, currentHeight))
@@ -6158,7 +5972,7 @@ internal sealed class TerrainMotionService
             return false;
         }
 
-        if (!CanOccupyTerrainFootprint(world, runtimeGrid, entity, nextX, nextY, currentHeight, maxStep, jumpClearance))
+        if (!CanOccupyTerrainFootprintCached(world, runtimeGrid, entity, nextX, nextY, currentHeight, footprintAllowedRise, jumpClearance))
         {
             if (TryResolveStaticContactAt(world, runtimeGrid, entity, nextX, nextY, currentHeight, out StaticContactResolution staticContact)
                 && TryApplyStaticContactResolution(world, runtimeGrid, entity, staticContact, currentHeight))
@@ -6187,7 +6001,7 @@ internal sealed class TerrainMotionService
             return false;
         }
 
-        if (heightDelta > effectiveDirectStep + 1e-6)
+        if (!slopeTransition && heightDelta > effectiveDirectStep + 1e-6)
         {
             double moveHeading = entity.TraversalDirectionDeg;
             double headingError = Math.Abs(SimulationCombatMath.NormalizeSignedDeg(moveHeading - entity.AngleDeg));
@@ -6221,7 +6035,7 @@ internal sealed class TerrainMotionService
         }
 
         if (TryResolveStaticContactAt(world, runtimeGrid, entity, nextX, nextY, currentHeight, out StaticContactResolution residualStaticContact)
-            && !IsIgnorableStepLipContact(runtimeGrid, residualStaticContact, currentHeight, targetHeight, supportHeight, maxStep, jumpClearance)
+            && !IsIgnorableStepLipContact(entity, runtimeGrid, residualStaticContact, currentHeight, targetHeight, supportHeight, maxStep, jumpClearance, slopeTransition)
             && TryApplyStaticContactResolution(world, runtimeGrid, entity, residualStaticContact, currentHeight))
         {
             entity.MotionBlockReason = residualStaticContact.Reason;
@@ -6264,13 +6078,15 @@ internal sealed class TerrainMotionService
     }
 
     private static bool IsIgnorableStepLipContact(
+        SimulationEntity entity,
         RuntimeGridData runtimeGrid,
         StaticContactResolution contact,
         double currentHeight,
         double targetHeight,
         double supportHeight,
         double maxStep,
-        double jumpClearance)
+        double jumpClearance,
+        bool slopeTransition)
     {
         if (runtimeGrid.CollisionSurface is null
             || !string.Equals(contact.Reason, "collision_surface_wall_contact", StringComparison.OrdinalIgnoreCase))
@@ -6280,10 +6096,85 @@ internal sealed class TerrainMotionService
 
         double climbAllowance = maxStep + jumpClearance;
         double heightDelta = targetHeight - currentHeight;
+        double lipTolerance = ResolveStepLipForgivenessM(entity);
+        if (slopeTransition)
+        {
+            climbAllowance = Math.Max(climbAllowance, Math.Max(0.0, heightDelta) + ResolveSlopeAllowanceM(entity));
+        }
+
         return contact.PenetrationWorld <= 0.030
             && heightDelta >= -TerrainSmoothHeightThresholdM
-            && heightDelta <= climbAllowance + 0.12
-            && supportHeight <= currentHeight + climbAllowance + 0.12;
+            && heightDelta <= climbAllowance + lipTolerance
+            && supportHeight <= currentHeight + climbAllowance + lipTolerance;
+    }
+
+    private static bool IsTraversableSlopeTransition(
+        RuntimeGridData runtimeGrid,
+        SimulationEntity entity,
+        double currentX,
+        double currentY,
+        double nextX,
+        double nextY,
+        double currentHeight,
+        double targetHeight,
+        double maxStep,
+        double jumpClearance)
+    {
+        double heightDelta = targetHeight - currentHeight;
+        if (heightDelta <= maxStep + jumpClearance + 1e-6)
+        {
+            return false;
+        }
+
+        if (heightDelta > ResolveMaxSlopeTransitionRiseM(entity) + jumpClearance)
+        {
+            return false;
+        }
+
+        if (!TryResolveTraversalSurfaceNormal(runtimeGrid, nextX, nextY, out Vector3 nextNormal)
+            || nextNormal.Y < ResolveSlopeMinNormalY(entity))
+        {
+            return false;
+        }
+
+        double midX = (currentX + nextX) * 0.5;
+        double midY = (currentY + nextY) * 0.5;
+        if (TryResolveTraversalSurfaceNormal(runtimeGrid, midX, midY, out Vector3 midNormal)
+            && midNormal.Y < ResolveSlopeMinNormalY(entity) - 0.08f)
+        {
+            return false;
+        }
+
+        double collisionHeight = Math.Max(0.08, ResolveCollisionHeightM(entity));
+        double minBlockHeight = Math.Max(0.0, Math.Min(currentHeight, targetHeight) - 0.06);
+        double maxBlockHeight = Math.Max(currentHeight, targetHeight) + collisionHeight;
+        if (runtimeGrid.HasCollisionSurfaceWallContact(nextX, nextY, minBlockHeight, maxBlockHeight, maxCellRadius: 0)
+            && nextNormal.Y < 0.82f)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryResolveTraversalSurfaceNormal(RuntimeGridData runtimeGrid, double worldX, double worldY, out Vector3 normal)
+    {
+        if (runtimeGrid.TrySampleCollisionSurface(worldX, worldY, out TerrainSurfaceSample surfaceSample, allowNeighborExpansion: true)
+            && surfaceSample.Normal.LengthSquared() > 1e-8f)
+        {
+            normal = Vector3.Normalize(surfaceSample.Normal);
+            return true;
+        }
+
+        if (runtimeGrid.TrySampleFacetCollisionSurface(worldX, worldY, out _, out Vector3 facetNormal, out _)
+            && facetNormal.LengthSquared() > 1e-8f)
+        {
+            normal = Vector3.Normalize(facetNormal);
+            return true;
+        }
+
+        normal = Vector3.UnitY;
+        return false;
     }
 
     private static bool TryResolveForwardDownstepHeight(
@@ -6409,7 +6300,7 @@ internal sealed class TerrainMotionService
         }
 
         double supportLiftM = supportHeight - chassisBottomHeight;
-        double allowedRecoveryLiftM = maxStep + jumpClearance + 0.08;
+        double allowedRecoveryLiftM = maxStep + jumpClearance + ResolveStepLipForgivenessM(entity);
         if (supportLiftM > allowedRecoveryLiftM + 1e-6)
         {
             entity.VerticalVelocityMps = Math.Min(0.0, entity.VerticalVelocityMps);
@@ -6621,19 +6512,16 @@ internal sealed class TerrainMotionService
             return;
         }
 
-        long nowTicks = System.Diagnostics.Stopwatch.GetTimestamp();
-        if (_lastTerrainMovementBlockLogTicks > 0
-            && (nowTicks - _lastTerrainMovementBlockLogTicks) / (double)System.Diagnostics.Stopwatch.Frequency < 0.75)
+        if (!SimulatorRuntimePerformance.TryMarkInterval(ref _lastTerrainMovementBlockLogTicks, 0.75))
         {
             return;
         }
 
-        _lastTerrainMovementBlockLogTicks = nowTicks;
         double velocityMps = Math.Sqrt(
             entity.VelocityXWorldPerSec * entity.VelocityXWorldPerSec
             + entity.VelocityYWorldPerSec * entity.VelocityYWorldPerSec) * Math.Max(_metersPerWorldUnit, 1e-6);
         string line =
-            $"{DateTime.Now:HH:mm:ss.fff} "
+            $"{SimulatorRuntimePerformance.WallClockLabel()} "
             + $"id={entity.Id} "
             + $"reason={reason} "
             + $"pos=({worldX:0.00},{worldY:0.00}) "
@@ -6729,6 +6617,34 @@ internal sealed class TerrainMotionService
         velocity += normal * (float)Math.Max(0.0, outwardImpulseWorldPerSec);
         entity.VelocityXWorldPerSec = velocity.X;
         entity.VelocityYWorldPerSec = velocity.Y;
+    }
+
+    private bool CanOccupyTerrainFootprintCached(
+        SimulationWorldState world,
+        RuntimeGridData runtimeGrid,
+        SimulationEntity entity,
+        double centerX,
+        double centerY,
+        double referenceHeight,
+        double maxStepHeightM,
+        double jumpClearanceM)
+    {
+        var key = new TerrainFootprintOccupancyKey(
+            entity.Id,
+            runtimeGrid.CollisionSurface is not null,
+            (int)Math.Round(centerX / Math.Max(runtimeGrid.CellWidthWorld, 1e-6) * 2.0),
+            (int)Math.Round(centerY / Math.Max(runtimeGrid.CellHeightWorld, 1e-6) * 2.0),
+            (int)Math.Round(SimulationCombatMath.NormalizeDeg(entity.AngleDeg) * 2.0),
+            (int)Math.Round(referenceHeight * 200.0),
+            (int)Math.Round((maxStepHeightM + jumpClearanceM) * 200.0));
+        if (_terrainFootprintOccupancyCache.TryGetValue(key, out bool cached))
+        {
+            return cached;
+        }
+
+        bool result = CanOccupyTerrainFootprint(world, runtimeGrid, entity, centerX, centerY, referenceHeight, maxStepHeightM, jumpClearanceM);
+        _terrainFootprintOccupancyCache[key] = result;
+        return result;
     }
 
     private static bool CanOccupyTerrainFootprint(
@@ -6849,6 +6765,8 @@ internal sealed class TerrainMotionService
         double maxX = runtimeGrid.WidthCells * runtimeGrid.CellWidthWorld;
         double maxY = runtimeGrid.HeightCells * runtimeGrid.CellHeightWorld;
         bool leggedSupport = UsesLeggedSupportProfile(entity);
+        bool omniSupport = string.Equals(entity.WheelStyle, "omni", StringComparison.OrdinalIgnoreCase);
+        bool pureWheelSupport = IsPureWheelTraversal(entity.WheelStyle);
         double sampleInset = leggedSupport ? 0.58 : 0.62;
         double sampleHalfLength = footprint.HalfLengthWorld * sampleInset;
         double sampleHalfWidth = footprint.HalfWidthWorld * sampleInset;
@@ -6870,7 +6788,7 @@ internal sealed class TerrainMotionService
         int wallOnlyCount = 0;
         bool centerPass = false;
         bool centerHardBlock = false;
-        double seamTolerance = leggedSupport ? 0.095 : 0.072;
+        double seamTolerance = omniSupport ? 0.014 : leggedSupport ? 0.095 : pureWheelSupport ? 0.040 : 0.060;
         double reachableHeight = referenceHeight + allowedRise + seamTolerance;
 
         for (int index = 0; index < samples.Length; index++)
@@ -7041,7 +6959,7 @@ internal sealed class TerrainMotionService
             ApplyDriveControl(world, entity, 0.0, 0.0, dt, entity.AngleDeg);
             entity.BuyAmmoRequested = false;
             entity.AiDecisionSelected = "recover";
-            entity.AiDecision = "回家恢复";
+            entity.AiDecision = "鍥炲鎭㈠";
             return true;
         }
 
@@ -7065,7 +6983,7 @@ internal sealed class TerrainMotionService
             null))
         {
             entity.AiDecisionSelected = "recover";
-            entity.AiDecision = "回家恢复";
+            entity.AiDecision = "鍥炲鎭㈠";
             entity.BuyAmmoRequested = false;
             return true;
         }
@@ -7077,7 +6995,7 @@ internal sealed class TerrainMotionService
         CacheAutoDrive(GetOrCreateNavigationState(entity.Id, world.GameTimeSec), 0.88, 0.0, entity.TraversalDirectionDeg);
         ApplyDriveControl(world, entity, 0.88, 0.0, dt, entity.TraversalDirectionDeg);
         entity.AiDecisionSelected = "recover";
-        entity.AiDecision = "回家恢复";
+        entity.AiDecision = "鍥炲鎭㈠";
         entity.BuyAmmoRequested = false;
         return true;
     }
@@ -7211,7 +7129,7 @@ internal sealed class TerrainMotionService
                 out double rightSlope);
             if (hasContactPlane)
             {
-                double maxReachableRise = ResolveEffectiveTraversalStepHeightM(entity) + 0.08;
+                double maxReachableRise = ResolveEffectiveTraversalStepHeightM(entity) + ResolveStepLipForgivenessM(entity);
                 if (planeHeightM - entity.GroundHeightM > maxReachableRise + 1e-6)
                 {
                     ApplyChassisAttitudeTarget(entity, 0.0, 0.0, 0.34, 0.34, dt);
@@ -7374,7 +7292,7 @@ internal sealed class TerrainMotionService
 
         if (requiredLiftM > 1e-4f)
         {
-            double allowedLiftM = ResolveEffectiveTraversalStepHeightM(entity) + 0.08;
+            double allowedLiftM = ResolveEffectiveTraversalStepHeightM(entity) + ResolveStepLipForgivenessM(entity);
             if (requiredLiftM > allowedLiftM + 1e-6)
             {
                 return;
@@ -7404,7 +7322,7 @@ internal sealed class TerrainMotionService
             entity.Y,
             referenceHeight,
             ResolveEffectiveTraversalStepHeightM(entity) + ResolveTerrainClearanceAllowanceM(entity));
-        double allowedAnchorErrorM = ResolveEffectiveTraversalStepHeightM(entity) + 0.12;
+        double allowedAnchorErrorM = ResolveEffectiveTraversalStepHeightM(entity) + ResolveStepLipForgivenessM(entity);
         if (entity.GroundHeightM <= reachableGroundHeight + allowedAnchorErrorM)
         {
             return;
@@ -7525,7 +7443,7 @@ internal sealed class TerrainMotionService
         }
 
         double medianHeight = ResolveMedianHeight(rawHeights[..count]);
-        double maxReachableRise = ResolveEffectiveTraversalStepHeightM(entity) + 0.08;
+        double maxReachableRise = ResolveEffectiveTraversalStepHeightM(entity) + ResolveStepLipForgivenessM(entity);
         if (medianHeight - entity.GroundHeightM > maxReachableRise + 1e-6)
         {
             return false;
@@ -7981,7 +7899,7 @@ internal sealed class TerrainMotionService
         double resolvedY = resolution.ResolvedY;
         ClampToMap(runtimeGrid, ref resolvedX, ref resolvedY);
 
-        if (!CanOccupyTerrainFootprint(world, runtimeGrid, entity, resolvedX, resolvedY, currentHeight, maxStep, jumpClearance))
+        if (!CanOccupyTerrainFootprintCached(world, runtimeGrid, entity, resolvedX, resolvedY, currentHeight, maxStep, jumpClearance))
         {
             if (!TryMoveToReachableContactPosition(world, runtimeGrid, entity, entity.X, entity.Y, resolvedX, resolvedY, currentHeight, maxStep, jumpClearance))
             {
@@ -8096,7 +8014,7 @@ internal sealed class TerrainMotionService
         double resolvedY = resolution.ResolvedY;
         ClampToMap(runtimeGrid, ref resolvedX, ref resolvedY);
 
-        bool reachable = CanOccupyTerrainFootprint(world, runtimeGrid, entity, resolvedX, resolvedY, currentHeight, maxStep, jumpClearance)
+        bool reachable = CanOccupyTerrainFootprintCached(world, runtimeGrid, entity, resolvedX, resolvedY, currentHeight, maxStep, jumpClearance)
             && !HasEntityCollisionAt(world, entity, resolvedX, resolvedY, out _)
             && !HasStaticCollisionAt(world, runtimeGrid, entity, resolvedX, resolvedY);
         if (!reachable)
@@ -8141,7 +8059,7 @@ internal sealed class TerrainMotionService
             double sampleX = Lerp(startX, targetX, mid);
             double sampleY = Lerp(startY, targetY, mid);
             ClampToMap(runtimeGrid, ref sampleX, ref sampleY);
-            bool valid = CanOccupyTerrainFootprint(world, runtimeGrid, entity, sampleX, sampleY, currentHeight, maxStep, jumpClearance)
+            bool valid = CanOccupyTerrainFootprintCached(world, runtimeGrid, entity, sampleX, sampleY, currentHeight, maxStep, jumpClearance)
                 && !HasEntityCollisionAt(world, entity, sampleX, sampleY, out _)
                 && !HasStaticCollisionAt(world, runtimeGrid, entity, sampleX, sampleY);
             if (valid)
@@ -8196,7 +8114,7 @@ internal sealed class TerrainMotionService
         double nextX = other.X + pushDir.X * (float)pushDistance;
         double nextY = other.Y + pushDir.Y * (float)pushDistance;
         ClampToMap(runtimeGrid, ref nextX, ref nextY);
-        if (!CanOccupyTerrainFootprint(world, runtimeGrid, other, nextX, nextY, currentHeight, maxStep, jumpClearance)
+        if (!CanOccupyTerrainFootprintCached(world, runtimeGrid, other, nextX, nextY, currentHeight, maxStep, jumpClearance)
             || HasEntityCollisionAt(world, other, nextX, nextY, out _)
             || HasStaticCollisionAt(world, runtimeGrid, other, nextX, nextY))
         {
@@ -10132,19 +10050,25 @@ internal sealed class TerrainMotionService
         => IsStandardMecanumPowerRole(entity);
 
     private static double ResolveEffectiveTraversalStepHeightM(SimulationEntity entity)
-        => ResolveEffectiveTraversalStepHeightM(
+        => ApplyWheelStepLimit(
+            entity.WheelStyle,
+            entity.WheelRadiusM,
+            ResolveEffectiveTraversalStepHeightM(
             Math.Max(0.02, entity.DirectStepHeightM),
             entity.MaxStepClimbHeightM,
-            UsesThirtyCentimeterTraversalCap(entity));
+                UsesThirtyCentimeterTraversalCap(entity)));
 
     private static double ResolveDirectTraversalStepHeightM(SimulationEntity entity)
         => Math.Min(Math.Max(0.02, entity.DirectStepHeightM), ResolveEffectiveTraversalStepHeightM(entity));
 
     private static double ResolveEffectiveTraversalStepHeightM(NavigationUnitSnapshot unit)
-        => ResolveEffectiveTraversalStepHeightM(
+        => ApplyWheelStepLimit(
+            unit.WheelStyle,
+            unit.WheelRadiusM,
+            ResolveEffectiveTraversalStepHeightM(
             Math.Max(0.02, unit.DirectStepHeightM),
             unit.MaxStepClimbHeightM,
-            unit.RestrictStepHeightToThirtyCm);
+                unit.RestrictStepHeightToThirtyCm));
 
     private static double ResolveEffectiveTraversalStepHeightM(
         double directStepHeightM,
@@ -10153,6 +10077,97 @@ internal sealed class TerrainMotionService
     {
         double resolved = Math.Max(directStepHeightM, maxStepClimbHeightM);
         return restrictToThirtyCentimeters ? Math.Min(0.30, resolved) : resolved;
+    }
+
+    private static double ApplyWheelStepLimit(string? wheelStyle, double wheelRadiusM, double configuredStepHeightM)
+    {
+        if (string.Equals(wheelStyle, "omni", StringComparison.OrdinalIgnoreCase))
+        {
+            return Math.Min(configuredStepHeightM, 0.035);
+        }
+
+        if (string.Equals(wheelStyle, "mecanum", StringComparison.OrdinalIgnoreCase))
+        {
+            return Math.Min(configuredStepHeightM, 0.25);
+        }
+
+        if (!IsPureWheelTraversal(wheelStyle))
+        {
+            return configuredStepHeightM;
+        }
+
+        double radiusLimitM = Math.Clamp(wheelRadiusM <= 1e-6 ? 0.06 : wheelRadiusM, 0.025, 0.18) * 0.98;
+        return Math.Min(configuredStepHeightM, Math.Max(0.02, radiusLimitM));
+    }
+
+    private static bool IsPureWheelTraversal(string? wheelStyle)
+        => string.Equals(wheelStyle, "omni", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(wheelStyle, "mecanum", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(wheelStyle, "standard", StringComparison.OrdinalIgnoreCase);
+
+    private static double ResolveStepLipForgivenessM(SimulationEntity entity)
+    {
+        if (string.Equals(entity.WheelStyle, "omni", StringComparison.OrdinalIgnoreCase))
+        {
+            return 0.006;
+        }
+
+        if (string.Equals(entity.WheelStyle, "mecanum", StringComparison.OrdinalIgnoreCase))
+        {
+            return IsStandardMecanumPowerRole(entity) ? 0.026 : 0.012;
+        }
+
+        if (IsPureWheelTraversal(entity.WheelStyle))
+        {
+            return 0.010;
+        }
+
+        return UsesLeggedSupportProfile(entity) ? 0.090 : 0.060;
+    }
+
+    private static double ResolveSlopeAllowanceM(SimulationEntity entity)
+    {
+        if (string.Equals(entity.WheelStyle, "omni", StringComparison.OrdinalIgnoreCase))
+        {
+            return 0.030;
+        }
+
+        if (string.Equals(entity.WheelStyle, "mecanum", StringComparison.OrdinalIgnoreCase))
+        {
+            return IsStandardMecanumPowerRole(entity) ? 0.070 : 0.040;
+        }
+
+        return UsesLeggedSupportProfile(entity) ? 0.110 : 0.055;
+    }
+
+    private static double ResolveMaxSlopeTransitionRiseM(SimulationEntity entity)
+    {
+        if (string.Equals(entity.WheelStyle, "omni", StringComparison.OrdinalIgnoreCase))
+        {
+            return 0.16;
+        }
+
+        if (string.Equals(entity.WheelStyle, "mecanum", StringComparison.OrdinalIgnoreCase))
+        {
+            return IsStandardMecanumPowerRole(entity) ? 0.34 : 0.20;
+        }
+
+        return UsesLeggedSupportProfile(entity) ? 0.55 : 0.24;
+    }
+
+    private static float ResolveSlopeMinNormalY(SimulationEntity entity)
+    {
+        if (string.Equals(entity.WheelStyle, "omni", StringComparison.OrdinalIgnoreCase))
+        {
+            return 0.78f;
+        }
+
+        if (string.Equals(entity.WheelStyle, "mecanum", StringComparison.OrdinalIgnoreCase))
+        {
+            return IsStandardMecanumPowerRole(entity) ? 0.68f : 0.75f;
+        }
+
+        return UsesLeggedSupportProfile(entity) ? 0.58f : 0.72f;
     }
 
     private readonly record struct DriveMotorModel(
@@ -10219,9 +10234,6 @@ internal sealed class TerrainMotionService
         double dy = left.Y - right.Y;
         return dx * dx + dy * dy;
     }
-
-    private static double TicksToMs(long ticks)
-        => ticks * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
 
     private static double Lerp(double a, double b, double t) => a + (b - a) * Math.Clamp(t, 0.0, 1.0);
 
@@ -10379,179 +10391,6 @@ internal sealed class TerrainMotionService
         public double LastGoalResolveQueuedSec { get; set; } = -999.0;
 
         public List<(double X, double Y)> Waypoints { get; } = new();
-    }
-
-    private readonly record struct AutoAimObservedState(
-        double AimPointXWorld,
-        double AimPointYWorld,
-        double AimPointHeightM,
-        double VelocityXMps,
-        double VelocityYMps,
-        double VelocityZMps,
-        double AccelerationXMps2,
-        double AccelerationYMps2,
-        double AccelerationZMps2,
-        double AngularVelocityRadPerSec);
-
-    private sealed class AutoAimObservationFilterState
-    {
-        private const double InitialPositionVariance = 0.20 * 0.20;
-        private const double InitialVelocityVariance = 4.5 * 4.5;
-
-        public AutoAimObservationFilterState(
-            string observationKey,
-            string targetId,
-            string aimPlateId,
-            string observationPlateId,
-            string targetKind)
-        {
-            ObservationKey = observationKey;
-            TargetId = targetId;
-            AimPlateId = aimPlateId;
-            ObservationPlateId = observationPlateId;
-            TargetKind = targetKind;
-        }
-
-        public string ObservationKey { get; }
-
-        public string TargetId { get; }
-
-        public string AimPlateId { get; }
-
-        public string ObservationPlateId { get; }
-
-        public string TargetKind { get; }
-
-        public bool Initialized { get; private set; }
-
-        public bool HasLastMeasurement { get; set; }
-
-        public double LastMeasurementXWorld { get; set; }
-
-        public double LastMeasurementYWorld { get; set; }
-
-        public double LastMeasurementHeightM { get; set; }
-
-        public double LastMeasurementTimeSec { get; set; } = -999.0;
-
-        public double LastUpdateTimeSec { get; set; } = -999.0;
-
-        public double LastMetersPerWorldUnit { get; private set; } = 1.0;
-
-        public double FilteredXWorld => _x.Position;
-
-        public double FilteredYWorld => _y.Position;
-
-        public double FilteredHeightM => _z.Position;
-
-        public double FilteredVelocityXMps => _x.VelocityPerSec * LastMetersPerWorldUnit;
-
-        public double FilteredVelocityYMps => _y.VelocityPerSec * LastMetersPerWorldUnit;
-
-        public double FilteredVelocityZMps => _z.VelocityPerSec;
-
-        private KalmanAxisState _x;
-        private KalmanAxisState _y;
-        private KalmanAxisState _z;
-
-        public static AutoAimObservationFilterState Create(
-            string observationKey,
-            string targetId,
-            string aimPlateId,
-            string observationPlateId,
-            string targetKind)
-            => new(observationKey, targetId, aimPlateId, observationPlateId, targetKind);
-
-        public void Initialize(
-            double observedXWorld,
-            double observedYWorld,
-            double observedHeightM,
-            double velocityXMps,
-            double velocityYMps,
-            double velocityZMps,
-            double metersPerWorldUnit)
-        {
-            LastMetersPerWorldUnit = Math.Max(metersPerWorldUnit, 1e-6);
-            _x = KalmanAxisState.CreateWorldAxis(observedXWorld, velocityXMps / LastMetersPerWorldUnit);
-            _y = KalmanAxisState.CreateWorldAxis(observedYWorld, velocityYMps / LastMetersPerWorldUnit);
-            _z = KalmanAxisState.CreateMetricAxis(observedHeightM, velocityZMps);
-            Initialized = true;
-        }
-
-        public void Update(
-            double observedXWorld,
-            double observedYWorld,
-            double observedHeightM,
-            double dtSec,
-            double metersPerWorldUnit,
-            double measurementNoiseM,
-            double accelerationNoiseMps2)
-        {
-            LastMetersPerWorldUnit = Math.Max(metersPerWorldUnit, 1e-6);
-            double worldMeasurementVariance = Math.Pow(measurementNoiseM / Math.Max(metersPerWorldUnit, 1e-6), 2);
-            double metricMeasurementVariance = measurementNoiseM * measurementNoiseM;
-            double worldAccelerationVariance = Math.Pow(accelerationNoiseMps2 / Math.Max(metersPerWorldUnit, 1e-6), 2);
-            double metricAccelerationVariance = accelerationNoiseMps2 * accelerationNoiseMps2;
-            _x.Update(observedXWorld, dtSec, worldMeasurementVariance, worldAccelerationVariance);
-            _y.Update(observedYWorld, dtSec, worldMeasurementVariance, worldAccelerationVariance);
-            _z.Update(observedHeightM, dtSec, metricMeasurementVariance, metricAccelerationVariance);
-        }
-
-        private struct KalmanAxisState
-        {
-            public double Position;
-            public double VelocityPerSec;
-            public double P00;
-            public double P01;
-            public double P10;
-            public double P11;
-
-            public static KalmanAxisState CreateWorldAxis(double positionWorld, double velocityPerSec)
-                => new()
-                {
-                    Position = positionWorld,
-                    VelocityPerSec = velocityPerSec,
-                    P00 = InitialPositionVariance,
-                    P11 = InitialVelocityVariance,
-                };
-
-            public static KalmanAxisState CreateMetricAxis(double positionM, double velocityPerSec)
-                => new()
-                {
-                    Position = positionM,
-                    VelocityPerSec = velocityPerSec,
-                    P00 = InitialPositionVariance,
-                    P11 = InitialVelocityVariance,
-                };
-
-            public void Update(
-                double measurement,
-                double dtSec,
-                double measurementVariance,
-                double accelerationVariance)
-            {
-                double dt = Math.Clamp(dtSec, 1.0 / 240.0, 0.12);
-                double predictedPosition = Position + VelocityPerSec * dt;
-                double predictedVelocity = VelocityPerSec;
-                double dt2 = dt * dt;
-                double dt3 = dt2 * dt;
-                double dt4 = dt2 * dt2;
-                double predictedP00 = P00 + dt * (P10 + P01) + dt2 * P11 + 0.25 * dt4 * accelerationVariance;
-                double predictedP01 = P01 + dt * P11 + 0.5 * dt3 * accelerationVariance;
-                double predictedP10 = P10 + dt * P11 + 0.5 * dt3 * accelerationVariance;
-                double predictedP11 = P11 + dt2 * accelerationVariance;
-                double innovation = measurement - predictedPosition;
-                double innovationVariance = predictedP00 + Math.Max(1e-8, measurementVariance);
-                double gainPosition = predictedP00 / innovationVariance;
-                double gainVelocity = predictedP10 / innovationVariance;
-                Position = predictedPosition + gainPosition * innovation;
-                VelocityPerSec = predictedVelocity + gainVelocity * innovation;
-                P00 = Math.Max(1e-10, (1.0 - gainPosition) * predictedP00);
-                P01 = (1.0 - gainPosition) * predictedP01;
-                P10 = predictedP10 - gainVelocity * predictedP00;
-                P11 = Math.Max(1e-10, predictedP11 - gainVelocity * predictedP01);
-            }
-        }
     }
 
     private sealed record AutoAimSolveCache(

@@ -1022,3 +1022,154 @@
 09:53:18.799 phase=Loading paused=True loading_progress terrain_ready=True view_ready=True world_ready=True progress=1.000
 09:53:18.799 phase=Countdown paused=True countdown_started
 09:53:21.809 phase=Live paused=False match_live
+10:05:30.780 phase=Loading paused=True loading_started_async_reset
+10:05:30.783 phase=Loading paused=True async_reset_ready
+10:05:30.785 phase=Loading paused=True loading_progress terrain_ready=False view_ready=False world_ready=True progress=0.707
+10:05:33.047 phase=Loading paused=True view_ready
+10:05:33.048 phase=Loading paused=True loading_progress terrain_ready=False view_ready=True world_ready=True progress=0.707
+10:05:33.162 phase=Loading paused=True loading_started_async_reset
+10:05:33.186 phase=Loading paused=True view_ready
+10:05:33.187 phase=Loading paused=True async_reset_ready
+10:05:33.187 phase=Loading paused=True loading_progress terrain_ready=False view_ready=True world_ready=True progress=0.707
+10:05:34.192 phase=Loading paused=True loading_progress terrain_ready=False view_ready=True world_ready=True progress=0.707
+10:05:35.215 phase=Loading paused=True loading_progress terrain_ready=False view_ready=True world_ready=True progress=0.707
+10:05:36.255 phase=Loading paused=True loading_progress terrain_ready=False view_ready=True world_ready=True progress=0.945
+10:05:36.339 phase=Countdown paused=True countdown_started
+10:05:39.354 phase=Live paused=False match_live
+10:16:56.257 phase=Loading paused=True loading_started_async_reset
+10:16:56.260 phase=Loading paused=True async_reset_ready
+10:16:56.262 phase=Loading paused=True loading_progress terrain_ready=True view_ready=False world_ready=True progress=1.000
+10:16:58.231 phase=Loading paused=True view_ready
+10:16:58.242 phase=Loading paused=True loading_progress terrain_ready=True view_ready=True world_ready=True progress=1.000
+10:16:58.242 phase=Countdown paused=True countdown_started
+10:17:01.252 phase=Live paused=False match_live
+10:30:47.555 phase=Loading paused=True loading_started_async_reset
+10:30:47.558 phase=Loading paused=True async_reset_ready
+10:30:47.561 phase=Loading paused=True loading_progress terrain_ready=False view_ready=False world_ready=True progress=0.707
+10:30:49.918 phase=Loading paused=True view_ready
+10:30:49.934 phase=Loading paused=True loading_progress terrain_ready=False view_ready=True world_ready=True progress=0.643
+10:30:50.621 phase=Countdown paused=True countdown_started
+10:30:53.628 phase=Live paused=False match_live
+10:44:20.420 phase=Loading paused=True loading_started_async_reset
+10:44:20.423 phase=Loading paused=True async_reset_ready
+10:44:20.424 phase=Loading paused=True loading_progress terrain_ready=True view_ready=False world_ready=True progress=1.000
+10:44:22.183 phase=Loading paused=True view_ready
+10:44:22.185 phase=Loading paused=True loading_progress terrain_ready=True view_ready=True world_ready=True progress=1.000
+10:44:22.185 phase=Countdown paused=True countdown_started
+10:44:25.194 phase=Live paused=False match_live
+10:56:07.721 phase=Loading paused=True loading_started_async_reset
+10:56:07.723 phase=Loading paused=True async_reset_ready
+10:56:07.724 phase=Loading paused=True loading_progress terrain_ready=True view_ready=False world_ready=True progress=1.000
+10:56:07.796 phase=Loading paused=True view_ready
+10:56:07.798 phase=Countdown paused=True countdown_started
+10:56:10.802 phase=Live paused=False match_live
+10:57:36.153 phase=Loading paused=True loading_started_async_reset
+10:57:36.156 phase=Loading paused=True async_reset_ready
+10:57:36.157 phase=Loading paused=True loading_progress terrain_ready=True view_ready=False world_ready=True progress=1.000
+10:57:37.985 phase=Loading paused=True view_ready
+10:57:37.988 phase=Loading paused=True loading_progress terrain_ready=True view_ready=True world_ready=True progress=1.000
+10:57:37.988 phase=Countdown paused=True countdown_started
+10:57:41.006 phase=Live paused=False match_live
+12:40:09.666 phase=Loading paused=True loading_started_async_reset
+12:40:09.670 phase=Loading paused=True async_reset_ready
+12:40:09.673 phase=Loading paused=True loading_progress terrain_ready=True view_ready=False world_ready=True progress=1.000
+12:40:11.649 phase=Loading paused=True view_ready
+12:40:11.651 phase=Loading paused=True loading_progress terrain_ready=True view_ready=True world_ready=True progress=1.000
+12:40:11.651 phase=Countdown paused=True countdown_started
+12:40:14.663 phase=Live paused=False match_live
+12:43:55.471 phase=Loading paused=True loading_started_async_reset
+12:43:55.522 phase=Loading paused=True view_ready
+12:43:55.524 phase=Loading paused=True async_reset_ready
+12:43:55.524 phase=Loading paused=True loading_progress terrain_ready=True view_ready=True world_ready=True progress=1.000
+12:43:55.524 phase=Countdown paused=True countdown_started
+12:43:55.578 phase=Loading paused=True loading_started_async_reset
+12:43:55.629 phase=Loading paused=True view_ready
+12:43:55.630 phase=Loading paused=True async_reset_ready
+12:43:55.630 phase=Loading paused=True loading_progress terrain_ready=True view_ready=True world_ready=True progress=1.000
+12:43:55.630 phase=Countdown paused=True countdown_started
+12:43:58.672 phase=Live paused=False match_live
+13:39:04.772 phase=Loading paused=True loading_started_async_reset
+13:39:04.775 phase=Loading paused=True async_reset_ready
+13:39:04.777 phase=Loading paused=True loading_progress terrain_ready=False view_ready=False world_ready=True progress=0.707
+13:39:06.693 phase=Loading paused=True view_ready
+13:39:06.731 phase=Loading paused=True loading_progress terrain_ready=False view_ready=True world_ready=True progress=0.707
+13:39:07.733 phase=Loading paused=True loading_progress terrain_ready=False view_ready=True world_ready=True progress=0.707
+13:39:08.736 phase=Loading paused=True loading_progress terrain_ready=False view_ready=True world_ready=True progress=0.707
+13:39:09.636 phase=Countdown paused=True countdown_started
+13:39:12.642 phase=Live paused=False match_live
+13:39:26.487 phase=Loading paused=True loading_started_async_reset
+13:39:26.519 phase=Loading paused=True view_ready
+13:39:26.519 phase=Loading paused=True async_reset_ready
+13:39:26.519 phase=Loading paused=True loading_progress terrain_ready=True view_ready=True world_ready=True progress=1.000
+13:39:26.519 phase=Countdown paused=True countdown_started
+13:39:29.524 phase=Live paused=False match_live
+15:40:06.073 phase=Loading paused=True loading_started_async_reset
+15:40:06.075 phase=Loading paused=True async_reset_ready
+15:40:06.077 phase=Loading paused=True loading_progress terrain_ready=False view_ready=False world_ready=True progress=0.707
+15:40:08.204 phase=Loading paused=True view_ready
+15:40:08.205 phase=Loading paused=True loading_progress terrain_ready=False view_ready=True world_ready=True progress=0.707
+15:40:09.207 phase=Loading paused=True loading_progress terrain_ready=False view_ready=True world_ready=True progress=0.707
+15:40:10.222 phase=Loading paused=True loading_progress terrain_ready=False view_ready=True world_ready=True progress=0.707
+15:40:10.749 phase=Countdown paused=True countdown_started
+15:40:13.761 phase=Live paused=False match_live
+15:44:07.779 phase=Loading paused=True loading_started_async_reset
+15:44:07.781 phase=Loading paused=True async_reset_ready
+15:44:07.783 phase=Loading paused=True loading_progress terrain_ready=False view_ready=False world_ready=True progress=0.707
+15:44:09.686 phase=Loading paused=True view_ready
+15:44:09.689 phase=Loading paused=True loading_progress terrain_ready=False view_ready=True world_ready=True progress=0.643
+15:44:10.047 phase=Countdown paused=True countdown_started
+15:44:13.064 phase=Live paused=False match_live
+15:48:30.606 phase=Loading paused=True loading_started_async_reset
+15:48:30.608 phase=Loading paused=True async_reset_ready
+15:48:30.610 phase=Loading paused=True loading_progress terrain_ready=False view_ready=False world_ready=True progress=0.707
+15:48:32.605 phase=Loading paused=True view_ready
+15:48:32.608 phase=Loading paused=True loading_progress terrain_ready=False view_ready=True world_ready=True progress=0.643
+15:48:32.971 phase=Countdown paused=True countdown_started
+15:48:35.983 phase=Live paused=False match_live
+16:00:10.800 phase=Loading paused=True loading_started_async_reset
+16:00:10.802 phase=Loading paused=True async_reset_ready
+16:00:10.805 phase=Loading paused=True loading_progress terrain_ready=False view_ready=False world_ready=True progress=0.707
+16:00:13.439 phase=Loading paused=True view_ready
+16:00:13.445 phase=Loading paused=True loading_progress terrain_ready=False view_ready=True world_ready=True progress=0.707
+16:00:14.469 phase=Loading paused=True loading_progress terrain_ready=False view_ready=True world_ready=True progress=0.707
+16:00:15.488 phase=Loading paused=True loading_progress terrain_ready=False view_ready=True world_ready=True progress=0.707
+16:00:16.511 phase=Loading paused=True loading_progress terrain_ready=False view_ready=True world_ready=True progress=0.707
+16:00:17.317 phase=Countdown paused=True countdown_started
+16:00:20.340 phase=Live paused=False match_live
+16:16:11.838 phase=Loading paused=True loading_started_async_reset
+16:16:11.878 phase=Loading paused=True view_ready
+16:16:11.881 phase=Loading paused=True async_reset_ready
+16:16:11.881 phase=Loading paused=True loading_progress terrain_ready=True view_ready=True world_ready=True progress=1.000
+16:16:11.881 phase=Countdown paused=True countdown_started
+16:16:14.890 phase=Live paused=False match_live
+16:16:41.207 phase=Loading paused=True loading_started_async_reset
+16:16:41.241 phase=Loading paused=True view_ready
+16:16:41.242 phase=Loading paused=True async_reset_ready
+16:16:41.242 phase=Loading paused=True loading_progress terrain_ready=True view_ready=True world_ready=True progress=1.000
+16:16:41.242 phase=Countdown paused=True countdown_started
+16:16:44.255 phase=Live paused=False match_live
+16:32:34.247 phase=Loading paused=True loading_started_async_reset
+16:32:34.251 phase=Loading paused=True async_reset_ready
+16:32:34.253 phase=Loading paused=True loading_progress terrain_ready=False view_ready=False world_ready=True progress=0.707
+16:32:36.565 phase=Loading paused=True view_ready
+16:32:36.573 phase=Loading paused=True loading_progress terrain_ready=False view_ready=True world_ready=True progress=0.643
+16:32:37.013 phase=Countdown paused=True countdown_started
+16:32:40.030 phase=Live paused=False match_live
+16:44:24.416 phase=Loading paused=True loading_started_async_reset
+16:44:24.419 phase=Loading paused=True async_reset_ready
+16:44:24.421 phase=Loading paused=True loading_progress terrain_ready=False view_ready=False world_ready=True progress=0.707
+16:44:26.256 phase=Loading paused=True view_ready
+16:44:26.258 phase=Loading paused=True loading_progress terrain_ready=False view_ready=True world_ready=True progress=0.707
+16:44:27.265 phase=Loading paused=True loading_progress terrain_ready=False view_ready=True world_ready=True progress=0.707
+16:44:28.287 phase=Loading paused=True loading_progress terrain_ready=False view_ready=True world_ready=True progress=0.707
+16:44:29.333 phase=Loading paused=True loading_progress terrain_ready=False view_ready=True world_ready=True progress=0.956
+16:44:29.490 phase=Countdown paused=True countdown_started
+16:44:32.491 phase=Live paused=False match_live
+16:59:59.911 phase=Loading paused=True loading_started_async_reset
+16:59:59.915 phase=Loading paused=True async_reset_ready
+16:59:59.917 phase=Loading paused=True loading_progress terrain_ready=False view_ready=False world_ready=True progress=0.707
+17:00:01.715 phase=Loading paused=True view_ready
+17:00:01.718 phase=Loading paused=True loading_progress terrain_ready=False view_ready=True world_ready=True progress=0.707
+17:00:02.725 phase=Loading paused=True loading_progress terrain_ready=False view_ready=True world_ready=True progress=0.643
+17:00:03.143 phase=Countdown paused=True countdown_started
+17:00:06.145 phase=Live paused=False match_live

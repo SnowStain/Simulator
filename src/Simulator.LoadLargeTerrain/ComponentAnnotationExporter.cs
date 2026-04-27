@@ -16,7 +16,9 @@ internal static class ComponentAnnotationExporter
         IReadOnlySet<int> actorComponentIds,
         IReadOnlyList<CompositeObject> composites,
         WorldScale worldScale,
-        IReadOnlyDictionary<int, System.Numerics.Vector4>? componentColorOverrides = null)
+        IReadOnlyDictionary<int, System.Numerics.Vector4>? componentColorOverrides = null,
+        IReadOnlyDictionary<int, string>? componentTerrainLabels = null,
+        IReadOnlyList<CollisionShapeObject>? collisionShapes = null)
     {
         var payload = new ComponentAnnotationFile
         {
@@ -62,6 +64,9 @@ internal static class ComponentAnnotationExporter
                 PrimitiveIndex = component.PrimitiveIndex,
                 Name = component.Name,
                 Role = actorComponentIds.Contains(component.Id) ? "actor" : "static",
+                TerrainLabel = componentTerrainLabels is not null && componentTerrainLabels.TryGetValue(component.Id, out var terrainLabel)
+                    ? terrainLabel
+                    : string.Empty,
                 Bounds = BoundsAnnotation.From(component.Bounds),
             }).ToArray(),
             ComponentColorOverrides = componentColorOverrides?
@@ -74,6 +79,22 @@ internal static class ComponentAnnotationExporter
                     G = Math.Clamp(pair.Value.Y, 0.0f, 1.0f),
                     B = Math.Clamp(pair.Value.Z, 0.0f, 1.0f),
                     A = Math.Clamp(pair.Value.W, 0.0f, 1.0f),
+                })
+                .ToArray() ?? [],
+            CollisionShapes = collisionShapes?
+                .OrderBy(shape => shape.Id)
+                .Select(shape => new CollisionShapeAnnotation
+                {
+                    Id = shape.Id,
+                    Name = shape.Name,
+                    ShapeType = shape.ShapeType.ToString().ToLowerInvariant(),
+                    PositionModel = VectorAnnotation.From(shape.PositionModel),
+                    SizeModel = VectorAnnotation.From(shape.SizeModel),
+                    RadiusModel = shape.RadiusModel,
+                    HeightModel = shape.HeightModel,
+                    YprDegrees = VectorAnnotation.From(shape.RotationYprDegrees),
+                    TerrainLabel = shape.TerrainLabel,
+                    VerticesModel = shape.VerticesModel.Select(VectorAnnotation.From).ToArray(),
                 })
                 .ToArray() ?? [],
         };
@@ -105,6 +126,8 @@ internal static class ComponentAnnotationExporter
         public required ComponentAnnotation[] Components { get; init; }
 
         public required ComponentColorOverrideAnnotation[] ComponentColorOverrides { get; init; }
+
+        public required CollisionShapeAnnotation[] CollisionShapes { get; init; }
     }
 
     private sealed class WorldScaleAnnotation
@@ -168,7 +191,32 @@ internal static class ComponentAnnotationExporter
 
         public required string Role { get; init; }
 
+        public required string TerrainLabel { get; init; }
+
         public required BoundsAnnotation Bounds { get; init; }
+    }
+
+    private sealed class CollisionShapeAnnotation
+    {
+        public required int Id { get; init; }
+
+        public required string Name { get; init; }
+
+        public required string ShapeType { get; init; }
+
+        public required VectorAnnotation PositionModel { get; init; }
+
+        public required VectorAnnotation SizeModel { get; init; }
+
+        public required float RadiusModel { get; init; }
+
+        public required float HeightModel { get; init; }
+
+        public required VectorAnnotation YprDegrees { get; init; }
+
+        public required string TerrainLabel { get; init; }
+
+        public required VectorAnnotation[] VerticesModel { get; init; }
     }
 
     private sealed class ComponentColorOverrideAnnotation

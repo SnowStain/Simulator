@@ -1,5 +1,6 @@
 using System.Numerics;
 using Simulator.Core;
+using Simulator.Core.Engine;
 
 namespace Simulator.Core.Gameplay;
 
@@ -102,6 +103,15 @@ public sealed class RuleSimulationService
     private readonly bool _projectileRicochetEnabled;
     private long _lastRulePerfLogTicks;
 
+    private struct RuleFramePerf
+    {
+        public long RespawnTicks;
+
+        public long InteractionTicks;
+
+        public long CombatTicks;
+    }
+
     public RuleSimulationService(
         RuleSet rules,
         ArenaInteractionService interactionService,
@@ -138,59 +148,75 @@ public sealed class RuleSimulationService
             DeltaTimeSec = dt,
         };
 
-        long respawnTicks = 0;
-        long interactionTicks = 0;
-        long combatTicks = 0;
-        long totalStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+        var perf = new RuleFramePerf();
+        long totalStartTicks = SimulatorRuntimePerformance.Timestamp();
         for (int step = 0; step < steps; step++)
         {
-            world.GameTimeSec += dt;
-
-            long segmentStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
-            if (enableCombat)
-            {
-                TickCombat(world, dt, report);
-            }
-            combatTicks += System.Diagnostics.Stopwatch.GetTimestamp() - segmentStartTicks;
-            segmentStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
-            TickRespawnAndRecovery(world, facilities, dt, report);
-            respawnTicks += System.Diagnostics.Stopwatch.GetTimestamp() - segmentStartTicks;
-            if (_enableAutoMovement)
-            {
-                TickAutoMovement(world, dt);
-            }
-
-            segmentStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
-            IReadOnlyList<FacilityInteractionEvent> interactionEvents =
-                _interactionService.UpdateWorld(world, facilities, dt);
-            interactionTicks += System.Diagnostics.Stopwatch.GetTimestamp() - segmentStartTicks;
-            foreach (FacilityInteractionEvent interactionEvent in interactionEvents)
-            {
-                report.InteractionEvents.Add(interactionEvent);
-            }
-
-            report.InteractionEventCount += interactionEvents.Count;
+            StepRuleFrame(world, facilities, dt, enableCombat, report, ref perf);
         }
 
         LogRulePerfIfDue(
-            System.Diagnostics.Stopwatch.GetTimestamp() - totalStartTicks,
-            respawnTicks,
-            interactionTicks,
-            combatTicks,
+            SimulatorRuntimePerformance.ElapsedTicksSince(totalStartTicks),
+            perf.RespawnTicks,
+            perf.InteractionTicks,
+            perf.CombatTicks,
             world.Entities.Count,
             world.Projectiles.Count);
 
-        if (!captureFinalEntities)
+        if (captureFinalEntities)
         {
-            return report;
+            CaptureFinalEntities(world, report);
         }
 
+        return report;
+    }
+
+    private void StepRuleFrame(
+        SimulationWorldState world,
+        IReadOnlyList<Simulator.Core.Map.FacilityRegion> facilities,
+        double dt,
+        bool enableCombat,
+        SimulationRunReport report,
+        ref RuleFramePerf perf)
+    {
+        world.GameTimeSec += dt;
+
+        long segmentStartTicks = SimulatorRuntimePerformance.Timestamp();
+        if (enableCombat)
+        {
+            TickCombat(world, dt, report);
+        }
+
+        perf.CombatTicks += SimulatorRuntimePerformance.ElapsedTicksSince(segmentStartTicks);
+
+        segmentStartTicks = SimulatorRuntimePerformance.Timestamp();
+        TickRespawnAndRecovery(world, facilities, dt, report);
+        perf.RespawnTicks += SimulatorRuntimePerformance.ElapsedTicksSince(segmentStartTicks);
+
+        if (_enableAutoMovement)
+        {
+            TickAutoMovement(world, dt);
+        }
+
+        segmentStartTicks = SimulatorRuntimePerformance.Timestamp();
+        IReadOnlyList<FacilityInteractionEvent> interactionEvents =
+            _interactionService.UpdateWorld(world, facilities, dt);
+        perf.InteractionTicks += SimulatorRuntimePerformance.ElapsedTicksSince(segmentStartTicks);
+
+        foreach (FacilityInteractionEvent interactionEvent in interactionEvents)
+        {
+            report.InteractionEvents.Add(interactionEvent);
+        }
+
+        report.InteractionEventCount += interactionEvents.Count;
+    }
+
+    private static void CaptureFinalEntities(SimulationWorldState world, SimulationRunReport report)
+    {
         foreach (SimulationEntity entity in world.Entities)
         {
             report.FinalEntities.Add(CloneEntity(entity));
         }
-
-        return report;
     }
 
     private void LogRulePerfIfDue(
@@ -201,26 +227,20 @@ public sealed class RuleSimulationService
         int entityCount,
         int projectileCount)
     {
-        long nowTicks = System.Diagnostics.Stopwatch.GetTimestamp();
-        if (_lastRulePerfLogTicks > 0
-            && (nowTicks - _lastRulePerfLogTicks) / (double)System.Diagnostics.Stopwatch.Frequency < 2.0)
+        if (!SimulatorRuntimePerformance.TryMarkInterval(ref _lastRulePerfLogTicks, 2.0))
         {
             return;
         }
 
-        _lastRulePerfLogTicks = nowTicks;
         string line =
-            $"{DateTime.Now:HH:mm:ss.fff} "
-            + $"total={TicksToMs(totalTicks):0.00}ms "
-            + $"respawn={TicksToMs(respawnTicks):0.00}ms "
-            + $"interaction={TicksToMs(interactionTicks):0.00}ms "
-            + $"combat={TicksToMs(combatTicks):0.00}ms "
+            $"{SimulatorRuntimePerformance.WallClockLabel()} "
+            + $"total={SimulatorRuntimePerformance.FormatMilliseconds(totalTicks)}ms "
+            + $"respawn={SimulatorRuntimePerformance.FormatMilliseconds(respawnTicks)}ms "
+            + $"interaction={SimulatorRuntimePerformance.FormatMilliseconds(interactionTicks)}ms "
+            + $"combat={SimulatorRuntimePerformance.FormatMilliseconds(combatTicks)}ms "
             + $"entities={entityCount} projectiles={projectileCount}";
         SimulatorRuntimeLog.Append("rule_perf.log", line);
     }
-
-    private static double TicksToMs(long ticks)
-        => ticks * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
 
     private void TickAutoMovement(SimulationWorldState world, double dt)
     {
@@ -562,8 +582,7 @@ public sealed class RuleSimulationService
                     pitchDeg = shooter.AutoAimHasSmoothedAim
                         ? shooter.AutoAimSmoothedPitchDeg
                         : solution.PitchDeg;
-                    yawDeg = SimulationCombatMath.NormalizeDeg(Math.Atan2(preferredTarget.Y - shooter.Y, preferredTarget.X - shooter.X) * 180.0 / Math.PI);
-                    shooter.TurretYawDeg = yawDeg;
+                    yawDeg = shooter.TurretYawDeg;
                     shooter.GimbalPitchDeg = pitchDeg;
                 }
                 else
@@ -2411,13 +2430,13 @@ public sealed class RuleSimulationService
         SimulationEntity target,
         ArmorPlateTarget lockedPlate)
     {
-        if (!SimulationCombatMath.IsRotatingArmorPlate(world, target, lockedPlate))
-        {
-            return true;
-        }
-
+        AutoAimSolution solution = TryResolveStoredAutoAimSolution(shooter, target, lockedPlate, out AutoAimSolution storedSolution)
+            ? storedSolution
+            : SimulationCombatMath.ComputeAutoAimSolution(world, shooter, target, lockedPlate, 1000.0);
         double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
-        double predictedTimeSec = world.GameTimeSec + Math.Clamp(shooter.AutoAimLeadTimeSec, 0.0, 2.35);
+        AutoAimCompensationProfile compensation = SimulationCombatMath.ResolveAutoAimCompensationProfile(world, shooter, target, lockedPlate);
+        double compensatedLeadTimeSec = Math.Clamp(solution.LeadTimeSec + compensation.TimeBiasSec, 0.0, 2.35);
+        double predictedTimeSec = world.GameTimeSec + compensatedLeadTimeSec;
         ArmorPlateTarget plate = SimulationCombatMath.GetAttackableArmorPlateTargets(target, metersPerWorldUnit, predictedTimeSec)
             .FirstOrDefault(candidate => string.Equals(candidate.Id, lockedPlate.Id, StringComparison.OrdinalIgnoreCase));
         if (string.IsNullOrWhiteSpace(plate.Id))
@@ -2425,10 +2444,14 @@ public sealed class RuleSimulationService
             plate = lockedPlate;
         }
 
-        double yawDeg = SimulationCombatMath.NormalizeDeg(Math.Atan2(target.Y - shooter.Y, target.X - shooter.X) * 180.0 / Math.PI);
-        double pitchDeg = shooter.AutoAimHasSmoothedAim
-            ? shooter.AutoAimSmoothedPitchDeg
-            : shooter.GimbalPitchDeg;
+        if (SimulationCombatMath.TryPredictOutpostRingPlatePose(world, target, lockedPlate, compensatedLeadTimeSec, out ArmorPlateTarget predictedOutpostRing))
+        {
+            plate = predictedOutpostRing;
+        }
+
+        plate = ResolveHeroLobPredictedAimPlate(plate, solution);
+        double yawDeg = shooter.TurretYawDeg;
+        double pitchDeg = shooter.GimbalPitchDeg;
         return IsHeroLobFireWindowReadyForPose(world, shooter, plate, yawDeg, pitchDeg);
     }
 
@@ -2439,6 +2462,79 @@ public sealed class RuleSimulationService
         double yawDeg,
         double pitchDeg)
     {
+        if (!TryProjectCrosshairToPredictedArmorPlate(
+                world,
+                shooter,
+                plate,
+                yawDeg,
+                pitchDeg,
+                out double horizontalOffsetM,
+                out double verticalOffsetM,
+                out bool frontFacing))
+        {
+            return false;
+        }
+
+        if (!frontFacing)
+        {
+            return false;
+        }
+
+        double widthM = Math.Clamp(plate.WidthM > 1e-6 ? plate.WidthM : plate.SideLengthM, 0.03, 0.60);
+        double heightM = Math.Clamp(plate.HeightSpanM > 1e-6 ? plate.HeightSpanM : plate.SideLengthM, 0.03, 0.60);
+        double projectileMarginM = Math.Clamp(
+            SimulationCombatMath.ProjectileDiameterM(shooter.AmmoType) * 1.05 + shooter.AutoAimLeadDistanceM * 0.0024,
+            0.018,
+            0.085);
+        double centerPlaneHeightErrorM = SimulationCombatMath.EstimateProjectileHeightErrorAtPoint(
+            world,
+            shooter,
+            plate.X,
+            plate.Y,
+            plate.HeightM,
+            pitchDeg);
+        double centerPlaneToleranceM = Math.Clamp(Math.Max(0.18, heightM * 0.88 + projectileMarginM), 0.18, 0.34);
+        return Math.Abs(horizontalOffsetM) <= widthM * 0.58 + projectileMarginM
+            && Math.Abs(verticalOffsetM) <= heightM * 0.58 + projectileMarginM
+            && Math.Abs(centerPlaneHeightErrorM) <= centerPlaneToleranceM;
+    }
+
+    private static ArmorPlateTarget ResolveHeroLobPredictedAimPlate(
+        ArmorPlateTarget posePlate,
+        AutoAimSolution solution)
+    {
+        if (!double.IsFinite(solution.AimPointX)
+            || !double.IsFinite(solution.AimPointY)
+            || Math.Abs(solution.AimPointX) + Math.Abs(solution.AimPointY) <= 1e-8)
+        {
+            return posePlate;
+        }
+
+        double aimHeightM = double.IsFinite(solution.AimPointHeightM) && solution.AimPointHeightM > 1e-6
+            ? solution.AimPointHeightM
+            : posePlate.HeightM;
+        return posePlate with
+        {
+            X = solution.AimPointX,
+            Y = solution.AimPointY,
+            HeightM = aimHeightM,
+        };
+    }
+
+    private static bool TryProjectCrosshairToPredictedArmorPlate(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        ArmorPlateTarget plate,
+        double yawDeg,
+        double pitchDeg,
+        out double horizontalOffsetM,
+        out double verticalOffsetM,
+        out bool frontFacing)
+    {
+        horizontalOffsetM = 0.0;
+        verticalOffsetM = 0.0;
+        frontFacing = true;
+
         double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
         (double muzzleX, double muzzleY, double muzzleHeightM) = SimulationCombatMath.ComputeMuzzlePoint(world, shooter, pitchDeg);
         Vector3 start = new(
@@ -2458,25 +2554,30 @@ public sealed class RuleSimulationService
         normal = Vector3.Normalize(normal);
         double yawRad = yawDeg * Math.PI / 180.0;
         double pitchRad = Math.Clamp(pitchDeg, -40.0, 40.0) * Math.PI / 180.0;
-        double speedMps = Math.Max(1.0, SimulationCombatMath.ProjectileSpeedMps(shooter));
-        Vector3 velocity = new(
-            (float)(Math.Cos(pitchRad) * Math.Cos(yawRad) * speedMps),
-            (float)(Math.Sin(pitchRad) * speedMps),
-            (float)(Math.Cos(pitchRad) * Math.Sin(yawRad) * speedMps));
-        if (!TryIntersectBallisticPlane(start, velocity, center, normal, out double tSec))
+        Vector3 direction = new(
+            (float)(Math.Cos(pitchRad) * Math.Cos(yawRad)),
+            (float)Math.Sin(pitchRad),
+            (float)(Math.Cos(pitchRad) * Math.Sin(yawRad)));
+        if (direction.LengthSquared() <= 1e-8f)
         {
             return false;
         }
 
-        Vector3 impact = start
-            + velocity * (float)tSec
-            + new Vector3(0f, (float)(-0.5 * 9.81 * tSec * tSec), 0f);
-        Vector3 impactDirection = velocity + new Vector3(0f, (float)(-9.81 * tSec), 0f);
-        if (impactDirection.LengthSquared() <= 1e-8f)
+        direction = Vector3.Normalize(direction);
+        double denom = Vector3.Dot(direction, normal);
+        if (Math.Abs(denom) <= 1e-6)
         {
             return false;
         }
 
+        double t = Vector3.Dot(center - start, normal) / denom;
+        if (t <= 0.02 || t > 200.0)
+        {
+            return false;
+        }
+
+        frontFacing = plate.Id.Contains("top", StringComparison.OrdinalIgnoreCase) || denom <= -0.03;
+        Vector3 crosshairPoint = start + direction * (float)t;
         double plateYawRad = plate.YawDeg * Math.PI / 180.0;
         Vector3 side = new((float)-Math.Sin(plateYawRad), 0f, (float)Math.Cos(plateYawRad));
         if (side.LengthSquared() <= 1e-8f)
@@ -2488,30 +2589,14 @@ public sealed class RuleSimulationService
             side = Vector3.Normalize(side);
         }
 
-        Vector3 up = Vector3.Cross(side, normal);
+        Vector3 up = plate.Id.Contains("top", StringComparison.OrdinalIgnoreCase)
+            ? Vector3.Cross(side, normal)
+            : Vector3.UnitY;
         up = up.LengthSquared() <= 1e-8f ? Vector3.UnitY : Vector3.Normalize(up);
-        Vector3 delta = impact - center;
-        double horizontalOffsetM = Vector3.Dot(delta, side);
-        double verticalOffsetM = Vector3.Dot(delta, up);
-        double frontDot = Vector3.Dot(-Vector3.Normalize(impactDirection), normal);
-        double widthM = Math.Clamp(plate.WidthM > 1e-6 ? plate.WidthM : plate.SideLengthM, 0.03, 0.60);
-        double heightM = Math.Clamp(plate.HeightSpanM > 1e-6 ? plate.HeightSpanM : plate.SideLengthM, 0.03, 0.60);
-        double projectileMarginM = Math.Clamp(
-            SimulationCombatMath.ProjectileDiameterM(shooter.AmmoType) * 0.75 + shooter.AutoAimLeadDistanceM * 0.0018,
-            0.012,
-            0.055);
-        double centerPlaneHeightErrorM = SimulationCombatMath.EstimateProjectileHeightErrorAtPoint(
-            world,
-            shooter,
-            plate.X,
-            plate.Y,
-            plate.HeightM,
-            pitchDeg);
-        double centerPlaneToleranceM = Math.Clamp(Math.Max(0.14, heightM * 0.72 + projectileMarginM), 0.14, 0.26);
-        return frontDot >= Math.Cos(Math.PI / 3.55)
-            && Math.Abs(horizontalOffsetM) <= widthM * 0.62 + projectileMarginM
-            && Math.Abs(verticalOffsetM) <= heightM * 0.64 + projectileMarginM
-            && Math.Abs(centerPlaneHeightErrorM) <= centerPlaneToleranceM;
+        Vector3 delta = crosshairPoint - center;
+        horizontalOffsetM = Vector3.Dot(delta, side);
+        verticalOffsetM = Vector3.Dot(delta, up);
+        return true;
     }
 
     private static bool TryIntersectBallisticPlane(

@@ -1259,27 +1259,29 @@ internal sealed record RobotAppearanceProfile
         if (entity.RoleKey.Equals("infantry", StringComparison.OrdinalIgnoreCase))
         {
             bool omni = string.Equals(ChassisSubtype, "omni_wheel", StringComparison.OrdinalIgnoreCase);
+            bool balance = ChassisSubtype.Contains("balance", StringComparison.OrdinalIgnoreCase);
             entity.StepClimbDurationSec = omni ? 0.75 : 1.0;
-            entity.DirectStepHeightM = omni ? 0.08 : 0.06;
-            entity.MaxStepClimbHeightM = omni ? 0.14 : 0.50;
+            entity.DirectStepHeightM = omni ? 0.025 : 0.06;
+            entity.MaxStepClimbHeightM = omni ? 0.035 : balance ? 0.50 : 0.25;
+            entity.ChassisSupportsJump = balance || entity.ChassisSupportsJump;
         }
         else if (entity.RoleKey.Equals("engineer", StringComparison.OrdinalIgnoreCase))
         {
             entity.StepClimbDurationSec = 1.0;
             entity.DirectStepHeightM = 0.07;
-            entity.MaxStepClimbHeightM = 0.30;
+            entity.MaxStepClimbHeightM = 0.25;
         }
         else if (entity.RoleKey.Equals("hero", StringComparison.OrdinalIgnoreCase))
         {
             entity.StepClimbDurationSec = 1.0;
             entity.DirectStepHeightM = 0.08;
-            entity.MaxStepClimbHeightM = 0.30;
+            entity.MaxStepClimbHeightM = 0.25;
         }
         else if (entity.RoleKey.Equals("sentry", StringComparison.OrdinalIgnoreCase))
         {
             entity.StepClimbDurationSec = 1.0;
             entity.DirectStepHeightM = 0.05;
-            entity.MaxStepClimbHeightM = 0.30;
+            entity.MaxStepClimbHeightM = 0.25;
         }
         else
         {

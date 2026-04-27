@@ -427,3 +427,61 @@
 09:52:32.433 enter sustained_low_latency no_gc_region=True
 09:53:17.830 end_no_gc_skipped InvalidOperationException:NoGCRegion mode must be set.
 09:53:21.824 enter sustained_low_latency no_gc_region=True
+10:05:39.379 enter sustained_low_latency no_gc_region=True
+10:06:15.803 end_no_gc_skipped InvalidOperationException:NoGCRegion mode must be set.
+10:06:16.442 enter sustained_low_latency no_gc_region=True
+10:06:35.575 end_no_gc_skipped InvalidOperationException:NoGCRegion mode must be set.
+10:17:01.297 enter sustained_low_latency no_gc_region=True
+10:18:20.985 end_no_gc_skipped InvalidOperationException:NoGCRegion mode must be set.
+10:30:53.654 enter sustained_low_latency no_gc_region=True
+10:31:24.485 end_no_gc_skipped InvalidOperationException:NoGCRegion mode must be set.
+10:32:44.942 enter sustained_low_latency no_gc_region=True
+10:33:00.515 end_no_gc_skipped InvalidOperationException:NoGCRegion mode must be set.
+10:44:25.217 enter sustained_low_latency no_gc_region=True
+10:44:48.028 end_no_gc_skipped InvalidOperationException:NoGCRegion mode must be set.
+10:56:10.814 enter sustained_low_latency no_gc_region=True
+10:56:12.448 enter sustained_low_latency no_gc_region=True
+10:56:49.963 end_no_gc_skipped InvalidOperationException:NoGCRegion mode must be set.
+10:57:41.027 enter sustained_low_latency no_gc_region=True
+10:58:37.228 end_no_gc_skipped InvalidOperationException:NoGCRegion mode must be set.
+12:40:14.699 enter sustained_low_latency no_gc_region=True
+12:40:17.029 enter sustained_low_latency no_gc_region=True
+12:41:03.491 end_no_gc_skipped InvalidOperationException:NoGCRegion mode must be set.
+12:41:47.035 enter sustained_low_latency no_gc_region=True
+12:42:52.534 end_no_gc_skipped InvalidOperationException:NoGCRegion mode must be set.
+12:42:57.618 enter sustained_low_latency no_gc_region=True
+12:43:22.846 end_no_gc_skipped InvalidOperationException:NoGCRegion mode must be set.
+12:43:58.700 enter sustained_low_latency no_gc_region=True
+13:39:12.662 enter sustained_low_latency no_gc_region=True
+13:39:15.231 enter sustained_low_latency no_gc_region=True
+13:39:29.540 enter sustained_low_latency no_gc_region=True
+13:40:12.047 end_no_gc_skipped InvalidOperationException:NoGCRegion mode must be set.
+15:40:13.783 enter sustained_low_latency no_gc_region=True
+15:41:57.245 end_no_gc_skipped InvalidOperationException:NoGCRegion mode must be set.
+15:41:57.753 enter sustained_low_latency no_gc_region=True
+15:42:13.759 end_no_gc_skipped InvalidOperationException:NoGCRegion mode must be set.
+15:42:18.615 enter sustained_low_latency no_gc_region=True
+15:42:28.286 end_no_gc_skipped InvalidOperationException:NoGCRegion mode must be set.
+15:44:13.086 enter sustained_low_latency no_gc_region=True
+15:44:36.358 end_no_gc_skipped InvalidOperationException:NoGCRegion mode must be set.
+15:48:36.005 enter sustained_low_latency no_gc_region=True
+15:49:32.386 end_no_gc_skipped InvalidOperationException:NoGCRegion mode must be set.
+16:00:20.366 enter sustained_low_latency no_gc_region=True
+16:00:58.009 end_no_gc_skipped InvalidOperationException:NoGCRegion mode must be set.
+16:02:31.351 enter sustained_low_latency no_gc_region=True
+16:16:14.907 enter sustained_low_latency no_gc_region=True
+16:16:29.711 end_no_gc_skipped InvalidOperationException:NoGCRegion mode must be set.
+16:16:30.670 enter sustained_low_latency no_gc_region=True
+16:16:44.274 enter sustained_low_latency no_gc_region=True
+16:17:17.656 end_no_gc_skipped InvalidOperationException:NoGCRegion mode must be set.
+16:32:40.053 enter sustained_low_latency no_gc_region=True
+16:44:32.514 enter sustained_low_latency no_gc_region=True
+16:45:00.270 end_no_gc_skipped InvalidOperationException:NoGCRegion mode must be set.
+16:46:13.738 enter sustained_low_latency no_gc_region=True
+16:47:00.527 end_no_gc_skipped InvalidOperationException:NoGCRegion mode must be set.
+16:47:43.925 enter sustained_low_latency no_gc_region=True
+16:48:40.920 end_no_gc_skipped InvalidOperationException:NoGCRegion mode must be set.
+17:00:06.169 enter sustained_low_latency no_gc_region=True
+17:00:26.301 end_no_gc_skipped InvalidOperationException:NoGCRegion mode must be set.
+17:00:32.805 enter sustained_low_latency no_gc_region=True
+17:01:26.273 end_no_gc_skipped InvalidOperationException:NoGCRegion mode must be set.

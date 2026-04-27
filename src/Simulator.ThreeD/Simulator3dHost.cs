@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using System.Text.Json;
 using Simulator.Assets;
 using Simulator.Core;
+using Simulator.Core.Engine;
 using Simulator.Core.Gameplay;
 using Simulator.Core.Map;
 
@@ -1123,25 +1124,25 @@ internal sealed class Simulator3dHost
         }
 
         bool effectiveAiEnabled = _aiEnabled || IsDuelMode;
-        long stepStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+        long stepStartTicks = SimulatorRuntimePerformance.Timestamp();
         long segmentStartTicks = stepStartTicks;
         MaybeReloadDecisionDeploymentProfile();
-        long reloadTicks = System.Diagnostics.Stopwatch.GetTimestamp() - segmentStartTicks;
-        segmentStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+        long reloadTicks = SimulatorRuntimePerformance.ElapsedTicksSince(segmentStartTicks);
+        segmentStartTicks = SimulatorRuntimePerformance.Timestamp();
         EnsureSingleUnitTestFocus();
         ApplyPlayerControlState(playerControlState);
         ApplyMapComponentTestRuntimeFilters();
         ApplySingleUnitTestRuntimeFilters();
         ApplyScenarioRuntimePreMotion();
-        long inputTicks = System.Diagnostics.Stopwatch.GetTimestamp() - segmentStartTicks;
-        segmentStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+        long inputTicks = SimulatorRuntimePerformance.ElapsedTicksSince(segmentStartTicks);
+        segmentStartTicks = SimulatorRuntimePerformance.Timestamp();
         _terrainMotionService.Step(World, _runtimeGrid, DeltaTimeSec, effectiveAiEnabled);
-        long motionTicks = System.Diagnostics.Stopwatch.GetTimestamp() - segmentStartTicks;
-        segmentStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+        long motionTicks = SimulatorRuntimePerformance.ElapsedTicksSince(segmentStartTicks);
+        segmentStartTicks = SimulatorRuntimePerformance.Timestamp();
         ApplyMapComponentTestRuntimeFilters();
         ApplySingleUnitTestRuntimeFilters();
-        long postMotionFilterTicks = System.Diagnostics.Stopwatch.GetTimestamp() - segmentStartTicks;
-        segmentStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+        long postMotionFilterTicks = SimulatorRuntimePerformance.ElapsedTicksSince(segmentStartTicks);
+        segmentStartTicks = SimulatorRuntimePerformance.Timestamp();
         LastReport = _simulationService.Run(
             World,
             MapPreset.Facilities,
@@ -1150,12 +1151,12 @@ internal sealed class Simulator3dHost
             captureFinalEntities: false,
             enableCombat: !duelRoundRestartActive);
         ApplyScenarioRuntimePostSimulation();
-        long rulesTicks = System.Diagnostics.Stopwatch.GetTimestamp() - segmentStartTicks;
-        segmentStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+        long rulesTicks = SimulatorRuntimePerformance.ElapsedTicksSince(segmentStartTicks);
+        segmentStartTicks = SimulatorRuntimePerformance.Timestamp();
         ApplySingleUnitTestRuntimeFilters();
         EnsureSelectedEntity();
-        long selectTicks = System.Diagnostics.Stopwatch.GetTimestamp() - segmentStartTicks;
-        long totalTicks = System.Diagnostics.Stopwatch.GetTimestamp() - stepStartTicks;
+        long selectTicks = SimulatorRuntimePerformance.ElapsedTicksSince(segmentStartTicks);
+        long totalTicks = SimulatorRuntimePerformance.ElapsedTicksSince(stepStartTicks);
         LogSimulationPerfIfDue(totalTicks, reloadTicks, inputTicks, motionTicks, postMotionFilterTicks, rulesTicks, selectTicks);
     }
 
@@ -1168,29 +1169,23 @@ internal sealed class Simulator3dHost
         long rulesTicks,
         long selectTicks)
     {
-        long nowTicks = System.Diagnostics.Stopwatch.GetTimestamp();
-        if (_lastSimulationPerfLogTicks > 0
-            && (nowTicks - _lastSimulationPerfLogTicks) / (double)System.Diagnostics.Stopwatch.Frequency < 2.0)
+        if (!SimulatorRuntimePerformance.TryMarkInterval(ref _lastSimulationPerfLogTicks, 2.0))
         {
             return;
         }
 
-        _lastSimulationPerfLogTicks = nowTicks;
         string line =
-            $"{DateTime.Now:HH:mm:ss.fff} "
-            + $"total={TicksToMs(totalTicks):0.00}ms "
-            + $"reload={TicksToMs(reloadTicks):0.00}ms "
-            + $"input={TicksToMs(inputTicks):0.00}ms "
-            + $"motion={TicksToMs(motionTicks):0.00}ms "
-            + $"filter={TicksToMs(postMotionFilterTicks):0.00}ms "
-            + $"rules={TicksToMs(rulesTicks):0.00}ms "
-            + $"select={TicksToMs(selectTicks):0.00}ms "
+            $"{SimulatorRuntimePerformance.WallClockLabel()} "
+            + $"total={SimulatorRuntimePerformance.FormatMilliseconds(totalTicks)}ms "
+            + $"reload={SimulatorRuntimePerformance.FormatMilliseconds(reloadTicks)}ms "
+            + $"input={SimulatorRuntimePerformance.FormatMilliseconds(inputTicks)}ms "
+            + $"motion={SimulatorRuntimePerformance.FormatMilliseconds(motionTicks)}ms "
+            + $"filter={SimulatorRuntimePerformance.FormatMilliseconds(postMotionFilterTicks)}ms "
+            + $"rules={SimulatorRuntimePerformance.FormatMilliseconds(rulesTicks)}ms "
+            + $"select={SimulatorRuntimePerformance.FormatMilliseconds(selectTicks)}ms "
             + $"entities={World.Entities.Count} projectiles={World.Projectiles.Count}";
         SimulatorRuntimeLog.Append("simulation_perf.log", line);
     }
-
-    private static double TicksToMs(long ticks)
-        => ticks * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
 
     public IReadOnlyList<SimulationEntity> GetControlCandidates(string? team = null)
     {
@@ -1296,6 +1291,7 @@ internal sealed class Simulator3dHost
         }
 
         SelectedTeam = normalized;
+        _selectedEntityId = null;
         EnsureSelectedEntity();
         PersistSimulatorSettings();
     }
