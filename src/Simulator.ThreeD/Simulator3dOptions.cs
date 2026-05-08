@@ -316,6 +316,7 @@ internal sealed class Simulator3dOptions
             "infantry" => "robot_3",
             "infantry_1" => "robot_3",
             "infantry_2" => "robot_4",
+            "gimbal" or "gunner" or "operator" => "robot_6",
             "sentry" => "robot_7",
             _ => key,
         };

@@ -35,13 +35,13 @@
     "sim3d_map_preset": "rmuc2026",
     "sim3d_renderer_backend": "gpu",
     "terrain_scene_backend": "wgl_opengl",
-    "sim3d_selected_team": "blue",
-    "sim3d_selected_entity_id": "blue_robot_1",
+    "sim3d_selected_team": "red",
+    "sim3d_selected_entity_id": null,
     "player_projectile_ricochet_enabled": true,
     "match_mode": "full",
     "single_unit_test_team": "red",
-    "single_unit_test_entity_key": "robot_7",
-    "sim3d_infantry_mode": "balance",
+    "single_unit_test_entity_key": "robot_1",
+    "sim3d_infantry_mode": "mecanum",
     "sim3d_hero_performance_mode": "ranged_priority",
     "sim3d_infantry_durability_mode": "hp_priority",
     "sim3d_infantry_weapon_mode": "burst_priority",
@@ -49,11 +49,12 @@
     "sim3d_sentry_stance": "attack",
     "sim3d_autoaim_accuracy_scale": 1,
     "sim3d_projectile_entity_rendering": true,
-    "sim3d_projectile_physics_backend": "native",
-    "sim3d_ai_enabled": false,
+    "sim3d_projectile_physics_backend": "bepu",
+    "sim3d_ai_enabled": true,
     "sim3d_autoaim_self_calibration_enabled": true,
     "sim3d_unit_test_energy_force_large": false,
-    "sim3d_duel_round_limit": 5
+    "sim3d_duel_round_limit": 4,
+    "sim3d_display_latency_ms": 153.84615384615387
   },
   "ai": {
     "decision_deployment": {

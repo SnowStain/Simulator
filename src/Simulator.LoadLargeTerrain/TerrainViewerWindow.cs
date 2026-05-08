@@ -117,6 +117,7 @@ internal sealed class TerrainViewerWindow : GameWindow
     private int _fpsFrames;
     private int _lastVisibleChunkCount;
     private readonly HashSet<int> _selectedComponentIds = new();
+    private List<CompositeState>? _copiedComponentComposites;
     private int? _selectedComponentId;
     private int? _selectedCompositeId;
     private int? _focusedCompositeId;
@@ -301,6 +302,16 @@ internal sealed class TerrainViewerWindow : GameWindow
         if (ctrlDown && keyboard.IsKeyPressed(Keys.Y) && !ImGui.IsAnyItemActive())
         {
             Redo();
+        }
+
+        if (ctrlDown && keyboard.IsKeyPressed(Keys.C) && !ImGui.IsAnyItemActive())
+        {
+            CopySelectedComponentsOrComposite();
+        }
+
+        if (ctrlDown && keyboard.IsKeyPressed(Keys.V) && !ImGui.IsAnyItemActive())
+        {
+            PasteCopiedComponentsOrComposite(recordHistory: true);
         }
 
         if (ctrlDown && keyboard.IsKeyPressed(Keys.S))
@@ -687,6 +698,7 @@ internal sealed class TerrainViewerWindow : GameWindow
 
             var model = ToOpenTk(composite.ModelMatrix);
             var hasSelectedComponentsInComposite = HasSelectedComponents(composite);
+            var visibleCompositeChunkFilter = composite.ModelMatrix.IsIdentity ? _visibleChunkLookup : null;
             GL.UniformMatrix4(_modelLocation, false, ref model);
             GL.Uniform1(
                 _renderModeLocation,
@@ -696,7 +708,7 @@ internal sealed class TerrainViewerWindow : GameWindow
 
             if (_compositeDrawBatches.TryGetValue(composite.Id, out var drawBatches))
             {
-                DrawBatches(drawBatches);
+                DrawBatches(drawBatches, visibleCompositeChunkFilter);
             }
 
             if (_selectedComponentIds.Count > 0)
@@ -721,6 +733,12 @@ internal sealed class TerrainViewerWindow : GameWindow
 
                     foreach (var renderRef in selectedRefs)
                     {
+                        if (visibleCompositeChunkFilter is not null &&
+                            !visibleCompositeChunkFilter.Contains(renderRef.Chunk.ChunkIndex))
+                        {
+                            continue;
+                        }
+
                         renderRef.Chunk.DrawRange(renderRef.Range);
                     }
                 }
@@ -1138,6 +1156,230 @@ internal sealed class TerrainViewerWindow : GameWindow
         {
             AddSelectedComponentToSelectedComposite(recordHistory: false);
         }
+    }
+
+    private void CopySelectedComponentsOrComposite()
+    {
+        List<int> selectedComponentIds = GetEditableSelectedComponentIds();
+        if (selectedComponentIds.Count > 0)
+        {
+            _copiedComponentComposites = BuildClipboardStatesFromComponents(selectedComponentIds);
+            int copiedComponentCount = _copiedComponentComposites.Sum(item => item.ComponentIds.Length);
+            _statusMessage = copiedComponentCount > 0
+                ? $"已复制 {copiedComponentCount} 个组件，可按 Ctrl+V 粘贴为新组合体。"
+                : "当前选中的组件不可复制。";
+            return;
+        }
+
+        CompositeObject? composite = GetSelectedComposite();
+        if (composite is null)
+        {
+            _copiedComponentComposites = null;
+            _statusMessage = "请先选中组件或组合体再复制。";
+            return;
+        }
+
+        _copiedComponentComposites = new List<CompositeState> { CaptureCompositeState(composite, null) };
+        _statusMessage = $"已复制组合体 {composite.Name}，可按 Ctrl+V 粘贴。";
+    }
+
+    private List<CompositeState> BuildClipboardStatesFromComponents(IReadOnlyList<int> selectedComponentIds)
+    {
+        var states = new List<CompositeState>();
+        var grouped = selectedComponentIds
+            .Where(componentId => _componentsById.ContainsKey(componentId))
+            .GroupBy(componentId => _componentToCompositeId.TryGetValue(componentId, out int compositeId) ? compositeId : 0)
+            .OrderBy(group => group.Key);
+
+        foreach (IGrouping<int, int> group in grouped)
+        {
+            int[] componentIds = group.Distinct().OrderBy(componentId => componentId).ToArray();
+            if (componentIds.Length == 0)
+            {
+                continue;
+            }
+
+            if (group.Key != 0)
+            {
+                CompositeObject? sourceComposite = _composites.FirstOrDefault(composite => composite.Id == group.Key);
+                if (sourceComposite is not null)
+                {
+                    states.Add(CaptureCompositeState(sourceComposite, componentIds));
+                    continue;
+                }
+            }
+
+            BoundingBox bounds = BoundingBox.CreateEmpty();
+            foreach (int componentId in componentIds)
+            {
+                bounds.Include(_componentsById[componentId].Bounds);
+            }
+
+            System.Numerics.Vector3 center = bounds.IsValid() ? bounds.Center : _scene.Bounds.Center;
+            states.Add(new CompositeState
+            {
+                Id = 0,
+                Name = componentIds.Length == 1 ? $"组件 {componentIds[0]}" : $"组件组 {componentIds.Length}",
+                IsActor = true,
+                NextInteractionUnitId = 1,
+                PivotModel = center,
+                PositionModel = center,
+                RotationYprDegrees = System.Numerics.Vector3.Zero,
+                CoordinateYprDegrees = System.Numerics.Vector3.Zero,
+                CoordinateSystemMode = CoordinateSystemMode.World,
+                ComponentIds = componentIds,
+                InteractionUnits = new List<InteractionUnitState>(),
+            });
+        }
+
+        return states;
+    }
+
+    private void PasteCopiedComponentsOrComposite(bool recordHistory)
+    {
+        if (_copiedComponentComposites is null || _copiedComponentComposites.Count == 0)
+        {
+            _statusMessage = "当前没有已复制的组件或组合体。";
+            return;
+        }
+
+        if (recordHistory)
+        {
+            PushUndoSnapshot();
+        }
+
+        System.Numerics.Vector3 pasteOffset = ResolvePasteOffsetModel();
+        var pastedCompositeIds = new List<int>(_copiedComponentComposites.Count);
+        foreach (CompositeState source in _copiedComponentComposites)
+        {
+            int compositeId = _nextCompositeId++;
+            var composite = new CompositeObject
+            {
+                Id = compositeId,
+                Name = BuildCopiedCompositeName(source.Name),
+                IsActor = source.IsActor,
+                NextInteractionUnitId = Math.Max(1, source.NextInteractionUnitId),
+                PivotModel = source.PivotModel,
+                PositionModel = source.PositionModel + pasteOffset,
+                RotationYprDegrees = source.RotationYprDegrees,
+                CoordinateYprDegrees = source.CoordinateYprDegrees,
+                CoordinateSystemMode = source.CoordinateSystemMode,
+            };
+
+            foreach (int componentId in source.ComponentIds)
+            {
+                if (_componentsById.ContainsKey(componentId))
+                {
+                    composite.ComponentIds.Add(componentId);
+                    _componentToCompositeId[componentId] = composite.Id;
+                }
+            }
+
+            foreach (InteractionUnitState unitState in source.InteractionUnits)
+            {
+                var unit = new InteractionUnitObject
+                {
+                    Id = unitState.Id,
+                    Name = unitState.Name,
+                };
+
+                foreach (int componentId in unitState.ComponentIds)
+                {
+                    if (composite.ComponentIds.Contains(componentId))
+                    {
+                        unit.ComponentIds.Add(componentId);
+                    }
+                }
+
+                if (unit.ComponentIds.Count > 0)
+                {
+                    composite.InteractionUnits.Add(unit);
+                    composite.NextInteractionUnitId = Math.Max(composite.NextInteractionUnitId, unit.Id + 1);
+                }
+            }
+
+            if (composite.ComponentIds.Count == 0)
+            {
+                continue;
+            }
+
+            _composites.Add(composite);
+            pastedCompositeIds.Add(composite.Id);
+        }
+
+        if (pastedCompositeIds.Count == 0)
+        {
+            _statusMessage = "复制内容里的组件已不存在，无法粘贴。";
+            return;
+        }
+
+        _selectedCompositeId = pastedCompositeIds[^1];
+        _focusedCompositeId = _selectedCompositeId;
+        _selectedInteractionUnitCompositeId = null;
+        _selectedInteractionUnitId = null;
+        _focusedInteractionUnitCompositeId = null;
+        _focusedInteractionUnitId = null;
+        ClearSelectedComponents();
+        UpdateActorIdsFromComposites();
+        RebuildCompositeDrawCaches();
+        RebuildStaticIndexBuffers();
+        _statusMessage = $"已粘贴 {pastedCompositeIds.Count} 个组合体。";
+    }
+
+    private System.Numerics.Vector3 ResolvePasteOffsetModel()
+    {
+        System.Numerics.Vector3 originModel = _worldScale.MetersToModel(System.Numerics.Vector3.Zero);
+        System.Numerics.Vector3 offsetModel = _worldScale.MetersToModel(new System.Numerics.Vector3(0.45f, 0.0f, 0.45f));
+        return offsetModel - originModel;
+    }
+
+    private string BuildCopiedCompositeName(string sourceName)
+    {
+        string baseName = string.IsNullOrWhiteSpace(sourceName) ? "复制组合体" : sourceName.Trim();
+        string candidate = $"{baseName}_copy";
+        int index = 2;
+        while (_composites.Any(composite => string.Equals(composite.Name, candidate, StringComparison.OrdinalIgnoreCase)))
+        {
+            candidate = $"{baseName}_copy{index++}";
+        }
+
+        return candidate;
+    }
+
+    private static CompositeState CaptureCompositeState(CompositeObject composite, IReadOnlyCollection<int>? componentFilter)
+    {
+        int[] componentIds = componentFilter is null
+            ? composite.ComponentIds.OrderBy(componentId => componentId).ToArray()
+            : composite.ComponentIds
+                .Where(componentFilter.Contains)
+                .OrderBy(componentId => componentId)
+                .ToArray();
+        var componentLookup = componentIds.ToHashSet();
+        return new CompositeState
+        {
+            Id = composite.Id,
+            Name = composite.Name,
+            IsActor = composite.IsActor,
+            NextInteractionUnitId = composite.NextInteractionUnitId,
+            PivotModel = composite.PivotModel,
+            PositionModel = composite.PositionModel,
+            RotationYprDegrees = composite.RotationYprDegrees,
+            CoordinateYprDegrees = composite.CoordinateYprDegrees,
+            CoordinateSystemMode = composite.CoordinateSystemMode,
+            ComponentIds = componentIds,
+            InteractionUnits = composite.InteractionUnits
+                .Select(unit => new InteractionUnitState
+                {
+                    Id = unit.Id,
+                    Name = unit.Name,
+                    ComponentIds = unit.ComponentIds
+                        .Where(componentLookup.Contains)
+                        .OrderBy(componentId => componentId)
+                        .ToArray(),
+                })
+                .Where(unit => unit.ComponentIds.Length > 0)
+                .ToList(),
+        };
     }
 
     private void AddSelectedComponentToSelectedComposite(bool recordHistory)
@@ -2321,8 +2563,9 @@ internal sealed class TerrainViewerWindow : GameWindow
             return;
         }
 
-        ImGui.SetNextWindowPos(new System.Numerics.Vector2(12.0f, 12.0f), ImGuiCond.Always);
-        ImGui.SetNextWindowSize(new System.Numerics.Vector2(390.0f, 0.0f), ImGuiCond.Always);
+        const float mapPanelWidth = 390.0f;
+        ImGui.SetNextWindowPos(new System.Numerics.Vector2(MathF.Max(0.0f, ClientSize.X - mapPanelWidth), 12.0f), ImGuiCond.Always);
+        ImGui.SetNextWindowSize(new System.Numerics.Vector2(mapPanelWidth, 0.0f), ImGuiCond.Always);
         ImGui.Begin("地图增益编辑", ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.AlwaysAutoResize);
 
         ImGui.Text($"地图: {_mapEditingSession.PresetName}");
@@ -2435,10 +2678,91 @@ internal sealed class TerrainViewerWindow : GameWindow
                 selectedFacility.HeightM = selectedHeight;
             }
 
+            bool volumeFacility = IsVolumeFacilityType(selectedFacility.Type);
+            if (volumeFacility)
+            {
+                ImGui.Separator();
+                ImGui.Text("Buff/设施立体区域");
+                string[] volumeShapes = ["box", "cylinder"];
+                int volumeShapeIndex = string.Equals(selectedFacility.VolumeShape, "cylinder", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+                if (ImGui.Combo("立体形状##selected", ref volumeShapeIndex, volumeShapes, volumeShapes.Length))
+                {
+                    selectedFacility.VolumeShape = volumeShapes[volumeShapeIndex];
+                    selectedFacility.Shape = volumeShapes[volumeShapeIndex] == "cylinder" ? "cylinder" : "box";
+                }
+
+                var center = new System.Numerics.Vector3(
+                    (float)selectedFacility.CenterX,
+                    (float)selectedFacility.CenterY,
+                    (float)selectedFacility.CenterZM);
+                if (ImGui.InputFloat3("XYZ 中心##selected", ref center, "%.3f"))
+                {
+                    selectedFacility.CenterX = center.X;
+                    selectedFacility.CenterY = center.Y;
+                    selectedFacility.CenterZM = center.Z;
+                }
+
+                if (string.Equals(selectedFacility.VolumeShape, "cylinder", StringComparison.OrdinalIgnoreCase))
+                {
+                    float radius = (float)selectedFacility.Radius;
+                    if (ImGui.InputFloat("半径##selected", ref radius, 1.0f, 10.0f, "%.3f"))
+                    {
+                        selectedFacility.Radius = Math.Max(0.01f, radius);
+                    }
+
+                    float height = (float)selectedFacility.SizeZM;
+                    if (ImGui.InputFloat("高度(m)##volume", ref height, 0.05f, 0.2f, "%.3f"))
+                    {
+                        selectedFacility.SizeZM = Math.Max(0.02f, height);
+                        selectedFacility.HeightM = selectedFacility.SizeZM;
+                    }
+                }
+                else
+                {
+                    var size = new System.Numerics.Vector3(
+                        (float)selectedFacility.SizeX,
+                        (float)selectedFacility.SizeY,
+                        (float)selectedFacility.SizeZM);
+                    if (ImGui.InputFloat3("长宽高##selected", ref size, "%.3f"))
+                    {
+                        selectedFacility.SizeX = Math.Max(0.01f, size.X);
+                        selectedFacility.SizeY = Math.Max(0.01f, size.Y);
+                        selectedFacility.SizeZM = Math.Max(0.02f, size.Z);
+                        selectedFacility.HeightM = selectedFacility.SizeZM;
+                    }
+                }
+
+                var ypr = new System.Numerics.Vector3(
+                    (float)selectedFacility.YawDeg,
+                    (float)selectedFacility.PitchDeg,
+                    (float)selectedFacility.RollDeg);
+                if (ImGui.InputFloat3("YPR##selected", ref ypr, "%.2f"))
+                {
+                    selectedFacility.YawDeg = ypr.X;
+                    selectedFacility.PitchDeg = ypr.Y;
+                    selectedFacility.RollDeg = ypr.Z;
+                }
+
+                if (ImGui.Button("按当前外接框写入立体参数", new System.Numerics.Vector2(-1, 0)))
+                {
+                    StampFacilityVolumeFromBounds(selectedFacility);
+                }
+            }
+
             if (ImGui.Button("删除当前设施 (Delete)", new System.Numerics.Vector2(-1, 0)))
             {
                 DeleteSelectedFacility();
             }
+        }
+
+        if (ImGui.Button("复制当前组件/组合体 (Ctrl+C)", new System.Numerics.Vector2(-1, 0)))
+        {
+            CopySelectedComponentsOrComposite();
+        }
+
+        if (ImGui.Button("粘贴为新组合体 (Ctrl+V)", new System.Numerics.Vector2(-1, 0)))
+        {
+            PasteCopiedComponentsOrComposite(recordHistory: true);
         }
 
         ImGui.Separator();
@@ -3021,9 +3345,19 @@ internal sealed class TerrainViewerWindow : GameWindow
             CreateCollisionShapeFromSelection(CollisionShapeType.Box);
         }
 
+        if (ImGui.Button("直接新增长方体碰撞体", new System.Numerics.Vector2(-1, 0)))
+        {
+            CreateDefaultCollisionShape(CollisionShapeType.Box);
+        }
+
         if (ImGui.Button("从选区新增圆柱体", new System.Numerics.Vector2(-1, 0)))
         {
             CreateCollisionShapeFromSelection(CollisionShapeType.Cylinder);
+        }
+
+        if (ImGui.Button("直接新增圆柱碰撞体", new System.Numerics.Vector2(-1, 0)))
+        {
+            CreateDefaultCollisionShape(CollisionShapeType.Cylinder);
         }
 
         if (ImGui.Button("从选区新增多面体", new System.Numerics.Vector2(-1, 0)))
@@ -3211,6 +3545,40 @@ internal sealed class TerrainViewerWindow : GameWindow
         _statusMessage = $"已创建 {shape.ShapeType} 碰撞形状 {shape.Id}。";
     }
 
+    private void CreateDefaultCollisionShape(CollisionShapeType shapeType)
+    {
+        PushUndoSnapshot();
+        var id = _nextCollisionShapeId++;
+        var center = ResolveDefaultCollisionShapeCenter();
+        var shape = new CollisionShapeObject
+        {
+            Id = id,
+            Name = string.IsNullOrWhiteSpace(_collisionShapeNameDraft) ? $"Collision {id}" : $"{_collisionShapeNameDraft.Trim()} {id}",
+            ShapeType = shapeType,
+            PositionModel = center,
+            SizeModel = new System.Numerics.Vector3(1.0f, 1.0f, 1.0f),
+            RadiusModel = 0.5f,
+            HeightModel = 1.0f,
+            TerrainLabel = _terrainLabelDraft.Trim(),
+        };
+
+        _collisionShapes.Add(shape);
+        _selectedCollisionShapeId = shape.Id;
+        _statusMessage = $"已新增 {shape.ShapeType} 碰撞体 {shape.Id}，可继续设置 XYZ/YPR/长宽高或半径高度。";
+    }
+
+    private System.Numerics.Vector3 ResolveDefaultCollisionShapeCenter()
+    {
+        if (TryComputeSelectedComponentBounds(out BoundingBox bounds) && bounds.IsValid())
+        {
+            return bounds.Center;
+        }
+
+        return _viewMode == ViewMode.TopDown
+            ? new System.Numerics.Vector3(_topDownCenter.X, _scene.Bounds.Center.Y, _topDownCenter.Y)
+            : _scene.Bounds.Center;
+    }
+
     private void DeleteSelectedCollisionShape()
     {
         if (_selectedCollisionShapeId is not int selectedId)
@@ -3276,7 +3644,8 @@ internal sealed class TerrainViewerWindow : GameWindow
         }
 
         const float panelWidth = 420.0f;
-        ImGui.SetNextWindowPos(new System.Numerics.Vector2(MathF.Max(0.0f, ClientSize.X - panelWidth), 0.0f), ImGuiCond.Always);
+        float mapEditorOffset = _mapEditingSession is null ? 0.0f : 390.0f;
+        ImGui.SetNextWindowPos(new System.Numerics.Vector2(MathF.Max(0.0f, ClientSize.X - panelWidth - mapEditorOffset), 0.0f), ImGuiCond.Always);
         ImGui.SetNextWindowSize(new System.Numerics.Vector2(panelWidth, ClientSize.Y), ImGuiCond.Always);
         ImGui.Begin("组合体编辑器", ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoSavedSettings);
 
@@ -4567,6 +4936,12 @@ internal sealed class TerrainViewerWindow : GameWindow
                 Thickness = _facilityDraftThickness,
                 HeightM = _facilityDraftHeightM,
             };
+            if (IsVolumeFacilityType(facility.Type))
+            {
+                facility.Shape = "box";
+                StampFacilityVolumeFromBounds(facility);
+            }
+
             _mapEditingSession.Document.Facilities.Add(facility);
             _selectedFacilityIndex = _mapEditingSession.Document.Facilities.Count - 1;
             _statusMessage = $"已新增矩形设施 {facility.Id}";
@@ -4609,6 +4984,12 @@ internal sealed class TerrainViewerWindow : GameWindow
                 Thickness = _facilityDraftThickness,
                 HeightM = _facilityDraftHeightM,
             };
+            if (IsVolumeFacilityType(facility.Type))
+            {
+                facility.Shape = "box";
+                StampFacilityVolumeFromBounds(facility);
+            }
+
             _mapEditingSession.Document.Facilities.Add(facility);
             _selectedFacilityIndex = _mapEditingSession.Document.Facilities.Count - 1;
             _statusMessage = $"已新增线段设施 {facility.Id}";
@@ -4654,6 +5035,13 @@ internal sealed class TerrainViewerWindow : GameWindow
             HeightM = _facilityDraftHeightM,
             PointsText = pointsText,
         };
+        if (IsVolumeFacilityType(facility.Type))
+        {
+            facility.Shape = "box";
+            StampFacilityVolumeFromBounds(facility);
+            facility.PointsText = string.Empty;
+        }
+
         _mapEditingSession.Document.Facilities.Add(facility);
         _selectedFacilityIndex = _mapEditingSession.Document.Facilities.Count - 1;
         _facilityPolygonPoints.Clear();
@@ -4671,6 +5059,45 @@ internal sealed class TerrainViewerWindow : GameWindow
         _mapEditingSession.Document.Facilities.RemoveAt(_selectedFacilityIndex);
         _selectedFacilityIndex = Math.Clamp(_selectedFacilityIndex, -1, _mapEditingSession.Document.Facilities.Count - 1);
         _statusMessage = $"已删除设施 {facilityId}";
+    }
+
+    private static bool IsVolumeFacilityType(string? type)
+    {
+        string normalized = type ?? string.Empty;
+        return normalized.Contains("buff", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("supply", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("fort", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("highland", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("road", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("fly_slope", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("hero_deployment", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void StampFacilityVolumeFromBounds(FacilityRegionEditorModel facility)
+    {
+        double minX = Math.Min(facility.X1, facility.X2);
+        double maxX = Math.Max(facility.X1, facility.X2);
+        double minY = Math.Min(facility.Y1, facility.Y2);
+        double maxY = Math.Max(facility.Y1, facility.Y2);
+        IReadOnlyList<Simulator.Core.Map.Point2D> points = facility.ParsePoints();
+        foreach (Simulator.Core.Map.Point2D point in points)
+        {
+            minX = Math.Min(minX, point.X);
+            maxX = Math.Max(maxX, point.X);
+            minY = Math.Min(minY, point.Y);
+            maxY = Math.Max(maxY, point.Y);
+        }
+
+        double height = Math.Max(0.40, facility.HeightM > 0.02 ? facility.HeightM : facility.SizeZM);
+        facility.VolumeShape = string.Equals(facility.Shape, "cylinder", StringComparison.OrdinalIgnoreCase) ? "cylinder" : "box";
+        facility.CenterX = (minX + maxX) * 0.5;
+        facility.CenterY = (minY + maxY) * 0.5;
+        facility.CenterZM = height * 0.5;
+        facility.SizeX = Math.Max(0.01, maxX - minX);
+        facility.SizeY = Math.Max(0.01, maxY - minY);
+        facility.SizeZM = height;
+        facility.Radius = Math.Max(facility.SizeX, facility.SizeY) * 0.5;
+        facility.HeightM = height;
     }
 
     private int HitTestFacility(System.Numerics.Vector2 worldPoint)
@@ -5657,7 +6084,16 @@ internal sealed class TerrainViewerWindow : GameWindow
         private readonly int _staticEbo;
         private readonly uint[] _sourceIndices;
 
-        private GpuChunk(int chunkIndex, int vao, int vbo, int fullEbo, int staticEbo, uint[] sourceIndices, int indexCount, BoundingBox bounds, TerrainChunkData sourceChunk)
+        private GpuChunk(
+            int chunkIndex,
+            int vao,
+            int vbo,
+            int fullEbo,
+            int staticEbo,
+            uint[] sourceIndices,
+            int indexCount,
+            BoundingBox bounds,
+            TerrainChunkData sourceChunk)
         {
             _chunkIndex = chunkIndex;
             _vao = vao;
@@ -5711,7 +6147,16 @@ internal sealed class TerrainViewerWindow : GameWindow
 
             GL.BindVertexArray(0);
 
-            return new GpuChunk(chunkIndex, vao, vbo, fullEbo, staticEbo, data.Indices, data.Indices.Length, data.Bounds, data)
+            return new GpuChunk(
+                chunkIndex,
+                vao,
+                vbo,
+                fullEbo,
+                staticEbo,
+                data.Indices,
+                data.Indices.Length,
+                data.Bounds,
+                data)
             {
                 ComponentRanges = data.ComponentRanges,
             };

@@ -5,6 +5,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using Simulator.Core.Gameplay;
+using Simulator.Core.Map;
 
 namespace Simulator.ThreeD;
 
@@ -147,6 +148,15 @@ internal sealed partial class Simulator3dForm
 
     private void ToggleViewMode()
     {
+        if (IsLanMultiplayerActive)
+        {
+            _firstPersonView = true;
+            _followSelection = true;
+            _lanStatusLine = "多人对局仅允许第一人称视角";
+            UpdateMouseCaptureState();
+            return;
+        }
+
         _firstPersonView = !_firstPersonView;
         _followSelection = !_firstPersonView;
         if (!_firstPersonView)
@@ -167,6 +177,16 @@ internal sealed partial class Simulator3dForm
 
     private void ToggleTacticalMode()
     {
+        if (IsLanMultiplayerActive)
+        {
+            _tacticalMode = false;
+            _firstPersonView = true;
+            _followSelection = true;
+            _lanStatusLine = "多人对局不开放第三人称/战术视角";
+            UpdateMouseCaptureState();
+            return;
+        }
+
         _tacticalMode = !_tacticalMode;
         if (_tacticalMode)
         {
@@ -212,9 +232,9 @@ internal sealed partial class Simulator3dForm
         (float powerRatio, string powerLabel) = ResolvePowerGauge(entity);
         (float energyRatio, string energyLabel) = ResolveEnergyGauge(entity);
         (float superCapRatio, string superCapLabel) = ResolveSuperCapGauge(entity);
-        DrawMiniGauge(graphics, new RectangleF(barX, barY, 112, 10), entity.MaxHealth <= 0 ? 0f : (float)(entity.Health / entity.MaxHealth), Color.FromArgb(72, 214, 126), $"\u8840\u91cf {(int)entity.Health}/{(int)entity.MaxHealth}");
+        DrawMiniGauge(graphics, new RectangleF(barX, barY, 112, 10), entity.MaxHealth <= 0 ? 0f : (float)(entity.Health / entity.MaxHealth), Color.FromArgb(72, 214, 126), $"HP {(int)entity.Health}/{(int)entity.MaxHealth}");
         DrawPowerGauge(graphics, new RectangleF(barX + 126, barY, 96, 10), entity, powerRatio, powerLabel);
-        DrawMiniGauge(graphics, new RectangleF(barX + 236, barY, 70, 10), entity.MaxHeat <= 0 ? 0f : (float)(entity.Heat / entity.MaxHeat), Color.FromArgb(228, 130, 58), $"\u70ed\u91cf {(int)entity.Heat}");
+        DrawMiniGauge(graphics, new RectangleF(barX + 236, barY, 70, 10), entity.MaxHeat <= 0 ? 0f : (float)(entity.Heat / entity.MaxHeat), Color.FromArgb(228, 130, 58), $"HEAT {(int)entity.Heat}");
         DrawMiniGauge(graphics, new RectangleF(barX + 320, barY, 92, 10), energyRatio, Color.FromArgb(88, 220, 208), energyLabel);
         DrawMiniGauge(graphics, new RectangleF(barX + 426, barY, 82, 10), superCapRatio, entity.SuperCapEnabled ? Color.FromArgb(255, 210, 76) : Color.FromArgb(152, 164, 178), superCapLabel);
 
@@ -229,13 +249,13 @@ internal sealed partial class Simulator3dForm
         string gyroText = entity.SmallGyroActive
             ? $"   小陀螺ω {entity.AngularVelocityDegPerSec:+0;-0;0}\u00b0/s"
             : string.Empty;
-        string motionText = $"\u5f39\u836f {ammoText}   \u5c04\u9891 {fireRateHz:0.0}Hz   \u5927\u5730\u901f\u5ea6 {speedMps:0.0}m/s{gyroText}{sentryText}";
+        string motionText = $"AMMO {ammoText}   FIRE {fireRateHz:0.0}Hz   SPD {speedMps:0.0}m/s{gyroText}{sentryText}";
         graphics.DrawString(motionText, _tinyHudFont, textBrush, panel.X + 16, panel.Y + 54);
 
         string aimMode = _autoAimAssistMode == AutoAimAssistMode.HardLock ? "\u786c\u9501" : "\u5f15\u5bfc";
         string targetTypeText = ResolveAutoAimTargetTypeText(entity);
         string autoAimText = entity.AutoAimLocked
-            ? $"\u81ea\u7784 {aimMode} {targetTypeText} {entity.AutoAimPlateDirection}   \u547d\u4e2d {entity.AutoAimAccuracy:P0}   \u63d0\u524d {entity.AutoAimLeadTimeSec:0.00}s/{entity.AutoAimLeadDistanceM:0.00}m"
+            ? $"\u81ea\u7784 {aimMode} {targetTypeText} {entity.AutoAimPlateDirection}   \u63d0\u524d {entity.AutoAimLeadTimeSec:0.00}s/{entity.AutoAimLeadDistanceM:0.00}m"
             : $"\u81ea\u7784 {aimMode}   \u672a\u9501\u5b9a{targetTypeText}";
         graphics.DrawString(autoAimText, _tinyHudFont, textBrush, panel.X + 16, panel.Y + 72);
 
@@ -243,10 +263,10 @@ internal sealed partial class Simulator3dForm
         bool inDeployZone = IsInFriendlyFacility(entity, "buff_hero_deployment");
         string supplyPrompt = inFriendlySupply ? "   B \u8865\u7ed9" : string.Empty;
         string deployText = entity.HeroDeploymentActive
-            ? "   \u957f\u6309Z\u9000\u51fa\u90e8\u7f72"
+            ? "   \u957f\u6309L\u9000\u51fa\u90e8\u7f72"
             : entity.HeroDeploymentRequested
                 ? "   \u82f1\u96c4\u90e8\u7f72\u8bfb\u6761"
-                : inDeployZone ? "   \u957f\u6309Z\u90e8\u7f72" : string.Empty;
+                : inDeployZone ? "   \u957f\u6309K\u90e8\u7f72" : string.Empty;
         string sentryPrompt = string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase)
             ? "   X \u54e8\u5175\u5f62\u6001"
             : string.Empty;
@@ -833,8 +853,7 @@ internal sealed partial class Simulator3dForm
     }
 
     private static bool IsHeroLobSubviewTrackingTarget(SimulationEntity shooter)
-        => shooter.AutoAimLocked
-            && IsHeroLobStructureTargetKind(shooter.AutoAimTargetKind)
+        => IsHeroLobStructureTargetKind(shooter.AutoAimTargetKind)
             && !string.IsNullOrWhiteSpace(shooter.AutoAimTargetId)
             && !string.IsNullOrWhiteSpace(shooter.AutoAimPlateId);
 
@@ -864,15 +883,12 @@ internal sealed partial class Simulator3dForm
 
         RobotAppearanceProfile profile = _host.ResolveAppearanceProfile(shooter);
         float yaw = ResolveEntityYaw(shooter);
-        float turretYaw = (float)(shooter.TurretYawDeg * Math.PI / 180.0);
-        float gimbalPitch = (float)(shooter.GimbalPitchDeg * Math.PI / 180.0);
+        float turretYaw = ResolveAppearanceTurretYaw(shooter);
+        float gimbalPitch = -(float)(shooter.GimbalPitchDeg * Math.PI / 180.0);
         RuntimeChassisMotion motion = ResolveRuntimeChassisMotion(shooter);
         ResolveChassisAxes(yaw, shooter.ChassisPitchDeg, shooter.ChassisRollDeg, out Vector3 chassisForward, out Vector3 chassisRight, out Vector3 chassisUp);
-        ResolveMountedTurretAxes(
-            chassisForward,
-            chassisRight,
-            chassisUp,
-            turretYaw - yaw,
+        ResolveWorldTurretAxes(
+            turretYaw,
             gimbalPitch,
             out _,
             out Vector3 turretRight,
@@ -890,15 +906,14 @@ internal sealed partial class Simulator3dForm
         Vector3 chassisOrigin = ToScenePoint(shooter.X, shooter.Y, groundHeight);
         Vector3 hingeCenter = OffsetScenePosition(
             chassisOrigin,
-            profile.GimbalOffsetXM,
-            profile.GimbalOffsetYM,
-            hingeBase,
+            profile.GimbalOffsetXM + profile.GimbalRelativeOffsetXM,
+            profile.GimbalOffsetYM + profile.GimbalRelativeOffsetZM,
+            hingeBase + profile.GimbalRelativeOffsetYM,
             chassisForward,
             chassisRight,
             chassisUp);
         Vector3 turretCenter = hingeCenter
-            + pitchedUp * (profile.GimbalBodyHeightM * 0.50f + 0.006f)
-            + pitchedForward * (profile.GimbalLengthM * 0.04f);
+            + pitchedUp * (profile.GimbalBodyHeightM * 0.50f);
         ResolveHeroSubviewCameraMount(
             turretCenter,
             pitchedForward,
@@ -989,13 +1004,13 @@ internal sealed partial class Simulator3dForm
         float safeHeight = Math.Max(0.04f, plateHeightM);
         float aspect = Math.Max(0.6f, viewportWidth / (float)Math.Max(1, viewportHeight));
         float plateAspect = safeWidth / Math.Max(0.02f, safeHeight);
-        float targetAreaFraction = 0.20f;
+        float targetAreaFraction = 0.34f;
         float heightFraction = MathF.Sqrt(targetAreaFraction * aspect / Math.Max(0.1f, plateAspect));
-        heightFraction = Math.Clamp(heightFraction, 0.20f, 0.78f);
+        heightFraction = Math.Clamp(heightFraction, 0.34f, 0.88f);
 
         float distance = Math.Max(0.10f, Vector3.Distance(cameraPosition, cameraTarget));
         float desiredVerticalFovRad = 2f * MathF.Atan(safeHeight / Math.Max(0.02f, 2f * distance * heightFraction));
-        return Math.Clamp(desiredVerticalFovRad, 0.035f, defaultVerticalFovRad);
+        return Math.Clamp(desiredVerticalFovRad, 0.024f, defaultVerticalFovRad);
     }
 
     private void DrawHeroLobCalibrationWorldMarker(Graphics graphics, HeroLobCalibrationPreview preview)
@@ -1089,15 +1104,6 @@ internal sealed partial class Simulator3dForm
 
         float plateWidthM = (float)(plate.WidthM > 1e-6 ? plate.WidthM : plate.SideLengthM);
         float plateHeightM = (float)(plate.HeightSpanM > 1e-6 ? plate.HeightSpanM : plate.SideLengthM);
-        bool crosshairProjectedToPlate = TryProjectCurrentCrosshairToPlateArea(
-            shooter,
-            plate.Id,
-            plateCenterScene,
-            plateNormalScene,
-            plateRightScene,
-            out float crosshairHorizontalOffsetM,
-            out float crosshairVerticalOffsetM,
-            out bool crosshairFrontFacing);
         if (!TrySimulateCurrentProjectileImpactPoint(shooter, plateCenterScene, plateNormalScene, out Vector3 impactScene, out bool crossedPlatePlane, out Vector3 impactDirectionScene))
         {
             return false;
@@ -1108,31 +1114,35 @@ internal sealed partial class Simulator3dForm
         float verticalOffsetM = delta.Y;
         float depthOffsetM = Vector3.Dot(delta, plateNormalScene);
         float normalAngleDeg = 180f;
+        bool impactFrontFacing = plate.Id.Contains("top", StringComparison.OrdinalIgnoreCase);
         if (impactDirectionScene.LengthSquared() > 1e-8f)
         {
-            float frontDot = Vector3.Dot(-Vector3.Normalize(impactDirectionScene), plateNormalScene);
+            Vector3 impactDirection = Vector3.Normalize(impactDirectionScene);
+            float frontDot = Vector3.Dot(-impactDirection, plateNormalScene);
             normalAngleDeg = MathF.Acos(Math.Clamp(frontDot, -1f, 1f)) * 180f / MathF.PI;
+            impactFrontFacing = impactFrontFacing || frontDot >= 0.010f;
         }
 
         bool hitsPlate = crossedPlatePlane
             && MathF.Abs(horizontalOffsetM) <= plateWidthM * 0.5f
             && MathF.Abs(verticalOffsetM) <= plateHeightM * 0.5f;
-        float centerPlaneHeightErrorM = (float)SimulationCombatMath.EstimateProjectileHeightErrorAtPoint(
+        float centerPlaneHeightErrorM = (float)SimulationCombatMath.EstimateProjectileHeightErrorAtVerticalPlane(
             _host.World,
             shooter,
             aimPlate.X,
             aimPlate.Y,
             aimPlate.HeightM,
+            shooter.TurretYawDeg,
             shooter.GimbalPitchDeg);
         float projectileMarginM = Math.Clamp(
-            (float)(SimulationCombatMath.ProjectileDiameterM(shooter.AmmoType) * 0.75 + shooter.AutoAimLeadDistanceM * 0.0018),
-            0.012f,
-            0.055f);
-        float centerPlaneToleranceM = Math.Clamp(Math.Max(0.14f, plateHeightM * 0.72f + projectileMarginM), 0.14f, 0.26f);
-        bool fireWindowReady = crosshairProjectedToPlate
-            && crosshairFrontFacing
-            && MathF.Abs(crosshairHorizontalOffsetM) <= plateWidthM * 0.5f + projectileMarginM
-            && MathF.Abs(crosshairVerticalOffsetM) <= plateHeightM * 0.5f + projectileMarginM
+            (float)(SimulationCombatMath.ProjectileDiameterM(shooter.AmmoType) * 1.05 + shooter.AutoAimLeadDistanceM * 0.0024),
+            0.022f,
+            0.095f);
+        float centerPlaneToleranceM = Math.Clamp(Math.Max(0.070f, plateHeightM * 0.40f + projectileMarginM), 0.070f, 0.220f);
+        bool fireWindowReady = crossedPlatePlane
+            && impactFrontFacing
+            && MathF.Abs(horizontalOffsetM) <= plateWidthM * 0.32f + projectileMarginM
+            && MathF.Abs(verticalOffsetM) <= plateHeightM * 0.34f + projectileMarginM
             && MathF.Abs(centerPlaneHeightErrorM) <= centerPlaneToleranceM;
         bool hasSuggestedFireWindow = fireWindowReady;
         float secondsToFireWindow = 0f;
@@ -1221,33 +1231,43 @@ internal sealed partial class Simulator3dForm
             Vector3 rightScene = visualPlate.Right.LengthSquared() <= 1e-8f
                 ? Vector3.UnitX
                 : Vector3.Normalize(visualPlate.Right);
-            if (!TryProjectCurrentCrosshairToPlateArea(
+            if (!TrySimulateCurrentProjectileImpactPoint(
                     shooter,
-                    plateId,
                     visualPlate.Center,
                     normalScene,
-                    rightScene,
-                    out float horizontalOffsetM,
-                    out float verticalOffsetM,
-                    out bool frontFacing))
+                    out Vector3 impactScene,
+                    out bool crossedPlatePlane,
+                    out Vector3 impactDirectionScene)
+                || !crossedPlatePlane)
             {
                 continue;
             }
 
+            Vector3 delta = impactScene - visualPlate.Center;
+            float horizontalOffsetM = Vector3.Dot(delta, rightScene);
+            float verticalOffsetM = delta.Y;
+            bool frontFacing = plateId.Contains("top", StringComparison.OrdinalIgnoreCase);
+            if (impactDirectionScene.LengthSquared() > 1e-8f)
+            {
+                float frontDot = Vector3.Dot(-Vector3.Normalize(impactDirectionScene), normalScene);
+                frontFacing = frontFacing || frontDot >= 0.010f;
+            }
+
             float projectileMarginM = Math.Clamp(
-                (float)(SimulationCombatMath.ProjectileDiameterM(shooter.AmmoType) * 0.75 + shooter.AutoAimLeadDistanceM * 0.0018),
-                0.012f,
-                0.055f);
+                (float)(SimulationCombatMath.ProjectileDiameterM(shooter.AmmoType) * 0.82 + shooter.AutoAimLeadDistanceM * 0.0012),
+                0.016f,
+                0.052f);
             if (frontFacing
-                && MathF.Abs(horizontalOffsetM) <= plateWidthM * 0.5f + projectileMarginM
-                && MathF.Abs(verticalOffsetM) <= plateHeightM * 0.5f + projectileMarginM
-                && Math.Abs(SimulationCombatMath.EstimateProjectileHeightErrorAtPoint(
+                && MathF.Abs(horizontalOffsetM) <= plateWidthM * 0.24f + projectileMarginM
+                && MathF.Abs(verticalOffsetM) <= plateHeightM * 0.26f + projectileMarginM
+                && Math.Abs(SimulationCombatMath.EstimateProjectileHeightErrorAtVerticalPlane(
                     _host.World,
                     shooter,
                     visualPlate.Center.X / Math.Max(_host.World.MetersPerWorldUnit, 1e-6),
                     visualPlate.Center.Z / Math.Max(_host.World.MetersPerWorldUnit, 1e-6),
                     visualPlate.Center.Y,
-                    shooter.GimbalPitchDeg)) <= Math.Clamp(Math.Max(0.14, plateHeightM * 0.72 + projectileMarginM), 0.14, 0.26))
+                    shooter.TurretYawDeg,
+                    shooter.GimbalPitchDeg)) <= Math.Clamp(Math.Max(0.055, plateHeightM * 0.34 + projectileMarginM), 0.055, 0.145))
             {
                 secondsToFireWindow = (float)waitSec;
                 return true;
@@ -1393,8 +1413,19 @@ internal sealed partial class Simulator3dForm
         double metersPerWorldUnit = Math.Max(_host.World.MetersPerWorldUnit, 1e-6);
         double yawRad = shooter.TurretYawDeg * Math.PI / 180.0;
         double pitchRad = shooter.GimbalPitchDeg * Math.PI / 180.0;
-        double speedMps = SimulationCombatMath.ProjectileSpeedMps(shooter);
         (double x, double y, double heightM) = SimulationCombatMath.ComputeMuzzlePoint(_host.World, shooter, shooter.GimbalPitchDeg);
+        double aimDistanceM = shooter.AutoAimLeadDistanceM;
+        if (aimDistanceM <= 1e-4
+            && double.IsFinite(shooter.AutoAimAimPointX)
+            && double.IsFinite(shooter.AutoAimAimPointY)
+            && Math.Abs(shooter.AutoAimAimPointX) + Math.Abs(shooter.AutoAimAimPointY) > 1e-8)
+        {
+            aimDistanceM = Math.Sqrt(
+                Math.Pow(shooter.AutoAimAimPointX - x, 2)
+                + Math.Pow(shooter.AutoAimAimPointY - y, 2)) * metersPerWorldUnit;
+        }
+
+        double speedMps = SimulationCombatMath.ResolveBallisticExperienceProjectileSpeedMps(shooter, aimDistanceM);
         double inheritedVxWorldPerSec = shooter.HasObservedKinematics ? shooter.ObservedVelocityXWorldPerSec : shooter.VelocityXWorldPerSec;
         double inheritedVyWorldPerSec = shooter.HasObservedKinematics ? shooter.ObservedVelocityYWorldPerSec : shooter.VelocityYWorldPerSec;
         double vxMps = inheritedVxWorldPerSec * metersPerWorldUnit + Math.Cos(pitchRad) * Math.Cos(yawRad) * speedMps;
@@ -1509,8 +1540,11 @@ internal sealed partial class Simulator3dForm
         double metersPerWorldUnit = Math.Max(_host.World.MetersPerWorldUnit, 1e-6);
         double yawRad = shooter.TurretYawDeg * Math.PI / 180.0;
         double pitchRad = shooter.GimbalPitchDeg * Math.PI / 180.0;
-        double speedMps = SimulationCombatMath.ProjectileSpeedMps(shooter);
         (double x, double y, double heightM) = SimulationCombatMath.ComputeMuzzlePoint(_host.World, shooter, shooter.GimbalPitchDeg);
+        double distanceM = MathF.Sqrt(
+            MathF.Pow(plateCenterScene.X - (float)(x * metersPerWorldUnit), 2f)
+            + MathF.Pow(plateCenterScene.Z - (float)(y * metersPerWorldUnit), 2f));
+        double speedMps = SimulationCombatMath.ResolveBallisticExperienceProjectileSpeedMps(shooter, distanceM);
         double inheritedVxWorldPerSec = shooter.HasObservedKinematics ? shooter.ObservedVelocityXWorldPerSec : shooter.VelocityXWorldPerSec;
         double inheritedVyWorldPerSec = shooter.HasObservedKinematics ? shooter.ObservedVelocityYWorldPerSec : shooter.VelocityYWorldPerSec;
         double vxMps = inheritedVxWorldPerSec * metersPerWorldUnit + Math.Cos(pitchRad) * Math.Cos(yawRad) * speedMps;
@@ -1673,35 +1707,35 @@ internal sealed partial class Simulator3dForm
 
     private (double SpeedMps, double XComponentMps, double YComponentMps) ResolveDisplayWorldVelocity(SimulationEntity entity)
     {
+        RobotReferenceFrame frame = ResolveWorldReferenceFrame(entity);
         double metersPerWorldUnit = Math.Max(_host.World.MetersPerWorldUnit, 1e-6);
         double vxMps = entity.VelocityXWorldPerSec * metersPerWorldUnit;
         double vyMps = entity.VelocityYWorldPerSec * metersPerWorldUnit;
         double speedMps = Math.Sqrt(vxMps * vxMps + vyMps * vyMps);
-        double referenceYawRad = ResolveRedBaseForwardYawDeg() * Math.PI / 180.0;
-        double worldYForwardX = Math.Cos(referenceYawRad);
-        double worldYForwardY = Math.Sin(referenceYawRad);
-        double worldXForwardX = -worldYForwardY;
-        double worldXForwardY = worldYForwardX;
-        double displayX = vxMps * worldXForwardX + vyMps * worldXForwardY;
-        double displayY = vxMps * worldYForwardX + vyMps * worldYForwardY;
-        return (speedMps, displayX, displayY);
+        Vector2 local = frame.WorldToLocal(vxMps, vyMps);
+        return (speedMps, local.X, local.Y);
     }
 
     private double ResolveDisplayWorldYawDeg(double yawDeg)
-        => NormalizeCompassDeg(yawDeg - ResolveRedBaseForwardYawDeg());
-
-    private double ResolveRedBaseForwardYawDeg()
     {
-        foreach (SimulationEntity entity in _host.World.Entities)
+        SimulationEntity? selected = _host.SelectedEntity ?? _host.World.Entities.FirstOrDefault(entity => entity.IsPlayerControlled);
+        return ResolveWorldReferenceFrame(selected).WorldYawToLocalDeg(yawDeg);
+    }
+
+    private RobotReferenceFrame ResolveWorldReferenceFrame(SimulationEntity? targetEntity)
+    {
+        double referenceYawDeg = targetEntity?.AngleDeg ?? 0.0;
+        foreach (SimulationEntity worldEntity in _host.World.Entities)
         {
-            if (string.Equals(entity.EntityType, "base", StringComparison.OrdinalIgnoreCase)
-                && string.Equals(entity.Team, "red", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(worldEntity.EntityType, "base", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(worldEntity.Team, "red", StringComparison.OrdinalIgnoreCase))
             {
-                return entity.AngleDeg;
+                referenceYawDeg = worldEntity.AngleDeg;
+                break;
             }
         }
 
-        return 0.0;
+        return RobotReferenceFrame.FromYawDeg(referenceYawDeg);
     }
 
     private double ResolveDisplayedFireRateHz(SimulationEntity entity)
@@ -1817,6 +1851,20 @@ internal sealed partial class Simulator3dForm
         AddTimedBuff(entries, "terrain_road_cool", "cooling", "\u516c\u8def\u51b7\u5374", "\u5c04\u51fb\u70ed\u91cf\u51b7\u5374 x2.00", entity.TerrainRoadCoolingTimerSec, 5.0, Color.FromArgb(105, 224, 160), 1.00);
         AddTimedBuff(entries, "terrain_slope_def", "defense", "\u96a7\u9053\u9632\u5fa1", "\u53d7\u5230\u4f24\u5bb3 x0.90", entity.TerrainSlopeDefenseTimerSec, 10.0, Color.FromArgb(150, 206, 255), 0.10);
         AddTimedBuff(entries, "terrain_slope_cool", "cooling", "\u96a7\u9053\u51b7\u5374", "\u5c04\u51fb\u70ed\u91cf\u51b7\u5374 x1.20", entity.TerrainSlopeCoolingTimerSec, 120.0, Color.FromArgb(94, 230, 176), 0.20);
+        if (entity.FortCaptureProgressSec > 1e-3
+            && entity.FortCaptureProgressSec + 1e-3 < ArenaInteractionService.FortCaptureHoldSec)
+        {
+            AddOrMergeBuff(entries, new BuffProgressEntry(
+                "fort_capture",
+                "capture",
+                "\u5821\u5792\u5360\u9886",
+                "\u5360\u9886\u5b8c\u6210\u540e\u751f\u6548",
+                Math.Max(0.0, ArenaInteractionService.FortCaptureHoldSec - entity.FortCaptureProgressSec),
+                ArenaInteractionService.FortCaptureHoldSec,
+                Color.FromArgb(118, 210, 246),
+                true,
+                Math.Clamp(entity.FortCaptureProgressSec / ArenaInteractionService.FortCaptureHoldSec, 0.0, 1.0)));
+        }
 
         if (_host.World.Teams.TryGetValue(entity.Team, out SimulationTeamState? teamState)
             && teamState.EnergyBuffTimerSec > 1e-3)
@@ -2295,62 +2343,101 @@ internal sealed partial class Simulator3dForm
 
     private void DrawOrientationWidget(Graphics graphics)
     {
-        SimulationEntity? entity = _host.SelectedEntity;
-        if (entity is null || _appState != SimulatorAppState.InMatch)
+        if (_appState != SimulatorAppState.InMatch
+            || _host.MapPreset.Width <= 1e-6
+            || _host.MapPreset.Height <= 1e-6)
         {
             return;
         }
 
-        Rectangle panel = new(ClientSize.Width - 190, ClientSize.Height - 142, 158, 88);
-        using GraphicsPath path = CreateRoundedRectangle(panel, 10);
-        using var fill = new SolidBrush(Color.FromArgb(214, 10, 16, 24));
-        using var border = new Pen(Color.FromArgb(150, 118, 136, 156), 1f);
+        const float widgetScale = 1.15f;
+        int panelWidth = (int)MathF.Round(252f * widgetScale);
+        int panelHeight = (int)MathF.Round(136f * widgetScale);
+        Rectangle panel = new(ClientSize.Width - panelWidth - 24, ClientSize.Height - panelHeight - 24, panelWidth, panelHeight);
+        using GraphicsPath path = CreateRoundedRectangle(panel, 4);
+        using var fill = new SolidBrush(Color.FromArgb(132, 4, 7, 11));
+        using var border = new Pen(Color.FromArgb(92, 214, 224, 234), 1f);
         graphics.FillPath(fill, path);
         graphics.DrawPath(border, path);
 
-        using var textBrush = new SolidBrush(Color.FromArgb(230, 236, 241, 245));
-        using var subTextBrush = new SolidBrush(Color.FromArgb(196, 198, 207, 216));
-        graphics.DrawString(_firstPersonView ? "First Person" : "Third Person", _smallHudFont, textBrush, panel.X + 12, panel.Y + 8);
-        double bodyWorldYawDeg = ResolveDisplayWorldYawDeg(entity.AngleDeg);
-        double turretWorldYawDeg = ResolveDisplayWorldYawDeg(entity.TurretYawDeg);
+        Rectangle mapRect = FitMiniMapRect(Rectangle.Inflate(panel, -12, -12));
+        using var mapBack = new SolidBrush(Color.FromArgb(146, 9, 13, 18));
+        graphics.FillRectangle(mapBack, mapRect);
 
-        PointF center = new(panel.X + 58, panel.Y + 52);
-        using var axisPen = new Pen(Color.FromArgb(96, 154, 170, 188), 1f);
-        graphics.DrawLine(axisPen, center.X - 42f, center.Y, center.X + 42f, center.Y);
-        graphics.DrawLine(axisPen, center.X, center.Y - 24f, center.X, center.Y + 24f);
+        using var gridPen = new Pen(Color.FromArgb(32, 210, 220, 230), 1f);
+        for (int i = 1; i < 4; i++)
+        {
+            float x = mapRect.Left + mapRect.Width * i / 4f;
+            float y = mapRect.Top + mapRect.Height * i / 4f;
+            graphics.DrawLine(gridPen, x, mapRect.Top, x, mapRect.Bottom);
+            graphics.DrawLine(gridPen, mapRect.Left, y, mapRect.Right, y);
+        }
 
-        DrawRotatedHudRectangle(
-            graphics,
-            center,
-            58f,
-            24f,
-            (float)(bodyWorldYawDeg * Math.PI / 180.0),
-            Color.FromArgb(190, 68, 82, 98),
-            Color.FromArgb(235, 222, 230, 238));
-        DrawHeadingNeedle(
-            graphics,
-            center,
-            34f,
-            (float)(bodyWorldYawDeg * Math.PI / 180.0),
-            Color.FromArgb(205, 198, 207, 216));
-        DrawRotatedHudRectangle(
-            graphics,
-            center,
-            46f,
-            13f,
-            (float)(turretWorldYawDeg * Math.PI / 180.0),
-            Color.FromArgb(220, ResolveTeamColor(entity.Team)),
-            Color.FromArgb(250, 245, 232, 132));
-        DrawHeadingNeedle(
-            graphics,
-            center,
-            31f,
-            (float)(turretWorldYawDeg * Math.PI / 180.0),
-            Color.FromArgb(255, 255, 230, 92));
+        foreach (FacilityRegion region in _host.MapPreset.Facilities)
+        {
+            if (region.Points.Count < 3)
+            {
+                continue;
+            }
 
-        graphics.DrawString($"Yaw {bodyWorldYawDeg:0}\u00b0", _tinyHudFont, subTextBrush, panel.X + 104, panel.Y + 30);
-        graphics.DrawString($"Tur {turretWorldYawDeg:0}\u00b0", _tinyHudFont, textBrush, panel.X + 104, panel.Y + 46);
-        graphics.DrawString($"P {entity.GimbalPitchDeg:+0;-0;0}\u00b0", _tinyHudFont, subTextBrush, panel.X + 112, panel.Y + 64);
+            PointF[] points = region.Points.Select(point => MapWorldToMiniMap(point.X, point.Y, mapRect)).ToArray();
+            Color facilityColor = string.Equals(region.Team, "red", StringComparison.OrdinalIgnoreCase)
+                ? Color.FromArgb(72, ResolveTeamColor("red"))
+                : string.Equals(region.Team, "blue", StringComparison.OrdinalIgnoreCase)
+                    ? Color.FromArgb(72, ResolveTeamColor("blue"))
+                    : Color.FromArgb(46, 196, 206, 216);
+            using var facilityPen = new Pen(facilityColor, 1f);
+            graphics.DrawPolygon(facilityPen, points);
+        }
+
+        foreach (SimulationEntity entity in _host.World.Entities)
+        {
+            if (!entity.IsAlive
+                || (!string.Equals(entity.EntityType, "robot", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(entity.EntityType, "sentry", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(entity.EntityType, "base", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(entity.EntityType, "outpost", StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            PointF p = MapWorldToMiniMap(entity.X, entity.Y, mapRect);
+            float radius = string.Equals(entity.EntityType, "robot", StringComparison.OrdinalIgnoreCase) || string.Equals(entity.EntityType, "sentry", StringComparison.OrdinalIgnoreCase)
+                ? 3.1f
+                : 4.4f;
+            Color color = ResolveTeamColor(entity.Team);
+            using var dot = new SolidBrush(Color.FromArgb(236, color));
+            using var edge = new Pen(Color.FromArgb(180, 245, 248, 252), 1f);
+            graphics.FillEllipse(dot, p.X - radius, p.Y - radius, radius * 2f, radius * 2f);
+            if (string.Equals(_host.SelectedEntity?.Id, entity.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                graphics.DrawEllipse(edge, p.X - radius - 2f, p.Y - radius - 2f, radius * 2f + 4f, radius * 2f + 4f);
+            }
+        }
+
+        using var mapBorder = new Pen(Color.FromArgb(116, 230, 236, 242), 1f);
+        graphics.DrawRectangle(mapBorder, mapRect);
+    }
+
+    private Rectangle FitMiniMapRect(Rectangle bounds)
+    {
+        double mapAspect = _host.MapPreset.Width / Math.Max(1e-6, _host.MapPreset.Height);
+        int width = bounds.Width;
+        int height = (int)Math.Round(width / mapAspect);
+        if (height > bounds.Height)
+        {
+            height = bounds.Height;
+            width = (int)Math.Round(height * mapAspect);
+        }
+
+        return new Rectangle(bounds.X + (bounds.Width - width) / 2, bounds.Y + (bounds.Height - height) / 2, Math.Max(1, width), Math.Max(1, height));
+    }
+
+    private PointF MapWorldToMiniMap(double x, double y, Rectangle mapRect)
+    {
+        float px = mapRect.Left + (float)(x / Math.Max(1e-6, _host.MapPreset.Width)) * mapRect.Width;
+        float py = mapRect.Bottom - (float)(y / Math.Max(1e-6, _host.MapPreset.Height)) * mapRect.Height;
+        return new PointF(px, py);
     }
 
     private static void DrawRotatedHudRectangle(
@@ -2975,7 +3062,9 @@ internal sealed partial class Simulator3dForm
 
         if (!hasProjectedPoint)
         {
-            return false;
+            return _firstPersonView
+                && Vector3.DistanceSquared(face.CenterScene, _cameraPositionM) <= 196f
+                && IsSceneBoundsPotentiallyVisible(face.CenterScene, 0.75f, 0.45f);
         }
 
         return maxX >= -1f - margin

@@ -20,6 +20,8 @@ internal sealed record PlayerControlState
 
     public bool AutoAimGuidanceOnly { get; init; }
 
+    public bool HeroLobAutoFireReady { get; init; }
+
     public bool JumpRequested { get; init; }
 
     public bool StepClimbModeActive { get; init; }

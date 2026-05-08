@@ -4,6 +4,9 @@ namespace LoadLargeTerrain;
 
 internal static class ComponentAnnotationExporter
 {
+    private const int ComponentShardSize = 50000;
+    private const string ComponentShardDirectorySuffix = ".parts";
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = false,
@@ -20,6 +23,21 @@ internal static class ComponentAnnotationExporter
         IReadOnlyDictionary<int, string>? componentTerrainLabels = null,
         IReadOnlyList<CollisionShapeObject>? collisionShapes = null)
     {
+        ComponentAnnotation[] componentAnnotations = components.Select(component => new ComponentAnnotation
+        {
+            Id = component.Id,
+            NodeIndex = component.NodeIndex,
+            MeshIndex = component.MeshIndex,
+            PrimitiveIndex = component.PrimitiveIndex,
+            Name = component.Name,
+            Role = actorComponentIds.Contains(component.Id) ? "actor" : "static",
+            TerrainLabel = componentTerrainLabels is not null && componentTerrainLabels.TryGetValue(component.Id, out var terrainLabel)
+                ? terrainLabel
+                : string.Empty,
+            Bounds = BoundsAnnotation.From(component.Bounds),
+        }).ToArray();
+        string[] componentFiles = WriteComponentShardsIfNeeded(path, componentAnnotations);
+
         var payload = new ComponentAnnotationFile
         {
             SourceModel = sourceModel,
@@ -56,19 +74,8 @@ internal static class ComponentAnnotationExporter
                 CoordinateYprDegrees = VectorAnnotation.From(composite.CoordinateYprDegrees),
                 CoordinateSystemMode = composite.CoordinateSystemMode == CoordinateSystemMode.Custom ? "custom" : "world",
             }).ToArray(),
-            Components = components.Select(component => new ComponentAnnotation
-            {
-                Id = component.Id,
-                NodeIndex = component.NodeIndex,
-                MeshIndex = component.MeshIndex,
-                PrimitiveIndex = component.PrimitiveIndex,
-                Name = component.Name,
-                Role = actorComponentIds.Contains(component.Id) ? "actor" : "static",
-                TerrainLabel = componentTerrainLabels is not null && componentTerrainLabels.TryGetValue(component.Id, out var terrainLabel)
-                    ? terrainLabel
-                    : string.Empty,
-                Bounds = BoundsAnnotation.From(component.Bounds),
-            }).ToArray(),
+            Components = componentFiles.Length == 0 ? componentAnnotations : null,
+            ComponentFiles = componentFiles.Length == 0 ? null : componentFiles,
             ComponentColorOverrides = componentColorOverrides?
                 .Where(pair => components.Any(component => component.Id == pair.Key))
                 .OrderBy(pair => pair.Key)
@@ -109,6 +116,42 @@ internal static class ComponentAnnotationExporter
         JsonSerializer.Serialize(stream, payload, JsonOptions);
     }
 
+    private static string[] WriteComponentShardsIfNeeded(
+        string manifestPath,
+        IReadOnlyList<ComponentAnnotation> components)
+    {
+        if (components.Count <= ComponentShardSize)
+        {
+            return [];
+        }
+
+        string manifestDirectory = Path.GetDirectoryName(Path.GetFullPath(manifestPath)) ?? Directory.GetCurrentDirectory();
+        string shardDirectoryName = Path.GetFileNameWithoutExtension(manifestPath) + ComponentShardDirectorySuffix;
+        string shardDirectory = Path.Combine(manifestDirectory, shardDirectoryName);
+        Directory.CreateDirectory(shardDirectory);
+
+        foreach (string staleShard in Directory.EnumerateFiles(shardDirectory, "components_*.json", SearchOption.TopDirectoryOnly))
+        {
+            File.Delete(staleShard);
+        }
+
+        var relativeFiles = new List<string>((components.Count + ComponentShardSize - 1) / ComponentShardSize);
+        for (int start = 0, shardIndex = 0; start < components.Count; start += ComponentShardSize, shardIndex++)
+        {
+            int count = Math.Min(ComponentShardSize, components.Count - start);
+            ComponentAnnotation[] shard = components.Skip(start).Take(count).ToArray();
+            string shardPath = Path.Combine(shardDirectory, $"components_{shardIndex:000}.json");
+            using (FileStream shardStream = File.Create(shardPath))
+            {
+                JsonSerializer.Serialize(shardStream, shard, JsonOptions);
+            }
+
+            relativeFiles.Add(Path.GetRelativePath(manifestDirectory, shardPath).Replace('\\', '/'));
+        }
+
+        return relativeFiles.ToArray();
+    }
+
     private sealed class ComponentAnnotationFile
     {
         public required string SourceModel { get; init; }
@@ -123,7 +166,9 @@ internal static class ComponentAnnotationExporter
 
         public required CompositeAnnotation[] Composites { get; init; }
 
-        public required ComponentAnnotation[] Components { get; init; }
+        public ComponentAnnotation[]? Components { get; init; }
+
+        public string[]? ComponentFiles { get; init; }
 
         public required ComponentColorOverrideAnnotation[] ComponentColorOverrides { get; init; }
 

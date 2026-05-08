@@ -102,6 +102,16 @@ internal static class ProjectileObstacleResolver
 
         if (runtimeGrid.CollisionSurface is not null)
         {
+            if (TryResolveCollisionSurfacePenetration(
+                    runtimeGrid,
+                    metersPerWorldUnit,
+                    projectileRadiusM,
+                    end,
+                    out hit))
+            {
+                return true;
+            }
+
             return false;
         }
 
@@ -183,7 +193,7 @@ internal static class ProjectileObstacleResolver
                 hit = new ProjectileObstacleHit(
                     sampleWorldX,
                     sampleWorldY,
-                    sample.Y,
+                    terrainHeight,
                     normal.X,
                     normal.Y,
                     normal.Z,
@@ -200,6 +210,43 @@ internal static class ProjectileObstacleResolver
         }
 
         return false;
+    }
+
+    private static bool TryResolveCollisionSurfacePenetration(
+        RuntimeGridData runtimeGrid,
+        double metersPerWorldUnit,
+        double projectileRadiusM,
+        Vector3 end,
+        out ProjectileObstacleHit hit)
+    {
+        hit = default;
+        double worldX = end.X / Math.Max(metersPerWorldUnit, 1e-6);
+        double worldY = end.Z / Math.Max(metersPerWorldUnit, 1e-6);
+        if (!runtimeGrid.TrySampleCollisionSurface(worldX, worldY, out TerrainSurfaceSample surface, allowNeighborExpansion: false))
+        {
+            return false;
+        }
+
+        float clearanceM = Math.Max(0.010f, (float)projectileRadiusM * 0.95f);
+        if (end.Y > surface.HeightM + clearanceM)
+        {
+            return false;
+        }
+
+        Vector3 normal = surface.Normal.LengthSquared() > 1e-8f
+            ? Vector3.Normalize(surface.Normal)
+            : Vector3.UnitY;
+        hit = new ProjectileObstacleHit(
+            worldX,
+            worldY,
+            surface.HeightM,
+            normal.X,
+            normal.Y,
+            normal.Z,
+            1.0,
+            SupportsRicochet: true,
+            Kind: "terrain_penetration");
+        return true;
     }
 
     private static bool TryResolveEntityHit(
@@ -329,11 +376,8 @@ internal static class ProjectileObstacleResolver
                 bodyTop + mountGap + mountHeightOnly,
                 (float)(profile?.GimbalHeightM ?? entity.GimbalHeightM) - gimbalHeight * 0.5f);
             Vector3 hingeCenter = center + forward * gimbalOffsetX + right * gimbalOffsetY + up * turretBase;
-            ResolveMountedTurretAxes(
-                forward,
-                right,
-                up,
-                (float)((entity.TurretYawDeg - entity.AngleDeg) * Math.PI / 180.0),
+            ResolveWorldTurretAxes(
+                (float)(entity.TurretYawDeg * Math.PI / 180.0),
                 (float)(entity.GimbalPitchDeg * Math.PI / 180.0),
                 out _,
                 out Vector3 turretRight,
@@ -595,6 +639,25 @@ internal static class ProjectileObstacleResolver
             + chassisUp * MathF.Sin(gimbalPitchRad),
             turretForward);
         pitchedUp = SafeNormalize(Vector3.Cross(turretRight, pitchedForward), chassisUp);
+    }
+
+    private static void ResolveWorldTurretAxes(
+        float worldTurretYawRad,
+        float gimbalPitchRad,
+        out Vector3 turretForward,
+        out Vector3 turretRight,
+        out Vector3 pitchedForward,
+        out Vector3 pitchedUp)
+    {
+        turretForward = SafeNormalize(
+            new Vector3(MathF.Cos(worldTurretYawRad), 0f, MathF.Sin(worldTurretYawRad)),
+            Vector3.UnitX);
+        turretRight = SafeNormalize(new Vector3(-turretForward.Z, 0f, turretForward.X), Vector3.UnitZ);
+        pitchedForward = SafeNormalize(
+            turretForward * MathF.Cos(gimbalPitchRad)
+            + Vector3.UnitY * MathF.Sin(gimbalPitchRad),
+            turretForward);
+        pitchedUp = SafeNormalize(Vector3.Cross(turretRight, pitchedForward), Vector3.UnitY);
     }
 
     private static ProjectileObstacleHit? TryIntersectOrientedBox(

@@ -23,6 +23,8 @@ internal sealed class TerrainEditorForm : Form
     private readonly PropertyGrid _facilityGrid = new();
     private readonly PropertyGrid _facetGrid = new();
     private readonly PropertyGrid _fineTerrainGrid = new();
+    private readonly ListBox _collisionShapeList = new();
+    private readonly PropertyGrid _collisionShapeGrid = new();
     private readonly Label _statusLabel = new();
     private readonly Label _currentLabel = new();
     private readonly MapPresetPreviewControl _editPreview = new();
@@ -30,6 +32,8 @@ internal sealed class TerrainEditorForm : Form
     private readonly TabControl _tabControl = new();
 
     private MapPresetEditorSettings? _document;
+    private FineTerrainAnnotationDocument? _activeFineTerrainAnnotation;
+    private FineTerrainCollisionShapeAnnotation? _copiedCollisionShape;
 
     public TerrainEditorForm()
     {
@@ -171,15 +175,18 @@ internal sealed class TerrainEditorForm : Form
         _facilityGrid.ToolbarVisible = false;
         _facetGrid.ToolbarVisible = false;
         _fineTerrainGrid.ToolbarVisible = false;
+        _collisionShapeGrid.ToolbarVisible = false;
         _mapGrid.HelpVisible = true;
         _surfaceGrid.HelpVisible = true;
         _facilityGrid.HelpVisible = true;
         _facetGrid.HelpVisible = true;
         _fineTerrainGrid.HelpVisible = true;
+        _collisionShapeGrid.HelpVisible = true;
         _mapGrid.PropertyValueChanged += (_, _) => OnDocumentModified();
         _surfaceGrid.PropertyValueChanged += (_, _) => OnDocumentModified();
         _facilityGrid.PropertyValueChanged += (_, _) => OnDocumentModified();
         _facetGrid.PropertyValueChanged += (_, _) => OnDocumentModified();
+        _collisionShapeGrid.PropertyValueChanged += (_, _) => SaveActiveFineTerrainAnnotation();
 
         _tabControl.TabPages.Add(new TabPage("地图参数") { Controls = { _mapGrid } });
         _tabControl.TabPages.Add(new TabPage("地形数据") { Controls = { _surfaceGrid } });
@@ -187,6 +194,7 @@ internal sealed class TerrainEditorForm : Form
         _tabControl.TabPages.Add(new TabPage("斜面三角面") { Controls = { BuildListAndGrid(_facetList, _facetGrid, "3D 斜面 / 边缘三角面") } });
 
         _tabControl.TabPages.Add(new TabPage("精细地图") { Controls = { BuildFineTerrainPanel() } });
+        _tabControl.TabPages.Add(new TabPage("碰撞组件") { Controls = { BuildCollisionShapePanel() } });
 
         _facilityList.Dock = DockStyle.Fill;
         _facilityList.DisplayMember = nameof(FacilityRegionEditorModel.Id);
@@ -195,6 +203,10 @@ internal sealed class TerrainEditorForm : Form
         _facetList.Dock = DockStyle.Fill;
         _facetList.DisplayMember = nameof(TerrainFacetEditorModel.Id);
         _facetList.SelectedIndexChanged += (_, _) => BindSelectedFacet();
+
+        _collisionShapeList.Dock = DockStyle.Fill;
+        _collisionShapeList.DisplayMember = nameof(FineTerrainCollisionShapeAnnotation.Name);
+        _collisionShapeList.SelectedIndexChanged += (_, _) => BindSelectedCollisionShape();
 
         return _tabControl;
     }
@@ -223,6 +235,37 @@ internal sealed class TerrainEditorForm : Form
 
         layout.Controls.Add(toolbar, 0, 0);
         layout.Controls.Add(_fineTerrainGrid, 0, 1);
+        return layout;
+    }
+
+    private Control BuildCollisionShapePanel()
+    {
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+        };
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        var toolbar = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            Padding = new Padding(0, 4, 0, 0),
+        };
+        toolbar.Controls.Add(CreateButton("矩形柱", (_, _) => AddCollisionShape("quad_prism"), 92));
+        toolbar.Controls.Add(CreateButton("六棱柱", (_, _) => AddCollisionShape("hex_prism"), 92));
+        toolbar.Controls.Add(CreateButton("圆柱体", (_, _) => AddCollisionShape("cylinder"), 92));
+        toolbar.Controls.Add(CreateButton("复制", (_, _) => CopySelectedCollisionShape(), 72));
+        toolbar.Controls.Add(CreateButton("粘贴", (_, _) => PasteCollisionShape(), 72));
+        toolbar.Controls.Add(CreateButton("删除", (_, _) => DeleteSelectedCollisionShape(), 72));
+        toolbar.Controls.Add(CreateButton("刷新", (_, _) => ReloadFineTerrainAnnotation(), 72));
+
+        layout.Controls.Add(toolbar, 0, 0);
+        layout.Controls.Add(BuildListAndGrid(_collisionShapeList, _collisionShapeGrid, "局内可见 / 可碰撞组件"), 0, 1);
         return layout;
     }
 
@@ -279,7 +322,7 @@ internal sealed class TerrainEditorForm : Form
 
     private void OpenFineTerrainFolder()
     {
-        string folder = _layout.ResolvePath("maps", "rmuc26map");
+        string folder = _layout.ResolvePath("maps", "rmuc2026");
         if (!Directory.Exists(folder))
         {
             _statusLabel.Text = "精细地形目录不存在。";
@@ -313,8 +356,8 @@ internal sealed class TerrainEditorForm : Form
         string annotationPath = ResolveMapRelativePath("annotation_path", presetDirectory);
         string runtimeCachePath = ResolveRuntimeGridSourcePath(presetDirectory);
         string fineTerrainFolder = !string.IsNullOrWhiteSpace(annotationPath)
-            ? Path.GetDirectoryName(annotationPath) ?? _layout.ResolvePath("maps", "rmuc26map")
-            : _layout.ResolvePath("maps", "rmuc26map");
+            ? Path.GetDirectoryName(annotationPath) ?? _layout.ResolvePath("maps", "rmuc2026")
+            : _layout.ResolvePath("maps", "rmuc2026");
         string modelPath = Path.Combine(fineTerrainFolder, "RMUC2026_MAP.glb");
         _fineTerrainGrid.SelectedObject = new FineTerrainIntegrationViewModel
         {
@@ -408,6 +451,7 @@ internal sealed class TerrainEditorForm : Form
             _mapGrid.SelectedObject = _document;
             _surfaceGrid.SelectedObject = _document.TerrainSurface;
             BindFineTerrainMetadata();
+            ReloadFineTerrainAnnotation();
             RebindFacilityList();
             RebindFacetList();
             _editPreview.MarkSceneDirty();
@@ -448,6 +492,25 @@ internal sealed class TerrainEditorForm : Form
         _editPreview.Invalidate();
     }
 
+    private void ReloadFineTerrainAnnotation()
+    {
+        _activeFineTerrainAnnotation = TryLoadActiveFineTerrainAnnotation();
+        RebindCollisionShapeList();
+    }
+
+    private void RebindCollisionShapeList()
+    {
+        _collisionShapeList.DataSource = null;
+        _collisionShapeGrid.SelectedObject = null;
+        if (_activeFineTerrainAnnotation is null)
+        {
+            return;
+        }
+
+        _collisionShapeList.DataSource = _activeFineTerrainAnnotation.CollisionShapes;
+        _collisionShapeList.DisplayMember = nameof(FineTerrainCollisionShapeAnnotation.Name);
+    }
+
     private void BindSelectedFacility()
     {
         if (_facilityList.SelectedItem is not FacilityRegionEditorModel facility)
@@ -472,6 +535,16 @@ internal sealed class TerrainEditorForm : Form
         _editPreview.SelectedFacetId = facet.Id;
         _editPreview.SelectedFacilityId = null;
         _editPreview.Invalidate();
+    }
+
+    private void BindSelectedCollisionShape()
+    {
+        if (_collisionShapeList.SelectedItem is not FineTerrainCollisionShapeAnnotation shape)
+        {
+            return;
+        }
+
+        _collisionShapeGrid.SelectedObject = shape;
     }
 
     private void AddFacility(string shape)
@@ -501,6 +574,136 @@ internal sealed class TerrainEditorForm : Form
         _facilityList.SelectedItem = facility;
         _tabControl.SelectedIndex = 2;
         _statusLabel.Text = $"已新增 {facility.Id}。";
+    }
+
+    private void AddCollisionShape(string shapeType)
+    {
+        if (_activeFineTerrainAnnotation is null)
+        {
+            ReloadFineTerrainAnnotation();
+        }
+
+        if (_activeFineTerrainAnnotation is null)
+        {
+            _statusLabel.Text = "当前地图没有可写入的精细地形注解，无法新增碰撞组件。";
+            return;
+        }
+
+        int nextId = _activeFineTerrainAnnotation.CollisionShapes.Count == 0
+            ? 1
+            : _activeFineTerrainAnnotation.CollisionShapes.Max(shape => shape.Id) + 1;
+        FineTerrainWorldScale worldScale = _activeFineTerrainAnnotation.WorldScale;
+        Vector3 center = worldScale.ModelCenter;
+        Vector3 defaultBoxSize = ResolveDefaultShapeSizeModel(worldScale, 1.20f, 1.00f, 1.20f);
+        string normalizedShapeType = string.Equals(shapeType, "box", StringComparison.OrdinalIgnoreCase)
+            ? "quad_prism"
+            : shapeType;
+        FineTerrainCollisionShapeAnnotation shape = normalizedShapeType switch
+        {
+            "cylinder" => new FineTerrainCollisionShapeAnnotation
+            {
+                Id = nextId,
+                Name = $"cylinder_{nextId}",
+                ShapeType = "cylinder",
+                PositionModel = FineTerrainVector3.From(center),
+                RadiusModel = ResolveDefaultRadiusModel(worldScale, 0.55f),
+                HeightModel = ResolveDefaultHeightModel(worldScale, 1.00f),
+            },
+            "hex_prism" => new FineTerrainCollisionShapeAnnotation
+            {
+                Id = nextId,
+                Name = $"hex_prism_{nextId}",
+                ShapeType = "hex_prism",
+                PositionModel = FineTerrainVector3.From(center),
+                RadiusModel = ResolveDefaultRadiusModel(worldScale, 0.60f),
+                HeightModel = ResolveDefaultHeightModel(worldScale, 1.00f),
+            },
+            _ => new FineTerrainCollisionShapeAnnotation
+            {
+                Id = nextId,
+                Name = $"box_{nextId}",
+                ShapeType = "box",
+                PositionModel = FineTerrainVector3.From(center),
+                SizeModel = FineTerrainVector3.From(defaultBoxSize),
+                HeightModel = Math.Max(0.001f, defaultBoxSize.Y),
+            },
+        };
+
+        if (shape.ShapeType.Equals("box", StringComparison.OrdinalIgnoreCase)
+            || shape.ShapeType.Equals("quad_prism", StringComparison.OrdinalIgnoreCase))
+        {
+            shape.SizeModel = FineTerrainVector3.From(defaultBoxSize);
+        }
+
+        _activeFineTerrainAnnotation.CollisionShapes.Add(shape);
+        SaveActiveFineTerrainAnnotation();
+        RebindCollisionShapeList();
+        _collisionShapeList.SelectedItem = shape;
+        _tabControl.SelectedIndex = 5;
+        _statusLabel.Text = $"已新增碰撞组件 {shape.Name}。";
+    }
+
+    private void CopySelectedCollisionShape()
+    {
+        if (_collisionShapeList.SelectedItem is not FineTerrainCollisionShapeAnnotation shape)
+        {
+            _statusLabel.Text = "请先选中一个碰撞组件再复制。";
+            return;
+        }
+
+        _copiedCollisionShape = CloneCollisionShape(shape, newId: shape.Id, offset: Vector3.Zero, rename: false);
+        _statusLabel.Text = $"已复制 {shape.Name}。";
+    }
+
+    private void PasteCollisionShape()
+    {
+        if (_copiedCollisionShape is null)
+        {
+            _statusLabel.Text = "当前没有已复制的碰撞组件。";
+            return;
+        }
+
+        if (_activeFineTerrainAnnotation is null)
+        {
+            ReloadFineTerrainAnnotation();
+        }
+
+        if (_activeFineTerrainAnnotation is null)
+        {
+            _statusLabel.Text = "当前地图没有可写入的精细地形注解，无法粘贴碰撞组件。";
+            return;
+        }
+
+        int nextId = _activeFineTerrainAnnotation.CollisionShapes.Count == 0
+            ? 1
+            : _activeFineTerrainAnnotation.CollisionShapes.Max(shape => shape.Id) + 1;
+        FineTerrainCollisionShapeAnnotation pasted = CloneCollisionShape(
+            _copiedCollisionShape,
+            nextId,
+            new Vector3(0.6f, 0f, 0.6f),
+            rename: true);
+        _activeFineTerrainAnnotation.CollisionShapes.Add(pasted);
+        SaveActiveFineTerrainAnnotation();
+        RebindCollisionShapeList();
+        _collisionShapeList.SelectedItem = pasted;
+        _tabControl.SelectedIndex = 5;
+        _statusLabel.Text = $"已粘贴碰撞组件 {pasted.Name}。";
+    }
+
+    private void DeleteSelectedCollisionShape()
+    {
+        if (_activeFineTerrainAnnotation is null
+            || _collisionShapeList.SelectedItem is not FineTerrainCollisionShapeAnnotation shape)
+        {
+            _statusLabel.Text = "请先选中一个碰撞组件再删除。";
+            return;
+        }
+
+        _activeFineTerrainAnnotation.CollisionShapes.Remove(shape);
+        SaveActiveFineTerrainAnnotation();
+        RebindCollisionShapeList();
+        _collisionShapeGrid.SelectedObject = null;
+        _statusLabel.Text = $"已删除碰撞组件 {shape.Name}。";
     }
 
     private void AddFacet()
@@ -735,6 +938,7 @@ internal sealed class TerrainEditorForm : Form
         try
         {
             _service.SavePresetDocument(_document);
+            SaveActiveFineTerrainAnnotation();
             _gpuPreview.QueueReload();
             _statusLabel.Text = $"已保存 {_document.PresetName}。";
             _currentLabel.Text = $"当前预设：{_service.GetActiveMapPreset(_layout)}";
@@ -797,6 +1001,7 @@ internal sealed class TerrainEditorForm : Form
         _editPreview.MarkSceneDirty();
         _facilityList.Refresh();
         _facetList.Refresh();
+        _collisionShapeList.Refresh();
         if (_facilityGrid.SelectedObject is FacilityRegionEditorModel facility)
         {
             _editPreview.SelectedFacilityId = facility.Id;
@@ -809,6 +1014,46 @@ internal sealed class TerrainEditorForm : Form
 
         _statusLabel.Text = "编辑辅助视图已更新；GPU 预览会跟随最近一次保存后的运行时结果。";
     }
+
+    private void SaveActiveFineTerrainAnnotation()
+    {
+        _activeFineTerrainAnnotation?.Save();
+    }
+
+    private static FineTerrainCollisionShapeAnnotation CloneCollisionShape(
+        FineTerrainCollisionShapeAnnotation source,
+        int newId,
+        Vector3 offset,
+        bool rename)
+    {
+        return new FineTerrainCollisionShapeAnnotation
+        {
+            Id = newId,
+            Name = rename ? $"{source.Name}_copy" : source.Name,
+            ShapeType = source.ShapeType,
+            PositionModel = FineTerrainVector3.From(source.PositionModel.ToVector3() + offset),
+            SizeModel = FineTerrainVector3.From(source.SizeModel.ToVector3()),
+            RadiusModel = source.RadiusModel,
+            HeightModel = source.HeightModel,
+            YprDegrees = FineTerrainVector3.From(source.YprDegrees.ToVector3()),
+            TerrainLabel = source.TerrainLabel,
+            VerticesModel = source.VerticesModel
+                .Select(vertex => FineTerrainVector3.From(vertex.ToVector3() + offset))
+                .ToList(),
+        };
+    }
+
+    private static Vector3 ResolveDefaultShapeSizeModel(FineTerrainWorldScale worldScale, float xMeters, float yMeters, float zMeters)
+        => new(
+            MathF.Max(0.02f, xMeters / MathF.Max(1e-6f, worldScale.XMetersPerModelUnit)),
+            MathF.Max(0.02f, yMeters / MathF.Max(1e-6f, worldScale.YMetersPerModelUnit)),
+            MathF.Max(0.02f, zMeters / MathF.Max(1e-6f, worldScale.ZMetersPerModelUnit)));
+
+    private static float ResolveDefaultRadiusModel(FineTerrainWorldScale worldScale, float meters)
+        => MathF.Max(0.02f, meters / MathF.Max(1e-6f, MathF.Max(worldScale.XMetersPerModelUnit, worldScale.ZMetersPerModelUnit)));
+
+    private static float ResolveDefaultHeightModel(FineTerrainWorldScale worldScale, float meters)
+        => MathF.Max(0.02f, meters / MathF.Max(1e-6f, worldScale.YMetersPerModelUnit));
 
     private Simulator3dOptions? BuildGpuPreviewOptions()
     {

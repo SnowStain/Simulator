@@ -1,0 +1,15 @@
+bin/
+obj/
+.vs/
+.idea/
+.vscode/
+
+.dotnet_home/
+.codex-build/
+artifacts/
+build_verify/
+__pycache__/
+*.pyc
+
+logs/
+*.log

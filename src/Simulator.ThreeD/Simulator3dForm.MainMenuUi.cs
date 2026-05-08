@@ -8,8 +8,12 @@ namespace Simulator.ThreeD;
 internal sealed partial class Simulator3dForm
 {
     private bool _mainMenuStartExpanded = true;
+    private bool _mainMenuSingleExpanded = true;
+    private bool _mainMenuMultiplayerExpanded;
     private bool _mainMenuEditorExpanded;
     private double _mainMenuStartExpandedVisual = 1.0;
+    private double _mainMenuSingleExpandedVisual = 1.0;
+    private double _mainMenuMultiplayerExpandedVisual;
     private double _mainMenuEditorExpandedVisual;
     private double _mainMenuPulseTimeSec;
     private long _mainMenuChromeLastTicks;
@@ -18,8 +22,12 @@ internal sealed partial class Simulator3dForm
     private void InitializeMainMenuChrome()
     {
         _mainMenuStartExpanded = true;
+        _mainMenuSingleExpanded = true;
+        _mainMenuMultiplayerExpanded = false;
         _mainMenuEditorExpanded = false;
         _mainMenuStartExpandedVisual = 1.0;
+        _mainMenuSingleExpandedVisual = 1.0;
+        _mainMenuMultiplayerExpandedVisual = 0.0;
         _mainMenuEditorExpandedVisual = 0.0;
         _mainMenuPulseTimeSec = 0.0;
         _mainMenuChromeLastTicks = _frameClock.ElapsedTicks;
@@ -33,6 +41,32 @@ internal sealed partial class Simulator3dForm
         if (_mainMenuStartExpanded)
         {
             _mainMenuEditorExpanded = false;
+            if (!_mainMenuSingleExpanded && !_mainMenuMultiplayerExpanded)
+            {
+                _mainMenuSingleExpanded = true;
+            }
+        }
+
+        Invalidate();
+    }
+
+    private void ToggleMainMenuSingleSection()
+    {
+        _mainMenuSingleExpanded = !_mainMenuSingleExpanded;
+        if (_mainMenuSingleExpanded)
+        {
+            _mainMenuMultiplayerExpanded = false;
+        }
+
+        Invalidate();
+    }
+
+    private void ToggleMainMenuMultiplayerSection()
+    {
+        _mainMenuMultiplayerExpanded = !_mainMenuMultiplayerExpanded;
+        if (_mainMenuMultiplayerExpanded)
+        {
+            _mainMenuSingleExpanded = false;
         }
 
         Invalidate();
@@ -51,19 +85,53 @@ internal sealed partial class Simulator3dForm
 
     private void EnterLobbyFromMainMenu(string matchMode)
     {
-        DiscardPendingLobbyWorldRebuild();
         if (string.Equals(matchMode, "full", StringComparison.OrdinalIgnoreCase))
         {
-            _host.SetMatchModeDeferred(matchMode);
-        }
-        else
-        {
-            _host.SetMatchMode(matchMode);
+            OpenLocalRoom("uc");
+            return;
         }
 
-        _mainMenuStartExpanded = false;
-        _mainMenuEditorExpanded = false;
-        EnterLobby();
+        if (string.Equals(matchMode, "duel_1v1", StringComparison.OrdinalIgnoreCase))
+        {
+            OpenLocalRoom("1v1");
+            return;
+        }
+
+        try
+        {
+            DiscardPendingLobbyWorldRebuild();
+            if (string.Equals(matchMode, "full", StringComparison.OrdinalIgnoreCase))
+            {
+                bool changed = _host.SetMatchModeDeferred(matchMode);
+                if (!changed)
+                {
+                    _host.ResetWorld();
+                }
+
+                _host.SetAiEnabled(true);
+            }
+            else
+            {
+                _host.SetMatchMode(matchMode);
+            }
+
+            _mainMenuStartExpanded = false;
+            _mainMenuEditorExpanded = false;
+            _openGkStartHubOpen = false;
+            EnterLobby();
+            EnsureLobbyMapReadyBeforeInteraction();
+        }
+        catch (Exception exception)
+        {
+            AppendGameplayLog(
+                "match_startup.log",
+                $"{DateTime.Now:HH:mm:ss.fff} lobby_enter_failed mode={matchMode} {exception.GetType().Name}:{exception.Message}");
+            _appState = SimulatorAppState.MainMenu;
+            _paused = true;
+            _lobbyWorldRebuildTask = null;
+            _lobbyWorldRebuildLabel = string.Empty;
+            Invalidate();
+        }
     }
 
     private void UpdateMainMenuChrome()
@@ -78,6 +146,8 @@ internal sealed partial class Simulator3dForm
         _mainMenuChromeLastTicks = nowTicks;
         _mainMenuPulseTimeSec += dt;
         _mainMenuStartExpandedVisual = ApproachUiAnimation(_mainMenuStartExpandedVisual, _mainMenuStartExpanded ? 1.0 : 0.0, dt, 10.0);
+        _mainMenuSingleExpandedVisual = ApproachUiAnimation(_mainMenuSingleExpandedVisual, _mainMenuStartExpanded && _mainMenuSingleExpanded ? 1.0 : 0.0, dt, 10.0);
+        _mainMenuMultiplayerExpandedVisual = ApproachUiAnimation(_mainMenuMultiplayerExpandedVisual, _mainMenuStartExpanded && _mainMenuMultiplayerExpanded ? 1.0 : 0.0, dt, 10.0);
         _mainMenuEditorExpandedVisual = ApproachUiAnimation(_mainMenuEditorExpandedVisual, _mainMenuEditorExpanded ? 1.0 : 0.0, dt, 10.0);
 
         string? hoveredAction = !_mouseCaptureActive && ClientRectangle.Contains(_lastMouse)

@@ -42,7 +42,7 @@ internal sealed class FineTerrainCompositeEditingSession
     {
         string annotationPath = ResolveAnnotationPath();
         return Path.GetDirectoryName(annotationPath)
-            ?? _layout.ResolvePath("maps", "rmuc26map");
+            ?? _layout.ResolvePath("maps", "rmuc2026");
     }
 
     public bool Reload()

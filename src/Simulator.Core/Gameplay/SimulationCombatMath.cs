@@ -11,7 +11,10 @@ public readonly record struct ArmorPlateTarget(
     double SideLengthM = 0.13,
     double WidthM = 0.0,
     double HeightSpanM = 0.0,
-    int EnergyRingScore = 0);
+    int EnergyRingScore = 0,
+    double NormalXM = 0.0,
+    double NormalYM = 0.0,
+    double NormalZM = 0.0);
 
 public readonly record struct AutoAimSolution(
     double YawDeg,
@@ -34,7 +37,8 @@ public readonly record struct AutoAimCompensationProfile(
     string Name,
     double TranslationLeadScale,
     double AngularLeadScale,
-    double TimeBiasSec);
+    double TimeBiasSec,
+    double BallisticSpeedScale);
 
 public static class SimulationCombatMath
 {
@@ -43,6 +47,7 @@ public static class SimulationCombatMath
     private const double LargeProjectileAutoAimLatencySec = 0.055;
     private const double ShooterInheritedVelocityLeadScale = 1.48;
     private const double AutoAimSearchConeHalfAngleDeg = 25.0;
+    private const double HeroLobClosePlateLockDistanceM = 12.0;
     private const double RuntimeEnergyTargetsTimeToleranceSec = 0.25;
     public const double HeroNormalAutoAimMaxDistanceM = 8.0;
     private const double OutpostTowerRadiusM = 0.20;
@@ -140,6 +145,15 @@ public static class SimulationCombatMath
                 faceYawDeg = sign > 0.0 ? 90.0 : -90.0;
             }
 
+            double plateCenterHeightM = localCenterHeightM;
+            if (index < target.ArmorPlateOffsetsM.Count)
+            {
+                (double offsetX, double offsetY, double offsetZ) = target.ArmorPlateOffsetsM[index];
+                localForwardM += offsetX;
+                plateCenterHeightM += offsetY;
+                localLateralM += offsetZ;
+            }
+
             ResolveChassisAxes(
                 target.AngleDeg,
                 target.ChassisPitchDeg,
@@ -150,10 +164,15 @@ public static class SimulationCombatMath
             Vector3 visualOffset =
                 chassisForward * (float)localForwardM
                 + chassisRight * (float)localLateralM
-                + chassisUp * (float)localCenterHeightM;
+                + chassisUp * (float)plateCenterHeightM;
             double selfYawDeg = target.ArmorSelfYawsDeg.Count > 0
                 ? (index < selfYaws.Count ? selfYaws[index] : orbitYawDeg)
                 : faceYawDeg;
+            if (index < target.ArmorPlateRotationsYprDeg.Count)
+            {
+                (double yawOffsetDeg, _, _) = target.ArmorPlateRotationsYprDeg[index];
+                selfYawDeg += yawOffsetDeg;
+            }
             plates.Add(new ArmorPlateTarget(
                 $"armor_{index + 1}",
                 target.X + visualOffset.X / Math.Max(metersPerWorldUnit, 1e-6),
@@ -230,7 +249,23 @@ public static class SimulationCombatMath
             && Math.Abs(ResolveOutpostRingAngularVelocityRadPerSec(target, gameTimeSec)) > OutpostRingStoppedAngularThresholdRadPerSec;
 
     public static double ResolveOutpostRingYawDeg(SimulationEntity target, double gameTimeSec)
-        => NormalizeDeg(target.AngleDeg + RadiansToDegrees(ResolveOutpostRingRelativeRotationRad(target, gameTimeSec)));
+        => NormalizeDeg(target.AngleDeg + RadiansToDegrees(ResolveOutpostRingWorldRotationRad(target, gameTimeSec)));
+
+    private static double ResolveOutpostRingWorldRotationRad(SimulationEntity target, double gameTimeSec)
+    {
+        double modelRotationRad = ResolveOutpostRingRelativeRotationRad(target, gameTimeSec);
+        return UsesModelSpaceOutpostVisual(target) ? -modelRotationRad : modelRotationRad;
+    }
+
+    private static double ResolveOutpostRingWorldAngularVelocityRadPerSec(SimulationEntity target, double gameTimeSec)
+    {
+        double modelAngularVelocityRadPerSec = ResolveOutpostRingAngularVelocityRadPerSec(target, gameTimeSec);
+        return UsesModelSpaceOutpostVisual(target) ? -modelAngularVelocityRadPerSec : modelAngularVelocityRadPerSec;
+    }
+
+    private static bool UsesModelSpaceOutpostVisual(SimulationEntity target)
+        => target.AnnotatedOutpost is not null
+            || target.RuntimeOutpostTargets is { Count: > 0 };
 
     public static IReadOnlyList<ArmorPlateTarget> GetAttackableArmorPlateTargets(
         SimulationEntity target,
@@ -478,6 +513,9 @@ public static class SimulationCombatMath
                 Y = teamDefinition.PivotWorldY + rotatedOffset.Z / safeMeters,
                 HeightM = teamDefinition.PivotHeightM + rotatedOffset.Y,
                 YawDeg = yawDeg,
+                NormalXM = rotatedNormal.X,
+                NormalYM = rotatedNormal.Y,
+                NormalZM = rotatedNormal.Z,
             });
         }
 
@@ -576,7 +614,10 @@ public static class SimulationCombatMath
             plateState.SideLengthM,
             plateState.WidthM,
             plateState.HeightSpanM,
-            plateState.RingScore);
+            plateState.RingScore,
+            rotatedNormal.X,
+            rotatedNormal.Y,
+            rotatedNormal.Z);
     }
 
     private static Vector3 RotateAroundAxis(Vector3 vector, Vector3 axis, float angleRad)
@@ -1308,16 +1349,22 @@ public static bool TryAcquireEnergyMechanismTarget(
                 structure,
                 candidatePlate,
                 metersPerWorldUnit);
-            double sameLockBonus = string.Equals(shooter.AutoAimTargetId, structure.Id, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(shooter.AutoAimPlateId, candidatePlate.Id, StringComparison.OrdinalIgnoreCase)
-                    ? 72.0
-                    : 0.0;
+            bool sameLockedTarget = string.Equals(shooter.AutoAimTargetId, structure.Id, StringComparison.OrdinalIgnoreCase);
+            bool sameLockedPlate = sameLockedTarget
+                && string.Equals(shooter.AutoAimPlateId, candidatePlate.Id, StringComparison.OrdinalIgnoreCase);
+            double sameLockBonus = sameLockedPlate
+                ? distanceM <= HeroLobClosePlateLockDistanceM ? 420.0 : 150.0
+                : 0.0;
+            double sameTargetSwitchPenalty = sameLockedTarget && !sameLockedPlate && distanceM <= HeroLobClosePlateLockDistanceM
+                ? 220.0
+                : 0.0;
             double score = yawError * 1.35
                 + pitchError * 1.65
                 + distanceM * 0.05
                 - lifetimeScore
                 - freshAppearanceBonus * 0.70
                 + exitPenalty
+                + sameTargetSwitchPenalty
                 - sameLockBonus;
             if (score >= bestScore)
             {
@@ -1719,11 +1766,16 @@ public static bool TryAcquireEnergyMechanismTarget(
         => plate.Id.StartsWith("outpost_ring_", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsHeroDeploymentBaseTopPlate(ArmorPlateTarget plate)
-        => plate.Id.Equals("base_top_slide", StringComparison.OrdinalIgnoreCase);
+        => plate.Id.Equals("base_middle_front", StringComparison.OrdinalIgnoreCase)
+            || plate.Id.Equals("base_middle_left", StringComparison.OrdinalIgnoreCase)
+            || plate.Id.Equals("base_middle_right", StringComparison.OrdinalIgnoreCase);
 
     private static double ResolveVisualBodyLiftM(SimulationEntity entity)
     {
         double bodyLift = 0.0;
+        bool balanceInfantry =
+            string.Equals(entity.RoleKey, "infantry", StringComparison.OrdinalIgnoreCase)
+            && entity.ChassisSubtype.Contains("balance", StringComparison.OrdinalIgnoreCase);
         if (entity.TraversalActive)
         {
             double progress = Math.Clamp(entity.TraversalProgress, 0.0, 1.0);
@@ -1732,7 +1784,26 @@ public static bool TryAcquireEnergyMechanismTarget(
                 string.Equals(entity.RoleKey, "hero", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(entity.RoleKey, "engineer", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase);
-            if (heavyChassis)
+            if (balanceInfantry)
+            {
+                double stepHeight = Math.Clamp(
+                    Math.Max(0.0, entity.TraversalTargetGroundHeightM - entity.TraversalStartGroundHeightM),
+                    0.0,
+                    0.22);
+                if (progress < 0.30)
+                {
+                    bodyLift = Blend(0.15, 0.22 + stepHeight * 0.18, progress / 0.30);
+                }
+                else if (progress < 0.72)
+                {
+                    bodyLift = Blend(0.22 + stepHeight * 0.18, 0.18 + stepHeight * 0.12, (progress - 0.30) / 0.42);
+                }
+                else
+                {
+                    bodyLift = (0.18 + stepHeight * 0.12) * (1.0 - (progress - 0.72) / 0.28);
+                }
+            }
+            else if (heavyChassis)
             {
                 double stepHeight = Math.Clamp(
                     Math.Max(0.0, entity.TraversalTargetGroundHeightM - entity.TraversalStartGroundHeightM),
@@ -1779,6 +1850,17 @@ public static bool TryAcquireEnergyMechanismTarget(
                     0.32);
                 bodyLift = (0.09 + stepHeight * 0.12) * (1.0 - (progress - 0.7) / 0.3);
             }
+        }
+        else if (balanceInfantry && entity.StepClimbPoseBlend > 1e-4)
+        {
+            double stepBlend = Math.Clamp(entity.StepClimbPoseBlend, 0.0, 1.0);
+            double eased = stepBlend * stepBlend * (3.0 - 2.0 * stepBlend);
+            double overshoot = Math.Max(0.0, Math.Clamp(entity.StepClimbPoseVelocity, -2.8, 2.8)) * 0.010;
+            bodyLift = Math.Max(bodyLift, 0.030 + 0.090 * eased + overshoot);
+        }
+        else if (balanceInfantry && entity.StepClimbModeActive)
+        {
+            bodyLift = Math.Max(bodyLift, 0.15);
         }
 
         if (entity.ChassisSupportsJump && entity.AirborneHeightM > 1e-4)
@@ -2050,10 +2132,12 @@ public static bool TryAcquireEnergyMechanismTarget(
     public static (double X, double Y, double HeightM) ComputeMuzzlePoint(
         SimulationWorldState world,
         SimulationEntity shooter,
-        double? pitchDegOverride = null)
+        double? pitchDegOverride = null,
+        double? turretYawDegOverride = null)
     {
         double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
         double pitchDeg = pitchDegOverride ?? shooter.GimbalPitchDeg;
+        double turretYawDeg = turretYawDegOverride ?? shooter.TurretYawDeg;
 
         double groundHeight = shooter.GroundHeightM + shooter.AirborneHeightM;
         double bodyTopM = shooter.BodyClearanceM + ResolveVisualBodyLiftM(shooter) + shooter.BodyHeightM;
@@ -2064,14 +2148,11 @@ public static bool TryAcquireEnergyMechanismTarget(
                 : bodyTopM + shooter.GimbalBodyHeightM * 0.5);
 
         ResolveChassisAxes(shooter.AngleDeg, shooter.ChassisPitchDeg, shooter.ChassisRollDeg, out Vector3 chassisForward, out Vector3 chassisRight, out Vector3 chassisUp);
-        ResolveMountedTurretAxes(
-            chassisForward,
-            chassisRight,
-            chassisUp,
-            DegreesToRadians(shooter.TurretYawDeg - shooter.AngleDeg),
+        ResolveWorldTurretAxes(
+            DegreesToRadians(turretYawDeg),
             DegreesToRadians(pitchDeg),
             out _,
-            out _,
+            out Vector3 turretRight,
             out Vector3 pitchedForward,
             out Vector3 pitchedUp);
         Vector3 chassisOriginM = new(
@@ -2079,19 +2160,106 @@ public static bool TryAcquireEnergyMechanismTarget(
             (float)groundHeight,
             (float)(shooter.Y * metersPerWorldUnit));
         Vector3 hingeM = chassisOriginM
-            + chassisForward * (float)shooter.GimbalOffsetXM
-            + chassisRight * (float)shooter.GimbalOffsetYM
-            + chassisUp * (float)hingeHeightM;
+            + chassisForward * (float)(shooter.GimbalOffsetXM + shooter.GimbalRelativeOffsetXM)
+            + chassisRight * (float)(shooter.GimbalOffsetYM + shooter.GimbalRelativeOffsetZM)
+            + chassisUp * (float)(hingeHeightM + shooter.GimbalRelativeOffsetYM);
         Vector3 turretCenterM = hingeM
-            + pitchedUp * (float)(shooter.GimbalBodyHeightM * 0.50 + 0.006)
-            + pitchedForward * (float)(shooter.GimbalLengthM * 0.04);
+            + pitchedUp * (float)(shooter.GimbalBodyHeightM * 0.50);
         Vector3 muzzleM = turretCenterM
-            + pitchedForward * (float)(shooter.GimbalLengthM * 0.5 + shooter.BarrelRadiusM * 0.45 + shooter.BarrelLengthM)
-            + pitchedUp * (float)(shooter.GimbalBodyHeightM * 0.12 - 0.03);
+            + pitchedForward * (float)(shooter.GimbalLengthM * 0.5 + shooter.BarrelOffsetXM + shooter.BarrelLengthM)
+            + pitchedUp * (float)shooter.BarrelOffsetYM
+            + turretRight * (float)shooter.BarrelOffsetZM;
         return (
             muzzleM.X / metersPerWorldUnit,
             muzzleM.Z / metersPerWorldUnit,
             muzzleM.Y);
+    }
+
+    public static (double X, double Y, double HeightM, Vector3 Forward, Vector3 Right, Vector3 Up) ComputeFirstPersonCameraTransform(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        double? pitchDegOverride = null,
+        double? turretYawDegOverride = null)
+    {
+        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
+        double pitchDeg = pitchDegOverride ?? shooter.GimbalPitchDeg;
+        double turretYawDeg = turretYawDegOverride ?? shooter.TurretYawDeg;
+
+        double groundHeight = shooter.GroundHeightM + shooter.AirborneHeightM;
+        double bodyTopM = shooter.BodyClearanceM + ResolveVisualBodyLiftM(shooter) + shooter.BodyHeightM;
+        double hingeHeightM = Math.Max(
+            bodyTopM + shooter.GimbalMountGapM + shooter.GimbalMountHeightM,
+            shooter.GimbalHeightM > 1e-4
+                ? shooter.GimbalHeightM - shooter.GimbalBodyHeightM * 0.5
+                : bodyTopM + shooter.GimbalBodyHeightM * 0.5);
+
+        ResolveChassisAxes(shooter.AngleDeg, shooter.ChassisPitchDeg, shooter.ChassisRollDeg, out Vector3 chassisForward, out Vector3 chassisRight, out Vector3 chassisUp);
+        ResolveWorldTurretAxes(
+            DegreesToRadians(turretYawDeg),
+            DegreesToRadians(pitchDeg),
+            out _,
+            out Vector3 turretRight,
+            out Vector3 pitchedForward,
+            out Vector3 pitchedUp);
+        Vector3 chassisOriginM = new(
+            (float)(shooter.X * metersPerWorldUnit),
+            (float)groundHeight,
+            (float)(shooter.Y * metersPerWorldUnit));
+        Vector3 hingeM = chassisOriginM
+            + chassisForward * (float)(shooter.GimbalOffsetXM + shooter.GimbalRelativeOffsetXM)
+            + chassisRight * (float)(shooter.GimbalOffsetYM + shooter.GimbalRelativeOffsetZM)
+            + chassisUp * (float)(hingeHeightM + shooter.GimbalRelativeOffsetYM);
+        Vector3 turretCenterM = hingeM
+            + pitchedUp * (float)(shooter.GimbalBodyHeightM * 0.50);
+        Vector3 barrelAxisAnchorM = turretCenterM
+            + pitchedForward * (float)(shooter.GimbalLengthM * 0.5 + shooter.BarrelOffsetXM)
+            + pitchedUp * (float)shooter.BarrelOffsetYM
+            + turretRight * (float)shooter.BarrelOffsetZM;
+        float cameraForwardOffsetM = Math.Abs(shooter.FirstPersonCameraOffsetXM) > 1e-6
+            ? (float)shooter.FirstPersonCameraOffsetXM
+            : 0.04f;
+        float cameraHeightOffsetM = Math.Abs(shooter.FirstPersonCameraOffsetYM) > 1e-6
+            ? (float)shooter.FirstPersonCameraOffsetYM
+            : 0.06f;
+        Vector3 cameraM = barrelAxisAnchorM
+            + pitchedForward * cameraForwardOffsetM
+            + pitchedUp * cameraHeightOffsetM
+            + turretRight * (float)shooter.FirstPersonCameraOffsetZM;
+        return (
+            cameraM.X / metersPerWorldUnit,
+            cameraM.Z / metersPerWorldUnit,
+            cameraM.Y,
+            pitchedForward,
+            turretRight,
+            pitchedUp);
+    }
+
+    public static (double X, double Y, double HeightM) ComputeFirstPersonCameraPoint(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        double? pitchDegOverride = null,
+        double? turretYawDegOverride = null)
+    {
+        (double x, double y, double heightM, _, _, _) = ComputeFirstPersonCameraTransform(
+            world,
+            shooter,
+            pitchDegOverride,
+            turretYawDegOverride);
+        return (x, y, heightM);
+    }
+
+    public static (double X, double Y, double HeightM, double ForwardX, double ForwardY, double ForwardZ) ComputeFirstPersonCameraPose(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        double? pitchDegOverride = null,
+        double? turretYawDegOverride = null)
+    {
+        (double x, double y, double heightM, Vector3 forward, _, _) = ComputeFirstPersonCameraTransform(
+            world,
+            shooter,
+            pitchDegOverride,
+            turretYawDegOverride);
+        return (x, y, heightM, forward.X, forward.Z, forward.Y);
     }
 
     public static (double YawDeg, double PitchDeg) ComputeAimAnglesToPoint(
@@ -2104,18 +2272,19 @@ public static bool TryAcquireEnergyMechanismTarget(
     {
         double pitch = shooter.GimbalPitchDeg;
         double yaw = shooter.TurretYawDeg;
-        double speedMps = Math.Max(1.0, ProjectileSpeedMps(shooter));
         bool useDragSolver = preferHighArc
             || string.Equals(shooter.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase);
         for (int iteration = 0; iteration < 3; iteration++)
         {
-            (double muzzleX, double muzzleY, double muzzleHeightM) = ComputeMuzzlePoint(world, shooter, pitch);
+            (double cameraX, double cameraY, _) = ComputeFirstPersonCameraPoint(world, shooter, pitch, yaw);
+            yaw = NormalizeDeg(RadiansToDegrees(Math.Atan2(targetY - cameraY, targetX - cameraX)));
+            (double muzzleX, double muzzleY, double muzzleHeightM) = ComputeMuzzlePoint(world, shooter, pitch, yaw);
             double dxWorld = targetX - muzzleX;
             double dyWorld = targetY - muzzleY;
             double horizontalM = Math.Sqrt(dxWorld * dxWorld + dyWorld * dyWorld) * Math.Max(world.MetersPerWorldUnit, 1e-6);
-            yaw = NormalizeDeg(RadiansToDegrees(Math.Atan2(dyWorld, dxWorld)));
 
             double dzM = targetHeightM - muzzleHeightM;
+            double speedMps = Math.Max(1.0, ResolveBallisticExperienceProjectileSpeedMps(shooter, horizontalM));
             if (useDragSolver
                 && TrySolveBallisticPitchDegWithDrag(horizontalM, dzM, speedMps, shooter.AmmoType, preferHighArc, out double dragPitchDeg))
             {
@@ -2136,6 +2305,78 @@ public static bool TryAcquireEnergyMechanismTarget(
         }
 
         return (yaw, pitch);
+    }
+
+    public static (double PitchDeg, double PlaneDistanceM) ComputeAimPitchToVerticalPlane(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        double planeCenterX,
+        double planeCenterY,
+        double targetHeightM,
+        double yawDeg,
+        bool preferHighArc = false)
+    {
+        double pitch = shooter.GimbalPitchDeg;
+        double planeDistanceM = 0.0;
+        bool useDragSolver = preferHighArc
+            || string.Equals(shooter.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase);
+        for (int iteration = 0; iteration < 3; iteration++)
+        {
+            (double muzzleX, double muzzleY, double muzzleHeightM) = ComputeMuzzlePoint(world, shooter, pitch, yawDeg);
+            planeDistanceM = ComputeVerticalPlaneDistanceM(world, muzzleX, muzzleY, planeCenterX, planeCenterY, yawDeg);
+            double dzM = targetHeightM - muzzleHeightM;
+            if (planeDistanceM <= 1e-4)
+            {
+                pitch = Math.Clamp(
+                    RadiansToDegrees(Math.Atan2(dzM, Math.Max(planeDistanceM, 1e-4))),
+                    -40.0,
+                    40.0);
+                continue;
+            }
+
+            double speedMps = Math.Max(1.0, ResolveBallisticExperienceProjectileSpeedMps(shooter, planeDistanceM));
+            if (useDragSolver
+                && TrySolveBallisticPitchDegWithDrag(planeDistanceM, dzM, speedMps, shooter.AmmoType, preferHighArc, out double dragPitchDeg))
+            {
+                pitch = Math.Clamp(dragPitchDeg, -40.0, 40.0);
+                continue;
+            }
+
+            if (TrySolveVacuumBallisticPitchDeg(planeDistanceM, dzM, speedMps, preferHighArc, out double vacuumPitchDeg))
+            {
+                pitch = Math.Clamp(vacuumPitchDeg, -40.0, 40.0);
+                continue;
+            }
+
+            pitch = Math.Clamp(
+                RadiansToDegrees(Math.Atan2(dzM, Math.Max(planeDistanceM, 1e-4))),
+                -40.0,
+                40.0);
+        }
+
+        return (pitch, planeDistanceM);
+    }
+
+    private static double ComputeVerticalPlaneDistanceM(
+        SimulationWorldState world,
+        double muzzleX,
+        double muzzleY,
+        double planeCenterX,
+        double planeCenterY,
+        double yawDeg)
+    {
+        double yawRad = DegreesToRadians(yawDeg);
+        double axisX = Math.Cos(yawRad);
+        double axisY = Math.Sin(yawRad);
+        double dxWorld = planeCenterX - muzzleX;
+        double dyWorld = planeCenterY - muzzleY;
+        double projectedWorld = dxWorld * axisX + dyWorld * axisY;
+        if (projectedWorld <= 1e-6)
+        {
+            projectedWorld = Math.Sqrt(dxWorld * dxWorld + dyWorld * dyWorld);
+        }
+
+        return projectedWorld * Math.Max(world.MetersPerWorldUnit, 1e-6);
     }
 
     private static bool TrySolveVacuumBallisticPitchDeg(
@@ -2334,7 +2575,28 @@ public static bool TryAcquireEnergyMechanismTarget(
             return -dzM;
         }
 
-        double speedMps = Math.Max(1.0, ProjectileSpeedMps(shooter));
+        double speedMps = Math.Max(1.0, ResolveBallisticExperienceProjectileSpeedMps(shooter, horizontalM));
+        return EvaluateBallisticHeightError(horizontalM, dzM, speedMps, shooter.AmmoType, DegreesToRadians(pitchDeg));
+    }
+
+    public static double EstimateProjectileHeightErrorAtVerticalPlane(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        double planeCenterX,
+        double planeCenterY,
+        double targetHeightM,
+        double yawDeg,
+        double pitchDeg)
+    {
+        (double muzzleX, double muzzleY, double muzzleHeightM) = ComputeMuzzlePoint(world, shooter, pitchDeg, yawDeg);
+        double horizontalM = ComputeVerticalPlaneDistanceM(world, muzzleX, muzzleY, planeCenterX, planeCenterY, yawDeg);
+        double dzM = targetHeightM - muzzleHeightM;
+        if (horizontalM <= 1e-4)
+        {
+            return -dzM;
+        }
+
+        double speedMps = Math.Max(1.0, ResolveBallisticExperienceProjectileSpeedMps(shooter, horizontalM));
         return EvaluateBallisticHeightError(horizontalM, dzM, speedMps, shooter.AmmoType, DegreesToRadians(pitchDeg));
     }
 
@@ -2362,8 +2624,9 @@ public static bool TryAcquireEnergyMechanismTarget(
         }
 
         double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
-        double dxWorld = plate.X - shooter.X;
-        double dyWorld = plate.Y - shooter.Y;
+        (double visionX, double visionY, _) = ComputeFirstPersonCameraPoint(world, shooter);
+        double dxWorld = plate.X - visionX;
+        double dyWorld = plate.Y - visionY;
         double distanceM = Math.Sqrt(dxWorld * dxWorld + dyWorld * dyWorld) * metersPerWorldUnit;
         (double observedVxWorld, double observedVyWorld, double observedVzMps) =
             ResolveArmorPlatePointObservedVelocityWorld(world, target, plate);
@@ -2388,8 +2651,7 @@ public static bool TryAcquireEnergyMechanismTarget(
             motionCoefficient *= 0.50;
         }
 
-        double accuracyScale = Math.Clamp(shooter.AutoAimAccuracyScale <= 1e-6 ? 1.0 : shooter.AutoAimAccuracyScale, 0.05, 1.0);
-        double accuracy = Math.Clamp(distanceCoefficient * motionCoefficient * accuracyScale, 0.05, 1.0);
+        double accuracy = Math.Clamp(distanceCoefficient * motionCoefficient, 0.05, 1.0);
         bool heroStructureHighArcTarget = ShouldUseHeroLobStructureAxisAim(world, shooter, target, plate);
         bool criticalStructureTarget = ShouldAimStructureCriticalZone(world.GameTimeSec, target, plate);
         double storedCenterHeightM = ResolveStoredAutoAimPointHeight(plate.HeightM, heightCompensationM, heroStructureHighArcTarget);
@@ -2495,7 +2757,7 @@ public static bool TryAcquireEnergyMechanismTarget(
         double heightNoise = StableSignedUnit(seed ^ 0x5A17);
         double lateralErrorM = errorRatio * Math.Clamp(distanceM * 0.075, 0.025, 0.42) * sideNoise;
         double heightErrorM = errorRatio * Math.Clamp(0.08 + distanceM * 0.04, 0.08, 0.36) * heightNoise;
-        double plateYawRad = Math.Atan2(predictedY - shooter.Y, predictedX - shooter.X);
+        double plateYawRad = Math.Atan2(predictedY - visionY, predictedX - visionX);
         double sideXWorld = -Math.Sin(plateYawRad) * lateralErrorM / metersPerWorldUnit;
         double sideYWorld = Math.Cos(plateYawRad) * lateralErrorM / metersPerWorldUnit;
 
@@ -2545,8 +2807,9 @@ public static bool TryAcquireEnergyMechanismTarget(
         double observedAngularVelocityRadPerSec)
     {
         double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
-        double dxWorld = observedXWorld - shooter.X;
-        double dyWorld = observedYWorld - shooter.Y;
+        (double visionX, double visionY, _) = ComputeFirstPersonCameraPoint(world, shooter);
+        double dxWorld = observedXWorld - visionX;
+        double dyWorld = observedYWorld - visionY;
         double distanceM = Math.Sqrt(dxWorld * dxWorld + dyWorld * dyWorld) * metersPerWorldUnit;
         double heightCompensationM = ResolveLargeProjectileAutoAimHeightCompensation(shooter, distanceM);
         (double predictedX, double predictedY, double predictedHeightM) = PredictObservationDrivenArmorPlatePoint(
@@ -2581,8 +2844,7 @@ public static bool TryAcquireEnergyMechanismTarget(
             motionCoefficient *= 0.50;
         }
 
-        double accuracyScale = Math.Clamp(shooter.AutoAimAccuracyScale <= 1e-6 ? 1.0 : shooter.AutoAimAccuracyScale, 0.05, 1.0);
-        double accuracy = Math.Clamp(distanceCoefficient * motionCoefficient * accuracyScale, 0.08, 1.0);
+        double accuracy = Math.Clamp(distanceCoefficient * motionCoefficient, 0.08, 1.0);
         bool heroStructureHighArcTarget = ShouldUseHeroLobStructureAxisAim(world, shooter, target, plate);
         bool criticalStructureTarget = ShouldAimStructureCriticalZone(world.GameTimeSec, target, plate);
         double storedObservedHeightM = ResolveStoredAutoAimPointHeight(observedHeightM, heightCompensationM, heroStructureHighArcTarget);
@@ -2666,7 +2928,7 @@ public static bool TryAcquireEnergyMechanismTarget(
         double heightNoise = StableSignedUnit(seed ^ 0x5A17);
         double lateralErrorM = errorRatio * Math.Clamp(distanceM * 0.055, 0.015, 0.26) * sideNoise;
         double heightErrorM = errorRatio * Math.Clamp(0.05 + distanceM * 0.025, 0.05, 0.18) * heightNoise;
-        double plateYawRad = Math.Atan2(predictedY - shooter.Y, predictedX - shooter.X);
+        double plateYawRad = Math.Atan2(predictedY - visionY, predictedX - visionX);
         double sideXWorld = -Math.Sin(plateYawRad) * lateralErrorM / metersPerWorldUnit;
         double sideYWorld = Math.Cos(plateYawRad) * lateralErrorM / metersPerWorldUnit;
         (double yawDeg, double pitchDeg) = ComputeAimAnglesToPoint(
@@ -2717,8 +2979,9 @@ public static bool TryAcquireEnergyMechanismTarget(
         double observedAngularVelocityRadPerSec)
     {
         double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
-        double dxWorld = observedXWorld - shooter.X;
-        double dyWorld = observedYWorld - shooter.Y;
+        (double visionX, double visionY, _) = ComputeFirstPersonCameraPoint(world, shooter);
+        double dxWorld = observedXWorld - visionX;
+        double dyWorld = observedYWorld - visionY;
         double distanceM = Math.Sqrt(dxWorld * dxWorld + dyWorld * dyWorld) * metersPerWorldUnit;
         double heightCompensationM = ResolveLargeProjectileAutoAimHeightCompensation(shooter, distanceM);
         (double predictedX, double predictedY, double predictedHeightM) = PredictObservationDrivenArmorPlatePointThirdOrderEkf(
@@ -2762,8 +3025,7 @@ public static bool TryAcquireEnergyMechanismTarget(
             motionCoefficient *= 0.50;
         }
 
-        double accuracyScale = Math.Clamp(shooter.AutoAimAccuracyScale <= 1e-6 ? 1.0 : shooter.AutoAimAccuracyScale, 0.05, 1.0);
-        double accuracy = Math.Clamp(distanceCoefficient * motionCoefficient * accuracyScale, 0.08, 1.0);
+        double accuracy = Math.Clamp(distanceCoefficient * motionCoefficient, 0.08, 1.0);
         bool heroStructureHighArcTarget = ShouldUseHeroLobStructureAxisAim(world, shooter, target, plate);
         bool criticalStructureTarget = ShouldAimStructureCriticalZone(world.GameTimeSec, target, plate);
         double storedObservedHeightM = ResolveStoredAutoAimPointHeight(observedHeightM, heightCompensationM, heroStructureHighArcTarget);
@@ -2849,7 +3111,7 @@ public static bool TryAcquireEnergyMechanismTarget(
         double heightNoise = StableSignedUnit(seed ^ 0x5A17);
         double lateralErrorM = errorRatio * Math.Clamp(distanceM * 0.055, 0.015, 0.24) * sideNoise;
         double heightErrorM = errorRatio * Math.Clamp(0.05 + distanceM * 0.022, 0.05, 0.16) * heightNoise;
-        double plateYawRad = Math.Atan2(predictedY - shooter.Y, predictedX - shooter.X);
+        double plateYawRad = Math.Atan2(predictedY - visionY, predictedX - visionX);
         double sideXWorld = -Math.Sin(plateYawRad) * lateralErrorM / metersPerWorldUnit;
         double sideYWorld = Math.Cos(plateYawRad) * lateralErrorM / metersPerWorldUnit;
         (double yawDeg, double pitchDeg) = ComputeAimAnglesToPoint(
@@ -3163,6 +3425,12 @@ public static bool TryAcquireEnergyMechanismTarget(
 
     public static Vector3 ResolveArmorPlateNormal(ArmorPlateTarget plate)
     {
+        Vector3 explicitNormal = new((float)plate.NormalXM, (float)plate.NormalYM, (float)plate.NormalZM);
+        if (explicitNormal.LengthSquared() > 1e-8f)
+        {
+            return Vector3.Normalize(explicitNormal);
+        }
+
         double yawRad = DegreesToRadians(plate.YawDeg);
         Vector3 forward = new((float)Math.Cos(yawRad), 0f, (float)Math.Sin(yawRad));
         if (plate.Id.Equals("base_top_slide", StringComparison.OrdinalIgnoreCase))
@@ -3179,6 +3447,47 @@ public static bool TryAcquireEnergyMechanismTarget(
         return forward;
     }
 
+    public static void ResolveArmorPlatePlaneBasis(
+        ArmorPlateTarget plate,
+        out Vector3 normal,
+        out Vector3 side,
+        out Vector3 up)
+    {
+        normal = ResolveArmorPlateNormal(plate);
+        if (normal.LengthSquared() <= 1e-8f)
+        {
+            normal = Vector3.UnitX;
+        }
+        else
+        {
+            normal = Vector3.Normalize(normal);
+        }
+
+        double yawRad = DegreesToRadians(plate.YawDeg);
+        side = new(-(float)Math.Sin(yawRad), 0f, (float)Math.Cos(yawRad));
+        side -= normal * Vector3.Dot(side, normal);
+        if (side.LengthSquared() <= 1e-8f)
+        {
+            side = Vector3.Cross(Vector3.UnitY, normal);
+        }
+
+        if (side.LengthSquared() <= 1e-8f)
+        {
+            side = Vector3.Cross(Vector3.UnitX, normal);
+        }
+
+        side = side.LengthSquared() <= 1e-8f ? Vector3.UnitZ : Vector3.Normalize(side);
+        up = Vector3.Cross(side, normal);
+        if (up.LengthSquared() <= 1e-8f)
+        {
+            up = Vector3.UnitY;
+        }
+        else
+        {
+            up = Vector3.Normalize(up);
+        }
+    }
+
     public static bool IsCriticalStructureArmorHit(ArmorPlateTarget plate, double metersPerWorldUnit, Vector3 hitPoint)
     {
         if (!IsCriticalStructurePlate(plate))
@@ -3190,16 +3499,7 @@ public static bool TryAcquireEnergyMechanismTarget(
             (float)(plate.X * metersPerWorldUnit),
             (float)plate.HeightM,
             (float)(plate.Y * metersPerWorldUnit));
-        double yawRad = DegreesToRadians(plate.YawDeg);
-        Vector3 normal = ResolveArmorPlateNormal(plate);
-        Vector3 side = new(-(float)Math.Sin(yawRad), 0f, (float)Math.Cos(yawRad));
-        Vector3 up = plate.Id.Contains("top", StringComparison.OrdinalIgnoreCase)
-            ? Vector3.Normalize(Vector3.Cross(side, normal))
-            : Vector3.UnitY;
-        if (up.LengthSquared() <= 1e-8f)
-        {
-            up = Vector3.UnitY;
-        }
+        ResolveArmorPlatePlaneBasis(plate, out _, out Vector3 side, out Vector3 up);
 
         Vector3 local = hitPoint - center;
         const float halfCriticalSideM = 0.005f;
@@ -3229,20 +3529,10 @@ public static bool TryAcquireEnergyMechanismTarget(
             return false;
         }
 
-        Vector3 normal = ResolveArmorPlateNormal(plate);
+        ResolveArmorPlatePlaneBasis(plate, out Vector3 normal, out Vector3 side, out Vector3 up);
         if (!IsProjectileApproachingArmorFrontFace(normal, segment))
         {
             return false;
-        }
-
-        double yawRad = DegreesToRadians(plate.YawDeg);
-        Vector3 side = new(-(float)Math.Sin(yawRad), 0f, (float)Math.Cos(yawRad));
-        Vector3 up = plate.Id.Contains("top", StringComparison.OrdinalIgnoreCase)
-            ? Vector3.Normalize(Vector3.Cross(side, normal))
-            : Vector3.UnitY;
-        if (up.LengthSquared() <= 1e-8f)
-        {
-            up = Vector3.UnitY;
         }
 
         float denom = Vector3.Dot(segment, normal);
@@ -3311,21 +3601,7 @@ public static bool TryAcquireEnergyMechanismTarget(
             return false;
         }
 
-        Vector3 normal = Vector3.Normalize(ResolveArmorPlateNormal(plate));
-        double yawRad = DegreesToRadians(plate.YawDeg);
-        Vector3 side = new(-(float)Math.Sin(yawRad), 0f, (float)Math.Cos(yawRad));
-        Vector3 up = Vector3.UnitY;
-        if (side.LengthSquared() <= 1e-8f)
-        {
-            side = Vector3.Normalize(Vector3.Cross(up, normal));
-        }
-
-        if (side.LengthSquared() <= 1e-8f)
-        {
-            side = Vector3.UnitZ;
-        }
-
-        side = Vector3.Normalize(side);
+        ResolveArmorPlatePlaneBasis(plate, out Vector3 normal, out Vector3 side, out Vector3 up);
         float diskRadiusM = (float)Math.Max(0.035, Math.Max(ResolveArmorPlateHitWidthM(plate), ResolveArmorPlateHitHeightM(plate)) * 0.5);
         bool smallProjectile = projectileRadiusM <= 0.005;
         float radialToleranceM = (float)(smallProjectile
@@ -3459,12 +3735,38 @@ public static bool TryAcquireEnergyMechanismTarget(
     {
         if (string.Equals(shooter.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase))
         {
-            bool rangedHero = string.Equals(shooter.RoleKey, "hero", StringComparison.OrdinalIgnoreCase)
-                && string.Equals(RuleSet.NormalizeHeroMode(shooter.HeroPerformanceMode), "ranged_priority", StringComparison.OrdinalIgnoreCase);
-            return rangedHero ? 16.5 : 12.0;
+            return shooter.HeroDeploymentActive
+                && string.Equals(shooter.RoleKey, "hero", StringComparison.OrdinalIgnoreCase)
+                    ? 16.5
+                    : 12.0;
         }
 
         return 25.0;
+    }
+
+    public static double ResolveBallisticExperienceProjectileSpeedMps(SimulationEntity shooter, double distanceM)
+    {
+        double baseSpeedMps = ProjectileSpeedMps(shooter);
+        return baseSpeedMps * ResolveBallisticExperienceSpeedScale(shooter, distanceM);
+    }
+
+    public static double ResolveBallisticExperienceSpeedScale(SimulationEntity shooter, double distanceM)
+    {
+        if (!string.Equals(shooter.RoleKey, "hero", StringComparison.OrdinalIgnoreCase)
+            || !IsHeroLobAutoAimMode(shooter)
+            || !string.Equals(shooter.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase))
+        {
+            return 1.0;
+        }
+
+        double distanceRatio = Math.Clamp((Math.Max(0.0, distanceM) - 4.0) / 18.0, 0.0, 1.0);
+        double speedScale = 0.982 - 0.018 * Math.Pow(distanceRatio, 1.12);
+        if (shooter.HeroDeploymentActive)
+        {
+            speedScale -= 0.004;
+        }
+
+        return Math.Clamp(speedScale, 0.956, 0.986);
     }
 
     public static double ProjectileDiameterM(string ammoType)
@@ -3494,6 +3796,12 @@ public static bool TryAcquireEnergyMechanismTarget(
         return string.Equals(shooter.RoleKey, "hero", StringComparison.OrdinalIgnoreCase)
             && (shooter.HeroDeploymentActive
                 || string.Equals(NormalizeHeroAutoAimMode(shooter.HeroAutoAimMode), "lob", StringComparison.OrdinalIgnoreCase));
+    }
+
+    public static bool IsHeroDeploymentEligible(SimulationEntity entity)
+    {
+        return string.Equals(entity.RoleKey, "hero", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(entity.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase);
     }
 
     public static bool IsHeroNormalAutoAimMode(SimulationEntity shooter)
@@ -3797,16 +4105,62 @@ public static bool TryAcquireEnergyMechanismTarget(
         out Vector3 pitchedForward,
         out Vector3 pitchedUp)
     {
+        Vector3 baseForward = new(chassisForward.X, 0f, chassisForward.Z);
+        if (baseForward.LengthSquared() <= 1e-8f)
+        {
+            baseForward = new(-chassisRight.Z, 0f, chassisRight.X);
+        }
+
+        if (baseForward.LengthSquared() <= 1e-8f)
+        {
+            baseForward = Vector3.UnitX;
+        }
+
+        baseForward = Vector3.Normalize(baseForward);
+        Vector3 baseRight = Vector3.Normalize(new Vector3(-baseForward.Z, 0f, baseForward.X));
         turretForward = Vector3.Normalize(
-            chassisForward * (float)Math.Cos(localTurretYawRad)
-            + chassisRight * (float)Math.Sin(localTurretYawRad));
+            baseForward * (float)Math.Cos(localTurretYawRad)
+            + baseRight * (float)Math.Sin(localTurretYawRad));
         turretRight = Vector3.Normalize(
-            -chassisForward * (float)Math.Sin(localTurretYawRad)
-            + chassisRight * (float)Math.Cos(localTurretYawRad));
+            -baseForward * (float)Math.Sin(localTurretYawRad)
+            + baseRight * (float)Math.Cos(localTurretYawRad));
         pitchedForward = Vector3.Normalize(
             turretForward * (float)Math.Cos(gimbalPitchRad)
-            + chassisUp * (float)Math.Sin(gimbalPitchRad));
+            + Vector3.UnitY * (float)Math.Sin(gimbalPitchRad));
         pitchedUp = Vector3.Normalize(Vector3.Cross(turretRight, pitchedForward));
+    }
+
+    private static void ResolveWorldTurretAxes(
+        double worldTurretYawRad,
+        double gimbalPitchRad,
+        out Vector3 turretForward,
+        out Vector3 turretRight,
+        out Vector3 pitchedForward,
+        out Vector3 pitchedUp)
+    {
+        turretForward = Vector3.Normalize(new Vector3(
+            (float)Math.Cos(worldTurretYawRad),
+            0f,
+            (float)Math.Sin(worldTurretYawRad)));
+        turretRight = Vector3.Normalize(new Vector3(-turretForward.Z, 0f, turretForward.X));
+        pitchedForward = Vector3.Normalize(
+            turretForward * (float)Math.Cos(gimbalPitchRad)
+            + Vector3.UnitY * (float)Math.Sin(gimbalPitchRad));
+        pitchedUp = Vector3.Normalize(Vector3.Cross(turretRight, pitchedForward));
+    }
+
+    private static void RotateBasisAroundAxis(ref Vector3 forward, ref Vector3 right, ref Vector3 up, Vector3 axis, float angleRad)
+    {
+        if (MathF.Abs(angleRad) <= 1e-6f || axis.LengthSquared() <= 1e-8f)
+        {
+            return;
+        }
+
+        Vector3 normalizedAxis = Vector3.Normalize(axis);
+        Quaternion rotation = Quaternion.CreateFromAxisAngle(normalizedAxis, angleRad);
+        forward = Vector3.Normalize(Vector3.Transform(forward, rotation));
+        right = Vector3.Normalize(Vector3.Transform(right, rotation));
+        up = Vector3.Normalize(Vector3.Transform(up, rotation));
     }
 
     private static (double X, double Y, double HeightM) PredictArmorPlatePoint(
@@ -3820,7 +4174,7 @@ public static bool TryAcquireEnergyMechanismTarget(
         out double leadDistanceM)
     {
         bool largeProjectile = string.Equals(shooter.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase);
-        double projectileSpeedMps = Math.Max(1.0, ProjectileSpeedMps(shooter));
+        double projectileSpeedMps = Math.Max(1.0, ResolveBallisticExperienceProjectileSpeedMps(shooter, distanceM));
         double dragTimeScale = 1.0 + Math.Clamp(distanceM * (largeProjectile ? 0.018 : 0.012), 0.0, largeProjectile ? 0.26 : 0.18);
         double travelLeadTimeSec = Math.Clamp(distanceM / projectileSpeedMps * dragTimeScale, 0.0, largeProjectile ? 1.05 : 0.75);
         double fireLatencySec = ResolveAutoAimFiringLatencySec(shooter);
@@ -3890,7 +4244,7 @@ public static bool TryAcquireEnergyMechanismTarget(
         out double leadDistanceM)
     {
         bool largeProjectile = string.Equals(shooter.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase);
-        double projectileSpeedMps = Math.Max(1.0, ProjectileSpeedMps(shooter));
+        double projectileSpeedMps = Math.Max(1.0, ResolveBallisticExperienceProjectileSpeedMps(shooter, distanceM));
         double dragTimeScale = 1.0 + Math.Clamp(distanceM * (largeProjectile ? 0.018 : 0.012), 0.0, largeProjectile ? 0.26 : 0.18);
         double travelLeadTimeSec = Math.Clamp(distanceM / projectileSpeedMps * dragTimeScale, 0.0, largeProjectile ? 1.05 : 0.75);
         double fireLatencySec = ResolveAutoAimFiringLatencySec(shooter);
@@ -3975,7 +4329,7 @@ public static bool TryAcquireEnergyMechanismTarget(
         out double leadDistanceM)
     {
         bool largeProjectile = string.Equals(shooter.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase);
-        double projectileSpeedMps = Math.Max(1.0, ProjectileSpeedMps(shooter));
+        double projectileSpeedMps = Math.Max(1.0, ResolveBallisticExperienceProjectileSpeedMps(shooter, distanceM));
         double dragTimeScale = 1.0 + Math.Clamp(distanceM * (largeProjectile ? 0.018 : 0.012), 0.0, largeProjectile ? 0.26 : 0.18);
         double travelLeadTimeSec = Math.Clamp(distanceM / projectileSpeedMps * dragTimeScale, 0.0, largeProjectile ? 1.05 : 0.75);
         double fireLatencySec = ResolveAutoAimFiringLatencySec(shooter);
@@ -4282,7 +4636,7 @@ public static bool TryAcquireEnergyMechanismTarget(
             Math.Pow(targetX - muzzleX, 2)
             + Math.Pow(targetY - muzzleY, 2)) * Math.Max(world.MetersPerWorldUnit, 1e-6);
         double dzM = targetHeightM - muzzleHeightM;
-        double speedMps = Math.Max(1.0, ProjectileSpeedMps(shooter));
+        double speedMps = Math.Max(1.0, ResolveBallisticExperienceProjectileSpeedMps(shooter, horizontalM));
         if (horizontalM <= 1e-4)
         {
             return 0.0;
@@ -4499,11 +4853,16 @@ public static bool TryAcquireEnergyMechanismTarget(
     {
         (double translationLeadScale, double angularLeadScale) = ResolveAutoAimLeadScales(world, shooter, target, plate);
         double timeBiasSec = ResolveAutoAimLeadTimeBiasSec(world, shooter, target, plate);
+        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
+        double distanceM = Math.Sqrt(
+            Math.Pow(plate.X - shooter.X, 2)
+            + Math.Pow(plate.Y - shooter.Y, 2)) * metersPerWorldUnit;
         return new AutoAimCompensationProfile(
             ResolveAutoAimCompensationProfileName(world, shooter, target, plate),
             translationLeadScale,
             angularLeadScale,
-            timeBiasSec);
+            timeBiasSec,
+            ResolveBallisticExperienceSpeedScale(shooter, distanceM));
     }
 
     private static string ResolveAutoAimCompensationProfileName(
@@ -4677,6 +5036,12 @@ public static bool TryAcquireEnergyMechanismTarget(
             empiricalTranslationDamping *= largeProjectile ? 0.88 : 0.95;
             empiricalAngularDamping *= largeProjectile ? 0.78 : 0.92;
         }
+        else if (target.SmallGyroActive
+            && string.Equals(ResolveAutoAimTargetKind(target, plate), "vehicle_armor", StringComparison.OrdinalIgnoreCase))
+        {
+            empiricalTranslationDamping *= largeProjectile ? 0.82 : 0.88;
+            empiricalAngularDamping *= largeProjectile ? 0.48 : 0.58;
+        }
 
         double translationLeadScale = baseTranslation * empiricalTranslationDamping;
         double angularLeadScale = baseAngular * empiricalAngularDamping;
@@ -4720,30 +5085,10 @@ public static bool TryAcquireEnergyMechanismTarget(
 
         double currentTimeSec = Math.Max(0.0, world.GameTimeSec);
         double predictedTimeSec = currentTimeSec + Math.Clamp(leadTimeSec, 0.0, 2.35);
-        double rotationDeltaRad =
-            ResolveOutpostRingRelativeRotationRad(target, predictedTimeSec)
-            - ResolveOutpostRingRelativeRotationRad(target, currentTimeSec);
-        if (!double.IsFinite(rotationDeltaRad))
-        {
-            return false;
-        }
-
-        double offsetXWorld = plate.X - target.X;
-        double offsetYWorld = plate.Y - target.Y;
-        if (offsetXWorld * offsetXWorld + offsetYWorld * offsetYWorld <= 1e-10)
-        {
-            return false;
-        }
-
-        double cos = Math.Cos(rotationDeltaRad);
-        double sin = Math.Sin(rotationDeltaRad);
-        predictedPlate = plate with
-        {
-            X = target.X + offsetXWorld * cos - offsetYWorld * sin,
-            Y = target.Y + offsetXWorld * sin + offsetYWorld * cos,
-            YawDeg = NormalizeDeg(plate.YawDeg + RadiansToDegrees(rotationDeltaRad)),
-        };
-        return true;
+        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
+        predictedPlate = GetAttackableArmorPlateTargets(target, metersPerWorldUnit, predictedTimeSec)
+            .FirstOrDefault(candidate => string.Equals(candidate.Id, plate.Id, StringComparison.OrdinalIgnoreCase));
+        return !string.IsNullOrWhiteSpace(predictedPlate.Id);
     }
 
     private static bool TryResolveFutureHeroLobStructurePlate(
@@ -4843,17 +5188,15 @@ public static bool TryAcquireEnergyMechanismTarget(
     {
         if (target.RuntimeOutpostTargets is { Count: > 0 } runtimeTargets)
         {
-            if (includeTopArmor)
+            IReadOnlyList<ArmorPlateTarget> projectedRuntimeTargets = ProjectRuntimeOutpostTargets(
+                target,
+                annotated,
+                runtimeTargets,
+                gameTimeSec,
+                includeTopArmor);
+            if (projectedRuntimeTargets.Count > 0)
             {
-                return runtimeTargets;
-            }
-
-            ArmorPlateTarget[] filteredRuntimeTargets = runtimeTargets
-                .Where(candidate => !string.Equals(candidate.Id, "outpost_top", StringComparison.OrdinalIgnoreCase))
-                .ToArray();
-            if (filteredRuntimeTargets.Length > 0)
-            {
-                return filteredRuntimeTargets;
+                return projectedRuntimeTargets;
             }
         }
 
@@ -4876,7 +5219,7 @@ public static bool TryAcquireEnergyMechanismTarget(
             });
         }
 
-        double rotationRad = ResolveOutpostRingRelativeRotationRad(target, gameTimeSec);
+        double rotationRad = ResolveOutpostRingWorldRotationRad(target, gameTimeSec);
         foreach (AnnotatedOutpostPlateState plate in annotated.RotatingPlates)
         {
             double angleRad = plate.BaseAngleRad + rotationRad;
@@ -4895,6 +5238,108 @@ public static bool TryAcquireEnergyMechanismTarget(
         return plates;
     }
 
+    private static IReadOnlyList<ArmorPlateTarget> ProjectRuntimeOutpostTargets(
+        SimulationEntity target,
+        AnnotatedOutpostTeamDefinition annotated,
+        IReadOnlyList<ArmorPlateTarget> runtimeTargets,
+        double gameTimeSec,
+        bool includeTopArmor)
+    {
+        var sourceTargets = new List<ArmorPlateTarget>(runtimeTargets.Count);
+        foreach (ArmorPlateTarget targetPlate in runtimeTargets)
+        {
+            if (!includeTopArmor
+                && string.Equals(targetPlate.Id, "outpost_top", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            sourceTargets.Add(targetPlate);
+        }
+
+        if (sourceTargets.Count == 0)
+        {
+            return Array.Empty<ArmorPlateTarget>();
+        }
+
+        double sourceTimeSec = double.IsFinite(target.RuntimeOutpostTargetsGameTimeSec)
+            ? Math.Max(0.0, target.RuntimeOutpostTargetsGameTimeSec)
+            : Math.Max(0.0, gameTimeSec);
+        double rotationDeltaRad =
+            ResolveOutpostRingWorldRotationRad(target, Math.Max(0.0, gameTimeSec))
+            - ResolveOutpostRingWorldRotationRad(target, sourceTimeSec);
+        if (!double.IsFinite(rotationDeltaRad) || Math.Abs(rotationDeltaRad) <= 1e-7)
+        {
+            return sourceTargets;
+        }
+
+        if (!TryResolveRuntimeOutpostPivot(runtimeTargets, annotated, out double pivotX, out double pivotY))
+        {
+            return sourceTargets;
+        }
+
+        double cos = Math.Cos(rotationDeltaRad);
+        double sin = Math.Sin(rotationDeltaRad);
+        var projectedTargets = new List<ArmorPlateTarget>(sourceTargets.Count);
+        foreach (ArmorPlateTarget plate in sourceTargets)
+        {
+            if (!plate.Id.StartsWith("outpost_ring_", StringComparison.OrdinalIgnoreCase))
+            {
+                projectedTargets.Add(plate);
+                continue;
+            }
+
+            double offsetX = plate.X - pivotX;
+            double offsetY = plate.Y - pivotY;
+            projectedTargets.Add(plate with
+            {
+                X = pivotX + offsetX * cos - offsetY * sin,
+                Y = pivotY + offsetX * sin + offsetY * cos,
+                YawDeg = NormalizeDeg(plate.YawDeg + RadiansToDegrees(rotationDeltaRad)),
+            });
+        }
+
+        return projectedTargets;
+    }
+
+    private static bool TryResolveRuntimeOutpostPivot(
+        IReadOnlyList<ArmorPlateTarget> runtimeTargets,
+        AnnotatedOutpostTeamDefinition annotated,
+        out double pivotX,
+        out double pivotY)
+    {
+        pivotX = 0.0;
+        pivotY = 0.0;
+        int ringCount = 0;
+        foreach (ArmorPlateTarget plate in runtimeTargets)
+        {
+            if (!plate.Id.StartsWith("outpost_ring_", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            pivotX += plate.X;
+            pivotY += plate.Y;
+            ringCount++;
+        }
+
+        if (ringCount >= 3)
+        {
+            pivotX /= ringCount;
+            pivotY /= ringCount;
+            return double.IsFinite(pivotX) && double.IsFinite(pivotY);
+        }
+
+        if (double.IsFinite(annotated.PivotWorldX) && double.IsFinite(annotated.PivotWorldY))
+        {
+            pivotX = annotated.PivotWorldX;
+            pivotY = annotated.PivotWorldY;
+            return true;
+        }
+
+        return false;
+    }
+
     private static IReadOnlyList<ArmorPlateTarget> GetBaseArmorPlateTargets(
         SimulationEntity target,
         double metersPerWorldUnit,
@@ -4902,12 +5347,16 @@ public static bool TryAcquireEnergyMechanismTarget(
     {
         if (target.RuntimeBaseTargets is { Count: > 0 } runtimeTargets)
         {
-            if (target.Health >= BaseArmorOpenThresholdHealth)
+            if (target.Health > BaseArmorOpenThresholdHealth)
             {
                 return runtimeTargets;
             }
 
-            var runtimeWithCore = runtimeTargets.ToList();
+            var runtimeWithCore = runtimeTargets
+                .Where(candidate =>
+                    !string.Equals(candidate.Id, "base_middle_left", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(candidate.Id, "base_middle_right", StringComparison.OrdinalIgnoreCase))
+                .ToList();
             if (!runtimeWithCore.Any(candidate => string.Equals(candidate.Id, "base_core", StringComparison.OrdinalIgnoreCase)))
             {
                 double runtimeBaseYawDeg = NormalizeDeg(target.AngleDeg);
@@ -4926,6 +5375,8 @@ public static bool TryAcquireEnergyMechanismTarget(
                     runtimeArmorSideLengthM));
             }
 
+            AppendBaseMiddleFrontTarget(runtimeWithCore, metersPerWorldUnit);
+            AppendBaseMiddleSideTargets(runtimeWithCore, metersPerWorldUnit);
             return runtimeWithCore;
         }
 
@@ -4935,7 +5386,7 @@ public static bool TryAcquireEnergyMechanismTarget(
         double metersToWorld = 1.0 / Math.Max(metersPerWorldUnit, 1e-6);
         double bodyLength = Math.Clamp(target.BodyLengthM, 1.10, 2.35);
         double bodyHeight = Math.Clamp(target.BodyHeightM, 0.70, 1.60);
-        double slideM = Math.Sin(Math.Max(0.0, gameTimeSec) * BaseTopArmorSlideSpeedRadPerSec) * BaseTopArmorSlideAmplitudeM;
+        double slideM = 0.0;
         double topForwardM = bodyLength * 0.06;
         double armorSideLengthM = Math.Clamp(Math.Max(target.ArmorPlateWidthM, target.ArmorPlateHeightM), 0.04, 0.60);
 
@@ -4948,9 +5399,16 @@ public static bool TryAcquireEnergyMechanismTarget(
                 target.GroundHeightM + Math.Max(0.05, target.StructureTopArmorCenterHeightM > 1e-6 ? target.StructureTopArmorCenterHeightM : bodyHeight * (BaseTopArmorCenterHeightM / BaseDiagramHeightM)),
                 baseYawDeg,
                 armorSideLengthM),
+            new(
+                "base_middle_front",
+                target.X + Math.Cos(baseYawRad) * (bodyLength * 0.11 + target.StructureTopArmorOffsetXM) * metersToWorld,
+                target.Y + Math.Sin(baseYawRad) * (bodyLength * 0.11 + target.StructureTopArmorOffsetXM) * metersToWorld,
+                target.GroundHeightM + bodyHeight * 0.56,
+                baseYawDeg,
+                armorSideLengthM * 0.95),
         };
 
-        if (target.Health < BaseArmorOpenThresholdHealth)
+        if (target.Health <= BaseArmorOpenThresholdHealth)
         {
             double coreForwardM = bodyLength * 0.15;
             plates.Add(new ArmorPlateTarget(
@@ -4960,9 +5418,125 @@ public static bool TryAcquireEnergyMechanismTarget(
                 target.GroundHeightM + bodyHeight * 0.70,
                 baseYawDeg,
                 armorSideLengthM));
+            AppendBaseMiddleFrontTarget(plates, metersPerWorldUnit);
+            AppendBaseMiddleSideTargets(plates, metersPerWorldUnit);
         }
 
         return plates;
+    }
+
+    private static void AppendBaseMiddleFrontTarget(List<ArmorPlateTarget> plates, double metersPerWorldUnit)
+    {
+        if (plates.Any(candidate => string.Equals(candidate.Id, "base_middle_front", StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        ArmorPlateTarget referencePlate = plates.FirstOrDefault(candidate =>
+            string.Equals(candidate.Id, "base_core", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(candidate.Id, "base_top_slide", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(candidate.Id, "base_middle", StringComparison.OrdinalIgnoreCase));
+        if (string.IsNullOrWhiteSpace(referencePlate.Id))
+        {
+            return;
+        }
+
+        ResolveArmorPlatePlaneBasis(referencePlate, out Vector3 normal, out _, out _);
+        Vector3 forward = new(normal.X, 0f, normal.Z);
+        if (forward.LengthSquared() <= 1e-8f)
+        {
+            double yawRad = DegreesToRadians(referencePlate.YawDeg);
+            forward = new((float)Math.Cos(yawRad), 0f, (float)Math.Sin(yawRad));
+        }
+        else
+        {
+            forward = Vector3.Normalize(forward);
+        }
+
+        bool topReference = string.Equals(referencePlate.Id, "base_top_slide", StringComparison.OrdinalIgnoreCase);
+        double worldToMeters = Math.Max(metersPerWorldUnit, 1e-6);
+        double forwardOffsetM = topReference ? 0.16 : 0.0;
+        double heightOffsetM = topReference ? -0.30 : 0.0;
+        plates.Add(new ArmorPlateTarget(
+            "base_middle_front",
+            referencePlate.X + forward.X * forwardOffsetM / worldToMeters,
+            referencePlate.Y + forward.Z * forwardOffsetM / worldToMeters,
+            Math.Max(0.05, referencePlate.HeightM + heightOffsetM),
+            referencePlate.YawDeg,
+            Math.Max(0.04, referencePlate.SideLengthM * 0.95),
+            Math.Max(referencePlate.WidthM, referencePlate.SideLengthM) * 0.95,
+            Math.Max(referencePlate.HeightSpanM, referencePlate.SideLengthM) * 0.82,
+            NormalXM: normal.X,
+            NormalYM: normal.Y,
+            NormalZM: normal.Z));
+    }
+
+    private static void AppendBaseMiddleSideTargets(
+        List<ArmorPlateTarget> plates,
+        double metersPerWorldUnit)
+    {
+        ArmorPlateTarget referencePlate = plates.FirstOrDefault(candidate =>
+            string.Equals(candidate.Id, "base_middle_front", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(candidate.Id, "base_core", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(candidate.Id, "base_middle", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(candidate.Id, "base_top_slide", StringComparison.OrdinalIgnoreCase));
+        if (string.IsNullOrWhiteSpace(referencePlate.Id))
+        {
+            return;
+        }
+
+        ResolveArmorPlatePlaneBasis(referencePlate, out Vector3 frontNormal, out Vector3 sideAxis, out Vector3 upAxis);
+        Vector3 center = new(
+            (float)(referencePlate.X * metersPerWorldUnit),
+            (float)referencePlate.HeightM,
+            (float)(referencePlate.Y * metersPerWorldUnit));
+        double plateSpanM = Math.Max(referencePlate.SideLengthM, Math.Max(referencePlate.WidthM, referencePlate.HeightSpanM));
+        double sideOffsetM = Math.Max(0.060, plateSpanM * 0.50);
+        double sideHalfWidthM = Math.Max(0.075, Math.Max(referencePlate.WidthM, referencePlate.SideLengthM) * 0.52);
+        double sideHalfHeightM = Math.Max(0.075, Math.Max(referencePlate.HeightSpanM, referencePlate.SideLengthM) * 0.52);
+        Vector3 leftCenter = center - sideAxis * (float)sideOffsetM;
+        Vector3 rightCenter = center + sideAxis * (float)sideOffsetM;
+        Vector3 leftWorldOffset = leftCenter - center;
+        Vector3 rightWorldOffset = rightCenter - center;
+        const float SideOpenAngleDeg = 27.5f;
+        float sideOpenSin = MathF.Sin(SideOpenAngleDeg * MathF.PI / 180f);
+        float sideOpenCos = MathF.Cos(SideOpenAngleDeg * MathF.PI / 180f);
+        Vector3 leftNormal = Vector3.Normalize(frontNormal * sideOpenCos - sideAxis * sideOpenSin);
+        Vector3 rightNormal = Vector3.Normalize(frontNormal * sideOpenCos + sideAxis * sideOpenSin);
+        double leftYawDeg = NormalizeDeg(Math.Atan2(leftNormal.Z, leftNormal.X) * 180.0 / Math.PI);
+        double rightYawDeg = NormalizeDeg(Math.Atan2(rightNormal.Z, rightNormal.X) * 180.0 / Math.PI);
+        double worldToMeters = Math.Max(metersPerWorldUnit, 1e-6);
+        if (!plates.Any(candidate => string.Equals(candidate.Id, "base_middle_left", StringComparison.OrdinalIgnoreCase)))
+        {
+            plates.Add(new ArmorPlateTarget(
+                "base_middle_left",
+                referencePlate.X + leftWorldOffset.X / worldToMeters,
+                referencePlate.Y + leftWorldOffset.Z / worldToMeters,
+                referencePlate.HeightM + leftWorldOffset.Y,
+                leftYawDeg,
+                sideHalfWidthM * 2.0,
+                sideHalfWidthM * 2.0,
+                sideHalfHeightM * 2.0,
+                NormalXM: leftNormal.X,
+                NormalYM: leftNormal.Y,
+                NormalZM: leftNormal.Z));
+        }
+
+        if (!plates.Any(candidate => string.Equals(candidate.Id, "base_middle_right", StringComparison.OrdinalIgnoreCase)))
+        {
+            plates.Add(new ArmorPlateTarget(
+                "base_middle_right",
+                referencePlate.X + rightWorldOffset.X / worldToMeters,
+                referencePlate.Y + rightWorldOffset.Z / worldToMeters,
+                referencePlate.HeightM + rightWorldOffset.Y,
+                rightYawDeg,
+                sideHalfWidthM * 2.0,
+                sideHalfWidthM * 2.0,
+                sideHalfHeightM * 2.0,
+                NormalXM: rightNormal.X,
+                NormalYM: rightNormal.Y,
+                NormalZM: rightNormal.Z));
+        }
     }
 
     private static (double DistanceSquared, Vector3 Point) PointToSegmentDistanceSquared(
@@ -5123,7 +5697,12 @@ public static bool TryAcquireEnergyMechanismTarget(
 
     private static double ResolveAutoAimAngularVelocityRadPerSec(SimulationEntity target)
         // 渲染与玩法 yaw 正方向和自瞄横向约定相反，因此预测时需要反转观测到的底盘角速度。
-        => DegreesToRadians(ResolveObservedAngularVelocityDegPerSec(target));
+    {
+        double omegaRadPerSec = DegreesToRadians(ResolveObservedAngularVelocityDegPerSec(target));
+        return target.SmallGyroActive
+            ? Math.Clamp(omegaRadPerSec, -12.0, 12.0)
+            : omegaRadPerSec;
+    }
 
     private static double ResolveAutoAimAngularVelocityRadPerSec(
         SimulationWorldState world,
@@ -5132,7 +5711,7 @@ public static bool TryAcquireEnergyMechanismTarget(
     {
         if (plate.Id.StartsWith("outpost_ring_", StringComparison.OrdinalIgnoreCase))
         {
-            return ResolveOutpostRingAngularVelocityRadPerSec(target, world.GameTimeSec);
+            return ResolveOutpostRingWorldAngularVelocityRadPerSec(target, world.GameTimeSec);
         }
 
         return ResolveAutoAimAngularVelocityRadPerSec(target);

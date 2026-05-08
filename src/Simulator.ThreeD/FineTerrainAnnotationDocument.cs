@@ -1,11 +1,16 @@
 using System.ComponentModel;
 using System.Numerics;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using Simulator.Core;
 
 namespace Simulator.ThreeD;
 
 internal sealed class FineTerrainAnnotationDocument
 {
+    private const int ComponentShardSize = 50000;
+    private const string ComponentShardDirectorySuffix = ".parts";
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -28,6 +33,8 @@ internal sealed class FineTerrainAnnotationDocument
 
     public required List<FineTerrainComponentAnnotation> Components { get; init; }
 
+    public required List<FineTerrainCollisionShapeAnnotation> CollisionShapes { get; init; }
+
     public IReadOnlyDictionary<int, FineTerrainComponentAnnotation> ComponentsById
         => _componentsById ??= Components.ToDictionary(component => component.Id);
 
@@ -40,14 +47,30 @@ internal sealed class FineTerrainAnnotationDocument
             return null;
         }
 
-        using FileStream stream = File.OpenRead(path);
-        FineTerrainAnnotationPayload? payload = JsonSerializer.Deserialize<FineTerrainAnnotationPayload>(stream, JsonOptions);
+        FineTerrainAnnotationPayload? payload;
+        try
+        {
+            using FileStream stream = File.Open(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+            payload = JsonSerializer.Deserialize<FineTerrainAnnotationPayload>(stream, JsonOptions);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
+        {
+            SimulatorRuntimeLog.Append(
+                "terrain_annotation_load.log",
+                $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} load_failed path={path} {exception.GetType().Name}:{exception.Message}");
+            return null;
+        }
+
         if (payload?.WorldScale is null)
         {
             return null;
         }
 
-        FineTerrainComponentAnnotation[] components = (payload.Components ?? Array.Empty<FineTerrainComponentAnnotation>())
+        FineTerrainComponentAnnotation[] components = LoadComponents(path, payload)
             .Select(CloneComponent)
             .ToArray();
         Vector3 modelCenter = payload.WorldScale.ModelCenter?.ToVector3()
@@ -75,6 +98,10 @@ internal sealed class FineTerrainAnnotationDocument
                 .Select(composite => CloneComposite(composite, worldScale))
                 .ToList(),
             Components = components.ToList(),
+            CollisionShapes = ((payload.CollisionShapes ?? payload.CollisionShapesSnakeCase) ?? Array.Empty<FineTerrainCollisionShapePayload>())
+                .Where(shape => shape.Id > 0)
+                .Select(CloneCollisionShape)
+                .ToList(),
         };
     }
 
@@ -106,9 +133,112 @@ internal sealed class FineTerrainAnnotationDocument
                 .OrderBy(component => component.Id)
                 .Select(CloneComponent)
                 .ToArray(),
+            CollisionShapes = CollisionShapes
+                .OrderBy(shape => shape.Id)
+                .Select(CloneCollisionShapePayload)
+                .ToArray(),
         };
 
+        FineTerrainComponentAnnotation[] orderedComponents = payload.Components;
+        string[] componentFiles = WriteComponentShardsIfNeeded(SourcePath, orderedComponents);
+        if (componentFiles.Length > 0)
+        {
+            payload = new FineTerrainAnnotationPayload
+            {
+                SourceModel = payload.SourceModel,
+                ExportedUtc = payload.ExportedUtc,
+                TotalComponents = payload.TotalComponents,
+                WorldScale = payload.WorldScale,
+                ActorComponentIds = payload.ActorComponentIds,
+                Composites = payload.Composites,
+                Components = null,
+                ComponentFiles = componentFiles,
+                CollisionShapes = payload.CollisionShapes,
+            };
+        }
+
         JsonSerializer.Serialize(stream, payload, JsonOptions);
+    }
+
+    private static IEnumerable<FineTerrainComponentAnnotation> LoadComponents(
+        string manifestPath,
+        FineTerrainAnnotationPayload payload)
+    {
+        if (payload.Components is not null)
+        {
+            foreach (FineTerrainComponentAnnotation component in payload.Components)
+            {
+                yield return component;
+            }
+        }
+
+        if (payload.ComponentFiles is null || payload.ComponentFiles.Length == 0)
+        {
+            yield break;
+        }
+
+        string manifestDirectory = Path.GetDirectoryName(Path.GetFullPath(manifestPath)) ?? Directory.GetCurrentDirectory();
+        foreach (string relativePath in payload.ComponentFiles)
+        {
+            if (string.IsNullOrWhiteSpace(relativePath))
+            {
+                continue;
+            }
+
+            string shardPath = Path.GetFullPath(Path.Combine(manifestDirectory, relativePath.Replace('/', Path.DirectorySeparatorChar)));
+            if (!File.Exists(shardPath))
+            {
+                continue;
+            }
+
+            using FileStream stream = File.Open(shardPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            FineTerrainComponentAnnotation[]? shard = JsonSerializer.Deserialize<FineTerrainComponentAnnotation[]>(stream, JsonOptions);
+            if (shard is null)
+            {
+                continue;
+            }
+
+            foreach (FineTerrainComponentAnnotation component in shard)
+            {
+                yield return component;
+            }
+        }
+    }
+
+    private static string[] WriteComponentShardsIfNeeded(
+        string manifestPath,
+        IReadOnlyList<FineTerrainComponentAnnotation> components)
+    {
+        if (components.Count <= ComponentShardSize)
+        {
+            return Array.Empty<string>();
+        }
+
+        string manifestDirectory = Path.GetDirectoryName(Path.GetFullPath(manifestPath)) ?? Directory.GetCurrentDirectory();
+        string shardDirectoryName = Path.GetFileNameWithoutExtension(manifestPath) + ComponentShardDirectorySuffix;
+        string shardDirectory = Path.Combine(manifestDirectory, shardDirectoryName);
+        Directory.CreateDirectory(shardDirectory);
+
+        foreach (string staleShard in Directory.EnumerateFiles(shardDirectory, "components_*.json", SearchOption.TopDirectoryOnly))
+        {
+            File.Delete(staleShard);
+        }
+
+        var relativeFiles = new List<string>((components.Count + ComponentShardSize - 1) / ComponentShardSize);
+        for (int start = 0, shardIndex = 0; start < components.Count; start += ComponentShardSize, shardIndex++)
+        {
+            int count = Math.Min(ComponentShardSize, components.Count - start);
+            FineTerrainComponentAnnotation[] shard = components.Skip(start).Take(count).ToArray();
+            string shardPath = Path.Combine(shardDirectory, $"components_{shardIndex:000}.json");
+            using (FileStream shardStream = File.Create(shardPath))
+            {
+                JsonSerializer.Serialize(shardStream, shard, JsonOptions);
+            }
+
+            relativeFiles.Add(Path.GetRelativePath(manifestDirectory, shardPath).Replace('\\', '/'));
+        }
+
+        return relativeFiles.ToArray();
     }
 
     private static FineTerrainCompositeAnnotation CloneComposite(
@@ -181,6 +311,78 @@ internal sealed class FineTerrainAnnotationDocument
             Name = source.Name,
             Role = source.Role,
             Bounds = source.Bounds,
+        };
+    }
+
+    private static FineTerrainCollisionShapeAnnotation CloneCollisionShape(FineTerrainCollisionShapePayload source)
+    {
+        string shapeType = !string.IsNullOrWhiteSpace(source.ShapeType)
+            ? source.ShapeType!
+            : source.ShapeTypePascal ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(shapeType))
+        {
+            shapeType = "box";
+        }
+
+        FineTerrainVector3 sizeModel = source.SizeModel ?? source.SizeModelPascal ?? FineTerrainVector3.From(Vector3.One);
+        Vector3 size = sizeModel.ToVector3();
+        bool radialShape = shapeType.Equals("cylinder", StringComparison.OrdinalIgnoreCase)
+            || shapeType.Equals("hex_prism", StringComparison.OrdinalIgnoreCase)
+            || shapeType.Equals("hexagon_prism", StringComparison.OrdinalIgnoreCase);
+        float radius = source.RadiusModel > 0.0f
+            ? source.RadiusModel
+            : source.RadiusModelPascal > 0.0f
+                ? source.RadiusModelPascal
+                : (radialShape
+                        ? MathF.Max(0.02f, MathF.Max(MathF.Abs(size.X), MathF.Abs(size.Z)) * 0.5f)
+                        : 1.0f);
+        float rawHeight = source.HeightModel > 0.0f
+            ? source.HeightModel
+            : source.HeightModelPascal > 0.0f
+                ? source.HeightModelPascal
+                : 0.0f;
+        float sizeHeight = MathF.Abs(size.Y);
+        float height = !radialShape && sizeHeight > 0.02f && (rawHeight <= 0.02f || rawHeight < sizeHeight * 0.25f)
+            ? sizeHeight
+            : rawHeight > 0.02f
+                ? rawHeight
+                : sizeHeight > 0.02f
+                    ? sizeHeight
+                    : 1.0f;
+
+        return new FineTerrainCollisionShapeAnnotation
+        {
+            Id = source.Id,
+            Name = string.IsNullOrWhiteSpace(source.Name) ? $"Collision {source.Id}" : source.Name,
+            ShapeType = shapeType.Trim(),
+            PositionModel = source.PositionModel ?? source.PositionModelPascal ?? new FineTerrainVector3(),
+            SizeModel = sizeModel,
+            RadiusModel = radius,
+            HeightModel = height,
+            YprDegrees = source.YprDegrees ?? source.YprDegreesPascal ?? new FineTerrainVector3(),
+            TerrainLabel = (source.TerrainLabel ?? source.TerrainLabelPascal)?.Trim() ?? string.Empty,
+            VerticesModel = (source.VerticesModel ?? source.VerticesModelPascal ?? Array.Empty<FineTerrainVector3>())
+                .Select(vertex => FineTerrainVector3.From(vertex.ToVector3()))
+                .ToList(),
+        };
+    }
+
+    private static FineTerrainCollisionShapePayload CloneCollisionShapePayload(FineTerrainCollisionShapeAnnotation source)
+    {
+        return new FineTerrainCollisionShapePayload
+        {
+            Id = source.Id,
+            Name = source.Name,
+            ShapeType = source.ShapeType,
+            PositionModel = source.PositionModel,
+            SizeModel = source.SizeModel,
+            RadiusModel = source.RadiusModel,
+            HeightModel = source.HeightModel,
+            YprDegrees = source.YprDegrees,
+            TerrainLabel = source.TerrainLabel,
+            VerticesModel = source.VerticesModel
+                .Select(vertex => FineTerrainVector3.From(vertex.ToVector3()))
+                .ToArray(),
         };
     }
 
@@ -312,12 +514,55 @@ internal sealed class FineTerrainBoundsAnnotation
     public float[] Max { get; init; } = Array.Empty<float>();
 }
 
+internal sealed class FineTerrainCollisionShapeAnnotation
+{
+    [ReadOnly(true)]
+    [DisplayName("ID")]
+    public int Id { get; init; }
+
+    [DisplayName("名称")]
+    public string Name { get; set; } = string.Empty;
+
+    [DisplayName("形状类型")]
+    [Description("box/quad_prism 为长方体，cylinder 为圆柱。")]
+    public string ShapeType { get; set; } = "box";
+
+    [DisplayName("位置 XYZ")]
+    [Description("碰撞体中心点，单位为地图模型坐标。")]
+    public FineTerrainVector3 PositionModel { get; set; } = new();
+
+    [DisplayName("长宽高 XYZ")]
+    [Description("长方体尺寸，单位为地图模型坐标。圆柱只使用高度和半径。")]
+    public FineTerrainVector3 SizeModel { get; set; } = FineTerrainVector3.From(Vector3.One);
+
+    [DisplayName("圆柱半径")]
+    [Description("圆柱半径，单位为地图模型坐标。")]
+    public float RadiusModel { get; set; } = 1.0f;
+
+    [DisplayName("圆柱高度")]
+    [Description("圆柱高度，单位为地图模型坐标。")]
+    public float HeightModel { get; set; } = 1.0f;
+
+    [DisplayName("旋转 YPR")]
+    [Description("Yaw/Pitch/Roll，单位为度。")]
+    public FineTerrainVector3 YprDegrees { get; set; } = new();
+
+    [DisplayName("地形标签")]
+    public string TerrainLabel { get; set; } = string.Empty;
+
+    [Browsable(false)]
+    public List<FineTerrainVector3> VerticesModel { get; set; } = new();
+}
+
 internal sealed class FineTerrainVector3
 {
+    [DisplayName("X")]
     public float X { get; set; }
 
+    [DisplayName("Y")]
     public float Y { get; set; }
 
+    [DisplayName("Z")]
     public float Z { get; set; }
 
     public Vector3 ToVector3() => new(X, Y, Z);
@@ -502,6 +747,13 @@ internal sealed class FineTerrainAnnotationPayload
     public FineTerrainCompositePayload[]? Composites { get; init; }
 
     public FineTerrainComponentAnnotation[]? Components { get; init; }
+
+    public string[]? ComponentFiles { get; init; }
+
+    public FineTerrainCollisionShapePayload[]? CollisionShapes { get; init; }
+
+    [JsonPropertyName("collision_shapes")]
+    public FineTerrainCollisionShapePayload[]? CollisionShapesSnakeCase { get; init; }
 }
 
 internal sealed class FineTerrainWorldScalePayload
@@ -544,6 +796,61 @@ internal sealed class FineTerrainCompositePayload
     public FineTerrainVector3? YprDegrees { get; init; }
 
     public FineTerrainVector3? CoordinateYprDegrees { get; init; }
+}
+
+internal sealed class FineTerrainCollisionShapePayload
+{
+    public int Id { get; init; }
+
+    public string? Name { get; init; }
+
+    [JsonPropertyName("shape_type")]
+    public string? ShapeType { get; init; }
+
+    [JsonPropertyName("ShapeType")]
+    public string? ShapeTypePascal { get; init; }
+
+    [JsonPropertyName("position_model")]
+    public FineTerrainVector3? PositionModel { get; init; }
+
+    [JsonPropertyName("PositionModel")]
+    public FineTerrainVector3? PositionModelPascal { get; init; }
+
+    [JsonPropertyName("size_model")]
+    public FineTerrainVector3? SizeModel { get; init; }
+
+    [JsonPropertyName("SizeModel")]
+    public FineTerrainVector3? SizeModelPascal { get; init; }
+
+    [JsonPropertyName("radius_model")]
+    public float RadiusModel { get; init; }
+
+    [JsonPropertyName("RadiusModel")]
+    public float RadiusModelPascal { get; init; }
+
+    [JsonPropertyName("height_model")]
+    public float HeightModel { get; init; }
+
+    [JsonPropertyName("HeightModel")]
+    public float HeightModelPascal { get; init; }
+
+    [JsonPropertyName("ypr_degrees")]
+    public FineTerrainVector3? YprDegrees { get; init; }
+
+    [JsonPropertyName("YprDegrees")]
+    public FineTerrainVector3? YprDegreesPascal { get; init; }
+
+    [JsonPropertyName("terrain_label")]
+    public string? TerrainLabel { get; init; }
+
+    [JsonPropertyName("TerrainLabel")]
+    public string? TerrainLabelPascal { get; init; }
+
+    [JsonPropertyName("vertices_model")]
+    public FineTerrainVector3[]? VerticesModel { get; init; }
+
+    [JsonPropertyName("VerticesModel")]
+    public FineTerrainVector3[]? VerticesModelPascal { get; init; }
 }
 
 internal sealed class FineTerrainInteractionUnitPayload

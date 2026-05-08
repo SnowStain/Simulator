@@ -328,6 +328,9 @@ internal static class FineTerrainOutpostVisualCache
                 int start = Math.Clamp(range.StartIndex, 0, indices.Length);
                 int end = Math.Clamp(range.StartIndex + Math.Max(0, range.IndexCount), start, indices.Length);
                 end -= (end - start) % 3;
+                Color? componentOverrideColor = TryResolveComponentColorOverride(runtimeScene, range.ComponentId, out Color overrideColor)
+                    ? overrideColor
+                    : null;
                 for (int triangleIndex = start; triangleIndex < end; triangleIndex += 3)
                 {
                     int i0 = checked((int)indices[triangleIndex]);
@@ -347,12 +350,28 @@ internal static class FineTerrainOutpostVisualCache
                         v0.Position,
                         v1.Position,
                         v2.Position,
-                        ResolveTriangleColor(v0.Color, v1.Color, v2.Color)));
+                        componentOverrideColor ?? ResolveTriangleColor(v0.Color, v1.Color, v2.Color)));
                 }
             }
         }
 
         return result;
+    }
+
+    private static bool TryResolveComponentColorOverride(RuntimeReferenceScene runtimeScene, int componentId, out Color color)
+    {
+        color = default;
+        if (!runtimeScene.ComponentColorOverrides.TryGetValue(componentId, out Vector4 value))
+        {
+            return false;
+        }
+
+        color = Color.FromArgb(
+            Math.Clamp((int)MathF.Round((value.W <= 0f ? 1f : value.W) * 255f), 0, 255),
+            Math.Clamp((int)MathF.Round(value.X * 255f), 0, 255),
+            Math.Clamp((int)MathF.Round(value.Y * 255f), 0, 255),
+            Math.Clamp((int)MathF.Round(value.Z * 255f), 0, 255));
+        return color.A > 0;
     }
 
     private static void AugmentMissingLightStripUnits(
@@ -709,64 +728,7 @@ internal static class FineTerrainOutpostVisualCache
         IReadOnlyList<FineTerrainColoredTriangle> triangles,
         string team,
         bool isLightStrip)
-    {
-        var normalized = new List<FineTerrainColoredTriangle>(triangles.Count);
-        foreach (FineTerrainColoredTriangle triangle in triangles)
-        {
-            normalized.Add(new FineTerrainColoredTriangle(
-                triangle.A,
-                triangle.B,
-                triangle.C,
-                ResolveNormalizedOutpostTriangleColor(triangle.Color, team, isLightStrip)));
-        }
-
-        return normalized;
-    }
-
-    private static Color ResolveNormalizedOutpostTriangleColor(Color source, string team, bool isLightStrip)
-    {
-        Color safeSource = source.A <= 0 ? Color.FromArgb(236, 224, 232, 240) : source;
-        if (isLightStrip
-            || ShouldApplyTeamAccentTint(safeSource)
-            || (string.Equals(team, "blue", StringComparison.OrdinalIgnoreCase) && ShouldForceBlueSideRecolor(safeSource)))
-        {
-            Color teamColor = string.Equals(team, "red", StringComparison.OrdinalIgnoreCase)
-                ? Color.FromArgb(208, 66, 44)
-                : string.Equals(team, "blue", StringComparison.OrdinalIgnoreCase)
-                    ? Color.FromArgb(34, 82, 170)
-                    : Color.FromArgb(112, 120, 128);
-            return Color.FromArgb(safeSource.A, teamColor);
-        }
-
-        float luminance = (safeSource.R * 0.2126f + safeSource.G * 0.7152f + safeSource.B * 0.0722f) / 255f;
-        int baseValue = Math.Clamp((int)MathF.Round(54f + luminance * 50f), 42, 108);
-        return Color.FromArgb(
-            safeSource.A,
-            baseValue,
-            Math.Clamp(baseValue + 4, 0, 255),
-            Math.Clamp(baseValue + 10, 0, 255));
-    }
-
-    private static bool ShouldApplyTeamAccentTint(Color source)
-    {
-        int dominant = Math.Max(source.R, Math.Max(source.G, source.B));
-        int minimum = Math.Min(source.R, Math.Min(source.G, source.B));
-        if (dominant < 112 || dominant - minimum < 54)
-        {
-            return false;
-        }
-
-        bool redAccent = source.R > source.G + 18 && source.R > source.B + 18;
-        bool blueAccent = source.B > source.G + 18 && source.B > source.R + 18;
-        return redAccent || blueAccent;
-    }
-
-    private static bool ShouldForceBlueSideRecolor(Color source)
-    {
-        return source.R >= 84
-            && source.R > source.G + 10
-            && source.R > source.B + 18;
-    }
+        => new(triangles);
 
     private static Color ResolveTriangleColor(uint color0, uint color1, uint color2)
     {

@@ -1,4 +1,4 @@
-# 项目日志
+﻿# 项目日志
 
 ## 维护约定
 
@@ -8,6 +8,268 @@
 - 如果只是临时试验，但已经合入主分支，也要记录“试验目的、影响范围、是否保留”。
 
 ---
+
+## 2026-05-06 第一视角黑屏 / 地形首人称可见性裁剪止血
+
+- `src/Simulator.ThreeD/Simulator3dForm.GpuRenderer.cs`
+- 第一视角下的 GPU 地形 chunk frustum culling 追加了 bounds-center 可见性兜底，并放宽了 near-plane 全角点拒绝。
+- 这次重点修的是“首人称相机离地很低时，近处地形 chunk 被整块误判成 allNear，于是 visible_vertices 直接掉到 0，HUD 还在但世界发黑”的情况。
+- `src/Simulator.ThreeD/Simulator3dForm.LiveControl.cs`
+- CPU 地形面投影链新增首人称兜底：当单个 terrain face 因近裁剪导致顶点都没通过投影时，只要面中心仍在首人称近域且总体可见，就不再直接丢弃。
+- 这一步先收紧“地形被误清空”的症状，不改云台/相机控制量本身，避免把另一条姿态链再一起带偏。
+- 验证：`dotnet build src/Simulator.ThreeD/Simulator.ThreeD.csproj -c Debug -v:minimal` 通过，`0 warnings / 0 errors`。
+
+---
+
+## 2026-05-06 能量机关亮环显色 / LAN 协议常量与分发收口
+
+- `src/Simulator.ThreeD/Simulator3dForm.FineTerrainActors.cs`
+- fine-terrain 能量机关的圆环亮态不再额外叠一层黑底上去“压亮环”，而是把命中 / 激活 / 待激活的 ring 显色直接并回 ring unit 本体渲染。
+- 当前高亮色改成更亮的红 / 蓝强调色，完成 / 命中闪烁也从纯黑改成带队伍色倾向的深色，减少红蓝亮起时被暗层吃掉、发脏发灰的问题。
+- 高亮 ring 在 GPU / GDI 下都会绕过静态 unit mesh 原色，改走实时 override color；这样保留原几何，不压模型质量，但能确保亮态清楚。
+- `src/Simulator.ThreeD/Simulator3dForm.Structures.cs`
+- `src/Simulator.ThreeD/Simulator3dForm.GpuRenderer.cs`
+- energy mechanism 的 CPU / GPU annulus 高亮边缘从“直接往黑色混”收紧成更轻的暗边，并同步提高外圈高光，粗模回退路径下的红蓝亮环也会更干净。
+- `src/Simulator.ThreeD/LanProtocol.cs`
+- `src/Simulator.ThreeD/LanMultiplayerSession.cs`
+- `src/Simulator.ThreeD/Simulator3dForm.LanMultiplayer.cs`
+- 新增 `LanProtocolMessageTypes`，把 `hello / welcome / input / snapshot / referee_*` 等消息类型常量集中收口。
+- `LanMultiplayerSession` 现在只负责 wire message 的发送、收包和反序列化，不再散落重复字符串；`Simulator3dForm.LanMultiplayer.cs` 的响应入口按 `status / control / match_sync / referee` 四类拆开，后续继续补 5v5 分包与回调时会更整齐。
+- 验证：`dotnet build src/Simulator.ThreeD/Simulator.ThreeD.csproj -c Debug -v:minimal` 通过，`0 warnings / 0 errors`。
+
+---
+
+## 2026-05-06 机器人姿态整体绑定 / 第一人称挂点统一
+
+- `src/Simulator.ThreeD/Simulator3dForm.cs`
+- 第一人称相机不再在渲染层单独重算一套姿态，而是直接读取 `SimulationCombatMath.ComputeFirstPersonCameraTransform(...)` 的统一挂点结果，去掉了额外的相机位移补偿和振动叠加。
+- 鼠标输入继续只作为云台控制增量进入延迟队列并作用到 `TurretYawDeg / GimbalPitchDeg`，不再维护一份独立的 `_firstPersonAim*` 缓存，避免相机和云台再分裂成两条时间线。
+- 底盘移动仍然只影响车体运动链，云台保持由自身控制环闭环，不再被车体平动反向干扰；第一人称视角现在和外观编辑器里的相机挂点语义保持一致。
+- 验证：待 `dotnet build`。
+
+---
+
+## 2026-05-06 局域网架构梳理 / 协议分层建议
+
+- `docs/architecture/lan-network-architecture.md`
+- 结合当前工程里的 `LanMultiplayerSession`、`Simulator3dForm.LanMultiplayer.cs`、`Simulator3dHost` 和规则仿真链路，把局域网联机整理成四层：会话层、比赛层、同步层、观测层。
+- 将你现有的上行/下行草案改写成更适合现有工程的消息职责划分，重点把高频位姿、弹丸、装甲板、场地交互与裁判回调拆开，避免所有内容塞进一条杂糅链路。
+- 新增 `docs/architecture/lan-network-architecture.md`，并同步挂到 `docs/README.md` 与 `docs/architecture/README.md`，方便后续继续补联机协议时直接沿这份结构推进。
+
+---
+
+## 2026-05-06 堡垒 Buff / 基地中部板位姿 / 地图碰撞组件 / 麦轮前轮固连
+
+- `src/Simulator.Core/Gameplay/ArenaInteractionService.cs`
+- 堡垒增益区现在不再只盯 `outpost.IsAlive` 单一位；只要前哨站已经进入真正的摧毁态，包括 `Health <= 0` 或已有 `DestroyedTimeSec`，堡垒 buff 就会按规则解锁，减少“前哨掉了但堡垒区还没亮”的状态滞后。
+- `src/Simulator.Core/Gameplay/SimulationCombatMath.cs`
+- `src/Simulator.ThreeD/Simulator3dForm.cs`
+- `src/Simulator.ThreeD/Simulator3dForm.AppearanceModel.cs`
+- 第一人称相机挂点改成直接落在枪管轴线上，并去掉相机相对枪管的额外 yaw / pitch / roll 偏置；现在视角轴线与云台枪管轴线保持完全平行，也不再保留上下/左右侧向位移。
+- `src/Simulator.Core/Gameplay/SimulationCombatMath.cs`
+- 基地中部左右装甲板的目标板位姿改成带外扩角度的独立法线，不再沿用和中板完全相同的朝向；这样自瞄、F8 框和中部展开后的三块板姿态会更一致。
+- `src/Simulator.ThreeD/Simulator3dForm.Structures.cs`
+- 简化基地模型的展开态从“整块看起来一起平移”改成“左 / 中 / 右三块板独立外扩”的画法，保持展开重心还在基地主体上，不再像整组漂出去。
+- `src/Simulator.ThreeD/TerrainEditorForm.cs`
+- 地图编辑器新增“碰撞组件”页，支持直接新增 `quad_prism`、`hex_prism`、`cylinder` 三类组件。
+- 支持在编辑器里复制 / 粘贴碰撞组件；粘贴会分配新 ID、轻微偏移位置，并跟随 annotation 一起保存。
+- 精细地形注解的碰撞组件属性改动、复制粘贴和新增内容，都会在保存地图时一并落盘。
+- `src/Simulator.ThreeD/TerrainMotionService.cs`
+- 局内碰撞链新增 `quad_prism / rect_prism / square_prism / hex_prism` 的真实碰撞轮廓构建，不再只把这类新组件当成不可见占位。
+- `src/Simulator.ThreeD/Simulator3dForm.FineTerrainActors.cs`
+- annotation 里的碰撞组件会直接参与局内可见绘制，圆柱和棱柱都能在对局里看到，便于一边搭图一边核对位置、体量和碰撞是否一致。
+- `src/Simulator.ThreeD/Simulator3dForm.cs`
+- 细分碰撞组件的局内绘制接进了常规 GDI 渲染路径。
+- `src/Simulator.ThreeD/Simulator3dForm.GpuRenderer.cs`
+- 细分碰撞组件的局内绘制也接进了 GPU 路径，避免 GPU 模式下新增组件“有碰撞没画面”。
+- `src/Simulator.ThreeD/Simulator3dForm.AppearanceModel.cs`
+- 麦轮车台阶 traversal 期间，前轮的视觉挂点不再额外按地形单独下探或抬升，优先跟底盘固连，收掉“前轮临时从底盘上脱开”的观感问题。
+- 验证：`dotnet build src/Simulator.ThreeD/Simulator.ThreeD.csproj -c Debug -v:minimal` 通过，`0 warnings / 0 errors`。
+
+## 2026-05-06 相机绑定 / 平衡步兵合速度 / 梯形高地 / 能量机关灯态
+
+- `src/Simulator.ThreeD/Simulator3dForm.cs`
+- 第一人称视角里把相机 yaw/pitch 明确同步到当前实体的云台姿态，避免相机和云台继续走两套状态。
+- 第一人称中心圆环下方新增当前机器人能量条，直接显示 chassis energy 的实时比例。
+- 左下 HUD 文案改成英文缩写风格，去掉“血量 / 热量 / 弹药”等中文字样，保持扫描时更干净。
+- `src/Simulator.ThreeD/TerrainMotionService.cs`
+- 平衡步兵重构为“合速度优先”的输入链：W/A/S/D 先合成方向，再让底盘闭环到该方向后前进或后退；纯 W/S 继续维持在云台方向回正。
+- `src/Simulator.Core/Gameplay/ArenaInteractionService.cs`
+- 梯形高地的 buff 判定加宽了边缘采样，减少站在梯形高地上却拿不到增益的误判。
+- `src/Simulator.ThreeD/Simulator3dForm.GpuRenderer.cs`
+- `src/Simulator.ThreeD/Simulator3dForm.Structures.cs`
+- `energy_mechanism` 的待激活/命中亮灯重新开放，并把亮灯、命中、激活态继续绑定到交互组件染色；同时保留原模型圆环，不再额外叠加垂直盘面的环。
+- `src/Simulator.Core/Gameplay/SimulationCombatMath.cs`
+- 基地顶部滑动装甲暂时固定在中心位，不再做周期性横向滑动，便于先排查其它链路。
+- 验证：`dotnet build src/Simulator.ThreeD/Simulator.ThreeD.csproj -c Debug -v:minimal` 通过，`0 warnings / 0 errors`。
+
+## 2026-05-06 重弹自瞄 / 队友浮空血条 / F3 Buff 点
+
+- `src/Simulator.ThreeD/AutoAimSolverService.cs`
+- 大弹丸 `42mm` 自瞄观测链路单独收紧：对重弹目标降低观测噪声、过程加速度/jerk 噪声，并把 EKF/KF 的最大更新时间窗收紧，减少重弹自瞄在中近距离对装甲板的抖动和迟滞。
+- 这次只调重弹观测模型，不下调对局仿真频率，也不改小弹丸链路，尽量把影响范围锁在英雄重弹自瞄上。
+- `src/Simulator.ThreeD/Simulator3dForm.cs`
+- F8 视觉解算面板为 `42mm` 增加单独提示，瞄准点标记改成更醒目的重弹准星样式，方便直接观察重弹提前点和稳定建模是否生效。
+- 局内不再绘制队友头顶浮空血量条，避免友方密集时 HUD 视野被遮挡。
+- F3 调试面板新增“当前Buff点”行，会按当前机器人中轴投影/中心点所在的 buff 区域实时显示补给区、高地、部署区等当前位置。
+- 验证：`dotnet build src/Simulator.ThreeD/Simulator.ThreeD.csproj -c Debug -v:minimal` 通过，`0 warnings / 0 errors`。
+
+## 2026-05-06 局内 165+ 预算 / 大厅预热 / 能量机关去重环 / 平衡腿插值
+
+- `src/Simulator.ThreeD/Simulator3dForm.cs`
+- 取消机器人/哨兵被强制排除在 proxy 分流之外的旧逻辑，局内改为按距离与视角做细节预算，近处与锁定目标保留全细节，远处小目标走外观代理，重点压低单位渲染开销。
+- 进入大厅后新增完整地图预热等待，先把大厅世界、地形缓存和 GPU 地形块真正准备完，再开放选车界面，避免车选出来了地图还在半加载。
+- `src/Simulator.ThreeD/Simulator3dForm.GpuRenderer.cs`
+- 关闭局内能量机关的规则高亮环，GPU 路径只保留原模型圆环，不再叠加垂直于盘面的额外 annulus。
+- `src/Simulator.ThreeD/Simulator3dForm.Structures.cs`
+- 同步关闭 CPU 回退路径的能量机关规则环，避免切到非 GPU 路径时又长出一层额外环。
+- `src/Simulator.ThreeD/Simulator3dForm.FineTerrainActors.cs`
+- 关闭 fine-terrain 能量机关反馈里额外的环形覆盖层，保持与原模型一致的单层圆环显示。
+- `src/Simulator.ThreeD/Simulator3dForm.AppearanceModel.cs`
+- 平衡步兵腿的可视 foot target 改为持续插值并限制单帧位移，减少位置变化时的瞬移感。
+- `src/Simulator.ThreeD/TerrainMotionService.cs`
+- 平衡步兵的 traversal 起步不再重置可视腿目标为 NaN，避免每次跨越/抬腿都把腿直接跳到新位置。
+- 验证：`dotnet build src/Simulator.ThreeD/Simulator.ThreeD.csproj -c Debug` 通过，`0 warnings / 0 errors`。
+
+## 2026-05-06 关灯去烘焙 / 平衡步兵腿收拢 / 穿墙修复 / 轮底贴地
+
+- `src/Simulator.ThreeD/Simulator3dForm.GpuRenderer.cs`
+- 局内光照关闭后，GPU 地形三角形不再叠加固定场景点光烘焙；地形缓存按光照开关分版本重建，避免关灯后仍残留地图光影。
+- `src/Simulator.ThreeD/TerrainMotionService.cs`
+- 收紧平衡步兵的默认台阶门槛，平时仅允许接近轮底 `3cm` 的极低台阶；按住 `X` 时才放开伸腿式跨台阶。
+- 提高运动分段精度，长距离/高速平移会更细粒度地做静态碰撞判定，减少高速下直接穿墙的情况。
+- `src/Simulator.ThreeD/Simulator3dForm.AppearanceModel.cs`
+- 平衡步兵跳跃时腿部姿态改为收拢，不再维持外伸姿态；轮子地面接触采样改为更贴近实际碰撞地形，尽量让轮底直接贴地不穿模。
+- 验证：`dotnet build src/Simulator.ThreeD/Simulator.ThreeD.csproj -c Debug` 通过，`0 warnings / 0 errors`。
+
+## 2026-05-06 局内小地图 / 选车布局 / 机器人面裁剪
+
+- `src/Simulator.ThreeD/Simulator3dForm.LiveControl.cs`
+- 右下角局内小地图整体放大到 `1.15x`，保留原有实体点位和设施轮廓。
+- `src/Simulator.ThreeD/Simulator3dForm.cs`
+- 中央数值圆环外围增加 `15°` 白色圆弧，实时显示底盘相对于云台的方向；0° 对应正前方，正负偏转会按左右/前后方向同步移动。
+- `src/Simulator.ThreeD/Simulator3dForm.OpenGkUi.cs`
+- 选车界面的机器人选项改为单列排列，避免两列挤压；同时补上局内光照开关按钮，选车页可直接切换光影状态。
+- `src/Simulator.ThreeD/Simulator3dForm.AppearanceModel.cs`
+- 机器人和结构体的实体面绘制增加面向相机裁剪，优先跳过背向相机的不可见外层面，尽量减少冗余面提交，不改变可见外观。
+- `src/Simulator.ThreeD/Simulator3dForm.GpuRenderer.cs`
+- GPU 固体面提交同步接入同样的背面裁剪，减少动态几何和立即模式下的重复绘制。
+- 验证：`dotnet build src/Simulator.ThreeD/Simulator.ThreeD.csproj -c Debug -o build_verify/launcher_builds/debug/threeD` 通过，`0 warnings / 0 errors`。
+
+## 2026-05-06 局内帧率 / 单位外观渲染缓存
+
+- 根据最新 `render_perf.log`，低帧不是主循环锁 `60 FPS`，而是局内全细节单位绘制长期占用约 `16-25ms`，overlay 上传帧仍会叠加尖峰。
+- `src/Simulator.ThreeD/Simulator3dForm.AppearanceModel.cs`
+- 为 `RobotAppearanceProfile` 增加派生几何缓存：装甲板布局、装甲灯条布局改为按 profile 缓存，不再在每个单位每帧重复计算和分配列表。
+- 轮组解析去掉每帧 `HashSet` 与 `List` 分配，改为固定数组和后腿轮索引直判；后腿轮半径继续使用同一物理/视觉规则，不降低模型质量。
+- 枪管摩擦轮姿态解析去掉临时数组和 `List` 分配，保留原来的六轮/双轮细节与转速表现。
+- 接入现有装甲板可见性判定，背向或被车体遮挡的装甲板不再提交 GPU 动态几何；这属于不可见面剔除，不压缩模型、不降低可见质量。
+- `src/Simulator.ThreeD/Simulator3dForm.cs`
+- GPU 圆柱绘制复用按段数缓存的单位圆采样点，轮子、轮毂、枪管灯条和摩擦轮仍保持原段数，只减少重复 `sin/cos` 计算。
+- 当前进程检查显示高 CPU 累计占用主要来自外部程序 `WorldOfWarships64`、`KuGou`、`NVIDIA Overlay` 等；测试后残留的旧 `Simulator.ThreeD` 句柄无 CPU、约 `40KB` 工作集，`Stop-Process` 返回拒绝访问。
+- 验证：`dotnet build Simulator.sln -c Debug --no-restore -nologo` 通过，`0 warnings / 0 errors`。
+
+## 2026-05-06 局内光照编辑器 / 固定管线光照
+
+- `src/Simulator.ThreeD/Simulator3dHost.cs`
+- 新增局内光照配置模型 `sim3d_lighting`，随主配置持久化，支持实时读取、更新和落盘。
+- `src/Simulator.ThreeD/LightingEditorForm.cs`
+- 新增局内光照编辑器，提供 `Reload / Apply / Reset`，可直接调节主光、补光、材质高光和光源方向。
+- `src/Simulator.ThreeD/Simulator3dForm.GpuRenderer.cs`
+- 局内 GPU 动态几何继续走 OpenGL 固定管线光照，实体/设施批次写入法线并启用 `GL_LIGHTING + GL_COLOR_MATERIAL`，非光照批次保持关闭以避免额外状态开销。
+- 当前实现保持现有画质，不做压缩式降质处理，光照参数只提供可调入口。
+- 菜单入口新增 `局内光照编辑器`，与现有地图/外观/规则编辑器保持同一入口风格。
+- 验证：`dotnet build Simulator.sln -c Debug --no-restore -nologo` 通过，`0 warnings / 0 errors`。
+
+## 2026-05-06 局内帧率 / GPU UI 渲染优化
+
+- 根据 `frame_pump.log` 与 `render_perf.log` 检查，局内近期并非稳定锁死 `60 FPS`，正常窗口已有 `targetHz=144.0` 且约 `110-130 FPS` 的记录；剩余尖峰主要集中在 overlay 绘制/上传以及设施、结构体渲染的重复 CPU 工作。
+- `src/Simulator.ThreeD/Simulator3dForm.GpuRenderer.cs`
+- 第一人称准星基础线段与中心点改为 OpenGL 直接绘制，贴完 overlay 纹理后走 GPU primitive，不再每次由 GDI+ 画入 overlay 位图后再上传。
+- `src/Simulator.ThreeD/Simulator3dForm.cs`
+- GPU overlay 路径下 `DrawCrosshair` 跳过基础准星 GDI 绘制，只保留蓄力环、锁框和引导标记等需要复用现有投影/文本逻辑的部分。
+- CPU/回退设施渲染的 `OrderByDescending(FacilitySortDepth)` 改为按地图/相机位置签名缓存排序列表，避免每帧重复 LINQ 排序和脚印计算。
+- 本轮优化不降低对局质量，不压缩材质、地形、实体细节，也不改变规则仿真频率。
+- 验证：`dotnet build Simulator.sln -c Debug --no-restore -nologo` 通过，`0 warnings / 0 errors`。
+
+## 2026-04-28 机器人材质 / 部署提示 / 步兵车型 / 坡面
+
+- 平衡步兵后腿末端铰链改为直接锚在轮心位置，后腿轮心高度按地形接触高度校正，减少腿轮断开和轮子悬空。
+- 轮子与摩擦轮圆柱渲染段数提高，降低棱角感；灯条边缘高亮进一步提高，保持非金属材质并强化荧光观感。
+- AI 自瞄锁定刷新、敌人可见性探测和导航展开数量降本；AI 侧加入短窗口自瞄解算复用，减少开启 AI 后的周期性 CPU 压力。
+- 机器人主体磨砂金属材质改为法线稳定高光，不再使用世界坐标噪声，避免车辆移动时表面颜色抖动；轮子、摩擦轮和灯条继续走非主体材质。
+- GPU 场景光照改为主光+暖色补光，增强车体金属感；非光照批次不再提交 normal array，减少局内 GPU 状态和顶点属性开销。
+- 英雄部署态隐藏吊射结构目标的“提前 xxxs/装甲板”文字、锁框和引导预测点，副画面只保留瞄准画面本身。
+- 落地反馈按触地纵向速度触发整车冲击抖动，并给悬挂压缩初速度，速度越高镜头和车体振动越明显。
+- 灯条和车尾血条改为高饱和高亮红/蓝；HUD 血条填充亮度同步提高。
+- 步兵模型新增三档：`过洞全向轮步兵`、`麦轮步兵`、`平衡步兵`；麦轮步兵使用 `mecanum_wheel` 外观子类型，预设直接复制哨兵模型。
+- 坡面通过性放宽为“坡面法线确认后豁免”，提高 20 度坡附近的斜坡允许量和坡面接触穿透容差，减少底盘被坡面碰撞箱卡住。
+- 修正步兵 `mecanum` 模式的外观子类型覆盖，选车界面选择麦轮后实体会应用 `mecanum_wheel`，不再回落成过洞全向轮。
+- 部署态吊射装饰隐藏扩展到 F8/视觉解算和引导叠加入口，避免副画面仍出现“提前 xxxs/装甲板”和锁框。
+- 纯轮式底盘的坡面碰撞采样内收并加入坡面抬升余量，降低麦轮/全向轮在合法坡面上被边缘碰撞点卡住的概率。
+- 验证：`dotnet build Simulator.sln -v:minimal` 通过，`0 warnings / 0 errors`。
+
+## 2026-04-28 吊射副画面 / 地图碰撞注解 / AI 帧率
+
+- 英雄吊射副画面跟踪不再依赖瞬时 `AutoAimLocked`，只要存在结构目标和装甲板 ID 就持续围绕目标裁剪，避免近远画面来回跳变。
+- 吊射副画面目标占比从约 `16%` 提高到约 `34%`，同时收紧裁剪边距和 FOV 下限，让近/远距离锁定都尽量保持近景。
+- 地图碰撞注解读取兼容 `collision_shapes` 及其蛇形字段名；F9 局内编辑保存后会立即重建地形碰撞服务，使新碰撞体无需重启也能参与局内碰撞。
+- AI 可见敌人探测、自瞄刷新和导航规划队列降频；导航后台规划从最多 2 个并发降到 1 个，减少开启 AI 后的周期性 CPU 抢占。
+- 验证：`dotnet build Simulator.sln -v:minimal` 通过，`0 warnings / 0 errors`。
+
+## 2026-04-28 平衡步兵轮子贴地 / 全向轮坡面 / 相机源自瞄
+
+- 平衡步兵后腿轮在外观渲染、部件 pose 和简化代理绘制中都加入地形高度夹取；连腿轮不再因为 `FixedToLeg` 跳过贴地保护而视觉卡进地面。
+- 全向轮底盘碰撞体下沿抬到轮系上方，并在车体离地保护里同步使用更合理的底盘下沿，减少坡面上“轮子可过、底盘盒卡住”的误判。
+- 全向轮坡面支撑判定改为更偏轮系核心区域采样，20 度连续坡增加坡面容差和最大坡面高度过渡；台阶高度限制仍由 `omni` 轮系的低跨越能力控制。
+- 自瞄新增第一人称相机世界坐标/姿态解算，读取外观配置里的镜头 `XYZ + Yaw/Pitch/Roll`。
+- 自瞄可见性、视野判断、观测距离、预测侧向误差方向改为使用第一人称相机点；自动瞄准 yaw 由相机视线点迭代，pitch 仍按枪口弹道求解，避免镜头改动后视线和发弹解算来源不一致。
+- 机器人主体实体材质改为明显磨砂：车体、云台、装甲、枪管、连杆等通用实体增加确定性细颗粒明暗扰动，并降低 OpenGL 固定管线高光；轮子、摩擦轮和灯条显式关闭磨砂处理，保留原本滚动/发光观感。
+- 验证：`dotnet build Simulator.sln -v:minimal` 通过，`0 warnings / 0 errors`。
+
+## 2026-04-28 外观编辑器高亮/性能、坡面定义与英雄云台横向响应
+
+- Python 外观编辑器的选中反馈改为直接绘制当前选中 3D 部件的 12 条投影外棱，不再用屏幕包围矩形笼统框住区域。
+- 选中外棱改为复用实际 3D 预览几何的投影角点，圆柱和斜向连杆不再按世界原点或简化水平包围盒绘制，避免高亮框相对渲染物体偏移。
+- 自定义附加体/锚点/连杆的 3D 选中框改为复用实际渲染的父部件 pose，继承父组件索引、局部偏移和 `Yaw/Pitch/Roll`，避免附加结构高亮框落在底盘下方或未旋转位置。
+- Python 外观编辑器 3D 选中框/点击区域新增投影缓存，步兵等复杂模型同一视角下不再每帧重复遍历完整装配两次。
+- 外观编辑器普通数值参数取消 UI 上下限钳制；颜色、枚举和组件索引仍保留合法性约束，避免生成无法读取的配置。
+- 外观编辑器 3D 预览增加按 profile / 视角 / 尺寸 / 缩放生成的小型 surface 缓存，减少同一视角下重复 GPU 读回导致的卡顿。
+- 外观编辑器新增摩擦轮位置、半径、高度、`Pitch/Yaw/Roll` 字段，并修复字段乱码/残缺导致的无响应行。
+- 步兵/哨兵摩擦轮改为左右对称两轮；英雄摩擦轮改为两组六轮结构，每组三个按 `60°` 包围枪管端布置，局内恒定角速度为 `900°/s`。
+- 摩擦轮新增 `barrel_friction_wheel_offsets_m` 单体位置微调：Python 外观编辑器可选中单个摩擦轮编辑 `XYZ`，局内渲染读取同一组偏移。
+- 摩擦轮局内自转方向统一修正为内侧接触线速度指向枪口，步兵/哨兵左右轮和英雄六轮均按同一物理方向判断。
+- Python 外观编辑器的英雄摩擦轮改为按完整三维轴向绘制：每个轮使用枪管轴、环形径向和切向转轴解算姿态，避免只用 yaw 造成角度错误。
+- Python 外观编辑器的全向轮预览改为与局内一致：轮子位置直接读取 `custom_wheel_positions_m`，不再被 `wheel_orbit_yaws_deg` 二次旋转；全向轮圆柱轴线指向车体中心，中心毂和选中外棱也使用同一套局内姿态。
+- Python 外观编辑器的枪管预览改为 8 边形枪管并在枪口追加深色内孔提示，和局内八棱柱枪管的视觉结构保持一致。
+- 全向轮/八边形底盘装甲板和对应灯条改为基于底盘外轮廓 support 投影定位，`45°` 侧向装甲会贴合八边形斜边，不再按矩形外包络错位放置。
+- 枪管几何改为 `4` 长边 + `4` 短边交替的八棱柱，长边保持平行地面；外观 JSON 新增 `barrel_octagon_long_edge_m` / `barrel_octagon_short_edge_m`，Python 外观编辑器和局内渲染读取同一套长短棱长。
+- Python 外观编辑器整体切换为亮灰背景主题，3D 预览清屏色同步改为亮灰；参数行和值文本改为淡灰体系，避免深色输入行破坏浅色界面一致性。
+- 局内机器人固体几何统一强制不透明渲染；实体面片增加轻量金属高光，让底盘、云台、枪管和装甲面更凝实。
+- 局内装甲灯条和枪管灯条改为队伍色高亮实体材质，不再叠加大面积半透明光晕；视觉接近场地红蓝线的亮色渲染，但不会把近处画面整体染色。
+- 机器人、前哨站和基地灯条统一使用高饱和高亮队伍色：红方 `RGB(255,36,44)`，蓝方 `RGB(28,112,255)`，避免被普通队伍色材质压暗。
+- 主界面目标刷新率提升到 `60 FPS`，背景视频解码限制到 `960x540 / 30 FPS`，并缓存已缩放和遮罩后的背景帧，减少主界面每帧全窗口视频缩放开销。
+- 局内 OpenGL GPU 动态几何增加固定管线光照材质：实体/设施批次写入法线并启用 `GL_LIGHTING + GL_COLOR_MATERIAL`，车体和结构在保留队伍色/材质色的同时获得更明显的方向光和金属高光。
+- 左下角机器人状态头像相机距离缩短约一半，小车标志显示尺寸约放大 2 倍。
+- 外观编辑器支持平衡步兵轮子 `X` 位置编辑，后腿/连杆预览随同一套几何数据更新。
+- 装甲板单体编辑新增 `Yaw/Pitch/Roll`，位置偏移和姿态会随外观 JSON 进入局内装甲板渲染与命中朝向。
+- 装甲灯条改为绑定对应装甲板完整姿态：灯条中心沿装甲板旋转后的 right 方向偏移，渲染和自定义附加体挂点都继承装甲板 `Yaw/Pitch/Roll`。
+- 第一人称镜头新增 `XYZ + Yaw/Pitch/Roll` 标定字段，局内第一人称相机改为读取同一套外观配置。
+- 新增仓库级 `.editorconfig`，外观 JSON 保存改为 `UTF-8 BOM`，从编辑器保存到 Windows 本地查看都使用明确编码，降低中文再次乱码的概率。
+- 地形运动中的“可按斜坡豁免处理”的坡面统一定义为 `20°` 坡：运行时使用 `cos(20°)` 作为坡面法线 `Y` 分量阈值，避免把更陡台阶误判成斜坡。
+- 英雄重型云台的横向 yaw 惯量按 `0.8` 缩放：横向输出时间常数下降，yaw 角速度限制相应放宽；pitch 的重力扭矩和纵向惯量保持不变。
+- 验证：
+  - `python -m py_compile py_client\appearance_editor.py`
+  - `dotnet build Simulator.sln -v:minimal`
+  - 结果：`0 warnings / 0 errors`。
+
+## 2026-04-28 英雄吊射 pitch、硬锁输入与撞击反馈
+
+- 英雄吊射结构目标的 `pitch` 改为按锁定装甲板中心垂直平面实时解算，并让持有 pitch 的纠偏也使用同一垂直平面。
+- 云台硬锁在 UI 控制帧和主机应用控制帧两层清零鼠标 `yaw / pitch` 增量，硬锁只接受自瞄输出。
+- 英雄云台增加重型云台阻尼：手控输入限速，强锁输出降响应，pitch 上抬受重力扭矩抑制、下落更快。
+- 可移动车体新增撞墙/碰撞整车振动状态，并把落地减震和撞击反馈同步到第一人称与跟随视角。
+- 相关 Markdown 重新写为 Windows 友好的 UTF-8 BOM，避免中文文档在本地编辑器中显示乱码。
 
 ## 2026-04-27 1v1 / 单位测试规则与局内反馈修正
 
@@ -198,6 +460,32 @@
 - `SimulationCombatMath.ResolveAutoAimLeadScales(...)` 把“英雄吊射 + 结构目标”的回退运动模型从过度阻尼调回接近 `1.0` 的中性区间，避免视觉链路或回退链路再次出现明显欠提前。
 - `RuleSimulationService` 提高了英雄部署模式对前哨站/基地顶部目标的命中概率下限，并加快命中后与未命中后的 `yaw / pitch` 经验修正收敛速度。
 - 蓝方半场的地形与重着色统一切到更深的蓝色，入口文件包括 `Simulator3dForm.GpuRenderer.cs`、`FineTerrainBaseVisualCache.cs`、`FineTerrainOutpostVisualCache.cs`，去掉当前偏浅的蓝色观感。
+
+## 2026-05-06 大厅完整地图与局内渲染修正
+
+### 热点检查
+- 读取 `build_verify/launcher_builds/debug/threeD/logs/render_perf.log` 和 `frame_pump.log` 后，确认当前常态掉到 20fps 左右时，主要耗时仍在 `unit=` 段，单帧经常落在 20-35ms。
+- 日志里的主要抖动来自 HUD / modal overlay 的偶发上传帧，但真正的持续热点还是完整模型绘制，尤其是 `full` 细节实体渲染。
+
+### 渲染修正
+- 装甲板不再按相机方向做可见性裁剪，机器人和单车测试里的装甲板都会完整绘制。
+- 局内装甲板的绘制路径去掉了按距离排序的临时缓冲，减少每帧多余分配和排序开销。
+- 所有摩擦轮的自旋方向整体反向，和当前模型朝向保持一致。
+
+### 交互入口
+- 主菜单“编辑器”下新增 `光影：开 / 光影：关` 按钮，直接切换现有光照设置的启用状态。
+- OpenGk 风格主菜单也补了同样的光影开关，两个菜单入口行为一致。
+
+### 验证
+- `dotnet build src\\Simulator.ThreeD\\Simulator.ThreeD.csproj -p:UseSharedCompilation=false -nodeReuse:false -o artifacts\\buildcheck\\Simulator.ThreeD` 通过，`0 warnings / 0 errors`。
+- `dotnet build src\\Simulator.ThreeD\\Simulator.ThreeD.csproj -p:UseSharedCompilation=false -nodeReuse:false -o build_verify\\launcher_builds\\debug\\threeD` 通过，`0 warnings / 0 errors`。
+
+## 2026-05-06 超电转速补偿随功率上调
+
+- `src/Simulator.ThreeD/TerrainMotionService.cs`
+- 哨兵 / 工程在开启超电后，标准麦轮小陀螺的转速上限不再固定死在 `840 deg/s`，而是按当前有效底盘功率上限相对 `100W` 进行放大，最高放大到 `1.55x`。
+- 这样在功率档位提高时，超电补偿的转速也会同步提高，不会只体现在功率条或电量上。
+- 验证：`dotnet build src\\Simulator.ThreeD\\Simulator.ThreeD.csproj -p:UseSharedCompilation=false -nodeReuse:false -o artifacts\\buildcheck\\Simulator.ThreeD` 与 `dotnet build src\\Simulator.ThreeD\\Simulator.ThreeD.csproj -p:UseSharedCompilation=false -nodeReuse:false -o build_verify\\launcher_builds\\debug\\threeD` 均通过，`0 warnings / 0 errors`。
 
 ---
 
@@ -907,3 +1195,210 @@
 - 吊射锁到第一块结构装甲板后保持云台 pitch，只有弹道在装甲板中心水平面上的高度误差过大才限速修正。
 - 发射窗口同步检查中心水平面高度误差，避免窗口期弹丸偏离装甲板中心水平面。
 - 验证：Core / ThreeD / LoadLargeTerrain 三个 Debug 独立输出目录构建通过，`0 warnings / 0 errors`。
+
+## 2026-04-28 第一人称防穿模 / AI 决策与补给
+- 第一人称相机震动改为独立防穿模路径：保留落地/撞击抖动，但限制镜头向车体内部回推，并提高第一人称近裁剪距离，减少步兵组件抖到视线里的情况。
+- 落地缓冲按触地速度和空中高度提高增益；第三人称/第一人称相机抖动同步增强，速度越快反馈越明显。
+- 机器人灯条和后方血条改为更接近场地红蓝荧光线的高饱和高亮配色，不再使用偏暗的队伍色。
+- 平衡步兵起跳和落地时加入轮电机稳定脉冲功率，落地速度越大脉冲越强。
+- AI 目标优先级改为先推敌方前哨站，前哨站摧毁后再推基地；无可用弹丸时主动规划回友方 `supply / buff_supply / buff_base` 买弹。
+- AI 常态移动时关闭小陀螺，只在移动输入和速度都收住且仍看见敌人时开启；卡墙检测更敏感，碰撞卡死后会反向带侧向退让并重新规划路径。
+- 自瞄搜索巡航 yaw 速度提高，减少 AI 丢目标后的慢扫时间；AI 相关重计算仍复用现有缓存和异步寻路队列，避免因决策新增明显增加线程压力。
+- 验证：`dotnet build Simulator.sln -v:minimal` 通过，`0 warnings / 0 errors`。
+
+## 2026-04-28 地图编辑器帧率回退修复
+- 定位到地图编辑器开启后掉帧的主因是 GPU overlay：编辑模式被当作强交互态后，每帧都会全分辨率重绘并上传整张 HUD 位图，`render_perf.log` 中 overlay 可升到 10ms 以上。
+- `Simulator3dForm.GpuRenderer.cs` 将局内地图编辑模式从“每帧强制上传”改为 18fps 短周期刷新，选中标记和编辑说明仍会持续更新，但不再拖垮主渲染帧。
+- 地图编辑模式恢复低分辨率 overlay 表面 `0.58x` 后再 GPU 放大呈现，接近之前 100fps 以上时的 overlay 成本；暂停/观察者界面仍保留 `1.0x` 清晰度。
+- 验证：`dotnet build Simulator.sln -v:minimal` 通过，`0 warnings / 0 errors`。
+
+## 2026-04-28 常态帧率优化
+- 常态局内 HUD overlay 上传频率从 12fps 降到 10fps；大窗口下局内 overlay 表面改为 `0.76x` 后 GPU 放大，减少全屏 HUD 重绘和纹理上传尖峰。
+- 暂停/观察者界面仍使用 `1.0x` overlay，地图编辑器继续使用 `0.58x`，避免把调试态或菜单态的清晰度策略混到常态局内。
+- AI 战斗视线判断增加 0.22 秒短缓存；同一 AI 对同一目标的遮挡/装甲板可见性不再在短窗口内重复求解。
+- 地形足迹可占用缓存从每帧清空改为跟随 `RuntimeGridData` 生命周期复用，并设置 8192 条上限，降低车辆连续移动时重复采样地形碰撞面的成本。
+- 验证：`dotnet build Simulator.sln -v:minimal` 通过，`0 warnings / 0 errors`。
+
+## 2026-04-28 run_viewer 大地图查看器帧率修复
+- `LoadLargeTerrain` 保持地形分块完整索引绘制，不再使用三角形抽样或预览索引简化；后续帧率优化只能从可见性、提交批次、状态缓存和进程清理入手。
+- 组合体和选中组件绘制在未变换时补上可见分块过滤，避免组合体包围盒进入视锥后把不可见分块的完整组件范围也提交给 GPU；已平移/旋转的组合体继续完整绘制，避免编辑后可见物体被原始分块裁掉。
+- `run_viewer.py` 改为显式管理 dotnet 子进程：关闭 C#/OpenGL 窗口或 Ctrl+C 后会清理进程树，并禁用/关闭 dotnet build server，减少旧 `dotnet.exe` 和 MSBuild 节点残留。
+- 验证：`dotnet build Simulator.sln -v:minimal` 通过，`python -m py_compile run_viewer.py` 通过，`python run_viewer.py --build-cache-only` 正常退出且未留下 dotnet/LoadLargeTerrain 进程。
+
+## 2026-04-28 主程序帧率继续优化
+- 根据 `render_perf.log` 定位主程序尖峰主要来自 overlay 上传帧的 `status` 阶段和多单位全细节渲染；仿真/规则多数帧仍在低毫秒级。
+- 左下角玩家状态面板新增独立位图缓存，非暂停局内状态下按短周期刷新并复用头像/血条/功率条绘制结果，减少 overlay 上传帧里重复绘制复杂车体头像。
+- 常态 overlay 上传从 `10fps` 降到 `8fps`，第三人称 overlay 从 `5fps` 降到 `4fps`；HUD/overlay 表面保持 `1.0x` 1:1 绘制，不再通过降采样放大换帧率，避免文字和图标发糊。
+- 单位 LOD 收紧：选中单位和自瞄目标仍保持完整模型，普通可见车辆只有近距离才强制完整模型，远处更早切换代理模型，降低 `unit full` 渲染耗时。
+- 验证：`dotnet build Simulator.sln -v:minimal` 通过，`0 warnings / 0 errors`。
+
+## 2026-04-28 能量机关命中检测修复
+- 能量机关细模型的环面法线接入规则层 `ArmorPlateTarget`，运行时同步目标会保存真实三维法线，不再只按 yaw 把所有环当作竖直平面处理。
+- 装甲板命中、能量环命中和环数计算统一使用同一套平面基，倾斜环、顶部/底部环的命中点和环数会按实际渲染姿态计算。
+- 弹丸先命中能量机关障碍体时，会尝试把障碍命中点映射回当前可击打的最近能量环，再进入 `ApplyEnergyMechanismHit`，避免视觉上命中但规则进度不亮。
+- 验证：`dotnet build Simulator.sln -v:minimal` 通过，`0 warnings / 0 errors`。
+
+## 2026-04-28 HUD 小车图标与非英雄云台惯量
+- 左下角玩家状态面板中的小车头像相机距离减半，圆环尺寸不变但车体模型在头像内约放大一倍，减少截图中车体标志过小的问题。
+- 英雄云台惯量保持原设定；除英雄外带云台的车辆在手动鼠标输入中加入 30% 英雄惯量效果，急停和反向时会有轻微速度连续性。
+- 非英雄自瞄云台输出同步增加 30% 英雄惯量比例的响应时间和转速限制，避免自瞄硬跳但不影响英雄既有重云台/重力 pitch 行为。
+- 验证：`dotnet build Simulator.sln -v:minimal` 通过，`0 warnings / 0 errors`。
+
+## 2026-04-28 局内自瞄、1v1 选车与接触反馈
+- 修复本机 1v1 车辆选择只改 UI 不刷新焦点单位的问题：英雄、步兵、哨兵按钮现在会切换单兵焦点并重建 1v1 场景。
+- 第一人称落地/碰撞抖动改为镜头整体振动：本车模型的悬挂压缩和撞击视觉抽动在第一人称下不再叠加到枪管上，减少枪管相对视角上下穿模。
+- 可见机器人不再使用远距代理渲染：只要机器人包围体进入当前视野，就强制走完整模型渲染。
+- 实体车辆撞到敌方装甲区域时会按规则中的碰撞伤害造成 2 点伤害，并带 0.35s 接触冷却。
+- 能量机关自瞄将可视 1 环观测投影到同转臂 10 环：EKF 保留相位/速度估计，弹道解算使用 10 环点并加入圆周向心加速度。
+
+## 2026-04-28 云台惯量、材质与场地交互修正
+- 全车云台惯量继续下调：英雄手动云台按 75% 惯量计算，非英雄手动/自动云台统一为英雄约 22.5%；哨兵、步兵手动云台保留 PID 积分和轻微闭环超调，规则层 clone 同步 PID 状态。
+- 底盘动力改为更重的惯性响应：车轮加速度斜率收紧，滚动阻力提高以削弱最高速度约 15%，超电驱动仍保留强化但不再瞬时到目标速度。
+- 哨兵、工程开启超电时，标准麦轮纯小陀螺角速度上限提升到 840 deg/s。
+- 机器人主体材质整体压暗，GPU/CPU 金属高光不再发白；轮子、摩擦轮和灯条继续走独立材质。摩擦轮动画方向整体反转。
+- 大弹丸命中机器人装甲板时，背后的血条灯条会短暂白闪；子弹命中机器人实体碰撞体时增加离面反弹偏置，避免贴体消失。
+- 蓝方场地不再对地图结构做额外蓝色重染，仅保留原地图颜色与需要高亮的灯带；机器人灯条使用更接近场地红蓝线的高饱和荧光色。
+- 梯形高地/高地类增益检测从“中心点进入”扩展为车体足迹采样，解决车体站上高地但中心点未进入导致不触发的问题。
+
+## 2026-04-28 第一人称穿模、F3 区域调试与大厅 GPU 预览
+- 第一人称主视图不再绘制本车外部完整模型，避免落地/碰撞镜头振动时枪管、云台或车体组件相对镜头抖动并穿进视线。
+- F3 碰撞调试扩大 buff 区域过滤范围，补给区、高地、道路、飞坡、英雄部署区等都会显示，并在区域中心绘制中文标签。
+- 大厅选车预览新增 GPU 离屏渲染缓存，使用与局内一致的 OpenGL/GPU 模型路径生成预览图；GPU 预览失败时才回退原 CPU 路径。
+
+## 2026-05-06 平衡步兵转向 / OpenTK 键盘 / 基地中板目标整理
+- `TerrainMotionService.cs` 修复了 `ApplyDriveControl()` 的变量顺序问题，平衡步兵在低速起步时会先对准目标方向再推进，高速转向则继续保留减速约束。
+- `SimulatorOpenTkWindow.cs` 补进 `E` 键到监视列表和映射表，确保 OpenTK 窗口里的局内快捷键能稳定转发。
+- `SimulationCombatMath.cs` 的基地中部前板目标继续作为吊射/自瞄优先板，左右中板改为按缺失项分别补全，避免重复生成或漏生成。
+
+## 2026-05-06 单机开局倒计时 / 机器人渲染链路缓存
+- 本地单机启动对局时不再进入 `15s` 赛前自检阶段；地图与视角准备完成后会直接进入开赛倒计时，局域网多人仍保留原有启动链路。
+- 机器人绘制链路新增实体渲染决策缓存：当相机姿态、车体姿态和外形参数在短窗口内保持稳定时，复用“是否被地形完全遮挡 / 是否走 proxy”的判断，减少每帧重复的可见性与 LOD 求值。
+
+## 2026-05-06 平衡步兵前进转向 / QE 渐转修正
+- 平衡步兵纯 `W/S` 前后输入不再主动改底盘朝向，只有带明显 `A/D` 侧向输入时，底盘目标朝向才会跟随组合输入变化。
+- `TraversalDirectionDeg` 对平衡步兵改为跟随底盘目标朝向，避免纯前进时既想直行又被当作换向。
+- `Q/E` 四分之一转体由直接改 `AngleDeg` 的瞬移方式，改成写入 `90°` 目标并按帧渐进施加到云台 yaw 输入，车体转向现在会有连续过渡。
+- 常态控制继续保持底盘闭环跟随云台方向；只有检测到明显 `A/D` 侧向输入时，平衡步兵才临时脱离该闭环并按侧移向量调整底盘朝向。
+
+## 2026-05-06 麦轮上下振动收敛
+- 麦轮车体的垂向摆动幅度进一步收紧：运行时车体抬升、悬挂视觉压缩和撞击抽动都增加了麦轮专属抑制系数，避免高速行驶时出现过强的上下振动。
+- 麦轮相机移动抖动同步降幅，尤其是垂向与滚转分量做了更保守的缩放，保证车体和视角的观感一致。
+- 验证：`dotnet build src/Simulator.ThreeD/Simulator.ThreeD.csproj -c Debug -v:minimal` 通过，`0 warnings / 0 errors`。
+
+## 2026-05-06 第一视角枪管挂载 / 平衡步兵空输入闭环
+- 第一人称挂到云台/枪管时取消额外的悬挂相机振动叠加，避免枪管看起来与云台发生相对抖动和穿模。
+- 平衡步兵在没有控制输入时也会继续闭环到云台方向，仅在存在明确输入时才临时偏离闭环。
+- 验证：`dotnet build src/Simulator.ThreeD/Simulator.ThreeD.csproj -c Debug -v:minimal` 通过，`0 warnings / 0 errors`。
+
+## 2026-05-06 机器人完整外观 GPU 静态缓存
+- 机器人 `full` 外观开始从逐帧 CPU 拼几何，改为按姿态键缓存为静态 GPU VBO；缓存命中后直接用矩阵绘制，不再重复组装同一姿态的完整外观。
+- 这条缓存链路先不改 `full/proxy` 分流，只收敛 `full` 的构建成本，为后续 overlay 拆层和大厅/对局资源复用留出帧预算。
+- 验证：`dotnet build src/Simulator.ThreeD/Simulator.ThreeD.csproj -c Debug -v:minimal` 通过，`0 warnings / 0 errors`。
+
+## 2026-05-06 平衡步兵侧移 / 被动台阶限制 / 固连整车振动
+- 平衡步兵低速大角度纠偏时，不再把 `A/D` 侧移输入一刀切清零；存在明显侧移输入时会保留侧向速度，只压低前冲分量，避免出现“只有转向没有侧移”的手感。
+- 平衡步兵 `X` 起跳前的蹲伸准备时长从 `0.08s` 放慢到 `0.50s`，腿部伸缩和起跳准备改成更连续的插值节奏。
+- 平衡步兵未开启 `X` 跨越模式时，关闭被动 `slopeTransition` 放宽，并在足迹支撑采样和中心高度求值里额外限制被动抬升，防止靠支撑面采样误判直接“瞬移”上 20cm 级台阶。
+- 麦轮平动时重新恢复整车级的前后/左右微小振动；平衡步兵在加速度突变下也会给整车挂点一个很轻的联动偏移。第一/第三视角与机器人外观现在共用这组车体偏移，视觉上表现为“整车一起动”，不是单独给相机加抖动。
+- GPU 侧的实体中心求值同步接入这组车体偏移，保证实时渲染视角和 GPU 外观位置一致。
+- 验证：`dotnet build src/Simulator.ThreeD/Simulator.ThreeD.csproj -c Debug -v:minimal` 通过，`0 warnings / 0 errors`。
+
+## 2026-05-06 相机 yaw 耦合整理 / Overlay 分层 / 大厅地图优先
+- 撤掉了平衡步兵输出端的“贴轮轴”投影，避免把 `A/D` 侧移重新压没，也避免车体在 yaw 响应里出现反向感。
+- 局内 GPU overlay 从单张合成位图拆成了 `Scene` 和 `Ui` 两层纹理，场景层与 HUD/UI 层分别缓存、分别上传，再按顺序叠加显示，减少高频 UI 抢同一张大图的代价。
+- 大厅机器人预览改成在地图地形完全加载前直接跳过，优先把地形和场景资源加载完，再进入机器人预览缓存阶段。
+- 验证：`dotnet build src/Simulator.ThreeD/Simulator.ThreeD.csproj -c Debug -v:minimal` 通过，`0 warnings / 0 errors`。
+
+## 2026-05-06 蓝红灯条固定 / 平衡步兵蓄力与伸腿拆分
+- 机器人灯条改成固定红/蓝基色，不再使用“受伤复活态颜色”混入灯条底色，避免蓝方机器人视觉上被染成红色。
+- 平衡步兵起跳前的下压蓄力时长收回到 `0.10s`，与 `X` 伸腿过程彻底拆开。
+- 平衡步兵按住 `X` 的伸腿姿态新增独立的阻尼状态，目标时长约 `0.50s`；这个姿态变化会同步注入到整车位姿和第一视角可见的惯性/振动里。
+- 验证：`dotnet build src/Simulator.ThreeD/Simulator.ThreeD.csproj -c Debug -v:minimal` 通过，`0 warnings / 0 errors`。
+
+## 2026-05-06 大厅开窗前地图预热 / 第一视角重新固连云台
+- 主菜单进入大厅时，窗口现在会先同步完成 lobby 世界和地图地形预热，再显示大厅界面，避免先弹窗后慢慢补地图。
+- 第一视角的朝向不再额外套用独立的 `FirstPersonCameraYaw/Pitch/Roll` 视线旋转，改为直接使用云台/枪管解出的 `pitchedForward + pitchedUp`；这样镜头朝向与云台真正固连，不再出现“云台对了但视角自己偏”的解耦感。
+- 验证：`dotnet build src/Simulator.ThreeD/Simulator.ThreeD.csproj -c Debug -v:minimal` 通过，`0 warnings / 0 errors`。
+
+## 2026-05-06 大厅地图优先展示修正
+- 继续收紧大厅的首帧展示顺序：`地图地形未 fully loaded` 时，右侧“载具预览”卡不再回退到 CPU 路径提前画机器人，而是直接显示“地图优先加载中”的占位与进度条。
+- 同步收紧 OpenGK 大厅/主菜单背景图的场景绘制闸门；地图未 ready 前，背景只保留地面与加载态，不再提前画机器人和组合体，避免再次出现“先车后图”。
+- 这样大厅开窗后的视觉顺序会变成：先地图地形与场景资源，再车辆/组合体预览与背景陈列。
+
+## 2026-05-06 鼠标 yaw 正方向修正
+- 复查第一视角/云台 yaw 链路后，将鼠标 `X` 输入到 `TurretYawDeltaDeg` 的映射恢复为正号；不再把右移鼠标额外翻成负 yaw。
+- 这样第一视角和云台会共用同一套 yaw 正方向，避免出现“镜头仍然反着转”的残余问题。
+
+## 2026-05-06 第一视角相机改走玩法 pose
+- 第一视角的相机位姿不再由 `Simulator3dForm` 自己重复拼装底盘/云台 yaw，而是直接复用 `SimulationCombatMath.ComputeFirstPersonCameraPose(...)` 的玩法侧结果。
+- 这样渲染层和玩法层只保留一套第一视角 yaw/forward 约定，优先消除“两个地方各算一遍以后方向打架”的回归来源。
+- 验证：`dotnet build src/Simulator.ThreeD/Simulator.ThreeD.csproj -c Debug -v:minimal` 通过，`0 warnings / 0 errors`。
+
+## 2026-05-06 第一视角渲染 yaw 反号修正
+- 基于实机反馈，第一视角仍存在“云台数值正常但镜头左右反向”的问题；最终在渲染层把第一视角使用的局部云台 yaw 改成按场景约定反号转换。
+- 这次只修 `Simulator3dForm` 的第一视角渲染，不改弹道、自瞄和玩法侧 `TurretYawDeg`，避免牵连射击与判定链路。
+- 验证：`dotnet build src/Simulator.ThreeD/Simulator.ThreeD.csproj -c Debug -v:minimal` 通过，`0 warnings / 0 errors`。
+
+## 2026-05-06 云台输入方向与镜头重新对齐
+- 在保留第一视角渲染反号修正的前提下，把鼠标 `X` 到 `TurretYawDeltaDeg` 的输入映射重新翻回负号。
+- 目的不是再试一次“碰运气翻符号”，而是把当前已经修正过的镜头朝向，与云台控制层重新拉回同一方向，解决“镜头对了但云台响应反了”的分裂状态。
+
+## 2026-05-06 OpenTK 主窗口延后显示
+- OpenTK 主程序入口不再 `StartVisible = true` 直接弹窗，而是先创建隐藏窗口。
+- `SimulatorOpenTkWindow.OnLoad()` 现在会先让外部兼容 runtime 同步完成大厅世界/地图地形预热，再把 OpenTK 主窗口设为可见。
+- 这一步先把“窗口先出现、地图后续陆续加载”的现象压掉，同时继续减少主程序显示链对 WinForms 可见窗体的依赖。
+
+## 2026-05-06 视角控制回退到 a463ee1
+- 按用户指定，将视角控制链路直接对齐回 `a463ee133a3d6f2a74b5c150d50fc90c58d7f4b0` 的实现。
+- 回退范围只收敛在视角控制相关逻辑：鼠标 yaw 输入映射，以及 `UpdateCameraMatrices()` 的第一视角相机组装；不回退其他帧率、地图预热和 OpenTK 显示链改动。
+
+## 2026-05-06 车体转向方向反号修正
+- 底盘实际转动方向在 `TerrainMotionService.ApplyRotation(...)` 里做统一反号，直接修正车体 `AngleDeg` 的更新方向。
+- 这只影响车体转向，不动云台与视角链路，目标是把“视角正常但车体方向反了”的问题单独修平。
+
+## 2026-05-06 视角与云台共用单一姿态源
+- 第一视角相机重新收敛到玩法侧 `SimulationCombatMath.ComputeFirstPersonCameraPose(...)`，不再在渲染层手工重拼一套独立的相机轴。
+- 同步移除第一视角 pose 里额外的相机 yaw/pitch/roll 叠加，让相机、云台和车体共用同一条姿态链，避免再出现各层各算一套方向的分裂。
+
+## 2026-05-06 第一视角姿态链恢复为旧版完整组装
+- 将第一视角相机从“简化的单向前向量绑定”恢复为旧版完整姿态链：底盘轴、云台轴、枪管挂点、相机偏移和 `FirstPersonCameraYaw/Pitch/Roll` 全部重新参与组装。
+- 目的不是继续猜符号，而是回到此前那套已知正常的完整视角控制路径，避免简化版绑定遗漏局部旋转约定。
+
+## 2026-05-06 buff 判定与 1v1 入口护栏
+- buff 地块的进入判定改为优先看机器人中轴线的地面投影，而不是依赖外扩足迹点，避免车体明明已经压到区域却还没被算作进入。
+- `buff_central_highland` 的占领判断同步复用这条投影链路，保证同一套几何口径同时服务触发与占领。
+- `duel_1v1` 进入大厅和大厅地图预加载都补了异常护栏与日志记录，避免准备世界或地形复用链路抛异常时直接把主窗口带崩。
+
+## 2026-05-06 外观模型 yaw 反向修正
+- 继续把“渲染用 yaw”从物理 yaw 中拆出来，机器人外观模型、枪管、装甲板和 GPU 外观矩阵统一改走反向的外观朝向。
+- 碰撞体、判定和自瞄不跟着改，只修外观层，避免再把正确的碰撞方向一起带偏。
+- 追加修正：`ResolveRuntimeChassisSceneOffset(...)` 恢复使用物理 yaw，不再误跟随外观 yaw。这样整车挂点偏移继续服务控制/视角链，而外观朝向翻转只停留在渲染层。
+
+## 2026-04-28 外观编辑器血条灯条 / AI 帧率与能量机关视觉
+- py 外观编辑器新增 `rear_health_light_*` 参数，可编辑血条灯条长宽高和相对底盘 XYZ 偏置；这些字段同步进入 JSON、运行时实体和局内渲染。
+- 血条灯条颜色改为更鲜艳的高饱和红蓝，血条填充不走金属质感，并保留大弹丸命中后的白闪反馈。
+- 选中普通组件时，左侧参数区下方会列出挂在该组件上的子附加体、锚点和连杆；点击子项可直接切到对应自定义结构编辑。
+- 自定义连杆新增 `length_m` 定长参数；锚点变化只改变连杆方向，设置定长后局内和 py 预览都不会随锚点距离拉伸。
+- 修复步兵形态切换到“麦轮步兵”后世界外观仍可能停留在上一形态的问题：不重建世界时也会立即重新应用步兵 subtype 外观并刷新焦点。
+- 根据 `motion_control_slow.log` 中 AI 英雄自瞄 10-11ms 尖峰，适度降低 AI 自瞄/决策刷新频率；根据 `render_perf.log` 中 modal overlay 约 30ms 的上传帧，暂停/观察者 overlay 不再每帧强制上传。
+- 能量机关细模型环亮起判定从“命中环数必须完全等于视觉环层”改为“命中环数覆盖该环层”，解决命中高环数时环层不亮的问题。
+- 验证：`python -m py_compile py_client\appearance_editor.py` 通过；`dotnet build Simulator.sln -v:minimal` 通过，`0 warnings / 0 errors`。
+- 2026-05-06
+  - 能量机关渲染止血：关闭生成式 ring overlay，只保留原模型圆环，消除“垂直于圆盘面”的额外圆环；后续命中/激活反馈继续走原模型染色链路，不再额外叠 annulus。
+  - 平衡步兵穿墙/穿模收紧：
+    - 提高平移/落体子步进密度，尤其是精细 collision surface 下的高速与腾空场景。
+    - 禁止平衡步兵在未开 `X` 的被动模式下把 wall lip contact 当成可忽略台阶唇边。
+    - 在每个平移子步落位后新增一次更严格的静态接触与 footprint 复检，命中则直接回退该子步，专门堵墙边误判和高台阶穿入。
+  - 补充修正：
+    - 平衡步兵手动移动时，底盘前向现在始终约束在云台前向的 +/-90 度内；左后/右后输入会自动切成前侧朝向配合反向轮速，不再把底盘转到云台身后。
+    - 非部署的大弹丸吊射自瞄收紧了更新间隔和缓存复用窗口，减少锁定后低频刷新导致的错失发射窗口。
+  - 堡垒/梯形高地/中央高地的 buff 投影判定改为按真实世界尺度采样，避免把米制车体尺寸直接当地图单位使用导致漏判。
+  - 第一人称视角回退到“外观挂点 + 云台同姿态”规则：相机位置重新吃机器人外观里的第一人称偏移，朝向不再叠加额外 yaw/pitch/roll，避免相机和云台继续出现相对位移。
+  - 进一步收口：第一人称相机不再额外叠加车体振动偏移，避免快速转镜头时出现相机与云台的瞬时相对漂移。
+  - 底盘/云台职责继续拆分：平衡步兵的底盘快速转向只改 `ChassisTargetYawDeg` 与移动目标，不再顺手打断云台命令速度，确保“控视角就是控云台，底盘单独算”。
+  - 第一人称鼠标输入改为即时进云台，不再走延迟队列；同时去掉手动云台的惯性缓动，让相机与云台严格同步，避免快速转镜头时出现相对角差。
+  - 继续按实机反馈收口输入时序：第一/第三视角的鼠标 yaw/pitch 现在统一先进 `DelayedLookInput` 队列，延迟到点后同一份增量同时作用到云台控制量和视角控制量，避免再出现“视角先到、云台后到”或“小陀螺时视角不变但云台逆向补偿”的分裂链路。
+  - 第一人称的相机姿态进一步收口为“已生效瞄准缓存”：渲染不再每帧自己猜队列或单独插值，而是只读取与云台共用的一份 `yaw/pitch` 缓存；这份缓存只在控制层真正消费到延迟输入时推进一次，避免相机和云台继续各走一条时间线。
+  - Buff 判定回退到地图 region 的中心投影口径，不再拿机器人外扩采样去猜区域；左上角调试与实际脚下触发现在统一按地图渲染出来的 buff 区域来算。
+  - 彻底去掉命中率/弹丸误差的可调链：`42mm` 非部署初速固定回 `12m/s`，弹丸散布与随机掉速移除，选车界面与 OpenGK 中的自瞄修正/命中率显示也一并清掉，底层自瞄修正比例固定为 `1.0`。
+  - 第一人称相机语义重新对齐 py 外观编辑器：恢复 `FirstPersonCameraOffsetX/Y/Z` 作为“挂点位置”参与运行时与外观挂点计算，但仍然不恢复额外 `Yaw/Pitch/Roll` 朝向偏置。这样局内第一视角会回到编辑器里设计的位置，同时继续和枪管/云台严格共用朝向，不再出现相对转动。

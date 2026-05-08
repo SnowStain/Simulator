@@ -245,7 +245,110 @@ public sealed class TerrainEditorService
             facilities.Add(node);
         }
 
-        map["facilities"] = facilities;
+        SaveFacilityDocuments(document, map, facilities);
         _mapPresetService.SaveDocument(document.SourcePath, root);
+    }
+
+    private void SaveFacilityDocuments(MapPresetEditorSettings document, JsonObject map, JsonArray facilities)
+    {
+        IReadOnlyList<string> facilityFiles = EnumerateFacilityFilePaths(map).ToArray();
+        if (facilityFiles.Count == 0)
+        {
+            map["facilities"] = facilities;
+            return;
+        }
+
+        string presetDirectory = Path.GetDirectoryName(document.SourcePath) ?? Directory.GetCurrentDirectory();
+        Dictionary<string, JsonArray> grouped = facilityFiles.ToDictionary(
+            path => path,
+            _ => new JsonArray(),
+            StringComparer.OrdinalIgnoreCase);
+        string fallbackFile = facilityFiles[^1];
+
+        foreach (JsonNode? node in facilities)
+        {
+            if (node is not JsonObject facility)
+            {
+                continue;
+            }
+
+            string targetFile = ResolveFacilityOutputFile(facility, facilityFiles, fallbackFile);
+            grouped[targetFile].Add(facility.DeepClone());
+        }
+
+        foreach ((string relativePath, JsonArray array) in grouped)
+        {
+            string fullPath = Path.IsPathRooted(relativePath)
+                ? relativePath
+                : Path.GetFullPath(Path.Combine(presetDirectory, relativePath));
+            Directory.CreateDirectory(Path.GetDirectoryName(fullPath) ?? presetDirectory);
+            var externalRoot = new JsonObject
+            {
+                ["facilities"] = array,
+            };
+            _mapPresetService.SaveDocument(fullPath, externalRoot);
+        }
+
+        map.Remove("facilities");
+    }
+
+    private static IEnumerable<string> EnumerateFacilityFilePaths(JsonObject map)
+    {
+        if (map["facility_files"] is JsonArray files)
+        {
+            foreach (JsonNode? fileNode in files)
+            {
+                string? value = fileNode?.ToString();
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    yield return value.Trim();
+                }
+            }
+        }
+
+        string? singlePath = map["facilities_path"]?.ToString();
+        if (!string.IsNullOrWhiteSpace(singlePath))
+        {
+            yield return singlePath.Trim();
+        }
+    }
+
+    private static string ResolveFacilityOutputFile(JsonObject facility, IReadOnlyList<string> facilityFiles, string fallbackFile)
+    {
+        string type = facility["type"]?.ToString() ?? string.Empty;
+        string id = facility["id"]?.ToString() ?? string.Empty;
+        string key = $"{type} {id}";
+        if (key.Contains("buff", StringComparison.OrdinalIgnoreCase))
+        {
+            return FindFacilityFile(facilityFiles, "buff", fallbackFile);
+        }
+
+        if (key.Contains("base", StringComparison.OrdinalIgnoreCase)
+            || key.Contains("outpost", StringComparison.OrdinalIgnoreCase)
+            || key.Contains("fort", StringComparison.OrdinalIgnoreCase))
+        {
+            return FindFacilityFile(facilityFiles, "structure", fallbackFile);
+        }
+
+        if (key.Contains("collision", StringComparison.OrdinalIgnoreCase)
+            || key.Contains("block", StringComparison.OrdinalIgnoreCase))
+        {
+            return FindFacilityFile(facilityFiles, "collision", fallbackFile);
+        }
+
+        return FindFacilityFile(facilityFiles, "gameplay", fallbackFile);
+    }
+
+    private static string FindFacilityFile(IReadOnlyList<string> facilityFiles, string keyword, string fallbackFile)
+    {
+        foreach (string file in facilityFiles)
+        {
+            if (file.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+            {
+                return file;
+            }
+        }
+
+        return fallbackFile;
     }
 }

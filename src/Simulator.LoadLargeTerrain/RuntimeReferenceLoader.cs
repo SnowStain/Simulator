@@ -77,6 +77,8 @@ public sealed class RuntimeReferenceScene
     public required IReadOnlyList<RuntimeReferenceComponent> Components { get; init; }
 
     public required IReadOnlyList<RuntimeReferenceComposite> Composites { get; init; }
+
+    public required IReadOnlyDictionary<int, Vector4> ComponentColorOverrides { get; init; }
 }
 
 public static class RuntimeReferenceLoader
@@ -131,6 +133,8 @@ public static class RuntimeReferenceLoader
             Components = scene.Components.Select(ToRuntimeComponent).ToArray(),
             Composites = importedAnnotations?.Composites.Select(ToRuntimeComposite).ToArray()
                 ?? Array.Empty<RuntimeReferenceComposite>(),
+            ComponentColorOverrides = importedAnnotations?.ComponentColorOverrides
+                ?? new Dictionary<int, Vector4>(),
         };
 
         lock (Gate)

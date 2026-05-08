@@ -19,9 +19,26 @@ namespace Simulator.ThreeD;
 
 internal static class SimulatorOpenTkApplication
 {
+    public static bool TryRun(Simulator3dOptions options)
+    {
+        try
+        {
+            Run(options);
+            return true;
+        }
+        catch (Exception exception) when (IsRecoverableOpenTkStartupException(exception))
+        {
+            LogOpenTkShutdownException(exception);
+            return false;
+        }
+    }
+
     public static int Run(Simulator3dOptions options)
     {
-        GameWindowSettings gameWindowSettings = GameWindowSettings.Default;
+        GameWindowSettings gameWindowSettings = new()
+        {
+            UpdateFrequency = 240.0,
+        };
         NativeWindowSettings nativeWindowSettings = new()
         {
             Title = "RM ARTINX A-Soul模拟器",
@@ -29,12 +46,65 @@ internal static class SimulatorOpenTkApplication
             APIVersion = new Version(4, 1),
             Profile = ContextProfile.Compatability,
             Flags = ContextFlags.Default,
+            NumberOfSamples = 4,
+            StartVisible = false,
             Icon = TryCreateWindowIcon(),
         };
 
-        using var window = new SimulatorOpenTkWindow(gameWindowSettings, nativeWindowSettings, options);
-        window.Run();
-        return 0;
+        SimulatorOpenTkWindow? window = null;
+        try
+        {
+            window = new SimulatorOpenTkWindow(gameWindowSettings, nativeWindowSettings, options);
+            window.Run();
+            return 0;
+        }
+        finally
+        {
+            DisposeWindowAfterRun(window);
+        }
+    }
+
+    private static bool IsRecoverableOpenTkStartupException(Exception exception)
+        => exception is GLFWException
+            || exception is InvalidOperationException
+            || exception.GetType().FullName?.Contains("OpenTK", StringComparison.OrdinalIgnoreCase) == true;
+
+    private static void DisposeWindowAfterRun(SimulatorOpenTkWindow? window)
+    {
+        if (window is null)
+        {
+            return;
+        }
+
+        try
+        {
+            window.Dispose();
+        }
+        catch (GLFWException exception)
+        {
+            LogOpenTkShutdownException(exception);
+        }
+        catch (InvalidOperationException exception) when (exception.Message.Contains("WGL", StringComparison.OrdinalIgnoreCase)
+            || exception.Message.Contains("GLFW", StringComparison.OrdinalIgnoreCase)
+            || exception.Message.Contains("context", StringComparison.OrdinalIgnoreCase))
+        {
+            LogOpenTkShutdownException(exception);
+        }
+    }
+
+    private static void LogOpenTkShutdownException(Exception exception)
+    {
+        try
+        {
+            string logDirectory = Path.Combine(AppContext.BaseDirectory, "logs");
+            Directory.CreateDirectory(logDirectory);
+            File.AppendAllText(
+                Path.Combine(logDirectory, "opentk_shutdown.log"),
+                $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {exception.GetType().Name}: {exception.Message}{Environment.NewLine}");
+        }
+        catch (Exception logException) when (logException is IOException or UnauthorizedAccessException or DirectoryNotFoundException)
+        {
+        }
     }
 
     private static WindowIcon? TryCreateWindowIcon()
@@ -124,6 +194,7 @@ internal sealed class SimulatorOpenTkWindow : GameWindow
         TkKeys.J,
         TkKeys.K,
         TkKeys.L,
+        TkKeys.E,
         TkKeys.N,
         TkKeys.P,
         TkKeys.Q,
@@ -134,6 +205,8 @@ internal sealed class SimulatorOpenTkWindow : GameWindow
         TkKeys.W,
         TkKeys.X,
         TkKeys.Z,
+        TkKeys.Backspace,
+        TkKeys.Delete,
         TkKeys.PageUp,
         TkKeys.PageDown,
         TkKeys.LeftShift,
@@ -153,10 +226,30 @@ internal sealed class SimulatorOpenTkWindow : GameWindow
         TkKeys.F9,
         TkKeys.Semicolon,
         TkKeys.Period,
+        TkKeys.Minus,
+        TkKeys.Slash,
         TkKeys.D1,
         TkKeys.D2,
         TkKeys.D3,
         TkKeys.D4,
+        TkKeys.D5,
+        TkKeys.D6,
+        TkKeys.D7,
+        TkKeys.D8,
+        TkKeys.D9,
+        TkKeys.D0,
+        TkKeys.KeyPad0,
+        TkKeys.KeyPad1,
+        TkKeys.KeyPad2,
+        TkKeys.KeyPad3,
+        TkKeys.KeyPad4,
+        TkKeys.KeyPad5,
+        TkKeys.KeyPad6,
+        TkKeys.KeyPad7,
+        TkKeys.KeyPad8,
+        TkKeys.KeyPad9,
+        TkKeys.KeyPadDecimal,
+        TkKeys.KeyPadSubtract,
     };
 
     private readonly Simulator3dForm _runtime;
@@ -182,13 +275,24 @@ internal sealed class SimulatorOpenTkWindow : GameWindow
 
     protected override void OnLoad()
     {
-        base.OnLoad();
-        VSync = VSyncMode.Off;
-        GL.ClearColor(0.07f, 0.09f, 0.12f, 1.0f);
-        _shaderProgram = BuildShaderProgram();
-        InitializeQuadBuffers();
-        EnsureFrameSurface();
-        _runtime.AttachExternalBorrowedGpuContext();
+        try
+        {
+            base.OnLoad();
+            VSync = VSyncMode.Off;
+            GL.ClearColor(0.07f, 0.09f, 0.12f, 1.0f);
+            GL.Enable(EnableCap.Multisample);
+            _shaderProgram = BuildShaderProgram();
+            InitializeQuadBuffers();
+            EnsureFrameSurface();
+            _runtime.AttachExternalBorrowedGpuContext();
+            _runtime.ExternalPrepareInitialPresentation();
+            IsVisible = true;
+        }
+        catch (Exception exception)
+        {
+            ReportOpenTkFailure("OnLoad", exception);
+            Close();
+        }
     }
 
     protected override void OnResize(ResizeEventArgs e)
@@ -201,75 +305,98 @@ internal sealed class SimulatorOpenTkWindow : GameWindow
 
     protected override void OnUpdateFrame(FrameEventArgs args)
     {
-        base.OnUpdateFrame(args);
-        if (_runtime.ExternalRuntimeClosed)
+        try
         {
-            Close();
-            return;
+            base.OnUpdateFrame(args);
+            if (_runtime.ExternalRuntimeClosed)
+            {
+                Close();
+                return;
+            }
+
+            ProcessKeyboard();
+            ProcessMouse();
+            _runtime.ExternalAdvanceFrame();
+
+            bool captureMouse = IsFocused && _runtime.ShouldCaptureMouseExternally();
+            CursorState = captureMouse ? CursorState.Grabbed : CursorState.Normal;
         }
-
-        ProcessKeyboard();
-        ProcessMouse();
-        _runtime.ExternalAdvanceFrame();
-
-        bool captureMouse = IsFocused && _runtime.ShouldCaptureMouseExternally();
-        CursorState = captureMouse ? CursorState.Grabbed : CursorState.Normal;
+        catch (Exception exception)
+        {
+            ReportOpenTkFailure("OnUpdateFrame", exception);
+            Close();
+        }
     }
 
     protected override void OnRenderFrame(FrameEventArgs args)
     {
-        base.OnRenderFrame(args);
-
-        GL.UseProgram(0);
-        GL.BindVertexArray(0);
-        GL.BindTexture(TextureTarget.Texture2D, 0);
-        if (_runtime.ExternalRenderToCurrentOpenGlContext())
+        try
         {
+            base.OnRenderFrame(args);
+
+            GL.UseProgram(0);
+            GL.BindVertexArray(0);
+            GL.BindTexture(TextureTarget.Texture2D, 0);
+            if (_runtime.ExternalRenderToCurrentOpenGlContext())
+            {
+                SwapBuffers();
+                return;
+            }
+
+            EnsureFrameSurface();
+            if (_frameGraphics is not null)
+            {
+                _runtime.ExternalRender(_frameGraphics);
+                UploadFrameTexture();
+            }
+
+            GL.Clear(ClearBufferMask.ColorBufferBit);
+            GL.UseProgram(_shaderProgram);
+            GL.BindVertexArray(_vertexArray);
+            GL.BindBuffer(BufferTarget.ArrayBuffer, _vertexBuffer);
+            GL.ActiveTexture(TextureUnit.Texture0);
+            GL.BindTexture(TextureTarget.Texture2D, _frameTexture);
+            GL.DrawArrays(PrimitiveType.TriangleStrip, 0, 4);
             SwapBuffers();
-            return;
         }
-
-        EnsureFrameSurface();
-        if (_frameGraphics is not null)
+        catch (Exception exception)
         {
-            _runtime.ExternalRender(_frameGraphics);
-            UploadFrameTexture();
+            ReportOpenTkFailure("OnRenderFrame", exception);
+            Close();
         }
-
-        GL.Clear(ClearBufferMask.ColorBufferBit);
-        GL.UseProgram(_shaderProgram);
-        GL.BindVertexArray(_vertexArray);
-        GL.BindBuffer(BufferTarget.ArrayBuffer, _vertexBuffer);
-        GL.ActiveTexture(TextureUnit.Texture0);
-        GL.BindTexture(TextureTarget.Texture2D, _frameTexture);
-        GL.DrawArrays(PrimitiveType.TriangleStrip, 0, 4);
-        SwapBuffers();
     }
 
     protected override void OnUnload()
     {
-        base.OnUnload();
-        _frameGraphics?.Dispose();
-        _frameBitmap?.Dispose();
-        _runtime.Dispose();
-        if (_frameTexture != 0)
+        try
         {
-            GL.DeleteTexture(_frameTexture);
-        }
+            base.OnUnload();
+            _frameGraphics?.Dispose();
+            _frameBitmap?.Dispose();
+            _runtime.Dispose();
+            if (_frameTexture != 0)
+            {
+                GL.DeleteTexture(_frameTexture);
+            }
 
-        if (_vertexBuffer != 0)
-        {
-            GL.DeleteBuffer(_vertexBuffer);
-        }
+            if (_vertexBuffer != 0)
+            {
+                GL.DeleteBuffer(_vertexBuffer);
+            }
 
-        if (_vertexArray != 0)
-        {
-            GL.DeleteVertexArray(_vertexArray);
-        }
+            if (_vertexArray != 0)
+            {
+                GL.DeleteVertexArray(_vertexArray);
+            }
 
-        if (_shaderProgram != 0)
+            if (_shaderProgram != 0)
+            {
+                GL.DeleteProgram(_shaderProgram);
+            }
+        }
+        catch (Exception exception)
         {
-            GL.DeleteProgram(_shaderProgram);
+            ReportOpenTkFailure("OnUnload", exception);
         }
     }
 
@@ -334,8 +461,8 @@ internal sealed class SimulatorOpenTkWindow : GameWindow
 
     private void ProcessMouse()
     {
-        Point location = new((int)Math.Round(MousePosition.X), (int)Math.Round(MousePosition.Y));
-        Point delta = new((int)Math.Round(MouseState.Delta.X), (int)Math.Round(MouseState.Delta.Y));
+        Point location = ResolveRuntimeMouseLocation(MousePosition);
+        Point delta = ResolveRuntimeMouseDelta(MouseState.Delta);
 
         HandleMouseButton(TkMouseButton.Left, WinFormsMouseButtons.Left, location);
         HandleMouseButton(TkMouseButton.Right, WinFormsMouseButtons.Right, location);
@@ -350,6 +477,18 @@ internal sealed class SimulatorOpenTkWindow : GameWindow
         bool capturedLook = IsFocused && _runtime.ShouldCaptureMouseExternally();
         _runtime.ExternalMouseMove(location, delta, capturedLook);
     }
+
+    private Point ResolveRuntimeMouseLocation(Vector2 mousePosition)
+    {
+        int width = Math.Max(1, ClientSize.X);
+        int height = Math.Max(1, ClientSize.Y);
+        int x = Math.Clamp((int)Math.Round(mousePosition.X), 0, width - 1);
+        int y = Math.Clamp((int)Math.Round(mousePosition.Y), 0, height - 1);
+        return new Point(x, y);
+    }
+
+    private static Point ResolveRuntimeMouseDelta(Vector2 delta)
+        => new((int)Math.Round(delta.X), (int)Math.Round(delta.Y));
 
     private void HandleMouseButton(TkMouseButton button, WinFormsMouseButtons mapped, Point location)
     {
@@ -452,6 +591,21 @@ internal sealed class SimulatorOpenTkWindow : GameWindow
         }
     }
 
+    private static void ReportOpenTkFailure(string stage, Exception exception)
+    {
+        try
+        {
+            string logDirectory = Path.Combine(AppContext.BaseDirectory, "logs");
+            Directory.CreateDirectory(logDirectory);
+            File.AppendAllText(
+                Path.Combine(logDirectory, "opentk_crash.log"),
+                $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {stage} {exception.GetType().Name}: {exception.Message}{Environment.NewLine}{exception}{Environment.NewLine}");
+        }
+        catch
+        {
+        }
+    }
+
     private void InitializeQuadBuffers()
     {
         float[] vertices =
@@ -494,7 +648,9 @@ internal sealed class SimulatorOpenTkWindow : GameWindow
             TkKeys.J => WinFormsKeys.J,
             TkKeys.K => WinFormsKeys.K,
             TkKeys.L => WinFormsKeys.L,
+            TkKeys.E => WinFormsKeys.E,
             TkKeys.N => WinFormsKeys.N,
+            TkKeys.O => WinFormsKeys.O,
             TkKeys.P => WinFormsKeys.P,
             TkKeys.Q => WinFormsKeys.Q,
             TkKeys.R => WinFormsKeys.R,
@@ -504,6 +660,8 @@ internal sealed class SimulatorOpenTkWindow : GameWindow
             TkKeys.W => WinFormsKeys.W,
             TkKeys.X => WinFormsKeys.X,
             TkKeys.Z => WinFormsKeys.Z,
+            TkKeys.Backspace => WinFormsKeys.Back,
+            TkKeys.Delete => WinFormsKeys.Delete,
             TkKeys.PageUp => WinFormsKeys.PageUp,
             TkKeys.PageDown => WinFormsKeys.PageDown,
             TkKeys.LeftShift => WinFormsKeys.LShiftKey,
@@ -523,10 +681,30 @@ internal sealed class SimulatorOpenTkWindow : GameWindow
             TkKeys.F9 => WinFormsKeys.F9,
             TkKeys.Semicolon => WinFormsKeys.Oem1,
             TkKeys.Period => WinFormsKeys.OemPeriod,
+            TkKeys.Minus => WinFormsKeys.OemMinus,
+            TkKeys.Slash => WinFormsKeys.OemQuestion,
             TkKeys.D1 => WinFormsKeys.D1,
             TkKeys.D2 => WinFormsKeys.D2,
             TkKeys.D3 => WinFormsKeys.D3,
             TkKeys.D4 => WinFormsKeys.D4,
+            TkKeys.D5 => WinFormsKeys.D5,
+            TkKeys.D6 => WinFormsKeys.D6,
+            TkKeys.D7 => WinFormsKeys.D7,
+            TkKeys.D8 => WinFormsKeys.D8,
+            TkKeys.D9 => WinFormsKeys.D9,
+            TkKeys.D0 => WinFormsKeys.D0,
+            TkKeys.KeyPad0 => WinFormsKeys.NumPad0,
+            TkKeys.KeyPad1 => WinFormsKeys.NumPad1,
+            TkKeys.KeyPad2 => WinFormsKeys.NumPad2,
+            TkKeys.KeyPad3 => WinFormsKeys.NumPad3,
+            TkKeys.KeyPad4 => WinFormsKeys.NumPad4,
+            TkKeys.KeyPad5 => WinFormsKeys.NumPad5,
+            TkKeys.KeyPad6 => WinFormsKeys.NumPad6,
+            TkKeys.KeyPad7 => WinFormsKeys.NumPad7,
+            TkKeys.KeyPad8 => WinFormsKeys.NumPad8,
+            TkKeys.KeyPad9 => WinFormsKeys.NumPad9,
+            TkKeys.KeyPadDecimal => WinFormsKeys.Decimal,
+            TkKeys.KeyPadSubtract => WinFormsKeys.Subtract,
             _ => WinFormsKeys.None,
         };
 

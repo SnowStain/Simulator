@@ -1,32 +1,32 @@
-{
-  "body_length_m": 0.55,
+﻿{
+  "body_length_m": 0.48,
   "body_width_m": 0.5,
   "body_height_m": 0.14,
   "body_clearance_m": 0.13,
   "wheel_radius_m": 0.08,
-  "gimbal_length_m": 0.3,
-  "gimbal_width_m": 0.15,
-  "gimbal_body_height_m": 0.11,
+  "gimbal_length_m": 0.19,
+  "gimbal_width_m": 0.12,
+  "gimbal_body_height_m": 0.09,
   "gimbal_mount_gap_m": 0.1,
-  "gimbal_mount_length_m": 0.1,
-  "gimbal_mount_width_m": 0.1,
-  "gimbal_mount_height_m": 0.06,
-  "barrel_length_m": 0.13,
+  "gimbal_mount_length_m": 0.04,
+  "gimbal_mount_width_m": 0.04,
+  "gimbal_mount_height_m": 0.03,
+  "barrel_length_m": 0.09,
   "barrel_radius_m": 0.015,
-  "gimbal_height_m": 0.485,
+  "gimbal_height_m": 0.445,
   "gimbal_offset_x_m": 0.0,
   "gimbal_offset_y_m": 0.0,
-  "armor_plate_width_m": 0.03,
-  "armor_plate_length_m": 0.16,
-  "armor_plate_height_m": 0.16,
+  "armor_plate_width_m": 0.04,
+  "armor_plate_length_m": 0.13,
+  "armor_plate_height_m": 0.13,
   "armor_plate_gap_m": 0.016,
-  "armor_light_length_m": 0.02,
+  "armor_light_length_m": 0.013,
   "armor_light_width_m": 0.005,
-  "armor_light_height_m": 0.1,
-  "barrel_light_length_m": 0.11,
-  "barrel_light_width_m": 0.015,
-  "barrel_light_height_m": 0.03,
-  "body_render_width_scale": 0.76,
+  "armor_light_height_m": 0.08,
+  "barrel_light_length_m": 0.06,
+  "barrel_light_width_m": 0.013,
+  "barrel_light_height_m": 0.02,
+  "body_render_width_scale": 0.78,
   "wheel_style": "mecanum",
   "suspension_style": "four_bar",
   "arm_style": "none",
@@ -34,32 +34,38 @@
   "rear_climb_assist_style": "balance_leg",
   "role_key": "sentry",
   "body_color_rgb": [
-    166,
-    174,
-    186
+    92,
+    96,
+    108
   ],
   "turret_color_rgb": [
-    232,
-    232,
-    236
+    28,
+    32,
+    38
   ],
   "armor_color_rgb": [
-    224,
-    229,
-    234
+    28,
+    32,
+    38
   ],
   "wheel_color_rgb": [
     44,
     44,
     44
   ],
-  "front_climb_assist_top_length_m": 0.07,
-  "front_climb_assist_bottom_length_m": 0.03,
+  "rear_health_light_length_m": 0.0,
+  "rear_health_light_width_m": 0.0,
+  "rear_health_light_height_m": 0.0,
+  "rear_health_light_offset_x_m": 0.0,
+  "rear_health_light_offset_y_m": 0.0,
+  "rear_health_light_offset_z_m": 0.0,
+  "front_climb_assist_top_length_m": 0.095,
+  "front_climb_assist_bottom_length_m": 0.045,
   "front_climb_assist_plate_width_m": 0.018,
   "front_climb_assist_plate_height_m": 0.185,
   "front_climb_assist_forward_offset_m": 0.0,
   "front_climb_assist_inner_offset_m": 0.03,
-  "rear_climb_assist_upper_length_m": 0.175,
+  "rear_climb_assist_upper_length_m": 0.15,
   "rear_climb_assist_lower_length_m": 0.195,
   "rear_climb_assist_upper_width_m": 0.026,
   "rear_climb_assist_upper_height_m": 0.02,
@@ -67,27 +73,766 @@
   "rear_climb_assist_lower_height_m": 0.022,
   "rear_climb_assist_mount_offset_x_m": 0.075,
   "rear_climb_assist_mount_height_m": 0.22,
-  "rear_climb_assist_inner_offset_m": 0.015,
+  "rear_climb_assist_inner_offset_m": 0.005,
   "rear_climb_assist_upper_pair_gap_m": 0.06,
   "rear_climb_assist_hinge_radius_m": 0.018,
   "rear_climb_assist_knee_min_deg": 42.0,
   "rear_climb_assist_knee_max_deg": 132.0,
+  "body_front_tilt_deg": 0.0,
+  "body_rear_tilt_deg": 0.0,
+  "body_left_tilt_deg": 0.0,
+  "body_right_tilt_deg": 0.0,
+  "gimbal_relative_offset_x_m": 0.0,
+  "gimbal_relative_offset_y_m": 0.0,
+  "gimbal_relative_offset_z_m": 0.0,
+  "barrel_offset_x_m": 0.03,
+  "barrel_offset_y_m": -0.01,
+  "barrel_offset_z_m": 0.0,
+  "barrel_light_offset_x_m": 0.0,
+  "barrel_light_offset_y_m": 0.0,
+  "barrel_light_offset_z_m": 0.0,
+  "barrel_octagon_long_edge_m": 0.03,
+  "barrel_octagon_short_edge_m": 0.010799999999999999,
+  "barrel_friction_wheel_radius_m": 0.027,
+  "barrel_friction_wheel_width_m": 0.018,
+  "barrel_friction_wheel_height_m": 0.019,
+  "barrel_friction_wheel_offset_x_m": -0.01,
+  "barrel_friction_wheel_offset_y_m": 0.0,
+  "barrel_friction_wheel_offset_z_m": 0.04,
+  "barrel_friction_wheel_yaw_deg": 0.0,
+  "barrel_friction_wheel_pitch_deg": 90.0,
+  "barrel_friction_wheel_roll_deg": 0.0,
+  "first_person_camera_offset_x_m": 0.03,
+  "first_person_camera_offset_y_m": 0.04,
+  "first_person_camera_offset_z_m": 0.0,
+  "first_person_camera_yaw_deg": 0.0,
+  "first_person_camera_pitch_deg": 0.0,
+  "first_person_camera_roll_deg": 0.0,
+  "armor_plate_offsets_m": [
+    [
+      0.0,
+      -0.01,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      -0.02,
+      0.03
+    ],
+    [
+      0.0,
+      -0.02,
+      -0.03
+    ]
+  ],
+  "armor_plate_rotations_ypr_deg": [
+    [
+      0.0,
+      5.0,
+      0.0
+    ],
+    [
+      0.0,
+      5.0,
+      0.0
+    ],
+    [
+      0.0,
+      5.0,
+      0.0
+    ],
+    [
+      0.0,
+      5.0,
+      0.0
+    ]
+  ],
+  "armor_plate_thickness_m": 0.015,
+  "armor_light_offsets_m": [
+    [
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0
+    ]
+  ],
+  "armor_light_plate_distances_m": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "barrel_friction_wheel_offsets_m": [
+    [
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0
+    ]
+  ],
+  "custom_primitives": [
+    {
+      "id": "balance_primitive_06",
+      "name": "附加体 6",
+      "parent_part": "turret",
+      "component_scope": "single",
+      "component_index": 0,
+      "primitive_type": "box",
+      "size_m": [
+        0.12,
+        0.1,
+        0.09
+      ],
+      "offset_m": [
+        -0.08,
+        0.015,
+        0.0
+      ],
+      "rotation_ypr_deg": [
+        0.0,
+        45.0,
+        0.0
+      ],
+      "color_rgb": [
+        28,
+        32,
+        38
+      ]
+    },
+    {
+      "id": "balance_primitive_06_copy_8",
+      "name": "附加体 6 副本",
+      "parent_part": "turret",
+      "component_scope": "single",
+      "component_index": 0,
+      "primitive_type": "box",
+      "size_m": [
+        0.12,
+        0.12,
+        0.06
+      ],
+      "offset_m": [
+        -0.08,
+        -0.01,
+        -0.07
+      ],
+      "rotation_ypr_deg": [
+        0.0,
+        45.0,
+        0.0
+      ],
+      "color_rgb": [
+        92,
+        96,
+        108
+      ]
+    },
+    {
+      "id": "balance_primitive_06_copy_7",
+      "name": "附加体 6 副本",
+      "parent_part": "turret",
+      "component_scope": "single",
+      "component_index": 0,
+      "primitive_type": "box",
+      "size_m": [
+        0.14,
+        0.1,
+        0.09
+      ],
+      "offset_m": [
+        0.01,
+        0.04,
+        0.0
+      ],
+      "rotation_ypr_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "color_rgb": [
+        28,
+        32,
+        38
+      ]
+    },
+    {
+      "id": "balance_primitive_09",
+      "name": "附加体 9",
+      "parent_part": "mount",
+      "component_scope": "single",
+      "component_index": 0,
+      "primitive_type": "box",
+      "size_m": [
+        0.042,
+        0.14,
+        0.05
+      ],
+      "offset_m": [
+        -0.01,
+        0.07,
+        0.0
+      ],
+      "rotation_ypr_deg": [
+        0.0,
+        30.0,
+        0.0
+      ],
+      "color_rgb": [
+        44,
+        44,
+        44
+      ]
+    },
+    {
+      "id": "balance_primitive_09_copy_10",
+      "name": "附加体 9 副本",
+      "parent_part": "mount",
+      "component_scope": "single",
+      "component_index": 0,
+      "primitive_type": "box",
+      "size_m": [
+        0.032,
+        0.15,
+        0.05
+      ],
+      "offset_m": [
+        0.0,
+        -0.04,
+        0.0
+      ],
+      "rotation_ypr_deg": [
+        0.0,
+        -22.0,
+        0.0
+      ],
+      "color_rgb": [
+        44,
+        44,
+        44
+      ]
+    },
+    {
+      "id": "balance_primitive_12",
+      "name": "附加体 12",
+      "parent_part": "turret",
+      "component_scope": "single",
+      "component_index": 0,
+      "primitive_type": "cylinder",
+      "size_m": [
+        0.1,
+        0.04,
+        0.07
+      ],
+      "offset_m": [
+        -0.11,
+        -0.03,
+        0.0
+      ],
+      "rotation_ypr_deg": [
+        90.0,
+        0.0,
+        0.0
+      ],
+      "color_rgb": [
+        44,
+        44,
+        44
+      ]
+    },
+    {
+      "id": "balance_primitive_12_copy_14",
+      "name": "附加体 12 副本",
+      "parent_part": "turret",
+      "component_scope": "single",
+      "component_index": 0,
+      "primitive_type": "cylinder",
+      "size_m": [
+        0.09,
+        0.03,
+        0.03
+      ],
+      "offset_m": [
+        -0.067,
+        0.078,
+        0.0
+      ],
+      "rotation_ypr_deg": [
+        90.0,
+        0.0,
+        0.0
+      ],
+      "color_rgb": [
+        28,
+        32,
+        38
+      ]
+    },
+    {
+      "id": "balance_primitive_13",
+      "name": "附加体 13",
+      "parent_part": "turret",
+      "component_scope": "single",
+      "component_index": 0,
+      "primitive_type": "box",
+      "size_m": [
+        0.17,
+        0.04,
+        0.07
+      ],
+      "offset_m": [
+        0.07,
+        0.03,
+        0.0
+      ],
+      "rotation_ypr_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "color_rgb": [
+        92,
+        96,
+        108
+      ]
+    },
+    {
+      "id": "balance_primitive_13_copy_19",
+      "name": "附加体 13 副本",
+      "parent_part": "turret",
+      "component_scope": "single",
+      "component_index": 0,
+      "primitive_type": "box",
+      "size_m": [
+        0.17,
+        0.04,
+        0.04
+      ],
+      "offset_m": [
+        0.06,
+        0.06,
+        0.0
+      ],
+      "rotation_ypr_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "color_rgb": [
+        44,
+        44,
+        44
+      ]
+    },
+    {
+      "id": "balance_primitive_13_copy_19_copy_19",
+      "name": "附加体 13 副本 副本",
+      "parent_part": "turret",
+      "component_scope": "single",
+      "component_index": 0,
+      "primitive_type": "cylinder",
+      "size_m": [
+        0.013,
+        0.02,
+        0.02
+      ],
+      "offset_m": [
+        0.15,
+        0.065,
+        0.0
+      ],
+      "rotation_ypr_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "color_rgb": [
+        42,
+        158,
+        255
+      ]
+    },
+    {
+      "id": "balance_primitive_13_copy_19_copy_19_copy_20",
+      "name": "附加体 13 副本 副本 副本",
+      "parent_part": "turret",
+      "component_scope": "single",
+      "component_index": 0,
+      "primitive_type": "box",
+      "size_m": [
+        0.003,
+        0.03,
+        0.04
+      ],
+      "offset_m": [
+        0.16,
+        0.03,
+        0.0
+      ],
+      "rotation_ypr_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "color_rgb": [
+        58,
+        112,
+        232
+      ]
+    },
+    {
+      "id": "primitive_10",
+      "name": "附加体 10",
+      "parent_part": "body",
+      "component_scope": "single",
+      "component_index": 0,
+      "primitive_type": "box",
+      "size_m": [
+        0.065,
+        0.08,
+        0.065
+      ],
+      "offset_m": [
+        0.0,
+        0.06,
+        0.16
+      ],
+      "rotation_ypr_deg": [
+        0.0,
+        0.0,
+        45.0
+      ],
+      "color_rgb": [
+        232,
+        232,
+        236
+      ]
+    },
+    {
+      "id": "primitive_10_copy_11",
+      "name": "附加体 10 副本",
+      "parent_part": "body",
+      "component_scope": "single",
+      "component_index": 0,
+      "primitive_type": "box",
+      "size_m": [
+        0.065,
+        0.08,
+        0.065
+      ],
+      "offset_m": [
+        0.0,
+        0.06,
+        -0.16
+      ],
+      "rotation_ypr_deg": [
+        0.0,
+        0.0,
+        -45.0
+      ],
+      "color_rgb": [
+        232,
+        232,
+        236
+      ]
+    },
+    {
+      "id": "primitive_12",
+      "name": "附加体 12",
+      "parent_part": "body",
+      "component_scope": "single",
+      "component_index": 0,
+      "primitive_type": "cylinder",
+      "size_m": [
+        0.02,
+        0.03,
+        0.07
+      ],
+      "offset_m": [
+        0.0,
+        0.08,
+        0.0
+      ],
+      "rotation_ypr_deg": [
+        0.0,
+        90.0,
+        0.0
+      ],
+      "color_rgb": [
+        224,
+        229,
+        234
+      ]
+    },
+    {
+      "id": "primitive_12_copy_13",
+      "name": "附加体 12 副本",
+      "parent_part": "body",
+      "component_scope": "single",
+      "component_index": 0,
+      "primitive_type": "box",
+      "size_m": [
+        0.01,
+        0.13,
+        0.36
+      ],
+      "offset_m": [
+        0.0,
+        0.08,
+        0.0
+      ],
+      "rotation_ypr_deg": [
+        0.0,
+        90.0,
+        0.0
+      ],
+      "color_rgb": [
+        28,
+        32,
+        38
+      ]
+    },
+    {
+      "id": "primitive_14",
+      "name": "附加体 14",
+      "parent_part": "front_climb",
+      "component_scope": "all",
+      "component_index": 0,
+      "primitive_type": "box",
+      "size_m": [
+        0.19,
+        0.01,
+        0.04
+      ],
+      "offset_m": [
+        0.04,
+        -0.03,
+        0.0
+      ],
+      "rotation_ypr_deg": [
+        0.0,
+        73.0,
+        0.0
+      ],
+      "color_rgb": [
+        28,
+        32,
+        38
+      ]
+    },
+    {
+      "id": "primitive_16",
+      "name": "附加体 16",
+      "parent_part": "front_climb",
+      "component_scope": "all",
+      "component_index": 0,
+      "primitive_type": "cylinder",
+      "size_m": [
+        0.02,
+        0.04,
+        0.02
+      ],
+      "offset_m": [
+        0.06,
+        0.09,
+        0.0
+      ],
+      "rotation_ypr_deg": [
+        90.0,
+        0.0,
+        0.0
+      ],
+      "color_rgb": [
+        188,
+        192,
+        198
+      ]
+    },
+    {
+      "id": "primitive_18",
+      "name": "附加体 18",
+      "parent_part": "turret",
+      "component_scope": "single",
+      "component_index": 0,
+      "primitive_type": "box",
+      "size_m": [
+        0.06,
+        0.03,
+        0.06
+      ],
+      "offset_m": [
+        0.12,
+        -0.01,
+        0.0
+      ],
+      "rotation_ypr_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "color_rgb": [
+        188,
+        192,
+        198
+      ]
+    }
+  ],
+  "custom_anchors": [
+    {
+      "id": "balance_anchor_01",
+      "name": "锚点 1",
+      "parent_part": "turret",
+      "anchor_mode": "fixed",
+      "parent_link_id": "",
+      "link_position_ratio": 0.5,
+      "component_scope": "single",
+      "component_index": 0,
+      "offset_m": [
+        -0.11,
+        -0.03,
+        0.04
+      ],
+      "rotation_ypr_deg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "balance_anchor_01_copy_3",
+      "name": "锚点 1 副本",
+      "parent_part": "turret",
+      "anchor_mode": "fixed",
+      "parent_link_id": "",
+      "link_position_ratio": 0.5,
+      "component_scope": "single",
+      "component_index": 0,
+      "offset_m": [
+        -0.11,
+        -0.075,
+        0.04
+      ],
+      "rotation_ypr_deg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "balance_anchor_01_copy_2",
+      "name": "锚点 1 副本",
+      "parent_part": "mount",
+      "anchor_mode": "fixed",
+      "parent_link_id": "",
+      "link_position_ratio": 0.5,
+      "component_scope": "single",
+      "component_index": 0,
+      "offset_m": [
+        0.0,
+        0.04,
+        0.04
+      ],
+      "rotation_ypr_deg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  ],
+  "custom_links": [
+    {
+      "id": "balance_link_01",
+      "name": "连杆 1",
+      "start_anchor_id": "balance_anchor_01",
+      "end_anchor_id": "balance_anchor_01_copy_3",
+      "radius_m": 0.008,
+      "width_m": 0.016,
+      "thickness_m": 0.016,
+      "length_m": 0.0,
+      "color_rgb": [
+        44,
+        44,
+        44
+      ]
+    },
+    {
+      "id": "balance_link_02",
+      "name": "连杆 2",
+      "start_anchor_id": "balance_anchor_01_copy_3",
+      "end_anchor_id": "balance_anchor_01_copy_2",
+      "radius_m": 0.008,
+      "width_m": 0.016,
+      "thickness_m": 0.016,
+      "length_m": 0.0,
+      "color_rgb": [
+        44,
+        44,
+        44
+      ]
+    }
+  ],
   "custom_wheel_positions_m": [
     [
       -0.215,
       -0.28
     ],
     [
-      0.215,
-      -0.26
+      0.205,
+      -0.27
     ],
     [
       -0.215,
       0.25
     ],
     [
-      0.215,
-      0.26
+      0.205,
+      0.27
     ]
   ],
   "rear_climb_assist_knee_direction": "front"

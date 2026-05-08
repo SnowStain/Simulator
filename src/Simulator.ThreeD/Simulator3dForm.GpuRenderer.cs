@@ -4,6 +4,7 @@ using System.Drawing.Text;
 using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using System.Threading;
 using LoadLargeTerrain;
 using Simulator.Assets;
 using Simulator.Core;
@@ -23,6 +24,7 @@ internal sealed partial class Simulator3dForm
     private const int GlTriangles = 0x0004;
     private const int GlQuads = 0x0007;
     private const int GlLines = 0x0001;
+    private const int GlLineStrip = 0x0003;
     private const int GlLineLoop = 0x0002;
     private const int GlModelView = 0x1700;
     private const int GlProjection = 0x1701;
@@ -41,14 +43,30 @@ internal sealed partial class Simulator3dForm
     private const int GlTextureMinFilter = 0x2801;
     private const int GlTextureMagFilter = 0x2800;
     private const int GlLinear = 0x2601;
+    private const int GlLinearMipmapLinear = 0x2703;
     private const int GlNearest = 0x2600;
     private const int GlRgba = 0x1908;
     private const int GlLuminance = 0x1909;
     private const int GlBgra = 0x80E1;
     private const int GlUnsignedByte = 0x1401;
     private const int GlFloat = 0x1406;
+    private const int GlPackAlignment = 0x0D05;
     private const int GlVertexArray = 0x8074;
+    private const int GlNormalArray = 0x8075;
     private const int GlColorArray = 0x8076;
+    private const int GlLighting = 0x0B50;
+    private const int GlLight0 = 0x4000;
+    private const int GlLight1 = 0x4001;
+    private const int GlColorMaterial = 0x0B57;
+    private const int GlNormalize = 0x0BA1;
+    private const int GlFrontAndBack = 0x0408;
+    private const int GlAmbientAndDiffuse = 0x1602;
+    private const int GlAmbient = 0x1200;
+    private const int GlDiffuse = 0x1201;
+    private const int GlSpecular = 0x1202;
+    private const int GlPosition = 0x1203;
+    private const int GlShininess = 0x1601;
+    private const int GlSmooth = 0x1D01;
     private const int GlArrayBuffer = 0x8892;
     private const int GlElementArrayBuffer = 0x8893;
     private const int GlStaticDraw = 0x88E4;
@@ -56,12 +74,13 @@ internal sealed partial class Simulator3dForm
     private const int GlUnsignedInt = 0x1405;
     private const float GpuTerrainChunkSizeM = 128.0f;
     private const float TerrainCacheGpuChunkSizeM = 2.0f;
-    private const int TerrainCacheGpuMaxUploadsPerFrame = 8;
-    private const int TerrainCacheGpuMaxUploadVerticesPerFrame = 6_000_000;
+    private const int TerrainCacheGpuMaxUploadsPerFrame = 3;
+    private const int TerrainCacheGpuMaxUploadVerticesPerFrame = 1_250_000;
     private const int TerrainCacheGpuMaxResidentVertices = 36_000_000;
     private const float GpuTerrainSmoothFlatSkipHeightM = 0.048f;
-    private const double GpuOverlayUploadIntervalSec = 1.0 / 12.0;
-    private const double GpuThirdPersonOverlayUploadIntervalSec = 1.0 / 5.0;
+    private const double GpuOverlayUploadIntervalSec = 1.0 / 5.0;
+    private const double GpuEditorOverlayUploadIntervalSec = 1.0 / 18.0;
+    private const double GpuThirdPersonOverlayUploadIntervalSec = 1.0 / 2.5;
     private const double GpuOverlaySlowPhaseThresholdMs = 0.75;
 
     private enum GpuDynamicBatchKind
@@ -69,6 +88,12 @@ internal sealed partial class Simulator3dForm
         Entity,
         Facility,
         Projectile,
+    }
+
+    private enum GpuOverlayLayerKind
+    {
+        Scene,
+        Ui,
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -114,6 +139,14 @@ internal sealed partial class Simulator3dForm
     private Graphics? _gpuOverlayGraphics;
     private float _gpuOverlaySurfaceScale = 1f;
     private Size _gpuOverlayLogicalSize = Size.Empty;
+    private Bitmap? _gpuOverlaySceneBitmap;
+    private Graphics? _gpuOverlaySceneGraphics;
+    private int _gpuOverlaySceneTexture;
+    private Size _gpuOverlaySceneTextureSize = Size.Empty;
+    private Bitmap? _gpuOverlayUiBitmap;
+    private Graphics? _gpuOverlayUiGraphics;
+    private int _gpuOverlayUiTexture;
+    private Size _gpuOverlayUiTextureSize = Size.Empty;
     private Bitmap? _gpuExternalScratchBitmap;
     private Graphics? _gpuExternalScratchGraphics;
     private int _gpuOverlayTexture;
@@ -128,11 +161,15 @@ internal sealed partial class Simulator3dForm
     private Size _gpuHeroLobSubviewTextureSize = Size.Empty;
     private bool _gpuHeroLobSubviewTextureUsesGrayscale;
     private long _lastGpuOverlayUploadTicks;
+    private long _lastGpuOverlaySceneUploadTicks;
+    private long _lastGpuOverlayUiUploadTicks;
     private long _lastGpuOverlayDrawCostTicks;
     private long _lastGpuOverlayUploadCostTicks;
     private long _lastGpuOverlayPresentCostTicks;
     private bool _lastGpuOverlayUploaded;
     private bool _lastGpuOverlayPausedState;
+    private bool _gpuOverlaySceneDirty = true;
+    private bool _gpuOverlayUiDirty = true;
     private bool _measureGpuOverlayPhases;
     private string _currentGpuOverlayPhaseSummary = string.Empty;
     private string _lastGpuOverlayPhaseSummary = "-";
@@ -155,6 +192,9 @@ internal sealed partial class Simulator3dForm
     private int _gpuTerrainChunkRows = 1;
     private string? _terrainCacheGpuSourcePath;
     private string? _terrainCacheGpuLoadedSourcePath;
+    private bool _terrainCacheGpuLoadedLightingEnabled;
+    private string? _terrainCacheGpuAnnotationPath;
+    private long _terrainCacheGpuAnnotationTicks;
     private bool _terrainCacheGpuBuildFailed;
     private int _terrainCacheGpuColumns;
     private int _terrainCacheGpuRows;
@@ -182,6 +222,18 @@ internal sealed partial class Simulator3dForm
     private readonly Dictionary<string, FineTerrainStaticMeshCache> _fineTerrainEnergyUnitMeshCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, FineTerrainStaticMeshCache> _fineTerrainOutpostUnitMeshCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, FineTerrainStaticMeshCache> _fineTerrainBaseUnitMeshCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, GpuEntityAppearanceMeshCache> _gpuEntityAppearanceMeshCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly float[] _gpuKeyLightPosition = { -0.42f, 0.96f, -0.26f, 0.0f };
+    private readonly float[] _gpuKeyLightAmbient = { 0.30f, 0.36f, 0.48f, 1.0f };
+    private readonly float[] _gpuKeyLightDiffuse = { 0.86f, 1.02f, 1.20f, 1.0f };
+    private readonly float[] _gpuKeyLightSpecular = { 0.24f, 0.34f, 0.52f, 1.0f };
+    private readonly float[] _gpuFillLightPosition = { 0.62f, 0.34f, 0.64f, 0.0f };
+    private readonly float[] _gpuFillLightAmbient = { 0.018f, 0.030f, 0.052f, 1.0f };
+    private readonly float[] _gpuFillLightDiffuse = { 0.12f, 0.22f, 0.38f, 1.0f };
+    private readonly float[] _gpuFillLightSpecular = { 0.05f, 0.09f, 0.18f, 1.0f };
+    private readonly float[] _gpuRobotMaterialSpecular = { 0.18f, 0.26f, 0.42f, 1.0f };
+    private static readonly object _gpuCylinderUnitCircleCacheLock = new();
+    private static readonly Dictionary<int, Vector2[]> _gpuCylinderUnitCircleCache = new();
     private string? _fineTerrainEnergyBodyMeshSceneKey;
     private string? _fineTerrainEnergyStripMeshSceneKey;
     private string? _fineTerrainOutpostBodyMeshSceneKey;
@@ -189,6 +241,7 @@ internal sealed partial class Simulator3dForm
     private string? _fineTerrainEnergyUnitMeshSceneKey;
     private string? _fineTerrainOutpostUnitMeshSceneKey;
     private string? _fineTerrainBaseUnitMeshSceneKey;
+    private Simulator3dLightingSettings _lightingSettings = Simulator3dLightingSettings.CreateDefault();
     private GlGenBuffersDelegate? _glGenBuffers;
     private GlBindBufferDelegate? _glBindBuffer;
     private GlBufferDataDelegate? _glBufferData;
@@ -212,6 +265,11 @@ internal sealed partial class Simulator3dForm
     private readonly struct GpuVertex
     {
         public GpuVertex(Vector3 position, Color color)
+            : this(position, color, Vector3.UnitY)
+        {
+        }
+
+        public GpuVertex(Vector3 position, Color color, Vector3 normal)
         {
             X = position.X;
             Y = position.Y;
@@ -220,6 +278,10 @@ internal sealed partial class Simulator3dForm
             G = color.G;
             B = color.B;
             A = color.A;
+            Vector3 safeNormal = normal.LengthSquared() <= 1e-8f ? Vector3.UnitY : Vector3.Normalize(normal);
+            Nx = safeNormal.X;
+            Ny = safeNormal.Y;
+            Nz = safeNormal.Z;
         }
 
         public readonly float X;
@@ -229,6 +291,9 @@ internal sealed partial class Simulator3dForm
         public readonly byte G;
         public readonly byte B;
         public readonly byte A;
+        public readonly float Nx;
+        public readonly float Ny;
+        public readonly float Nz;
     }
 
     private sealed class GpuTerrainChunk
@@ -249,6 +314,17 @@ internal sealed partial class Simulator3dForm
         public int VertexCount;
 
         public Vector3 PivotScene;
+    }
+
+    private sealed class GpuEntityAppearanceMeshCache
+    {
+        public int Buffer;
+
+        public int VertexCount;
+
+        public float HeightM;
+
+        public long LastUsedFrame;
     }
 
     private sealed class TerrainCacheGpuChunk
@@ -504,13 +580,13 @@ internal sealed partial class Simulator3dForm
         float FieldLengthM,
         float FieldWidthM,
         float SceneScale,
+        string? AnnotationPath,
         IReadOnlySet<int> ExcludedComponentIds,
-        bool BlueBaseSideRecolorEnabled,
-        bool BlueBaseSideHigherWorldX,
-        float BlueBaseSideSplitXMeters);
+        bool UseBakedLighting);
 
     private sealed record TerrainCacheGpuBuildResult(
         string SourcePath,
+        bool UseBakedLighting,
         List<TerrainCacheGpuChunk> Chunks,
         int Columns,
         int Rows,
@@ -609,6 +685,9 @@ internal sealed partial class Simulator3dForm
     private static extern void glTexSubImage2D(int target, int level, int xoffset, int yoffset, int width, int height, int format, int type, IntPtr pixels);
 
     [DllImport("opengl32.dll")]
+    private static extern void glGenerateMipmap(int target);
+
+    [DllImport("opengl32.dll")]
     private static extern void glCopyTexImage2D(int target, int level, int internalformat, int x, int y, int width, int height, int border);
 
     [DllImport("opengl32.dll")]
@@ -630,10 +709,37 @@ internal sealed partial class Simulator3dForm
     private static extern void glColorPointer(int size, int type, int stride, IntPtr pointer);
 
     [DllImport("opengl32.dll")]
+    private static extern void glNormalPointer(int type, int stride, IntPtr pointer);
+
+    [DllImport("opengl32.dll")]
+    private static extern void glNormal3f(float nx, float ny, float nz);
+
+    [DllImport("opengl32.dll")]
+    private static extern void glLightfv(int light, int pname, float[] parameters);
+
+    [DllImport("opengl32.dll")]
+    private static extern void glMaterialfv(int face, int pname, float[] parameters);
+
+    [DllImport("opengl32.dll")]
+    private static extern void glMaterialf(int face, int pname, float parameter);
+
+    [DllImport("opengl32.dll")]
+    private static extern void glColorMaterial(int face, int mode);
+
+    [DllImport("opengl32.dll")]
+    private static extern void glShadeModel(int mode);
+
+    [DllImport("opengl32.dll")]
     private static extern void glDrawArrays(int mode, int first, int count);
 
     [DllImport("opengl32.dll")]
     private static extern void glDrawElements(int mode, int count, int type, IntPtr indices);
+
+    [DllImport("opengl32.dll")]
+    private static extern void glReadPixels(int x, int y, int width, int height, int format, int type, IntPtr pixels);
+
+    [DllImport("opengl32.dll")]
+    private static extern void glPixelStorei(int pname, int param);
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     private delegate int WglSwapIntervalExt(int interval);
@@ -694,6 +800,7 @@ internal sealed partial class Simulator3dForm
 
     private void DrawGpuMatch(Graphics graphics)
     {
+        SyncGpuLightingSettings();
         long frameStartTicks = Stopwatch.GetTimestamp();
         long terrainTicks = 0;
         long facilityTicks = 0;
@@ -759,7 +866,7 @@ internal sealed partial class Simulator3dForm
         {
             _projectionViewportRect = new Rectangle(0, 0, useSceneTexture ? sceneRenderSize.Width : clientWidth, useSceneTexture ? sceneRenderSize.Height : clientHeight);
             _projectionMatrix = useSceneTexture ? sceneProjectionMatrix : previousProjection;
-            glClearColor(0.035f, 0.047f, 0.065f, 1f);
+            glClearColor(0.030f, 0.037f, 0.050f, 1f);
             glClear(GlColorBufferBit | GlDepthBufferBit);
             glEnable(GlDepthTest);
             glEnable(GlBlend);
@@ -957,36 +1064,72 @@ internal sealed partial class Simulator3dForm
 
     private void DrawGpuOverlayLayer()
     {
-        EnsureGpuOverlaySurface();
-        if (_gpuOverlayGraphics is null)
+        EnsureGpuOverlayMatchSurfaces();
+        if (_gpuOverlaySceneGraphics is null || _gpuOverlayUiGraphics is null)
         {
             return;
         }
 
         long nowTicks = _frameClock.ElapsedTicks;
-        double overlayUploadIntervalSec = IsFirstPersonHudVisible() || _observerMode || _paused
-            ? GpuOverlayUploadIntervalSec
-            : GpuThirdPersonOverlayUploadIntervalSec;
-        bool overlayInteractive = _paused || _observerMode || _tacticalMode || _fineTerrainInMatchEditMode || _showDebugSidebars;
-        bool mustUpload = overlayInteractive
-            || _gpuOverlayTexture == 0
-            || _gpuOverlayBitmap is null
-            || _gpuOverlayTextureSize != _gpuOverlayBitmap.Size
+        SimulatorRenderPassPlan passPlan = ResolveRenderPassPlan();
+        double sceneUploadIntervalSec = passPlan.SceneOverlayUploadIntervalSec;
+        double uiUploadIntervalSec = passPlan.UiOverlayUploadIntervalSec;
+        bool overlayInteractive = passPlan.OverlayInteractive;
+        bool mustUploadScene = overlayInteractive
+            || _gpuOverlaySceneTexture == 0
+            || _gpuOverlaySceneBitmap is null
+            || _gpuOverlaySceneTextureSize != _gpuOverlaySceneBitmap.Size
             || _lastGpuOverlayPausedState != _paused
-            || _lastGpuOverlayUploadTicks <= 0
-            || (nowTicks - _lastGpuOverlayUploadTicks) / (double)Stopwatch.Frequency >= overlayUploadIntervalSec;
-        if (mustUpload)
+            || _lastGpuOverlaySceneUploadTicks <= 0
+            || _gpuOverlaySceneDirty
+            || (nowTicks - _lastGpuOverlaySceneUploadTicks) / (double)Stopwatch.Frequency >= sceneUploadIntervalSec;
+        bool mustUploadUi = overlayInteractive
+            || _gpuOverlayUiTexture == 0
+            || _gpuOverlayUiBitmap is null
+            || _gpuOverlayUiTextureSize != _gpuOverlayUiBitmap.Size
+            || _lastGpuOverlayPausedState != _paused
+            || _lastGpuOverlayUiUploadTicks <= 0
+            || _gpuOverlayUiDirty
+            || (nowTicks - _lastGpuOverlayUiUploadTicks) / (double)Stopwatch.Frequency >= uiUploadIntervalSec;
+        if (mustUploadScene
+            && mustUploadUi
+            && !overlayInteractive
+            && _gpuOverlaySceneTexture != 0
+            && _gpuOverlayUiTexture != 0
+            && !_gpuOverlaySceneDirty
+            && !_gpuOverlayUiDirty)
+        {
+            bool sceneOlder = _lastGpuOverlaySceneUploadTicks <= _lastGpuOverlayUiUploadTicks;
+            mustUploadScene = sceneOlder;
+            mustUploadUi = !sceneOlder;
+        }
+
+        if (mustUploadScene || mustUploadUi)
         {
             long drawStartTicks = Stopwatch.GetTimestamp();
-            _gpuOverlayGraphics.Clear(Color.Transparent);
-            _gpuOverlayGraphics.ResetTransform();
-            _gpuOverlayGraphics.ScaleTransform(_gpuOverlaySurfaceScale, _gpuOverlaySurfaceScale);
-            ConfigureGpuOverlayGraphics(_gpuOverlayGraphics);
             _measureGpuOverlayPhases = true;
             _currentGpuOverlayPhaseSummary = string.Empty;
             try
             {
-                DrawInMatchOverlay(_gpuOverlayGraphics);
+                if (mustUploadScene)
+                {
+                    _gpuOverlaySceneGraphics.Clear(Color.Transparent);
+                    _gpuOverlaySceneGraphics.ResetTransform();
+                    _gpuOverlaySceneGraphics.ScaleTransform(_gpuOverlaySurfaceScale, _gpuOverlaySurfaceScale);
+                    ConfigureGpuOverlayGraphics(_gpuOverlaySceneGraphics);
+                    DrawInMatchOverlaySceneLayer(_gpuOverlaySceneGraphics);
+                    _gpuOverlaySceneGraphics.ResetTransform();
+                }
+
+                if (mustUploadUi)
+                {
+                    _gpuOverlayUiGraphics.Clear(Color.Transparent);
+                    _gpuOverlayUiGraphics.ResetTransform();
+                    _gpuOverlayUiGraphics.ScaleTransform(_gpuOverlaySurfaceScale, _gpuOverlaySurfaceScale);
+                    ConfigureGpuOverlayGraphics(_gpuOverlayUiGraphics);
+                    DrawInMatchOverlayUiLayer(_gpuOverlayUiGraphics);
+                    _gpuOverlayUiGraphics.ResetTransform();
+                }
             }
             finally
             {
@@ -995,13 +1138,25 @@ internal sealed partial class Simulator3dForm
                     ? "-"
                     : _currentGpuOverlayPhaseSummary.TrimEnd(';');
                 _currentGpuOverlayPhaseSummary = string.Empty;
-                _gpuOverlayGraphics.ResetTransform();
             }
 
             _lastGpuOverlayDrawCostTicks = Stopwatch.GetTimestamp() - drawStartTicks;
 
             long uploadStartTicks = Stopwatch.GetTimestamp();
-            UploadGpuOverlayBitmap();
+            if (mustUploadScene)
+            {
+                UploadGpuOverlayBitmap(_gpuOverlaySceneBitmap, ref _gpuOverlaySceneTexture, ref _gpuOverlaySceneTextureSize);
+                _lastGpuOverlaySceneUploadTicks = nowTicks;
+                _gpuOverlaySceneDirty = false;
+            }
+
+            if (mustUploadUi)
+            {
+                UploadGpuOverlayBitmap(_gpuOverlayUiBitmap, ref _gpuOverlayUiTexture, ref _gpuOverlayUiTextureSize);
+                _lastGpuOverlayUiUploadTicks = nowTicks;
+                _gpuOverlayUiDirty = false;
+            }
+
             _lastGpuOverlayUploadCostTicks = Stopwatch.GetTimestamp() - uploadStartTicks;
             _lastGpuOverlayUploadTicks = nowTicks;
             _lastGpuOverlayPausedState = _paused;
@@ -1015,9 +1170,631 @@ internal sealed partial class Simulator3dForm
         }
 
         long presentStartTicks = Stopwatch.GetTimestamp();
-        PresentGpuOverlayTexture();
+        PresentGpuOverlayTexture(_gpuOverlaySceneTexture);
+        if (passPlan.RenderGpuHudPrimitives)
+        {
+            DrawGpuHudPrimitives();
+        }
+        PresentGpuOverlayTexture(_gpuOverlayUiTexture);
         _lastGpuOverlayPresentCostTicks = Stopwatch.GetTimestamp() - presentStartTicks;
     }
+
+    private void DrawGpuHudPrimitives()
+    {
+        if (_previewOnly)
+        {
+            return;
+        }
+
+        DrawGpuOpenGkDynamicHudPrimitives();
+        if (!IsFirstPersonHudVisible())
+        {
+            return;
+        }
+
+        DrawGpuCrosshairPrimitive();
+        if (_customHudVisible)
+        {
+            DrawGpuCrosshairStatusProgressRingsPrimitive();
+        }
+        DrawGpuHeroDeploymentChargeRingPrimitive();
+        DrawGpuCrosshairStatusProgressPrimitive();
+        DrawGpuAutoAimGuidancePrimitive();
+    }
+
+    private void DrawGpuOpenGkDynamicHudPrimitives()
+    {
+        if (!UseOpenGkMatchHud()
+            || _appState != SimulatorAppState.InMatch
+            || !ShouldDrawOpenGkDynamicHudShapesOnGpu()
+            || _host.IsDuelMode
+            || _host.IsUnitTestMode
+            || ClientSize.Width <= 0
+            || ClientSize.Height <= 0)
+        {
+            return;
+        }
+
+        PrepareGpuScreenPrimitivePass();
+        ResolveOpenGkUcHudLayoutV2(out Rectangle red, out _, out Rectangle blue);
+        DrawGpuOpenGkTeamHudDynamicPrimitives(red, "red", mirrored: false);
+        DrawGpuOpenGkTeamHudDynamicPrimitives(blue, "blue", mirrored: true);
+        glEnable(GlDepthTest);
+        glLineWidth(1f);
+    }
+
+    private void DrawGpuOpenGkTeamHudDynamicPrimitives(Rectangle rect, string teamKey, bool mirrored)
+    {
+        Color teamColor = ResolveTeamColor(teamKey);
+        SimulationEntity? baseEntity = FindEntityById($"{teamKey}_base");
+        SimulationEntity? outpostEntity = FindEntityById($"{teamKey}_outpost");
+        int outpostWidth = Math.Clamp(rect.Width / 7, 72, 100);
+        Rectangle outpostBar = mirrored
+            ? new Rectangle(rect.Right - outpostWidth - 10, rect.Y + 25, outpostWidth, 26)
+            : new Rectangle(rect.X + 10, rect.Y + 25, outpostWidth, 26);
+        Rectangle baseBanner = mirrored
+            ? new Rectangle(rect.X + 10, rect.Y + 30, rect.Width - outpostBar.Width - 28, 14)
+            : new Rectangle(outpostBar.Right + 8, rect.Y + 30, rect.Width - outpostBar.Width - 28, 14);
+        Rectangle baseBar = new(baseBanner.X + 34, baseBanner.Y + 4, Math.Max(42, baseBanner.Width - 40), 8);
+        Rectangle outpostGauge = new(outpostBar.X + 7, outpostBar.Bottom - 9, outpostBar.Width - 14, 5);
+
+        DrawGpuOpenGkStructureBar(baseBar, ResolveHealthRatio(baseEntity), teamColor, fillFromRight: mirrored, pathMirrored: !mirrored);
+        DrawGpuOpenGkStructureBar(outpostGauge, ResolveHealthRatio(outpostEntity), teamColor, fillFromRight: mirrored, pathMirrored: !mirrored);
+
+        IReadOnlyList<OpenGkHudUnitSlot> slots = BuildOpenGkHudUnitSlotsV2(teamKey);
+        Rectangle[] cards = BuildOpenGkUcUnitCardRectsV2(rect, slots.Count, mirrored);
+        for (int i = 0; i < slots.Count && i < cards.Length; i++)
+        {
+            OpenGkHudUnitSlot slot = slots[ResolveOpenGkUcSlotIndex(i, slots.Count, mirrored)];
+            if (slot.Entity is null)
+            {
+                continue;
+            }
+
+            Rectangle card = cards[i];
+            int infoStripHeight = 22;
+            Rectangle infoStrip = new(card.X + 4, card.Bottom - infoStripHeight - 3, card.Width - 8, infoStripHeight);
+            Rectangle hpRect = new(infoStrip.X + 3, infoStrip.Y + 3, Math.Max(10, infoStrip.Width - 6), 6);
+            DrawGpuOpenGkUnitBar(hpRect, ResolveHealthRatio(slot.Entity), teamColor, fillFromRight: mirrored, pathMirrored: !mirrored);
+            DrawGpuOpenGkAmmoGlyphs(new Rectangle(infoStrip.X + 3, infoStrip.Y + 10, Math.Max(1, infoStrip.Width - 6), 12), slot.Entity);
+        }
+    }
+
+    private void DrawGpuOpenGkStructureBar(Rectangle rect, float ratio, Color color, bool fillFromRight, bool pathMirrored)
+    {
+        DrawGpuScreenParallelogramFill(rect, ratio, Color.FromArgb(238, color), fillFromRight, pathMirrored, Math.Min(8f, Math.Max(4f, rect.Height)));
+        int glowWidth = Math.Max(0, (int)Math.Round(rect.Width * Math.Clamp(ratio, 0f, 1f)) - 4);
+        if (glowWidth > 1)
+        {
+            Rectangle glowRect = fillFromRight
+                ? new Rectangle(rect.Right - glowWidth, rect.Y, glowWidth, Math.Max(2, rect.Height / 3))
+                : new Rectangle(rect.X, rect.Y, glowWidth, Math.Max(2, rect.Height / 3));
+            DrawGpuScreenParallelogramFill(glowRect, 1f, Color.FromArgb(72, 255, 255, 255), fillFromRight, pathMirrored, Math.Min(8f, Math.Max(4f, rect.Height)));
+        }
+    }
+
+    private void DrawGpuOpenGkUnitBar(Rectangle rect, float ratio, Color color, bool fillFromRight, bool pathMirrored)
+    {
+        DrawGpuScreenParallelogramFill(rect, ratio, Color.FromArgb(236, color), fillFromRight, pathMirrored, Math.Min(8f, rect.Width * 0.18f));
+    }
+
+    private void DrawGpuOpenGkAmmoGlyphs(Rectangle rect, SimulationEntity entity)
+    {
+        if (!entity.IsAlive
+            || string.Equals(entity.RoleKey, "engineer", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(entity.AmmoType, "none", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        bool largeAmmo = string.Equals(entity.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase);
+        int iconWidth = largeAmmo ? 11 : 24;
+        int iconX = rect.X + Math.Max(0, (rect.Width - iconWidth - 22) / 2);
+        Rectangle icon = new(iconX, rect.Y + Math.Max(0, (rect.Height - 8) / 2), iconWidth, 8);
+        Color fill = Color.FromArgb(235, 248, 250, 252);
+        if (largeAmmo)
+        {
+            DrawGpuScreenCircle(new Rectangle(icon.X + 1, icon.Y, 8, 8), fill, segments: 14);
+            DrawGpuScreenCircle(new Rectangle(icon.X + 3, icon.Y + 2, 1, 1), Color.FromArgb(82, 120, 132, 146), segments: 6);
+            DrawGpuScreenCircle(new Rectangle(icon.X + 6, icon.Y + 2, 1, 1), Color.FromArgb(82, 120, 132, 146), segments: 6);
+            DrawGpuScreenCircle(new Rectangle(icon.X + 5, icon.Y + 5, 1, 1), Color.FromArgb(82, 120, 132, 146), segments: 6);
+            return;
+        }
+
+        for (int i = 0; i < 3; i++)
+        {
+            int x = icon.X + i * 8;
+            Span<PointF> bullet =
+            [
+                new PointF(x, icon.Y + 2),
+                new PointF(x + 5, icon.Y + 2),
+                new PointF(x + 7, icon.Y + 4),
+                new PointF(x + 5, icon.Y + 6),
+                new PointF(x, icon.Y + 6),
+            ];
+            DrawGpuScreenPolygon(bullet, fill);
+        }
+    }
+
+    private void PrepareGpuScreenPrimitivePass()
+    {
+        glDisable(GlLighting);
+        glDisable(GlTexture2D);
+        glEnable(GlBlend);
+        glBlendFunc(GlSrcAlpha, GlOneMinusSrcAlpha);
+        glDisable(GlDepthTest);
+        glMatrixMode(GlProjection);
+        glLoadMatrixf(ToOpenGlMatrix(Matrix4x4.Identity));
+        glMatrixMode(GlModelView);
+        glLoadMatrixf(ToOpenGlMatrix(Matrix4x4.Identity));
+    }
+
+    private void DrawGpuScreenParallelogramFill(Rectangle rect, float ratio, Color color, bool fillFromRight, bool pathMirrored, float skew)
+    {
+        float clamped = Math.Clamp(ratio, 0f, 1f);
+        if (rect.Width <= 0 || rect.Height <= 0 || clamped <= 0.001f)
+        {
+            return;
+        }
+
+        int fillWidth = Math.Max(1, (int)Math.Round(rect.Width * clamped));
+        Rectangle fillRect = fillFromRight
+            ? new Rectangle(rect.Right - fillWidth, rect.Y, fillWidth, rect.Height)
+            : new Rectangle(rect.X, rect.Y, fillWidth, rect.Height);
+        float safeSkew = Math.Min(Math.Max(0f, skew), fillRect.Width * 0.45f);
+        Span<PointF> points = stackalloc PointF[4];
+        if (pathMirrored)
+        {
+            points[0] = new PointF(fillRect.Left, fillRect.Top);
+            points[1] = new PointF(fillRect.Right - safeSkew, fillRect.Top);
+            points[2] = new PointF(fillRect.Right, fillRect.Bottom);
+            points[3] = new PointF(fillRect.Left + safeSkew, fillRect.Bottom);
+        }
+        else
+        {
+            points[0] = new PointF(fillRect.Left + safeSkew, fillRect.Top);
+            points[1] = new PointF(fillRect.Right, fillRect.Top);
+            points[2] = new PointF(fillRect.Right - safeSkew, fillRect.Bottom);
+            points[3] = new PointF(fillRect.Left, fillRect.Bottom);
+        }
+
+        DrawGpuScreenPolygon(points, color);
+    }
+
+    private void DrawGpuScreenPolygon(ReadOnlySpan<PointF> points, Color color)
+    {
+        if (points.Length < 3)
+        {
+            return;
+        }
+
+        SetGpuColor(color);
+        glBegin(GlTriangles);
+        for (int i = 1; i < points.Length - 1; i++)
+        {
+            EmitGpuScreenVertex(points[0]);
+            EmitGpuScreenVertex(points[i]);
+            EmitGpuScreenVertex(points[i + 1]);
+        }
+
+        glEnd();
+    }
+
+    private void DrawGpuScreenCircle(Rectangle rect, Color color, int segments)
+    {
+        if (rect.Width <= 0 || rect.Height <= 0)
+        {
+            return;
+        }
+
+        int count = Math.Clamp(segments, 6, 32);
+        float cx = rect.X + rect.Width * 0.5f;
+        float cy = rect.Y + rect.Height * 0.5f;
+        float rx = rect.Width * 0.5f;
+        float ry = rect.Height * 0.5f;
+        SetGpuColor(color);
+        glBegin(GlTriangles);
+        for (int i = 0; i < count; i++)
+        {
+            float a0 = MathF.Tau * i / count;
+            float a1 = MathF.Tau * (i + 1) / count;
+            EmitGpuScreenVertex(new PointF(cx, cy));
+            EmitGpuScreenVertex(new PointF(cx + MathF.Cos(a0) * rx, cy + MathF.Sin(a0) * ry));
+            EmitGpuScreenVertex(new PointF(cx + MathF.Cos(a1) * rx, cy + MathF.Sin(a1) * ry));
+        }
+
+        glEnd();
+    }
+
+    private void EmitGpuScreenVertex(PointF point)
+        => glVertex3f(ScreenXToNdc(point.X), ScreenYToNdc(point.Y), 0f);
+
+    private void DrawGpuCrosshairPrimitive()
+    {
+        if (ClientSize.Width <= 0 || ClientSize.Height <= 0)
+        {
+            return;
+        }
+
+        glDisable(GlLighting);
+        glDisable(GlTexture2D);
+        glEnable(GlBlend);
+        glBlendFunc(GlSrcAlpha, GlOneMinusSrcAlpha);
+        glDisable(GlDepthTest);
+        glMatrixMode(GlProjection);
+        glLoadMatrixf(ToOpenGlMatrix(Matrix4x4.Identity));
+        glMatrixMode(GlModelView);
+        glLoadMatrixf(ToOpenGlMatrix(Matrix4x4.Identity));
+
+        float centerX = ScreenXToNdc(ClientSize.Width * 0.5f);
+        float centerY = ScreenYToNdc(ClientSize.Height * 0.5f);
+        float gapX = 4f / Math.Max(1f, ClientSize.Width) * 2f;
+        float armX = 12f / Math.Max(1f, ClientSize.Width) * 2f;
+        float gapY = 4f / Math.Max(1f, ClientSize.Height) * 2f;
+        float armY = 12f / Math.Max(1f, ClientSize.Height) * 2f;
+        float dotX = 1.5f / Math.Max(1f, ClientSize.Width) * 2f;
+        float dotY = 1.5f / Math.Max(1f, ClientSize.Height) * 2f;
+
+        glLineWidth(3f);
+        glColor4ub(0, 0, 0, 145);
+        glBegin(GlLines);
+        glVertex3f(centerX - armX, centerY, 0f);
+        glVertex3f(centerX - gapX, centerY, 0f);
+        glVertex3f(centerX + gapX, centerY, 0f);
+        glVertex3f(centerX + armX, centerY, 0f);
+        glVertex3f(centerX, centerY + armY, 0f);
+        glVertex3f(centerX, centerY + gapY, 0f);
+        glVertex3f(centerX, centerY - gapY, 0f);
+        glVertex3f(centerX, centerY - armY, 0f);
+        glEnd();
+
+        glLineWidth(1.5f);
+        glColor4ub(235, 68, 72, 230);
+        glBegin(GlLines);
+        glVertex3f(centerX - armX, centerY, 0f);
+        glVertex3f(centerX - gapX, centerY, 0f);
+        glVertex3f(centerX + gapX, centerY, 0f);
+        glVertex3f(centerX + armX, centerY, 0f);
+        glVertex3f(centerX, centerY + armY, 0f);
+        glVertex3f(centerX, centerY + gapY, 0f);
+        glVertex3f(centerX, centerY - gapY, 0f);
+        glVertex3f(centerX, centerY - armY, 0f);
+        glEnd();
+
+        glColor4ub(245, 245, 245, 255);
+        glBegin(GlQuads);
+        glVertex3f(centerX - dotX, centerY + dotY, 0f);
+        glVertex3f(centerX + dotX, centerY + dotY, 0f);
+        glVertex3f(centerX + dotX, centerY - dotY, 0f);
+        glVertex3f(centerX - dotX, centerY - dotY, 0f);
+        glEnd();
+
+        glLineWidth(1f);
+        glEnable(GlDepthTest);
+    }
+
+    private void DrawGpuHeroDeploymentChargeRingPrimitive()
+    {
+        SimulationEntity? entity = _host.SelectedEntity;
+        if (entity is null
+            || !string.Equals(entity.RoleKey, "hero", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        bool exiting = entity.HeroDeploymentActive;
+        double timerSec = exiting
+            ? entity.HeroDeploymentExitHoldTimerSec
+            : entity.HeroDeploymentHoldTimerSec;
+        if (timerSec <= 1e-4 || ClientSize.Width <= 0 || ClientSize.Height <= 0)
+        {
+            return;
+        }
+
+        float progress = (float)Math.Clamp(timerSec / 2.0, 0.0, 1.0);
+        DrawGpuScreenRing(ClientSize.Width * 0.5f, ClientSize.Height * 0.5f, 30f, 4f, Color.FromArgb(128, 24, 28, 34));
+        DrawGpuScreenArc(
+            ClientSize.Width * 0.5f,
+            ClientSize.Height * 0.5f,
+            30f,
+            4f,
+            -90f,
+            progress * 360f,
+            Color.FromArgb(exiting ? 235 : 235, exiting ? 255 : 255, exiting ? 132 : 216, 92),
+            4f);
+    }
+
+    private void DrawGpuCrosshairStatusProgressPrimitive()
+    {
+        SimulationEntity? entity = _host.SelectedEntity;
+        if (entity is null || ClientSize.Width <= 0 || ClientSize.Height <= 0)
+        {
+            return;
+        }
+
+        if (!TryResolveCrosshairStatusProgress(entity, out float progress, out Color color, out double remainingSec, out string label))
+        {
+            return;
+        }
+
+        float centerX = ClientSize.Width * 0.5f;
+        float centerY = ClientSize.Height * 0.5f;
+        DrawGpuScreenRing(centerX, centerY, 48f, 5.4f, Color.FromArgb(136, 12, 14, 18));
+        DrawGpuScreenArc(centerX, centerY, 48f, 5.0f, -90f, progress * 360f, Color.FromArgb(238, color), 5.0f);
+
+        _ = remainingSec;
+        _ = label;
+    }
+
+    private bool TryResolveCrosshairStatusProgress(
+        SimulationEntity entity,
+        out float progress,
+        out Color color,
+        out double remainingSec,
+        out string label)
+    {
+        progress = 0f;
+        color = Color.White;
+        remainingSec = 0.0;
+        label = string.Empty;
+
+        if (!entity.IsAlive)
+        {
+            remainingSec = Math.Max(0.0, entity.RespawnTimerSec);
+            double totalSec = 15.0;
+            progress = (float)Math.Clamp(1.0 - remainingSec / totalSec, 0.0, 1.0);
+            label = "\u8bfb\u6761\u590d\u6d3b";
+            color = Color.FromArgb(92, 224, 144);
+            return true;
+        }
+
+        if (entity.PowerCutTimerSec > 1e-6)
+        {
+            remainingSec = Math.Max(0.0, entity.PowerCutTimerSec);
+            double totalSec = 5.0;
+            progress = (float)Math.Clamp(1.0 - remainingSec / totalSec, 0.0, 1.0);
+            label = "\u5e95\u76d8\u65ad\u7535";
+            color = Color.FromArgb(255, 88, 88);
+            return true;
+        }
+
+        if (entity.HeatLockTimerSec > 1e-6 || string.Equals(entity.State, "heat_locked", StringComparison.OrdinalIgnoreCase))
+        {
+            ResolvedRoleProfile profile = _host.ResolveRuntimeProfile(entity);
+            double coolingRate = Math.Max(0.1, profile.HeatDissipationRate * Math.Max(0.1, entity.DynamicCoolingMult));
+            remainingSec = Math.Max(entity.HeatLockTimerSec, entity.Heat / coolingRate);
+            double totalSec = Math.Max(0.5, ResolveHeatLockInitialHeatForProgress(entity) / coolingRate);
+            progress = (float)Math.Clamp(1.0 - remainingSec / totalSec, 0.0, 1.0);
+            label = "\u70ed\u91cf\u8d85\u9650";
+            color = Color.FromArgb(255, 88, 88);
+            return true;
+        }
+
+        return false;
+    }
+
+    private void DrawGpuScreenRing(float centerX, float centerY, float radius, float width, Color color)
+        => DrawGpuScreenArc(centerX, centerY, radius, width, 0f, 360f, color, width);
+
+    private void DrawGpuScreenArc(
+        float centerX,
+        float centerY,
+        float radius,
+        float width,
+        float startAngleDeg,
+        float sweepAngleDeg,
+        Color color,
+        float lineWidth)
+    {
+        if (ClientSize.Width <= 0
+            || ClientSize.Height <= 0
+            || radius <= 0.5f
+            || lineWidth <= 0.1f
+            || MathF.Abs(sweepAngleDeg) <= 1e-4f)
+        {
+            return;
+        }
+
+        glDisable(GlDepthTest);
+        glDisable(GlLighting);
+        glDisable(GlTexture2D);
+        glEnable(GlBlend);
+        glBlendFunc(GlSrcAlpha, GlOneMinusSrcAlpha);
+        glMatrixMode(GlProjection);
+        glLoadMatrixf(ToOpenGlMatrix(Matrix4x4.Identity));
+        glMatrixMode(GlModelView);
+        glLoadMatrixf(ToOpenGlMatrix(Matrix4x4.Identity));
+
+        int segments = Math.Clamp((int)MathF.Ceiling(MathF.Abs(sweepAngleDeg) / 8f), 16, 96);
+        bool fullCircle = MathF.Abs(MathF.Abs(sweepAngleDeg) - 360f) <= 1e-3f;
+        float startRad = MathF.PI / 180f * startAngleDeg;
+        float sweepRad = MathF.PI / 180f * sweepAngleDeg;
+        float cx = ScreenXToNdc(centerX);
+        float cy = ScreenYToNdc(centerY);
+        float scaleX = 2f / Math.Max(1f, ClientSize.Width);
+        float scaleY = 2f / Math.Max(1f, ClientSize.Height);
+
+        glLineWidth(lineWidth);
+        glColor4ub(color.R, color.G, color.B, color.A);
+        glBegin(fullCircle ? GlLineLoop : GlLineStrip);
+        int pointCount = fullCircle ? segments : segments + 1;
+        for (int i = 0; i < pointCount; i++)
+        {
+            float t = fullCircle
+                ? i / (float)segments
+                : i / (float)segments;
+            float angle = startRad + sweepRad * t;
+            float x = cx + MathF.Cos(angle) * radius * scaleX;
+            float y = cy + MathF.Sin(angle) * radius * scaleY;
+            glVertex3f(x, y, 0f);
+        }
+        glEnd();
+
+        glLineWidth(1f);
+        glEnable(GlDepthTest);
+    }
+
+    private void DrawGpuCrosshairStatusProgressRingsPrimitive()
+    {
+        SimulationEntity? entity = _host.SelectedEntity;
+        if (entity is null || _previewOnly || ClientSize.Width <= 8 || ClientSize.Height <= 8)
+        {
+            return;
+        }
+
+        float safeClientMin = Math.Clamp(Math.Min(ClientSize.Width, ClientSize.Height), 1f, 4096f);
+        float diameter = Math.Clamp(safeClientMin * 0.57f, 330f, 840f);
+        float centerX = ClientSize.Width * 0.5f;
+        float centerY = ClientSize.Height * 0.5f;
+        float arcWidth = Math.Clamp(diameter * 0.026f, 7.0f, 13.0f);
+        float outerArcWidth = Math.Max(3.0f, arcWidth * 0.58f);
+
+        float hpRatio = SafeGaugeRatio(entity.Health, entity.MaxHealth);
+        float heatRatio = SafeGaugeRatio(entity.Heat, entity.MaxHeat);
+        (float powerRatio, _) = ResolvePowerGauge(entity);
+        (float superCapRatio, _) = ResolveSuperCapGauge(entity);
+        float bufferRatio = SafeGaugeRatio(entity.BufferEnergyJ, entity.MaxBufferEnergyJ);
+
+        DrawGpuRatioScreenArc(centerX, centerY, diameter, 180f, 90f, hpRatio, Color.FromArgb(128, 72, 214, 126), arcWidth);
+        DrawGpuRatioScreenArc(centerX, centerY, diameter, 270f, 90f, powerRatio, Color.FromArgb(136, 255, 214, 48), arcWidth);
+        DrawGpuRatioScreenArc(centerX, centerY, diameter, 0f, 90f, superCapRatio, Color.FromArgb(138, 255, 96, 196), arcWidth);
+        DrawGpuRatioScreenArc(centerX, centerY, diameter, 90f, 90f, heatRatio, Color.FromArgb(128, 228, 130, 58), arcWidth);
+        DrawGpuRatioScreenArc(centerX, centerY, diameter * 1.09f, 18f, 27f, bufferRatio, Color.FromArgb(96, 168, 174, 184), outerArcWidth);
+    }
+
+    private void DrawGpuAutoAimGuidancePrimitive()
+    {
+        SimulationEntity? entity = _host.SelectedEntity;
+        if (entity is null
+            || _autoAimAssistMode != AutoAimAssistMode.GuidanceOnly
+            || !_autoAimPressed
+            || !entity.AutoAimLocked
+            || ShouldSuppressHeroDeploymentAimDecorations(entity))
+        {
+            return;
+        }
+
+        if (string.Equals(entity.AutoAimTargetKind, "energy_disk", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(entity.AutoAimTargetId))
+        {
+            SimulationEntity? energyTarget = _host.World.Entities.FirstOrDefault(candidate =>
+                string.Equals(candidate.Id, entity.AutoAimTargetId, StringComparison.OrdinalIgnoreCase));
+            if (energyTarget is not null
+                && TryResolveTrackedEnergyDiskPose(entity, energyTarget, Math.Clamp(entity.AutoAimLeadTimeSec, 0.0, 1.10), out _, out Vector3 energyCenter, out float energyRadius, out _, out _, out _)
+                && TryProject(energyCenter, out PointF energyPoint, out _))
+            {
+                float radius = Math.Max(13f, energyRadius * 16f);
+                DrawGpuScreenCircle(energyPoint.X, energyPoint.Y, radius, Color.FromArgb(160, 0, 0, 0), 3f);
+                DrawGpuScreenCircle(energyPoint.X, energyPoint.Y, radius, Color.FromArgb(238, 255, 214, 70), 1.5f);
+                return;
+            }
+        }
+
+        Vector3 marker = ToScenePoint(entity.AutoAimAimPointX, entity.AutoAimAimPointY, (float)entity.AutoAimAimPointHeightM);
+        if (TryProject(marker, out PointF point, out _))
+        {
+            DrawGpuScreenCircle(point.X, point.Y, 13f, Color.FromArgb(160, 0, 0, 0), 3f);
+            DrawGpuScreenCircle(point.X, point.Y, 13f, Color.FromArgb(238, 255, 214, 70), 1.5f);
+        }
+    }
+
+    private void DrawGpuRatioScreenArc(float centerX, float centerY, float diameter, float startAngleDeg, float sweepAngleDeg, float ratio, Color color, float lineWidth)
+    {
+        float clamped = Math.Clamp(ratio, 0f, 1f);
+        if (clamped <= 1e-4f || diameter <= 1f || lineWidth <= 0.1f)
+        {
+            return;
+        }
+
+        glDisable(GlDepthTest);
+        glDisable(GlLighting);
+        glDisable(GlTexture2D);
+        glEnable(GlBlend);
+        glBlendFunc(GlSrcAlpha, GlOneMinusSrcAlpha);
+        glMatrixMode(GlProjection);
+        glLoadMatrixf(ToOpenGlMatrix(Matrix4x4.Identity));
+        glMatrixMode(GlModelView);
+        glLoadMatrixf(ToOpenGlMatrix(Matrix4x4.Identity));
+
+        int segments = Math.Clamp((int)MathF.Ceiling(MathF.Abs(sweepAngleDeg) / 8f), 16, 96);
+        float cx = ScreenXToNdc(centerX);
+        float cy = ScreenYToNdc(centerY);
+        float scaleX = 2f / Math.Max(1f, ClientSize.Width);
+        float scaleY = 2f / Math.Max(1f, ClientSize.Height);
+        float startRad = MathF.PI / 180f * startAngleDeg;
+        float sweepRad = MathF.PI / 180f * sweepAngleDeg;
+        float radius = diameter * 0.5f;
+        float shadowWidth = Math.Max(1f, lineWidth * 0.5f);
+
+        DrawGpuScreenArcCore(cx, cy, radius, scaleX, scaleY, startRad, sweepRad, clamped, Color.FromArgb(110, 0, 0, 0), lineWidth + shadowWidth);
+        DrawGpuScreenArcCore(cx, cy, radius, scaleX, scaleY, startRad, sweepRad, clamped, color, lineWidth);
+    }
+
+    private void DrawGpuScreenCircle(float centerX, float centerY, float radius, Color color, float lineWidth)
+        => DrawGpuRatioScreenArc(centerX, centerY, radius * 2f, 0f, 360f, 1f, color, lineWidth);
+
+    private void DrawGpuScreenArcCore(float cx, float cy, float radius, float scaleX, float scaleY, float startRad, float sweepRad, float ratio, Color color, float lineWidth)
+    {
+        glLineWidth(lineWidth);
+        glColor4ub(color.R, color.G, color.B, color.A);
+        glBegin(GlLineStrip);
+        int segments = Math.Clamp((int)MathF.Ceiling(MathF.Abs(sweepRad) / (MathF.PI / 22.5f)), 16, 96);
+        int pointCount = segments + 1;
+        for (int i = 0; i < pointCount; i++)
+        {
+            float t = i / (float)segments * ratio;
+            float angle = startRad + sweepRad * t;
+            float x = cx + MathF.Cos(angle) * radius * scaleX;
+            float y = cy + MathF.Sin(angle) * radius * scaleY;
+            glVertex3f(x, y, 0f);
+        }
+
+        glEnd();
+        glLineWidth(1f);
+        glEnable(GlDepthTest);
+    }
+
+    private void DrawGpuScreenCross(Vector3 centerScene, float radiusPixels, Color color)
+    {
+        if (!TryProject(centerScene, out PointF point, out _))
+        {
+            return;
+        }
+
+        float cx = ScreenXToNdc(point.X);
+        float cy = ScreenYToNdc(point.Y);
+        float dx = radiusPixels / Math.Max(1f, ClientSize.Width) * 2f;
+        float dy = radiusPixels / Math.Max(1f, ClientSize.Height) * 2f;
+        glDisable(GlDepthTest);
+        glDisable(GlLighting);
+        glDisable(GlTexture2D);
+        glEnable(GlBlend);
+        glBlendFunc(GlSrcAlpha, GlOneMinusSrcAlpha);
+        glMatrixMode(GlProjection);
+        glLoadMatrixf(ToOpenGlMatrix(Matrix4x4.Identity));
+        glMatrixMode(GlModelView);
+        glLoadMatrixf(ToOpenGlMatrix(Matrix4x4.Identity));
+        glLineWidth(1.5f);
+        glColor4ub(color.R, color.G, color.B, color.A);
+        glBegin(GlLines);
+        glVertex3f(cx - dx, cy, 0f);
+        glVertex3f(cx - dx * 0.35f, cy, 0f);
+        glVertex3f(cx + dx * 0.35f, cy, 0f);
+        glVertex3f(cx + dx, cy, 0f);
+        glVertex3f(cx, cy - dy, 0f);
+        glVertex3f(cx, cy - dy * 0.35f, 0f);
+        glVertex3f(cx, cy + dy * 0.35f, 0f);
+        glVertex3f(cx, cy + dy, 0f);
+        glEnd();
+        glLineWidth(1f);
+        glEnable(GlDepthTest);
+    }
+
+    private float ScreenXToNdc(float x)
+        => x / Math.Max(1f, ClientSize.Width) * 2f - 1f;
+
+    private float ScreenYToNdc(float y)
+        => 1f - y / Math.Max(1f, ClientSize.Height) * 2f;
 
     private void ConfigureGpuOverlayGraphics(Graphics graphics)
     {
@@ -1155,9 +1932,7 @@ internal sealed partial class Simulator3dForm
             return false;
         }
 
-        Size sourceViewportSize = IsHeroDeploymentSubviewOnlyMode()
-            ? GetHeroLobSubviewRect().Size
-            : viewport.Size;
+        Size sourceViewportSize = viewport.Size;
         float zoomScale = 2.2f;
         PointF cropCenter = new(mainViewport.X + mainViewport.Width * 0.5f, mainViewport.Y + mainViewport.Height * 0.5f);
         if (TryResolveHeroLobSubviewCropCenterAndZoom(shooter, sourceViewportSize, mainViewport, out PointF resolvedCenter, out float resolvedZoomScale))
@@ -1185,27 +1960,26 @@ internal sealed partial class Simulator3dForm
         zoomScale = 2.2f;
 
         if ((_autoAimPressed || shooter.HeroDeploymentActive)
-            && shooter.AutoAimLocked
-            && IsHeroLobStructureTargetKind(shooter.AutoAimTargetKind)
+            && IsHeroLobSubviewTrackingTarget(shooter)
             && TryGetProjectedHeroLobPlatePolygon(shooter, out PointF[] polygon))
         {
             RectangleF bounds = GetBounds(polygon);
             if (bounds.Width > 2f && bounds.Height > 2f)
             {
-                float targetFraction = 0.20f;
+                float targetFraction = 0.34f;
                 float aspect = Math.Max(0.6f, viewportSize.Width / (float)Math.Max(1, viewportSize.Height));
                 float plateArea = Math.Max(16f, bounds.Width * bounds.Height);
                 float desiredSourceArea = Math.Max(plateArea / targetFraction, 1024f);
                 float sourceWidth = MathF.Sqrt(desiredSourceArea * aspect);
                 float sourceHeight = sourceWidth / aspect;
-                sourceWidth = Math.Max(sourceWidth, bounds.Width + Math.Max(28f, bounds.Width * 0.55f) * 2f);
-                sourceHeight = Math.Max(sourceHeight, bounds.Height + Math.Max(36f, bounds.Height * 0.85f) * 2f);
+                sourceWidth = Math.Max(sourceWidth, bounds.Width + Math.Max(28f, bounds.Width * 0.52f) * 2f);
+                sourceHeight = Math.Max(sourceHeight, bounds.Height + Math.Max(34f, bounds.Height * 0.72f) * 2f);
                 sourceWidth = Math.Min(sourceWidth, viewportSize.Width / 1.02f);
                 sourceHeight = Math.Min(sourceHeight, viewportSize.Height / 1.02f);
                 float zoomX = viewportSize.Width / Math.Max(8f, sourceWidth);
                 float zoomY = viewportSize.Height / Math.Max(8f, sourceHeight);
-                zoomScale = Math.Clamp(MathF.Min(zoomX, zoomY), 1.10f, 8f);
-                float bottomBias = Math.Min(sourceHeight * 0.22f, Math.Max(24f, bounds.Height * 1.35f));
+                zoomScale = Math.Clamp(MathF.Min(zoomX, zoomY), 1.0f, 12f);
+                float bottomBias = Math.Min(sourceHeight * 0.06f, Math.Max(8f, bounds.Height * 0.34f));
                 center = new PointF(
                     bounds.Left + bounds.Width * 0.5f,
                     bounds.Top + bounds.Height * 0.5f + bottomBias);
@@ -1443,9 +2217,12 @@ internal sealed partial class Simulator3dForm
         string mapStats = string.IsNullOrWhiteSpace(_terrainCacheGpuSourcePath)
             ? $"{_gpuTerrainVertexCount}v/1draw"
             : $"{_terrainCacheGpuVisibleVertices}v/{_terrainCacheGpuDrawCalls}draw/{_terrainCacheGpuResidentVertices}resident/{_terrainCacheGpuPendingUploads}pending";
+        SimulatorRenderPassPlan passPlan = ResolveRenderPassPlan();
+        SimulatorFramePacingPlan pacingPlan = ResolveFramePacingPlan();
         string line =
             $"{DateTime.Now:HH:mm:ss.fff} "
             + $"mode={(_host.SelectedEntity?.HeroDeploymentActive == true ? "deployment_subview" : "normal")} "
+            + $"pipeline={passPlan.Label} targetHz={pacingPlan.TargetHz:0.0} "
             + $"frame={ElapsedMs(frameStartTicks, nowTicks):0.00}ms "
             + $"map={TicksToMs(terrainTicks):0.00}ms/{mapStats} "
             + $"facility={TicksToMs(facilityTicks):0.00}ms/{facilityVertices}v/{(facilityVertices > 0 ? 1 : 0)}draw "
@@ -1480,7 +2257,7 @@ internal sealed partial class Simulator3dForm
 
     internal bool ExternalRenderToCurrentOpenGlContext()
     {
-        if (_appState != SimulatorAppState.InMatch || !UseGpuRenderer || UseFastFlatRenderer)
+        if (!UseGpuRenderer || UseFastFlatRenderer)
         {
             return false;
         }
@@ -1490,10 +2267,545 @@ internal sealed partial class Simulator3dForm
         _gpuContextReady = true;
         TryInitializeGpuBufferApi();
         EnsureExternalGpuScratchSurface();
+        SimulatorRenderPassPlan passPlan = ResolveRenderPassPlan();
+
+        if (_appState == SimulatorAppState.MainMenu)
+        {
+            if (!passPlan.RenderWorld)
+            {
+                DrawGpuOpenGkFrozenBackdropOverlay(graphics => DrawOpenGkMainMenuForeground(graphics));
+            }
+            else
+            {
+                DrawGpuOpenGkMenuScene(_gpuExternalScratchGraphics!);
+                DrawGpuOpenGkMenuOverlay();
+            }
+            return true;
+        }
+
+        if (_appState == SimulatorAppState.Lobby)
+        {
+            if (!passPlan.RenderWorld)
+            {
+                DrawGpuOpenGkFrozenBackdropOverlay(graphics => DrawOpenGkLanRoomScreen(graphics));
+            }
+            else
+            {
+                DrawGpuOpenGkLobbyScene(_gpuExternalScratchGraphics!);
+                DrawGpuOpenGkLobbyOverlay();
+            }
+            return true;
+        }
+
+        if (_appState != SimulatorAppState.InMatch)
+        {
+            return false;
+        }
+
         UpdateCameraMatrices();
         DrawGpuMatch(_gpuExternalScratchGraphics!);
         MarkMatchStartupViewReady();
         return true;
+    }
+
+    private void DrawGpuOpenGkMenuScene(Graphics graphics)
+    {
+        Rectangle? previousViewport = _projectionViewportRect;
+        Matrix4x4 previousView = _viewMatrix;
+        Matrix4x4 previousProjection = _projectionMatrix;
+        Vector3 previousCameraPosition = _cameraPositionM;
+        Vector3 previousCameraTarget = _cameraTargetM;
+        double previousGameTimeSec = _host.World.GameTimeSec;
+        bool previousGeometryPass = _gpuGeometryPass;
+        bool previousBatching = _gpuBatchingDynamicGeometry;
+        GpuDynamicBatchKind previousBatch = _gpuCurrentDynamicBatch;
+        bool previousSuppressLabels = _suppressEntityLabels;
+        bool previousUseProfileColors = _useProfileColorsForVehiclePreview;
+
+        if (!EnsureGpuContext())
+        {
+            return;
+        }
+
+        if (!ReferenceEquals(_cachedRuntimeGrid, _host.RuntimeGrid))
+        {
+            RebuildTerrainTileCache();
+        }
+
+        if (!MakeGpuContextCurrent())
+        {
+            return;
+        }
+
+        int width = Math.Max(1, ClientSize.Width);
+        int height = Math.Max(1, ClientSize.Height);
+
+        try
+        {
+            glViewport(0, 0, width, height);
+            glClearColor(0.030f, 0.037f, 0.050f, 1f);
+            glClear(GlColorBufferBit | GlDepthBufferBit);
+            glEnable(GlDepthTest);
+            glEnable(GlBlend);
+            glBlendFunc(GlSrcAlpha, GlOneMinusSrcAlpha);
+
+            UpdateOpenGkBackdropCamera(new Size(width, height));
+            _projectionViewportRect = new Rectangle(0, 0, width, height);
+            _host.World.GameTimeSec = Math.Max(previousGameTimeSec, _frameClock.Elapsed.TotalSeconds);
+            _projectionMatrix = Matrix4x4.CreatePerspectiveFieldOfView(0.60f, width / (float)Math.Max(1, height), 0.03f, 900f);
+            glMatrixMode(GlProjection);
+            glLoadMatrixf(ToOpenGlMatrix(_projectionMatrix));
+            glMatrixMode(GlModelView);
+            glLoadMatrixf(ToOpenGlMatrix(_viewMatrix));
+
+            _gpuDynamicVertexBuildBuffer.Clear();
+            _gpuEnergyMechanismVertexBuildBuffer.Clear();
+            _gpuProjectileVertexBuildBuffer.Clear();
+            _gpuBatchingDynamicGeometry = true;
+            _gpuGeometryPass = true;
+
+            DrawGpuTerrainBase();
+            DrawGpuTerrainGeometry();
+            _gpuCurrentDynamicBatch = GpuDynamicBatchKind.Facility;
+            DrawGpuFacilities();
+            DrawGpuTeamTopNeonLights();
+            _suppressEntityLabels = true;
+            DrawStaticStructureBodies(graphics);
+            _gpuCurrentDynamicBatch = GpuDynamicBatchKind.Entity;
+            DrawEntityGeometry(graphics);
+            FlushGpuEnergyMechanismVertices();
+            FlushGpuDynamicVertices();
+        }
+        finally
+        {
+            _host.World.GameTimeSec = previousGameTimeSec;
+            _projectionViewportRect = previousViewport;
+            _viewMatrix = previousView;
+            _projectionMatrix = previousProjection;
+            _cameraPositionM = previousCameraPosition;
+            _cameraTargetM = previousCameraTarget;
+            _gpuGeometryPass = previousGeometryPass;
+            _gpuBatchingDynamicGeometry = previousBatching;
+            _gpuCurrentDynamicBatch = previousBatch;
+            _suppressEntityLabels = previousSuppressLabels;
+            _useProfileColorsForVehiclePreview = previousUseProfileColors;
+        }
+    }
+
+    private void DrawGpuOpenGkMenuOverlay()
+    {
+        EnsureGpuOverlaySurface();
+        if (_gpuOverlayGraphics is null)
+        {
+            return;
+        }
+
+        _uiButtons.Clear();
+        _gpuOverlayGraphics.Clear(Color.Transparent);
+        _gpuOverlayGraphics.ResetTransform();
+        _gpuOverlayGraphics.ScaleTransform(_gpuOverlaySurfaceScale, _gpuOverlaySurfaceScale);
+        ConfigureGpuOverlayGraphics(_gpuOverlayGraphics);
+        DrawOpenGkMainMenuForeground(_gpuOverlayGraphics);
+        _gpuOverlayGraphics.ResetTransform();
+        UploadGpuOverlayBitmap();
+        PresentGpuOverlayTexture();
+    }
+
+    private void DrawGpuOpenGkFrozenBackdropOverlay(Action<Graphics> drawOverlay)
+    {
+        EnsureGpuOverlaySurface();
+        if (_gpuOverlayGraphics is null)
+        {
+            return;
+        }
+
+        long nowTicks = _frameClock.ElapsedTicks;
+        SimulatorRenderPassPlan passPlan = ResolveRenderPassPlan();
+        bool throttleLanRoomUi =
+            passPlan.Mode == SimulatorRenderModeKind.LanRoom
+            && _gpuOverlayTexture != 0
+            && _gpuOverlayBitmap is not null
+            && _gpuOverlayTextureSize == _gpuOverlayBitmap.Size
+            && !_gpuOverlayUiDirty;
+        if (throttleLanRoomUi
+            && _lastGpuOverlayUiUploadTicks > 0
+            && (nowTicks - _lastGpuOverlayUiUploadTicks) / (double)Stopwatch.Frequency < passPlan.UiOverlayUploadIntervalSec)
+        {
+            PresentGpuOverlayTexture();
+            return;
+        }
+
+        EnsureOpenGkBackdropBitmap(allowSuppressedRefresh: true);
+        _uiButtons.Clear();
+        _gpuOverlayGraphics.Clear(Color.FromArgb(6, 8, 12));
+        _gpuOverlayGraphics.ResetTransform();
+        _gpuOverlayGraphics.ScaleTransform(_gpuOverlaySurfaceScale, _gpuOverlaySurfaceScale);
+        ConfigureGpuOverlayGraphics(_gpuOverlayGraphics);
+        if (_openGkBackdropBitmap is not null)
+        {
+            _gpuOverlayGraphics.DrawImage(_openGkBackdropBitmap, ClientRectangle);
+        }
+
+        drawOverlay(_gpuOverlayGraphics);
+        _gpuOverlayGraphics.ResetTransform();
+        UploadGpuOverlayBitmap();
+        _lastGpuOverlayUiUploadTicks = nowTicks;
+        _gpuOverlayUiDirty = false;
+        PresentGpuOverlayTexture();
+    }
+
+    private void DrawGpuOpenGkLobbyScene(Graphics graphics)
+    {
+        Rectangle? previousViewport = _projectionViewportRect;
+        Matrix4x4 previousView = _viewMatrix;
+        Matrix4x4 previousProjection = _projectionMatrix;
+        Vector3 previousCameraPosition = _cameraPositionM;
+        Vector3 previousCameraTarget = _cameraTargetM;
+        double previousGameTimeSec = _host.World.GameTimeSec;
+        bool previousGeometryPass = _gpuGeometryPass;
+        bool previousBatching = _gpuBatchingDynamicGeometry;
+        GpuDynamicBatchKind previousBatch = _gpuCurrentDynamicBatch;
+        bool previousSuppressLabels = _suppressEntityLabels;
+        bool previousUseProfileColors = _useProfileColorsForVehiclePreview;
+
+        if (!EnsureGpuContext())
+        {
+            return;
+        }
+
+        if (!ReferenceEquals(_cachedRuntimeGrid, _host.RuntimeGrid))
+        {
+            RebuildTerrainTileCache();
+        }
+
+        if (!MakeGpuContextCurrent())
+        {
+            return;
+        }
+
+        int width = Math.Max(1, ClientSize.Width);
+        int height = Math.Max(1, ClientSize.Height);
+
+        try
+        {
+            glViewport(0, 0, width, height);
+            glClearColor(0.030f, 0.037f, 0.050f, 1f);
+            glClear(GlColorBufferBit | GlDepthBufferBit);
+            glEnable(GlDepthTest);
+            glEnable(GlBlend);
+            glBlendFunc(GlSrcAlpha, GlOneMinusSrcAlpha);
+
+            UpdateOpenGkBackdropCamera(new Size(width, height));
+            _projectionViewportRect = new Rectangle(0, 0, width, height);
+            _host.World.GameTimeSec = Math.Max(previousGameTimeSec, _frameClock.Elapsed.TotalSeconds);
+            _projectionMatrix = Matrix4x4.CreatePerspectiveFieldOfView(0.60f, width / (float)Math.Max(1, height), 0.03f, 900f);
+            glMatrixMode(GlProjection);
+            glLoadMatrixf(ToOpenGlMatrix(_projectionMatrix));
+            glMatrixMode(GlModelView);
+            glLoadMatrixf(ToOpenGlMatrix(_viewMatrix));
+
+            _gpuDynamicVertexBuildBuffer.Clear();
+            _gpuEnergyMechanismVertexBuildBuffer.Clear();
+            _gpuProjectileVertexBuildBuffer.Clear();
+            _gpuBatchingDynamicGeometry = true;
+            _gpuGeometryPass = true;
+
+            DrawGpuTerrainBase();
+            DrawGpuTerrainGeometry();
+            _gpuCurrentDynamicBatch = GpuDynamicBatchKind.Facility;
+            DrawGpuFacilities();
+            DrawGpuTeamTopNeonLights();
+            _suppressEntityLabels = true;
+            DrawStaticStructureBodies(graphics);
+            _gpuCurrentDynamicBatch = GpuDynamicBatchKind.Entity;
+            DrawEntityGeometry(graphics);
+            FlushGpuEnergyMechanismVertices();
+            FlushGpuDynamicVertices();
+        }
+        finally
+        {
+            _host.World.GameTimeSec = previousGameTimeSec;
+            _projectionViewportRect = previousViewport;
+            _viewMatrix = previousView;
+            _projectionMatrix = previousProjection;
+            _cameraPositionM = previousCameraPosition;
+            _cameraTargetM = previousCameraTarget;
+            _gpuGeometryPass = previousGeometryPass;
+            _gpuBatchingDynamicGeometry = previousBatching;
+            _gpuCurrentDynamicBatch = previousBatch;
+            _suppressEntityLabels = previousSuppressLabels;
+            _useProfileColorsForVehiclePreview = previousUseProfileColors;
+        }
+    }
+
+    private void DrawGpuOpenGkLobbyOverlay()
+    {
+        EnsureGpuOverlaySurface();
+        if (_gpuOverlayGraphics is null)
+        {
+            return;
+        }
+
+        _uiButtons.Clear();
+        _gpuOverlayGraphics.Clear(Color.Transparent);
+        _gpuOverlayGraphics.ResetTransform();
+        _gpuOverlayGraphics.ScaleTransform(_gpuOverlaySurfaceScale, _gpuOverlaySurfaceScale);
+        ConfigureGpuOverlayGraphics(_gpuOverlayGraphics);
+
+        if (IsLanMultiplayerActive)
+        {
+            using var shade = new SolidBrush(Color.FromArgb(112, 0, 0, 0));
+            _gpuOverlayGraphics.FillRectangle(shade, ClientRectangle);
+            DrawOpenGkLanRoomScreen(_gpuOverlayGraphics);
+        }
+        else
+        {
+            DrawOpenGkMainHeader(_gpuOverlayGraphics);
+            DrawOpenGkLobbyHud(_gpuOverlayGraphics);
+        }
+
+        _gpuOverlayGraphics.ResetTransform();
+        UploadGpuOverlayBitmap();
+        PresentGpuOverlayTexture();
+    }
+
+    private Bitmap? RenderLobbyVehiclePreviewGpu(
+        SimulationEntity entity,
+        Size size,
+        double fixedAngleDeg = 34.0,
+        double fixedTurretYawDeg = 16.0,
+        double fixedGimbalPitchDeg = -6.0,
+        float distanceScaleOverride = 1.45f)
+    {
+        int width = Math.Clamp(size.Width, 16, 2048);
+        int height = Math.Clamp(size.Height, 16, 2048);
+        if (!EnsureGpuContext() || !MakeGpuContextCurrent())
+        {
+            return null;
+        }
+
+        TryInitializeGpuBufferApi();
+        TryInitializeGpuFramebufferApi();
+        if (!EnsureGpuSceneRenderTarget(new Size(width, height)) || _glBindFramebuffer is null)
+        {
+            return null;
+        }
+
+        RobotAppearanceProfile profile = _host.ResolveAppearanceProfile(entity);
+        Rectangle? previousViewport = _projectionViewportRect;
+        Matrix4x4 previousView = _viewMatrix;
+        Matrix4x4 previousProjection = _projectionMatrix;
+        Vector3 previousCameraPosition = _cameraPositionM;
+        Vector3 previousCameraTarget = _cameraTargetM;
+        bool previousGeometryPass = _gpuGeometryPass;
+        bool previousBatching = _gpuBatchingDynamicGeometry;
+        GpuDynamicBatchKind previousBatch = _gpuCurrentDynamicBatch;
+        bool previousSuppressLabels = _suppressEntityLabels;
+        bool previousUseProfileColors = _useProfileColorsForVehiclePreview;
+        double previousAngle = entity.AngleDeg;
+        double previousTurretYaw = entity.TurretYawDeg;
+        double previousPitch = entity.GimbalPitchDeg;
+
+        try
+        {
+            _glBindFramebuffer(GlFramebuffer, _gpuSceneFramebuffer);
+            glViewport(0, 0, width, height);
+            glClearColor(0.080f, 0.095f, 0.118f, 1f);
+            glClear(GlColorBufferBit | GlDepthBufferBit);
+            glEnable(GlDepthTest);
+            glEnable(GlBlend);
+            glBlendFunc(GlSrcAlpha, GlOneMinusSrcAlpha);
+
+            _projectionViewportRect = new Rectangle(0, 0, width, height);
+            _suppressEntityLabels = true;
+            _gpuGeometryPass = true;
+            _gpuBatchingDynamicGeometry = true;
+            _gpuCurrentDynamicBatch = GpuDynamicBatchKind.Entity;
+            _useProfileColorsForVehiclePreview = true;
+            _gpuDynamicVertexBuildBuffer.Clear();
+            _gpuEnergyMechanismVertexBuildBuffer.Clear();
+            _gpuProjectileVertexBuildBuffer.Clear();
+
+            entity.AngleDeg = fixedAngleDeg;
+            entity.TurretYawDeg = fixedTurretYawDeg;
+            entity.GimbalPitchDeg = fixedGimbalPitchDeg;
+
+            float previewExtent = Math.Max(
+                0.45f,
+                Math.Max(
+                    profile.BodyLengthM + profile.BarrelLengthM * 0.8f,
+                    Math.Max(profile.BodyWidthM, profile.GimbalHeightM + profile.BodyClearanceM)));
+            _cameraTargetM = new Vector3(0f, Math.Max(0.22f, profile.BodyClearanceM + profile.BodyHeightM * 0.55f), 0f);
+            float distance = Math.Clamp(previewExtent * Math.Clamp(distanceScaleOverride, 0.86f, 1.75f), 0.62f, 3.2f);
+            _cameraPositionM = _cameraTargetM + new Vector3(distance * 0.86f, distance * 0.52f, distance * 1.08f);
+            _viewMatrix = Matrix4x4.CreateLookAt(_cameraPositionM, _cameraTargetM, Vector3.UnitY);
+            float aspect = Math.Max(0.6f, width / (float)Math.Max(1, height));
+            _projectionMatrix = Matrix4x4.CreatePerspectiveFieldOfView(0.86f, aspect, 0.02f, 40f);
+
+            glMatrixMode(GlProjection);
+            glLoadMatrixf(ToOpenGlMatrix(_projectionMatrix));
+            glMatrixMode(GlModelView);
+            glLoadMatrixf(ToOpenGlMatrix(_viewMatrix));
+
+            using Bitmap scratchBitmap = new(1, 1, PixelFormat.Format32bppPArgb);
+            using Graphics scratchGraphics = Graphics.FromImage(scratchBitmap);
+            DrawEntityAppearanceModelModern(scratchGraphics, entity, Vector3.Zero, profile);
+            FlushGpuDynamicVertices();
+
+            Bitmap bitmap = new(width, height, PixelFormat.Format32bppPArgb);
+            BitmapData data = bitmap.LockBits(
+                new Rectangle(0, 0, width, height),
+                ImageLockMode.WriteOnly,
+                PixelFormat.Format32bppPArgb);
+            try
+            {
+                glPixelStorei(GlPackAlignment, 4);
+                glReadPixels(0, 0, width, height, GlBgra, GlUnsignedByte, data.Scan0);
+            }
+            finally
+            {
+                bitmap.UnlockBits(data);
+            }
+
+            bitmap.RotateFlip(RotateFlipType.RotateNoneFlipY);
+            return bitmap;
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            entity.AngleDeg = previousAngle;
+            entity.TurretYawDeg = previousTurretYaw;
+            entity.GimbalPitchDeg = previousPitch;
+            _projectionViewportRect = previousViewport;
+            _viewMatrix = previousView;
+            _projectionMatrix = previousProjection;
+            _cameraPositionM = previousCameraPosition;
+            _cameraTargetM = previousCameraTarget;
+            _gpuGeometryPass = previousGeometryPass;
+            _gpuBatchingDynamicGeometry = previousBatching;
+            _gpuCurrentDynamicBatch = previousBatch;
+            _suppressEntityLabels = previousSuppressLabels;
+            _useProfileColorsForVehiclePreview = previousUseProfileColors;
+            _glBindFramebuffer?.Invoke(GlFramebuffer, 0);
+            if (ClientSize.Width > 0 && ClientSize.Height > 0)
+            {
+                glViewport(0, 0, ClientSize.Width, ClientSize.Height);
+            }
+        }
+    }
+
+    private Bitmap? RenderOpenGkBackdropGpu(Size size)
+    {
+        int width = Math.Clamp(size.Width, 16, 2048);
+        int height = Math.Clamp(size.Height, 16, 2048);
+        if (!EnsureGpuContext() || !MakeGpuContextCurrent())
+        {
+            return null;
+        }
+
+        TryInitializeGpuBufferApi();
+        TryInitializeGpuFramebufferApi();
+        if (!EnsureGpuSceneRenderTarget(new Size(width, height)) || _glBindFramebuffer is null)
+        {
+            return null;
+        }
+
+        Rectangle? previousViewport = _projectionViewportRect;
+        Matrix4x4 previousView = _viewMatrix;
+        Matrix4x4 previousProjection = _projectionMatrix;
+        Vector3 previousCameraPosition = _cameraPositionM;
+        Vector3 previousCameraTarget = _cameraTargetM;
+        bool previousGeometryPass = _gpuGeometryPass;
+        bool previousBatching = _gpuBatchingDynamicGeometry;
+        GpuDynamicBatchKind previousBatch = _gpuCurrentDynamicBatch;
+        bool previousSuppressLabels = _suppressEntityLabels;
+        bool previousUseProfileColors = _useProfileColorsForVehiclePreview;
+        double previousGameTimeSec = _host.World.GameTimeSec;
+
+        try
+        {
+            _glBindFramebuffer(GlFramebuffer, _gpuSceneFramebuffer);
+            glViewport(0, 0, width, height);
+            glClearColor(0.035f, 0.042f, 0.055f, 1f);
+            glClear(GlColorBufferBit | GlDepthBufferBit);
+            glEnable(GlDepthTest);
+            glEnable(GlBlend);
+            glBlendFunc(GlSrcAlpha, GlOneMinusSrcAlpha);
+
+            _projectionViewportRect = new Rectangle(0, 0, width, height);
+            _gpuGeometryPass = true;
+            _gpuBatchingDynamicGeometry = true;
+            _gpuCurrentDynamicBatch = GpuDynamicBatchKind.Entity;
+            _suppressEntityLabels = true;
+            _useProfileColorsForVehiclePreview = true;
+            _gpuDynamicVertexBuildBuffer.Clear();
+            _gpuEnergyMechanismVertexBuildBuffer.Clear();
+            _gpuProjectileVertexBuildBuffer.Clear();
+
+            UpdateOpenGkBackdropCamera(new Size(width, height));
+            _host.World.GameTimeSec = Math.Max(previousGameTimeSec, _frameClock.Elapsed.TotalSeconds);
+
+            glMatrixMode(GlProjection);
+            glLoadMatrixf(ToOpenGlMatrix(_projectionMatrix));
+            glMatrixMode(GlModelView);
+            glLoadMatrixf(ToOpenGlMatrix(_viewMatrix));
+
+            using Bitmap scratchBitmap = new(1, 1, PixelFormat.Format32bppPArgb);
+            using Graphics scratchGraphics = Graphics.FromImage(scratchBitmap);
+            DrawGpuTerrainBase();
+            DrawGpuTerrainGeometry();
+            DrawGpuFacilities();
+            DrawGpuTeamTopNeonLights();
+            DrawStaticStructureBodies(scratchGraphics);
+            DrawEntityGeometry(scratchGraphics);
+            FlushGpuEnergyMechanismVertices();
+            FlushGpuDynamicVertices();
+            FlushGpuProjectileVertices();
+
+            Bitmap bitmap = new(width, height, PixelFormat.Format32bppPArgb);
+            BitmapData data = bitmap.LockBits(
+                new Rectangle(0, 0, width, height),
+                ImageLockMode.WriteOnly,
+                PixelFormat.Format32bppPArgb);
+            try
+            {
+                glPixelStorei(GlPackAlignment, 4);
+                glReadPixels(0, 0, width, height, GlBgra, GlUnsignedByte, data.Scan0);
+            }
+            finally
+            {
+                bitmap.UnlockBits(data);
+            }
+
+            bitmap.RotateFlip(RotateFlipType.RotateNoneFlipY);
+            return bitmap;
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            _host.World.GameTimeSec = previousGameTimeSec;
+            _projectionViewportRect = previousViewport;
+            _viewMatrix = previousView;
+            _projectionMatrix = previousProjection;
+            _cameraPositionM = previousCameraPosition;
+            _cameraTargetM = previousCameraTarget;
+            _gpuGeometryPass = previousGeometryPass;
+            _gpuBatchingDynamicGeometry = previousBatching;
+            _gpuCurrentDynamicBatch = previousBatch;
+            _suppressEntityLabels = previousSuppressLabels;
+            _useProfileColorsForVehiclePreview = previousUseProfileColors;
+            _glBindFramebuffer?.Invoke(GlFramebuffer, 0);
+            if (ClientSize.Width > 0 && ClientSize.Height > 0)
+            {
+                glViewport(0, 0, ClientSize.Width, ClientSize.Height);
+            }
+        }
     }
 
     private bool EnsureGpuContext()
@@ -1643,9 +2955,10 @@ internal sealed partial class Simulator3dForm
         {
             glGenTextures(1, out _gpuTerrainTexture);
             glBindTexture(GlTexture2D, _gpuTerrainTexture);
-            glTexParameteri(GlTexture2D, GlTextureMinFilter, GlLinear);
+            glTexParameteri(GlTexture2D, GlTextureMinFilter, GlLinearMipmapLinear);
             glTexParameteri(GlTexture2D, GlTextureMagFilter, GlLinear);
             glTexImage2D(GlTexture2D, 0, GlRgba, uploadBitmap.Width, uploadBitmap.Height, 0, GlBgra, GlUnsignedByte, data.Scan0);
+            OpenTK.Graphics.OpenGL4.GL.GenerateMipmap(OpenTK.Graphics.OpenGL4.GenerateMipmapTarget.Texture2D);
             _gpuTerrainTexturePath = _terrainColorBitmapPath;
             _gpuTerrainTextureSize = uploadBitmap.Size;
             return true;
@@ -1677,7 +2990,7 @@ internal sealed partial class Simulator3dForm
 
         if (_gpuTerrainVertexCount > 0)
         {
-            DrawGpuVertexBuffer(_gpuTerrainVertexBuffer, _gpuTerrainVertexCount);
+            DrawGpuVertexBuffer(_gpuTerrainVertexBuffer, _gpuTerrainVertexCount, useNativeLighting: false);
         }
     }
 
@@ -1764,6 +3077,19 @@ internal sealed partial class Simulator3dForm
 
     private bool IsTerrainCacheGpuBoundsVisible(float minX, float minY, float minZ, float maxX, float maxY, float maxZ)
     {
+        Vector3 boundsCenter = new(
+            (minX + maxX) * 0.5f,
+            (minY + maxY) * 0.5f,
+            (minZ + maxZ) * 0.5f);
+        float horizontalRadius = MathF.Max(0.25f, MathF.Sqrt(
+            MathF.Pow((maxX - minX) * 0.5f, 2f)
+            + MathF.Pow((maxZ - minZ) * 0.5f, 2f)));
+        float verticalSpan = MathF.Max(0.20f, maxY - minY);
+        if (!IsSceneBoundsPotentiallyVisible(boundsCenter, horizontalRadius, verticalSpan))
+        {
+            return false;
+        }
+
         Span<Vector3> corners =
         [
             new(minX, minY, minZ),
@@ -1795,6 +3121,14 @@ internal sealed partial class Simulator3dForm
             allFar &= clip.Z > w;
         }
 
+        if (_firstPersonView)
+        {
+            // First-person camera often runs very low and close to the ground.
+            // Nearby terrain chunks can straddle the near plane and get rejected
+            // as "allNear" even though they should still contribute visible ground.
+            return !(allLeft || allRight || allBelow || allAbove || allFar);
+        }
+
         return !(allLeft || allRight || allBelow || allAbove || allNear || allFar);
     }
 
@@ -1805,10 +3139,19 @@ internal sealed partial class Simulator3dForm
             return false;
         }
 
+        bool lightingEnabled = _lightingSettings.Enabled;
         if (string.Equals(_terrainCacheGpuLoadedSourcePath, _terrainCacheGpuSourcePath, StringComparison.OrdinalIgnoreCase)
+            && _terrainCacheGpuLoadedLightingEnabled == lightingEnabled
             && _terrainCacheGpuChunks.Count > 0)
         {
             return true;
+        }
+
+        if (_terrainCacheGpuLoadedLightingEnabled != lightingEnabled)
+        {
+            ReleaseTerrainCacheGpuChunks(deleteBuffers: true, clearSource: false);
+            _terrainCacheGpuLoadedSourcePath = null;
+            _terrainCacheGpuLoadedLightingEnabled = lightingEnabled;
         }
 
         if (_terrainCacheGpuBuildTask is not null
@@ -1839,6 +3182,13 @@ internal sealed partial class Simulator3dForm
                 return false;
             }
 
+            if (result.UseBakedLighting != _lightingSettings.Enabled)
+            {
+                _terrainCacheGpuLoadedSourcePath = null;
+                _terrainCacheGpuLoadedLightingEnabled = _lightingSettings.Enabled;
+                return false;
+            }
+
             ReleaseTerrainCacheGpuChunks(deleteBuffers: true, clearSource: false);
             _terrainCacheGpuChunks.AddRange(result.Chunks);
             _terrainCacheGpuChunkTree = TerrainCacheGpuChunkQuadTree.Build(_terrainCacheGpuChunks);
@@ -1847,10 +3197,11 @@ internal sealed partial class Simulator3dForm
             _terrainCacheGpuTotalTriangles = result.EmittedTriangles;
             _gpuTerrainVertexCount = result.VertexCount;
             _terrainCacheGpuLoadedSourcePath = result.SourcePath;
+            _terrainCacheGpuLoadedLightingEnabled = result.UseBakedLighting;
             _terrainCacheGpuBuildFailed = _terrainCacheGpuChunks.Count == 0;
             AppendGameplayLog(
                 "terrain_cache_render.log",
-                $"{DateTime.Now:HH:mm:ss.fff} source={Path.GetFileName(result.SourcePath)} original_triangles={result.EmittedTriangles}/{result.TotalTriangles} chunks={result.UsedChunks}/{result.Chunks.Count} chunk_size_m={TerrainCacheGpuChunkSizeM:0.##} vertices={result.VertexCount}");
+                $"{DateTime.Now:HH:mm:ss.fff} source={Path.GetFileName(result.SourcePath)} lighting={result.UseBakedLighting} original_triangles={result.EmittedTriangles}/{result.TotalTriangles} chunks={result.UsedChunks}/{result.Chunks.Count} chunk_size_m={TerrainCacheGpuChunkSizeM:0.##} vertices={result.VertexCount}");
             return !_terrainCacheGpuBuildFailed;
         }
         catch (Exception exception)
@@ -1867,20 +3218,29 @@ internal sealed partial class Simulator3dForm
 
     private void StartTerrainCacheGpuChunkBuild(string sourcePath)
     {
-        bool recolorBlueBaseSide = TryResolveBlueBaseSideTerrainRecolor(out bool blueBaseSideHigherWorldX, out float blueBaseSideSplitXMeters);
         var parameters = new TerrainCacheGpuBuildParameters(
             Math.Max(1f, _host.MapPreset.Width),
             Math.Max(1f, _host.MapPreset.Height),
             Math.Max(1f, (float)_host.MapPreset.FieldLengthM),
             Math.Max(1f, (float)_host.MapPreset.FieldWidthM),
             (float)Math.Max(1e-6, _host.World.MetersPerWorldUnit),
+            _terrainCacheGpuAnnotationPath,
             TerrainCacheActorComponentFilter.LoadExcludedComponentIds(_host.MapPreset),
-            recolorBlueBaseSide,
-            blueBaseSideHigherWorldX,
-            blueBaseSideSplitXMeters);
+            _lightingSettings.Enabled);
         string fullPath = Path.GetFullPath(sourcePath);
         _terrainCacheGpuBuildingSourcePath = fullPath;
-        _terrainCacheGpuBuildTask = Task.Run(() => BuildTerrainCacheGpuChunks(fullPath, parameters));
+        _terrainCacheGpuBuildTask = Task.Run(() =>
+        {
+            try
+            {
+                Thread.CurrentThread.Priority = ThreadPriority.BelowNormal;
+            }
+            catch
+            {
+            }
+
+            return BuildTerrainCacheGpuChunks(fullPath, parameters);
+        });
         AppendGameplayLog(
             "terrain_cache_render.log",
             $"{DateTime.Now:HH:mm:ss.fff} source={Path.GetFileName(fullPath)} gpu_chunk_build=background_started");
@@ -1890,7 +3250,7 @@ internal sealed partial class Simulator3dForm
         string sourcePath,
         TerrainCacheGpuBuildParameters parameters)
     {
-        RuntimeReferenceScene runtimeScene = RuntimeReferenceLoader.Load(sourcePath);
+        RuntimeReferenceScene runtimeScene = RuntimeReferenceLoader.Load(sourcePath, parameters.AnnotationPath);
         bool initialized = false;
         float sceneWidthM = Math.Max(1f, parameters.FieldLengthM);
         float sceneDepthM = Math.Max(1f, parameters.FieldWidthM);
@@ -1926,7 +3286,8 @@ internal sealed partial class Simulator3dForm
             }
 
             int triangleIndexCount = indices.Length - indices.Length % 3;
-            if (componentRanges.Length > 0 && parameters.ExcludedComponentIds.Count > 0)
+            if (componentRanges.Length > 0
+                && (parameters.ExcludedComponentIds.Count > 0 || runtimeScene.ComponentColorOverrides.Count > 0))
             {
                 foreach (RuntimeReferenceComponentRange range in componentRanges)
                 {
@@ -1939,16 +3300,19 @@ internal sealed partial class Simulator3dForm
                         continue;
                     }
 
-                    AppendTriangles(rangeStart, rangeEnd);
+                    Color? componentOverrideColor = TryResolveRuntimeReferenceComponentColorOverride(runtimeScene, range.ComponentId, out Color overrideColor)
+                        ? overrideColor
+                        : null;
+                    AppendTriangles(rangeStart, rangeEnd, componentOverrideColor, parameters.UseBakedLighting);
                 }
 
                 continue;
             }
 
             totalTriangles += triangleIndexCount / 3;
-            AppendTriangles(0, triangleIndexCount);
+            AppendTriangles(0, triangleIndexCount, null, parameters.UseBakedLighting);
 
-            void AppendTriangles(int startIndex, int endIndex)
+            void AppendTriangles(int startIndex, int endIndex, Color? componentOverrideColor, bool useBakedLighting)
             {
                 for (int triangle = startIndex; triangle < endIndex; triangle += 3)
                 {
@@ -1966,12 +3330,11 @@ internal sealed partial class Simulator3dForm
                     Vector3 p1 = sceneVertices[i1];
                     Vector3 p2 = sceneVertices[i2];
                     TerrainCacheGpuChunk targetChunk = ResolveTerrainCacheGpuChunk(chunks, columns, rows, (p0 + p1 + p2) / 3f);
-                    Color fill = ResolveRuntimeReferenceTriangleColor(
+                    Color fill = componentOverrideColor ?? ResolveRuntimeReferenceTriangleColor(
                         vertices[i0].Color,
                         vertices[i1].Color,
                         vertices[i2].Color);
-                    fill = RemapBlueBaseSideAccentIfNeeded(fill, p0, p1, p2, parameters);
-                    fill = ApplyGpuTopPointLight(fill, p0, p1, p2, sceneWidthM, sceneDepthM, 0.30f);
+                    fill = ApplyBakedArenaPointLight(fill, p0, p1, p2, sceneWidthM, sceneDepthM, useBakedLighting);
                     targetChunk.AppendTriangle(
                         new GpuVertex(p0, fill),
                         new GpuVertex(p1, fill),
@@ -2002,6 +3365,7 @@ internal sealed partial class Simulator3dForm
 
         return new TerrainCacheGpuBuildResult(
             sourcePath,
+            parameters.UseBakedLighting,
             chunks,
             columns,
             rows,
@@ -2047,61 +3411,23 @@ internal sealed partial class Simulator3dForm
             (a.B + b.B + c.B) / 3);
     }
 
-    private static Color RemapBlueBaseSideAccentIfNeeded(
-        Color color,
-        Vector3 p0,
-        Vector3 p1,
-        Vector3 p2,
-        TerrainCacheGpuBuildParameters parameters)
+    private static bool TryResolveRuntimeReferenceComponentColorOverride(
+        RuntimeReferenceScene runtimeScene,
+        int componentId,
+        out Color color)
     {
-        if (!parameters.BlueBaseSideRecolorEnabled || !IsLikelyRedAccent(color))
-        {
-            return color;
-        }
-
-        Vector3 centroid = (p0 + p1 + p2) / 3f;
-        bool onBlueSide = parameters.BlueBaseSideHigherWorldX
-            ? centroid.X >= parameters.BlueBaseSideSplitXMeters
-            : centroid.X <= parameters.BlueBaseSideSplitXMeters;
-        if (!onBlueSide)
-        {
-            return color;
-        }
-
-        Color blueAccent = Color.FromArgb(color.A, 34, 82, 170);
-        return BlendColor(color, blueAccent, 0.86f);
-    }
-
-    private static bool IsLikelyRedAccent(Color color)
-    {
-        if (color.A <= 0)
+        color = default;
+        if (!runtimeScene.ComponentColorOverrides.TryGetValue(componentId, out Vector4 value))
         {
             return false;
         }
 
-        return color.R >= 92
-            && color.R > color.G + 16
-            && color.R > color.B + 24;
-    }
-
-    private bool TryResolveBlueBaseSideTerrainRecolor(out bool blueBaseSideHigherWorldX, out float blueBaseSideSplitXMeters)
-    {
-        blueBaseSideSplitXMeters = Math.Max(1f, (float)_host.MapPreset.FieldLengthM) * 0.5f;
-        blueBaseSideHigherWorldX = false;
-
-        FacilityRegion? blueBase = _host.MapPreset.Facilities.FirstOrDefault(facility =>
-            string.Equals(facility.Team, "blue", StringComparison.OrdinalIgnoreCase)
-            && facility.Type.Contains("base", StringComparison.OrdinalIgnoreCase));
-        if (blueBase is null)
-        {
-            return false;
-        }
-
-        double metersPerWorldUnit = Math.Max(_host.World.MetersPerWorldUnit, 1e-6);
-        double baseCenterWorldX = (blueBase.X1 + blueBase.X2) * 0.5;
-        double baseCenterMeters = baseCenterWorldX * metersPerWorldUnit;
-        blueBaseSideHigherWorldX = baseCenterMeters >= blueBaseSideSplitXMeters;
-        return true;
+        color = Color.FromArgb(
+            Math.Clamp((int)MathF.Round((value.W <= 0f ? 1f : value.W) * 255f), 0, 255),
+            Math.Clamp((int)MathF.Round(value.X * 255f), 0, 255),
+            Math.Clamp((int)MathF.Round(value.Y * 255f), 0, 255),
+            Math.Clamp((int)MathF.Round(value.Z * 255f), 0, 255));
+        return color.A > 0;
     }
 
     private static TerrainCacheGpuChunk ResolveTerrainCacheGpuChunk(
@@ -2318,6 +3644,10 @@ internal sealed partial class Simulator3dForm
     private void InvalidateGpuOverlayLayer()
     {
         _lastGpuOverlayUploadTicks = 0;
+        _lastGpuOverlaySceneUploadTicks = 0;
+        _lastGpuOverlayUiUploadTicks = 0;
+        _gpuOverlaySceneDirty = true;
+        _gpuOverlayUiDirty = true;
     }
 
     private void TrimTerrainCacheGpuResidentBuffers()
@@ -2544,17 +3874,17 @@ internal sealed partial class Simulator3dForm
 
         if (face.Vertices.Length == 3)
         {
-            AppendGpuTerrainTriangle(target, face.Vertices[0], face.Vertices[1], face.Vertices[2], face.FillColor);
+            AppendGpuTerrainTriangle(target, face.Vertices[0], face.Vertices[1], face.Vertices[2], face.FillColor, _lightingSettings.Enabled);
         }
         else if (face.Vertices.Length == 4)
         {
-            AppendGpuTerrainQuad(target, face.Vertices[0], face.Vertices[1], face.Vertices[2], face.Vertices[3], face.FillColor);
+            AppendGpuTerrainQuad(target, face.Vertices[0], face.Vertices[1], face.Vertices[2], face.Vertices[3], face.FillColor, _lightingSettings.Enabled);
         }
         else if (face.Vertices.Length > 4)
         {
             for (int index = 1; index < face.Vertices.Length - 1; index++)
             {
-                AppendGpuTerrainTriangle(target, face.Vertices[0], face.Vertices[index], face.Vertices[index + 1], face.FillColor);
+                AppendGpuTerrainTriangle(target, face.Vertices[0], face.Vertices[index], face.Vertices[index + 1], face.FillColor, _lightingSettings.Enabled);
             }
         }
     }
@@ -2592,17 +3922,17 @@ internal sealed partial class Simulator3dForm
         {
             if (face.Vertices.Length == 3)
             {
-                AppendGpuTerrainTriangle(target, face.Vertices[0], face.Vertices[1], face.Vertices[2], face.FillColor);
+                AppendGpuTerrainTriangle(target, face.Vertices[0], face.Vertices[1], face.Vertices[2], face.FillColor, _lightingSettings.Enabled);
             }
             else if (face.Vertices.Length == 4)
             {
-                AppendGpuTerrainQuad(target, face.Vertices[0], face.Vertices[1], face.Vertices[2], face.Vertices[3], face.FillColor);
+                AppendGpuTerrainQuad(target, face.Vertices[0], face.Vertices[1], face.Vertices[2], face.Vertices[3], face.FillColor, _lightingSettings.Enabled);
             }
             else if (face.Vertices.Length > 4)
             {
                 for (int index = 1; index < face.Vertices.Length - 1; index++)
                 {
-                    AppendGpuTerrainTriangle(target, face.Vertices[0], face.Vertices[index], face.Vertices[index + 1], face.FillColor);
+                    AppendGpuTerrainTriangle(target, face.Vertices[0], face.Vertices[index], face.Vertices[index + 1], face.FillColor, _lightingSettings.Enabled);
                 }
             }
         }
@@ -2633,7 +3963,7 @@ internal sealed partial class Simulator3dForm
                 Vector2 c = facet.PointsWorld[index + 1];
                 float hb = index < facet.HeightsM.Count ? facet.HeightsM[index] : facet.HeightsM[^1];
                 float hc = index + 1 < facet.HeightsM.Count ? facet.HeightsM[index + 1] : facet.HeightsM[^1];
-                AppendGpuTerrainTriangle(target, a, ToScenePoint(b.X, b.Y, hb), ToScenePoint(c.X, c.Y, hc), topColor);
+                AppendGpuTerrainTriangle(target, a, ToScenePoint(b.X, b.Y, hb), ToScenePoint(c.X, c.Y, hc), topColor, _lightingSettings.Enabled);
             }
         }
     }
@@ -2666,7 +3996,7 @@ internal sealed partial class Simulator3dForm
                 Vector3 vb = ToScenePoint(b.X, b.Y, hb);
                 Vector3 vc = ToScenePoint(c.X, c.Y, hc);
                 Vector3 center = (a + vb + vc) / 3f;
-                AppendGpuTerrainTriangle(ResolveGpuTerrainChunk(center).BuildBuffer, a, vb, vc, topColor);
+                AppendGpuTerrainTriangle(ResolveGpuTerrainChunk(center).BuildBuffer, a, vb, vc, topColor, _lightingSettings.Enabled);
             }
         }
     }
@@ -2766,7 +4096,8 @@ internal sealed partial class Simulator3dForm
 
             Color color = region.Type switch
             {
-                "base" or "outpost" => Color.FromArgb(160, ResolveTeamColor(region.Team)),
+                "base" or "outpost" => Color.FromArgb(150, 86, 94, 102),
+                "energy_mechanism" => Color.FromArgb(180, ResolveTeamColor(region.Team)),
                 "supply" or "buff_supply" => Color.FromArgb(150, 88, 204, 142),
                 "wall" => Color.FromArgb(190, 104, 110, 118),
                 _ => Color.FromArgb(110, 120, 170, 150),
@@ -2816,6 +4147,7 @@ internal sealed partial class Simulator3dForm
 
         TryDrawGpuFineTerrainOutposts();
         TryDrawGpuFineTerrainBases();
+        TryDrawGpuFineTerrainCollisionShapes();
     }
 
     private void DrawGpuTeamTopNeonLights()
@@ -3049,6 +4381,11 @@ internal sealed partial class Simulator3dForm
         _entityOverlayBuffer.Clear();
         foreach (SimulationEntity entity in _host.World.Entities)
         {
+            if (!ShouldRenderEntity(entity))
+            {
+                continue;
+            }
+
             if (ShouldHideTemporaryArenaMechanismModels() && IsTemporaryArenaMechanismEntity(entity))
             {
                 continue;
@@ -3078,12 +4415,14 @@ internal sealed partial class Simulator3dForm
                 continue;
             }
 
-            Color teamColor = ResolveTeamColor(entity.Team);
+            RobotAppearanceProfile entityProfile = _host.ResolveAppearanceProfile(entity);
+            Color bodyColor = entityProfile.BodyColor.A <= 0 ? Color.FromArgb(166, 174, 186) : entityProfile.BodyColor;
             RuntimeChassisMotion motion = ResolveRuntimeChassisMotion(entity);
             float baseHeight = (float)Math.Max(
                 0.0,
                 entity.GroundHeightM + entity.AirborneHeightM + motion.BodyLiftM);
-            Vector3 center = ToScenePoint(entity.X, entity.Y, baseHeight + (float)Math.Max(0.06, entity.BodyHeightM * 0.5));
+            Vector3 center = ToScenePoint(entity.X, entity.Y, baseHeight + (float)Math.Max(0.06, entity.BodyHeightM * 0.5))
+                + ResolveRuntimeChassisSceneOffset(entity, motion);
             float radius = entity.EntityType switch
             {
                 "base" => 0.62f,
@@ -3094,12 +4433,12 @@ internal sealed partial class Simulator3dForm
             float height = entity.EntityType is "base" or "outpost"
                 ? Math.Max(0.55f, (float)entity.BodyHeightM)
                 : Math.Max(0.14f, (float)entity.BodyHeightM);
-            DrawGpuBox(center, radius, Math.Max(0.09f, radius * 0.7f), height, Color.FromArgb(230, teamColor));
+            DrawGpuBox(center, radius, Math.Max(0.09f, radius * 0.7f), height, Color.FromArgb(230, bodyColor));
             _entityOverlayBuffer.Add(new EntityRenderOverlay(
                 entity,
                 center,
                 height,
-                _host.ResolveAppearanceProfile(entity)));
+                entityProfile));
 
             float yaw = (float)(entity.AngleDeg * Math.PI / 180.0);
             Vector3 nose = center + new Vector3(MathF.Cos(yaw) * radius * 1.35f, 0.02f, MathF.Sin(yaw) * radius * 1.35f);
@@ -3514,6 +4853,13 @@ internal sealed partial class Simulator3dForm
 
     private void DrawGpuEnergyMechanismRuleHighlights(FacilityRegion region, double centerWorldX, double centerWorldY)
     {
+        // Only render the authored energy-mechanism model rings. The score/active
+        // overlay annuli added extra rings standing off the disk plane.
+        if (!ShouldRenderGeneratedEnergyMechanismRingOverlays())
+        {
+            return;
+        }
+
         SimulationEntity? mechanism = null;
         double bestMechanismScore = double.MaxValue;
         foreach (SimulationEntity entity in _host.World.Entities)
@@ -3548,9 +4894,9 @@ internal sealed partial class Simulator3dForm
         double metersPerWorldUnit = Math.Max(_host.World.MetersPerWorldUnit, 1e-6);
         foreach (SimulationTeamState teamState in _host.World.Teams.Values)
         {
-            bool showActive = string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
-                && teamState.EnergyNextModuleDelaySec <= 1e-6
+            bool showPending = string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
                 && teamState.EnergyCurrentLitMask != 0;
+            bool showActive = showPending && teamState.EnergyNextModuleDelaySec <= 1e-6;
             bool showActivated = string.Equals(teamState.EnergyMechanismState, "activated", StringComparison.OrdinalIgnoreCase)
                 && teamState.EnergyBuffTimerSec > 1e-6;
             bool showLastHit = teamState.EnergyLastHitArmIndex >= 0 && teamState.EnergyLastRingScore > 0;
@@ -3564,17 +4910,17 @@ internal sealed partial class Simulator3dForm
                 }
             }
 
-            if (!showActive && !showActivated && !showLastHit && !hasPersistentRings)
+            if (!showPending && !showActivated && !showLastHit && !hasPersistentRings)
             {
                 continue;
             }
 
-            Color teamColor = ResolveTeamColor(teamState.Team);
-            Color activeColor = Color.FromArgb(232, Math.Min(255, teamColor.R + 45), Math.Min(255, teamColor.G + 45), Math.Min(255, teamColor.B + 45));
-            Color activatedColor = Color.FromArgb(210, teamColor.R, teamColor.G, teamColor.B);
-            Color ringHitColor = Color.FromArgb(245, Math.Min(255, teamColor.R + 58), Math.Min(255, teamColor.G + 58), Math.Min(255, teamColor.B + 58));
-            Color ringSteadyColor = Color.FromArgb(204, teamColor.R, teamColor.G, teamColor.B);
-            foreach (ArmorPlateTarget plate in SimulationCombatMath.GetEnergyMechanismTargets(mechanism, metersPerWorldUnit, _host.World.GameTimeSec, teamState.Team, teamState))
+            Color teamColor = ResolveMapTeamLineColor(teamState.Team);
+            Color activeColor = ResolveEnergyMechanismRingLitColor(teamColor, emphasized: showActive);
+            Color ringSteadyColor = ResolveEnergyMechanismRingLitColor(teamColor, emphasized: false);
+            bool completionFlashBlack = IsFineTerrainEnergyCompletionFlashBlack(_host.World.GameTimeSec, teamState);
+            foreach (ArmorPlateTarget plate in SelectEnergyMechanismOverlayDisks(
+                         SimulationCombatMath.GetEnergyMechanismTargets(mechanism, metersPerWorldUnit, _host.World.GameTimeSec, teamState.Team, teamState)))
             {
                 if (!SimulationCombatMath.TryParseEnergyArmIndex(plate.Id, out _, out int armIndex))
                 {
@@ -3587,26 +4933,43 @@ internal sealed partial class Simulator3dForm
                 int persistentRingScore = armIndex >= 0 && armIndex < teamState.EnergyHitRingsByArm.Length
                     ? Math.Clamp(teamState.EnergyHitRingsByArm[armIndex], 0, 10)
                     : 0;
-                if (persistentRingScore <= 0)
+                bool activeArm = showPending && (teamState.EnergyCurrentLitMask & (1 << armIndex)) != 0;
+                if (persistentRingScore <= 0 && !activeArm)
                 {
                     continue;
                 }
 
-                float outer = diskRadius * (11 - persistentRingScore) / 10f;
-                float inner = persistentRingScore >= 10 ? 0f : diskRadius * (10 - persistentRingScore) / 10f;
-                bool flashing = showLastHit
+                void DrawRingScore(int ringScore, Color ringColor, bool emphasized)
+                {
+                    float outer = diskRadius * (11 - ringScore) / 10f;
+                    float inner = ringScore >= 10 ? 0f : diskRadius * (10 - ringScore) / 10f;
+                    DrawGpuAnnulusDoubleSided(
+                        center,
+                        normal,
+                        Vector3.UnitY,
+                        inner,
+                        Math.Max(inner + (emphasized ? 0.004f : 0.003f), outer),
+                        ringColor,
+                        24,
+                        emphasized ? 0.0140f : 0.0130f);
+                }
+
+                if (activeArm && persistentRingScore <= 0)
+                {
+                    DrawRingScore(4, activeColor, emphasized: false);
+                    DrawRingScore(7, activeColor, emphasized: true);
+                    continue;
+                }
+
+                bool hitFlashing = showLastHit
                     && teamState.EnergyLastHitArmIndex == armIndex
                     && _host.World.GameTimeSec <= teamState.EnergyLastHitFlashEndSec;
-                if (flashing)
-                {
-                    double blinkPhase = (_host.World.GameTimeSec * 6.25) % 1.0;
-                    Color flashColor = blinkPhase < 0.5 ? Color.FromArgb(232, 8, 9, 11) : ringSteadyColor;
-                    DrawGpuAnnulusDoubleSided(center, normal, Vector3.UnitY, inner, Math.Max(inner + 0.004f, outer), flashColor, 24, 0.0140f);
-                }
-                else
-                {
-                    DrawGpuAnnulusDoubleSided(center, normal, Vector3.UnitY, inner, Math.Max(inner + 0.003f, outer), ringSteadyColor, 24, 0.0130f);
-                }
+                bool hitFlashBlack = hitFlashing
+                    && IsFineTerrainEnergyHitFlashBlack(_host.World.GameTimeSec, teamState.EnergyLastHitFlashEndSec);
+                Color ringColor = completionFlashBlack || hitFlashBlack
+                    ? ResolveEnergyMechanismRingFlashColor(teamColor)
+                    : ringSteadyColor;
+                DrawRingScore(persistentRingScore, ringColor, hitFlashing || completionFlashBlack);
             }
         }
     }
@@ -3617,6 +4980,8 @@ internal sealed partial class Simulator3dForm
         DrawGpuAnnulus(center + normal * offset, normal, upAxis, innerRadius, outerRadius, color, segmentCount);
         DrawGpuAnnulus(center - normal * offset, -normal, upAxis, innerRadius, outerRadius, color, segmentCount);
     }
+
+    private static bool ShouldRenderGeneratedEnergyMechanismRingOverlays() => true;
 
     private void DrawGpuGeneralPrism(IReadOnlyList<Vector3> bottom, IReadOnlyList<Vector3> top, Color color)
     {
@@ -3969,7 +5334,8 @@ internal sealed partial class Simulator3dForm
         FlushGpuVertexList(
             _gpuDynamicVertexBuildBuffer,
             ref _gpuDynamicVertexBuffer,
-            ref _gpuDynamicVertexCapacity);
+            ref _gpuDynamicVertexCapacity,
+            useNativeLighting: true);
     }
 
     private void FlushGpuEnergyMechanismVertices()
@@ -3977,7 +5343,8 @@ internal sealed partial class Simulator3dForm
         FlushGpuVertexList(
             _gpuEnergyMechanismVertexBuildBuffer,
             ref _gpuEnergyMechanismVertexBuffer,
-            ref _gpuEnergyMechanismVertexCapacity);
+            ref _gpuEnergyMechanismVertexCapacity,
+            useNativeLighting: true);
     }
 
     private void FlushGpuProjectileVertices()
@@ -3985,7 +5352,8 @@ internal sealed partial class Simulator3dForm
         FlushGpuVertexList(
             _gpuProjectileVertexBuildBuffer,
             ref _gpuProjectileVertexBuffer,
-            ref _gpuProjectileVertexCapacity);
+            ref _gpuProjectileVertexCapacity,
+            useNativeLighting: false);
     }
 
     private void ResetFineTerrainEnergyBodyMeshCache(string? sceneKey)
@@ -4163,7 +5531,7 @@ internal sealed partial class Simulator3dForm
         _fineTerrainBaseUnitMeshSceneKey = sceneKey;
     }
 
-    private void FlushGpuVertexList(List<GpuVertex> vertices, ref int buffer, ref int capacity)
+    private void FlushGpuVertexList(List<GpuVertex> vertices, ref int buffer, ref int capacity, bool useNativeLighting)
     {
         if (vertices.Count == 0)
         {
@@ -4172,7 +5540,7 @@ internal sealed partial class Simulator3dForm
 
         if (!_gpuBufferApiReady || _glGenBuffers is null || _glBindBuffer is null || _glBufferData is null || _glBufferSubData is null)
         {
-            DrawGpuVerticesImmediate(vertices);
+            DrawGpuVerticesImmediate(vertices, useNativeLighting);
             vertices.Clear();
             return;
         }
@@ -4192,7 +5560,7 @@ internal sealed partial class Simulator3dForm
         }
 
         UploadGpuVertexSubData(vertices, bytes);
-        DrawGpuVertexBuffer(buffer, vertices.Count);
+        DrawGpuVertexBuffer(buffer, vertices.Count, useNativeLighting);
         _glBindBuffer(GlArrayBuffer, 0);
         vertices.Clear();
     }
@@ -4431,7 +5799,7 @@ internal sealed partial class Simulator3dForm
         }
     }
 
-    private void DrawGpuVertexBuffer(int buffer, int vertexCount)
+    private void DrawGpuVertexBuffer(int buffer, int vertexCount, bool useNativeLighting = false)
     {
         if (vertexCount <= 0 || _glBindBuffer is null)
         {
@@ -4446,13 +5814,27 @@ internal sealed partial class Simulator3dForm
 
         _glBindVertexArray?.Invoke(_gpuSharedVertexArray);
         _glBindBuffer(GlArrayBuffer, buffer);
+        bool enableLighting = useNativeLighting && _lightingSettings.Enabled;
+        ConfigureGpuNativeLighting(enableLighting, _lightingSettings);
         glEnableClientState(GlVertexArray);
         glEnableClientState(GlColorArray);
         glVertexPointer(3, GlFloat, stride, IntPtr.Zero);
         glColorPointer(4, GlUnsignedByte, stride, new IntPtr(12));
+        if (enableLighting)
+        {
+            glEnableClientState(GlNormalArray);
+            glNormalPointer(GlFloat, stride, new IntPtr(16));
+        }
+
         glDrawArrays(GlTriangles, 0, vertexCount);
+        if (enableLighting)
+        {
+            glDisableClientState(GlNormalArray);
+        }
+
         glDisableClientState(GlColorArray);
         glDisableClientState(GlVertexArray);
+        ConfigureGpuNativeLighting(false, _lightingSettings);
         _glBindBuffer(GlArrayBuffer, 0);
         _glBindVertexArray?.Invoke(0);
     }
@@ -4477,6 +5859,210 @@ internal sealed partial class Simulator3dForm
         }
     }
 
+    private bool TryDrawCachedGpuEntityAppearance(
+        Graphics graphics,
+        SimulationEntity entity,
+        Vector3 center,
+        RobotAppearanceProfile profile)
+    {
+        if (!_gpuBufferApiReady || _glGenBuffers is null)
+        {
+            return false;
+        }
+
+        string cacheKey = BuildGpuEntityAppearanceMeshCacheKey(entity, profile);
+        if (_gpuEntityAppearanceMeshCache.TryGetValue(cacheKey, out GpuEntityAppearanceMeshCache? cache))
+        {
+            cache.LastUsedFrame = _terrainCacheGpuFrameIndex;
+            DrawGpuVertexBuffer(cache.Buffer, cache.VertexCount, ResolveGpuEntityAppearanceModelMatrix(entity, center));
+            return true;
+        }
+
+        Rectangle? previousViewport = _projectionViewportRect;
+        Matrix4x4 previousView = _viewMatrix;
+        Matrix4x4 previousProjection = _projectionMatrix;
+        Vector3 previousCameraPosition = _cameraPositionM;
+        Vector3 previousCameraTarget = _cameraTargetM;
+        bool previousGeometryPass = _gpuGeometryPass;
+        bool previousBatching = _gpuBatchingDynamicGeometry;
+        GpuDynamicBatchKind previousBatch = _gpuCurrentDynamicBatch;
+        bool previousUseProfileColors = _useProfileColorsForVehiclePreview;
+        double previousAngle = entity.AngleDeg;
+        double previousTurretYaw = entity.TurretYawDeg;
+        double previousPitch = entity.GimbalPitchDeg;
+        List<GpuVertex> preservedDynamicVertices = new(_gpuDynamicVertexBuildBuffer);
+        List<GpuVertex>? builtVertices = null;
+
+        try
+        {
+            _gpuDynamicVertexBuildBuffer.Clear();
+            _gpuBatchingDynamicGeometry = true;
+            _gpuGeometryPass = true;
+            _gpuCurrentDynamicBatch = GpuDynamicBatchKind.Entity;
+            _useProfileColorsForVehiclePreview = false;
+            entity.AngleDeg = 0.0;
+            entity.TurretYawDeg = SimulationCombatMath.NormalizeDeg(previousTurretYaw - previousAngle);
+
+            using Bitmap scratchBitmap = new(1, 1, PixelFormat.Format32bppPArgb);
+            using Graphics scratchGraphics = Graphics.FromImage(scratchBitmap);
+            DrawEntityAppearanceModelModern(scratchGraphics, entity, Vector3.Zero, profile);
+            if (_gpuDynamicVertexBuildBuffer.Count > 0)
+            {
+                builtVertices = new List<GpuVertex>(_gpuDynamicVertexBuildBuffer);
+            }
+        }
+        finally
+        {
+            if (_gpuDynamicVertexBuildBuffer.Count != preservedDynamicVertices.Count
+                || preservedDynamicVertices.Count > 0)
+            {
+                _gpuDynamicVertexBuildBuffer.Clear();
+                _gpuDynamicVertexBuildBuffer.AddRange(preservedDynamicVertices);
+            }
+
+            entity.AngleDeg = previousAngle;
+            entity.TurretYawDeg = previousTurretYaw;
+            entity.GimbalPitchDeg = previousPitch;
+            _projectionViewportRect = previousViewport;
+            _viewMatrix = previousView;
+            _projectionMatrix = previousProjection;
+            _cameraPositionM = previousCameraPosition;
+            _cameraTargetM = previousCameraTarget;
+            _gpuGeometryPass = previousGeometryPass;
+            _gpuBatchingDynamicGeometry = previousBatching;
+            _gpuCurrentDynamicBatch = previousBatch;
+            _useProfileColorsForVehiclePreview = previousUseProfileColors;
+        }
+
+        if (builtVertices is null || builtVertices.Count <= 0)
+        {
+            return false;
+        }
+
+        _glGenBuffers!(1, out int buffer);
+        UploadGpuVertexBuffer(buffer, builtVertices, GlStaticDraw);
+        cache = new GpuEntityAppearanceMeshCache
+        {
+            Buffer = buffer,
+            VertexCount = builtVertices.Count,
+            HeightM = EstimateGpuEntityAppearanceHeight(entity, profile),
+            LastUsedFrame = _terrainCacheGpuFrameIndex,
+        };
+        _gpuEntityAppearanceMeshCache[cacheKey] = cache;
+        TrimGpuEntityAppearanceMeshCache();
+        DrawGpuVertexBuffer(cache.Buffer, cache.VertexCount, ResolveGpuEntityAppearanceModelMatrix(entity, center));
+        return true;
+    }
+
+    private static bool RequiresWorldSpaceGimbalRendering(SimulationEntity entity)
+        => false;
+
+    private static Matrix4x4 ResolveGpuEntityAppearanceModelMatrix(SimulationEntity entity, Vector3 center)
+    {
+        float yaw = -(float)(entity.AngleDeg * Math.PI / 180.0);
+        return Matrix4x4.CreateFromAxisAngle(Vector3.UnitY, yaw) * Matrix4x4.CreateTranslation(center);
+    }
+
+    private string BuildGpuEntityAppearanceMeshCacheKey(SimulationEntity entity, RobotAppearanceProfile profile)
+    {
+        RuntimeChassisMotion motion = ResolveRuntimeChassisMotion(entity);
+        IReadOnlyList<RenderWheelComponent> wheels = ResolveWheelComponents(entity, profile, motion);
+        double bakedTurretYaw = SimulationCombatMath.NormalizeSignedDeg(entity.TurretYawDeg - entity.AngleDeg);
+        var builder = new System.Text.StringBuilder(384);
+        builder.Append(entity.RoleKey).Append('|')
+            .Append(profile.RoleKey).Append('|')
+            .Append(profile.ChassisSubtype).Append('|')
+            .Append(profile.BodyShape).Append('|')
+            .Append(profile.WheelStyle).Append('|')
+            .Append(profile.SuspensionStyle).Append('|')
+            .Append(profile.ArmStyle).Append('|')
+            .Append(profile.FrontClimbAssistStyle).Append('|')
+            .Append(profile.RearClimbAssistStyle).Append('|')
+            .Append(Math.Round(profile.BodyLengthM, 3)).Append('|')
+            .Append(Math.Round(profile.BodyWidthM, 3)).Append('|')
+            .Append(Math.Round(profile.BodyHeightM, 3)).Append('|')
+            .Append(Math.Round(profile.GimbalLengthM, 3)).Append('|')
+            .Append(Math.Round(profile.GimbalWidthM, 3)).Append('|')
+            .Append(Math.Round(profile.GimbalBodyHeightM, 3)).Append('|')
+            .Append(Math.Round(profile.BarrelLengthM, 3)).Append('|')
+            .Append(Math.Round(profile.BarrelRadiusM, 3)).Append('|')
+            .Append(Math.Round(entity.ChassisPitchDeg, 1)).Append('|')
+            .Append(Math.Round(entity.ChassisRollDeg, 1)).Append('|')
+            .Append(Math.Round(bakedTurretYaw, 1)).Append('|')
+            .Append(Math.Round(entity.GimbalPitchDeg, 1)).Append('|')
+            .Append(Math.Round(motion.BodyLiftM, 3)).Append('|')
+            .Append(Math.Round(motion.FrontDropM, 3)).Append('|')
+            .Append(Math.Round(motion.FrontRaiseM, 3)).Append('|')
+            .Append(Math.Round(motion.RearFootRaiseM, 3)).Append('|')
+            .Append(Math.Round(motion.RearFootReachM, 3)).Append('|')
+            .Append(entity.TraversalActive ? '1' : '0').Append('|')
+            .Append(Math.Round(entity.TraversalProgress, 2)).Append('|')
+            .Append(Math.Round(entity.JumpCrouchTimerSec, 2)).Append('|')
+            .Append(Math.Round(entity.AirborneHeightM, 2)).Append('|')
+            .Append(Math.Round(entity.VerticalVelocityMps, 2)).Append('|')
+            .Append(entity.SmallGyroActive ? '1' : '0');
+        for (int index = 0; index < wheels.Count; index++)
+        {
+            RenderWheelComponent wheel = wheels[index];
+            builder.Append('|').Append(index).Append(':').Append(Math.Round(wheel.SpinRad, 2));
+        }
+
+        return builder.ToString();
+    }
+
+    private float EstimateGpuEntityAppearanceHeight(SimulationEntity entity, RobotAppearanceProfile profile)
+    {
+        RuntimeChassisMotion motion = ResolveRuntimeChassisMotion(entity);
+        float bodyBase = Math.Max(0f, profile.BodyClearanceM + motion.BodyLiftM);
+        float bodyHeight = Math.Max(0.08f, profile.BodyHeightM);
+        float maxHeight = bodyBase + bodyHeight;
+        maxHeight = Math.Max(maxHeight, bodyBase + bodyHeight * 0.72f + Math.Max(0.015f, bodyHeight * 0.12f));
+        maxHeight = Math.Max(maxHeight, bodyBase + bodyHeight + 0.03f);
+        maxHeight = Math.Max(maxHeight, bodyBase + profile.GimbalMountGapM + profile.GimbalMountHeightM + profile.GimbalBodyHeightM + profile.BarrelLengthM * 0.6f);
+        return Math.Max(0.18f, maxHeight);
+    }
+
+    private float ResolveCachedGpuEntityAppearanceHeight(SimulationEntity entity, RobotAppearanceProfile profile)
+    {
+        string cacheKey = BuildGpuEntityAppearanceMeshCacheKey(entity, profile);
+        return _gpuEntityAppearanceMeshCache.TryGetValue(cacheKey, out GpuEntityAppearanceMeshCache? cache)
+            ? Math.Max(0.18f, cache.HeightM)
+            : EstimateGpuEntityAppearanceHeight(entity, profile);
+    }
+
+    private void TrimGpuEntityAppearanceMeshCache()
+    {
+        const int maxCachedMeshes = 192;
+        if (_gpuEntityAppearanceMeshCache.Count <= maxCachedMeshes)
+        {
+            return;
+        }
+
+        foreach (KeyValuePair<string, GpuEntityAppearanceMeshCache> entry in _gpuEntityAppearanceMeshCache
+            .OrderBy(pair => pair.Value.LastUsedFrame)
+            .Take(_gpuEntityAppearanceMeshCache.Count - maxCachedMeshes)
+            .ToArray())
+        {
+            GpuEntityAppearanceMeshCache cache = entry.Value;
+            if (cache.Buffer != 0)
+            {
+                DeleteGpuBuffer(ref cache.Buffer);
+            }
+
+            _gpuEntityAppearanceMeshCache.Remove(entry.Key);
+        }
+    }
+
+    private void ClearGpuEntityAppearanceMeshCache()
+    {
+        foreach (GpuEntityAppearanceMeshCache cache in _gpuEntityAppearanceMeshCache.Values)
+        {
+            DeleteGpuBuffer(ref cache.Buffer);
+        }
+
+        _gpuEntityAppearanceMeshCache.Clear();
+    }
+
     private void DrawGpuIndexedVertexBuffer(int vertexBuffer, int indexBuffer, int indexCount)
     {
         if (indexCount <= 0 || vertexBuffer == 0 || indexBuffer == 0 || _glBindBuffer is null)
@@ -4493,6 +6079,7 @@ internal sealed partial class Simulator3dForm
         _glBindVertexArray?.Invoke(_gpuSharedVertexArray);
         _glBindBuffer(GlArrayBuffer, vertexBuffer);
         _glBindBuffer(GlElementArrayBuffer, indexBuffer);
+        ConfigureGpuNativeLighting(false, _lightingSettings);
         glEnableClientState(GlVertexArray);
         glEnableClientState(GlColorArray);
         glVertexPointer(3, GlFloat, stride, IntPtr.Zero);
@@ -4505,43 +6092,121 @@ internal sealed partial class Simulator3dForm
         _glBindVertexArray?.Invoke(0);
     }
 
-    private static void DrawGpuVerticesImmediate(IReadOnlyList<GpuVertex> vertices)
+    private void SyncGpuLightingSettings()
     {
+        Simulator3dLightingSettings latest = _host.GetLightingSettings();
+        _lightingSettings = latest;
+        _gpuKeyLightPosition[0] = latest.KeyDirectionX;
+        _gpuKeyLightPosition[1] = latest.KeyDirectionY;
+        _gpuKeyLightPosition[2] = latest.KeyDirectionZ;
+        _gpuKeyLightAmbient[0] = latest.KeyAmbientR;
+        _gpuKeyLightAmbient[1] = latest.KeyAmbientG;
+        _gpuKeyLightAmbient[2] = latest.KeyAmbientB;
+        _gpuKeyLightDiffuse[0] = latest.KeyDiffuseR;
+        _gpuKeyLightDiffuse[1] = latest.KeyDiffuseG;
+        _gpuKeyLightDiffuse[2] = latest.KeyDiffuseB;
+        _gpuKeyLightSpecular[0] = latest.KeySpecularR;
+        _gpuKeyLightSpecular[1] = latest.KeySpecularG;
+        _gpuKeyLightSpecular[2] = latest.KeySpecularB;
+        _gpuFillLightPosition[0] = latest.FillDirectionX;
+        _gpuFillLightPosition[1] = latest.FillDirectionY;
+        _gpuFillLightPosition[2] = latest.FillDirectionZ;
+        _gpuFillLightAmbient[0] = latest.FillAmbientR;
+        _gpuFillLightAmbient[1] = latest.FillAmbientG;
+        _gpuFillLightAmbient[2] = latest.FillAmbientB;
+        _gpuFillLightDiffuse[0] = latest.FillDiffuseR;
+        _gpuFillLightDiffuse[1] = latest.FillDiffuseG;
+        _gpuFillLightDiffuse[2] = latest.FillDiffuseB;
+        _gpuFillLightSpecular[0] = latest.FillSpecularR;
+        _gpuFillLightSpecular[1] = latest.FillSpecularG;
+        _gpuFillLightSpecular[2] = latest.FillSpecularB;
+        _gpuRobotMaterialSpecular[0] = latest.MaterialSpecularR;
+        _gpuRobotMaterialSpecular[1] = latest.MaterialSpecularG;
+        _gpuRobotMaterialSpecular[2] = latest.MaterialSpecularB;
+    }
+
+    private void ConfigureGpuNativeLighting(bool enabled, Simulator3dLightingSettings settings)
+    {
+        if (!enabled)
+        {
+            glDisable(GlColorMaterial);
+            glDisable(GlNormalize);
+            glDisable(GlLight1);
+            glDisable(GlLight0);
+            glDisable(GlLighting);
+            return;
+        }
+
+        glShadeModel(GlSmooth);
+        glEnable(GlLighting);
+        glEnable(GlLight0);
+        glEnable(GlLight1);
+        glEnable(GlColorMaterial);
+        glColorMaterial(GlFrontAndBack, GlAmbientAndDiffuse);
+        glLightfv(GlLight0, GlPosition, _gpuKeyLightPosition);
+        glLightfv(GlLight0, GlAmbient, _gpuKeyLightAmbient);
+        glLightfv(GlLight0, GlDiffuse, _gpuKeyLightDiffuse);
+        glLightfv(GlLight0, GlSpecular, _gpuKeyLightSpecular);
+        glLightfv(GlLight1, GlPosition, _gpuFillLightPosition);
+        glLightfv(GlLight1, GlAmbient, _gpuFillLightAmbient);
+        glLightfv(GlLight1, GlDiffuse, _gpuFillLightDiffuse);
+        glLightfv(GlLight1, GlSpecular, _gpuFillLightSpecular);
+        glMaterialfv(GlFrontAndBack, GlSpecular, _gpuRobotMaterialSpecular);
+        glMaterialf(GlFrontAndBack, GlShininess, settings.MaterialShininess);
+    }
+
+    private void DrawGpuVerticesImmediate(IReadOnlyList<GpuVertex> vertices, bool useNativeLighting = false)
+    {
+        bool enableLighting = useNativeLighting && _lightingSettings.Enabled;
+        ConfigureGpuNativeLighting(enableLighting, _lightingSettings);
         glBegin(GlTriangles);
         foreach (GpuVertex vertex in vertices)
         {
             glColor4ub(vertex.R, vertex.G, vertex.B, vertex.A);
+            glNormal3f(vertex.Nx, vertex.Ny, vertex.Nz);
             glVertex3f(vertex.X, vertex.Y, vertex.Z);
         }
 
         glEnd();
+        ConfigureGpuNativeLighting(false, _lightingSettings);
     }
 
-    private static void AppendGpuTriangle(List<GpuVertex> target, Vector3 a, Vector3 b, Vector3 c, Color color)
+    private static void AppendGpuTriangle(List<GpuVertex> target, Vector3 a, Vector3 b, Vector3 c, Color color, bool matteMaterial = false)
     {
-        target.Add(new GpuVertex(a, color));
-        target.Add(new GpuVertex(b, color));
-        target.Add(new GpuVertex(c, color));
+        Vector3 normal = Vector3.Cross(b - a, c - a);
+        if (normal.LengthSquared() > 1e-8f)
+        {
+            normal = Vector3.Normalize(normal);
+        }
+        else
+        {
+            normal = Vector3.UnitY;
+        }
+
+        target.Add(new GpuVertex(a, matteMaterial ? ApplyMatteSurfaceColor(color, a, normal) : color, normal));
+        target.Add(new GpuVertex(b, matteMaterial ? ApplyMatteSurfaceColor(color, b, normal) : color, normal));
+        target.Add(new GpuVertex(c, matteMaterial ? ApplyMatteSurfaceColor(color, c, normal) : color, normal));
     }
 
-    private static void AppendGpuQuad(List<GpuVertex> target, Vector3 a, Vector3 b, Vector3 c, Vector3 d, Color color)
+    private static void AppendGpuQuad(List<GpuVertex> target, Vector3 a, Vector3 b, Vector3 c, Vector3 d, Color color, bool matteMaterial = false)
     {
-        AppendGpuTriangle(target, a, b, c, color);
-        AppendGpuTriangle(target, a, c, d, color);
+        AppendGpuTriangle(target, a, b, c, color, matteMaterial);
+        AppendGpuTriangle(target, a, c, d, color, matteMaterial);
     }
 
-    private static void AppendGpuTerrainTriangle(List<GpuVertex> target, Vector3 a, Vector3 b, Vector3 c, Color color)
+    private static void AppendGpuTerrainTriangle(List<GpuVertex> target, Vector3 a, Vector3 b, Vector3 c, Color color, bool useBakedLighting)
     {
-        AppendGpuTriangle(target, a, b, c, ShadeGpuFaceColor(color, a, b, c, 0.56f));
+        Color shaded = ShadeGpuFaceColor(color, a, b, c, 0.56f);
+        AppendGpuTriangle(target, a, b, c, ApplyBakedArenaPointLight(shaded, a, b, c, 28f, 15f, useBakedLighting));
     }
 
-    private static void AppendGpuTerrainQuad(List<GpuVertex> target, Vector3 a, Vector3 b, Vector3 c, Vector3 d, Color color)
+    private static void AppendGpuTerrainQuad(List<GpuVertex> target, Vector3 a, Vector3 b, Vector3 c, Vector3 d, Color color, bool useBakedLighting)
     {
-        AppendGpuTerrainTriangle(target, a, b, c, color);
-        AppendGpuTerrainTriangle(target, a, c, d, color);
+        AppendGpuTerrainTriangle(target, a, b, c, color, useBakedLighting);
+        AppendGpuTerrainTriangle(target, a, c, d, color, useBakedLighting);
     }
 
-    private static void AppendGpuPolygon(List<GpuVertex> target, IReadOnlyList<Vector3> vertices, Color color)
+    private static void AppendGpuPolygon(List<GpuVertex> target, IReadOnlyList<Vector3> vertices, Color color, bool matteMaterial = false)
     {
         if (vertices.Count < 3)
         {
@@ -4550,7 +6215,7 @@ internal sealed partial class Simulator3dForm
 
         for (int index = 1; index < vertices.Count - 1; index++)
         {
-            AppendGpuTriangle(target, vertices[0], vertices[index], vertices[index + 1], color);
+            AppendGpuTriangle(target, vertices[0], vertices[index], vertices[index + 1], color, matteMaterial);
         }
     }
 
@@ -4628,15 +6293,58 @@ internal sealed partial class Simulator3dForm
         }
 
         normal = Vector3.Normalize(normal);
-        Vector3 keyLight = Vector3.Normalize(new Vector3(-0.45f, 1.0f, -0.35f));
-        Vector3 rimLight = Vector3.Normalize(new Vector3(0.55f, 0.72f, 0.48f));
+        Vector3 keyLight = Vector3.Normalize(new Vector3(-0.42f, 1.12f, -0.30f));
+        Vector3 rimLight = Vector3.Normalize(new Vector3(0.55f, 0.76f, 0.48f));
         float keyDiffuse = MathF.Max(0f, Vector3.Dot(normal, keyLight));
         float rimDiffuse = MathF.Max(0f, Vector3.Dot(normal, rimLight));
         float diffuseFill = MathF.Abs(normal.Y) * 0.05f;
-        float ambientFloor = MathF.Max(ambient, 0.48f);
-        float brightness = ambientFloor + keyDiffuse * 0.32f + rimDiffuse * 0.13f + diffuseFill;
-        Color lit = ScaleGpuColor(color, Math.Clamp(brightness, 0.44f, 1.15f));
-        return ApplyGpuTopPointLight(ApplyAmbientSceneLight(lit, 0.026f), a, b, c, 28f, 15f, 0.24f);
+        float ambientFloor = MathF.Max(ambient, 0.43f);
+        float brightness = ambientFloor + keyDiffuse * 0.40f + rimDiffuse * 0.16f + diffuseFill;
+        Color lit = ScaleGpuColor(ApplyCoolSceneColor(color, 0.20f), Math.Clamp(brightness, 0.40f, 1.22f));
+        lit = ApplyMetallicSheen(lit, normal, keyDiffuse, rimDiffuse);
+        return ApplyCoolSceneColor(ApplyGpuTopPointLight(ApplyAmbientSceneLight(lit, 0.032f), a, b, c, 28f, 15f, 0.30f), 0.24f);
+    }
+
+    private static Color ApplyBakedArenaPointLight(
+        Color color,
+        Vector3 a,
+        Vector3 b,
+        Vector3 c,
+        float sceneWidthM,
+        float sceneDepthM,
+        bool enabled)
+    {
+        if (!enabled)
+        {
+            return color;
+        }
+
+        Vector3 normal = Vector3.Cross(b - a, c - a);
+        if (normal.LengthSquared() <= 1e-8f)
+        {
+            return color;
+        }
+
+        normal = Vector3.Normalize(normal);
+        Vector3 center = (a + b + c) / 3f;
+        Vector3 keyLightPosition = new(
+            Math.Max(1f, sceneWidthM) * 0.5f,
+            8.8f,
+            Math.Max(1f, sceneDepthM) * 0.5f);
+        Vector3 toLight = keyLightPosition - center;
+        float distanceSq = Math.Max(1e-4f, toLight.LengthSquared());
+        Vector3 lightDir = toLight / MathF.Sqrt(distanceSq);
+        float direct = MathF.Max(0f, Vector3.Dot(normal, lightDir));
+        float attenuation = 1f / (1f + distanceSq / 145f);
+        float sky = Math.Clamp(normal.Y * 0.5f + 0.5f, 0f, 1f);
+        float bounce = Math.Clamp(1f - MathF.Abs(normal.Y), 0f, 1f) * 0.055f;
+        float bakedBrightness = Math.Clamp(0.83f + sky * 0.12f + bounce + direct * attenuation * 0.74f, 0.68f, 1.42f);
+        Color lit = ScaleGpuColor(color, bakedBrightness);
+        float coolLift = Math.Clamp(direct * attenuation * 0.18f + sky * 0.040f, 0f, 0.18f);
+        int r = Math.Clamp((int)MathF.Round(lit.R + (178 - lit.R) * coolLift * 0.48f), 0, 255);
+        int g = Math.Clamp((int)MathF.Round(lit.G + (218 - lit.G) * coolLift * 0.88f), 0, 255);
+        int bComponent = Math.Clamp((int)MathF.Round(lit.B + (255 - lit.B) * coolLift), 0, 255);
+        return ApplyCoolSceneColor(Color.FromArgb(lit.A, r, g, bComponent), enabled ? 0.42f : 0.20f);
     }
 
     private static Color ApplyGpuTopPointLight(
@@ -4679,26 +6387,26 @@ internal sealed partial class Simulator3dForm
         glColor4ub(color.R, color.G, color.B, color.A);
     }
 
-    private void AppendOrDrawGpuTriangle(Vector3 a, Vector3 b, Vector3 c, Color color)
+    private void AppendOrDrawGpuTriangle(Vector3 a, Vector3 b, Vector3 c, Color color, bool matteMaterial = false)
     {
         if (_gpuBatchingDynamicGeometry)
         {
-            AppendGpuTriangle(CurrentGpuDynamicBuildBuffer(), a, b, c, color);
+            AppendGpuTriangle(CurrentGpuDynamicBuildBuffer(), a, b, c, color, matteMaterial);
             return;
         }
 
-        DrawGpuTriangle(a, b, c, color);
+        DrawGpuTriangle(a, b, c, matteMaterial ? ApplyMatteSurfaceColor(color, (a + b + c) / 3f, Vector3.Cross(b - a, c - a)) : color);
     }
 
-    private void AppendOrDrawGpuQuad(Vector3 a, Vector3 b, Vector3 c, Vector3 d, Color color)
+    private void AppendOrDrawGpuQuad(Vector3 a, Vector3 b, Vector3 c, Vector3 d, Color color, bool matteMaterial = false)
     {
         if (_gpuBatchingDynamicGeometry)
         {
-            AppendGpuQuad(CurrentGpuDynamicBuildBuffer(), a, b, c, d, color);
+            AppendGpuQuad(CurrentGpuDynamicBuildBuffer(), a, b, c, d, color, matteMaterial);
             return;
         }
 
-        DrawGpuQuad(a, b, c, d, color);
+        DrawGpuQuad(a, b, c, d, matteMaterial ? ApplyMatteSurfaceColor(color, (a + b + c + d) * 0.25f, Vector3.Cross(b - a, c - a)) : color);
     }
 
     private List<GpuVertex> CurrentGpuDynamicBuildBuffer()
@@ -4789,15 +6497,20 @@ internal sealed partial class Simulator3dForm
         ];
     }
 
-    private void DrawGpuSolidFaces(IReadOnlyList<SolidFace> faces, Color fillColor, Color edgeColor)
+    private void DrawGpuSolidFaces(IReadOnlyList<SolidFace> faces, Color fillColor, Color edgeColor, bool matteMaterial = false)
     {
         if (_gpuBatchingDynamicGeometry)
         {
             List<GpuVertex> target = CurrentGpuDynamicBuildBuffer();
             foreach (SolidFace face in faces)
             {
-                Color shaded = ShadeFaceColor(fillColor, face.Vertices, face.Ambient);
-                AppendGpuPolygon(target, face.Vertices, shaded);
+                if (ShouldCullSolidFace(face.Vertices))
+                {
+                    continue;
+                }
+
+                Color shaded = ShadeFaceColor(fillColor, face.Vertices, face.Ambient, matteMaterial);
+                AppendGpuPolygon(target, face.Vertices, shaded, matteMaterial);
             }
 
             return;
@@ -4805,10 +6518,38 @@ internal sealed partial class Simulator3dForm
 
         foreach (SolidFace face in faces)
         {
-            Color shaded = ShadeFaceColor(fillColor, face.Vertices, face.Ambient);
+            if (ShouldCullSolidFace(face.Vertices))
+            {
+                continue;
+            }
+
+            Color shaded = ShadeFaceColor(fillColor, face.Vertices, face.Ambient, matteMaterial);
             DrawGpuPolygon(face.Vertices, shaded);
             DrawGpuPolygonOutline(face.Vertices, edgeColor);
         }
+    }
+
+    private bool ShouldCullSolidFace(IReadOnlyList<Vector3> vertices)
+    {
+        if (vertices.Count < 3)
+        {
+            return true;
+        }
+
+        Vector3 faceNormal = Vector3.Cross(vertices[1] - vertices[0], vertices[2] - vertices[0]);
+        if (faceNormal.LengthSquared() <= 1e-8f)
+        {
+            return true;
+        }
+
+        Vector3 faceCenter = ResolveFaceCenter(vertices);
+        Vector3 toCamera = _cameraPositionM - faceCenter;
+        if (toCamera.LengthSquared() <= 1e-8f)
+        {
+            return false;
+        }
+
+        return Vector3.Dot(faceNormal, toCamera) <= 1e-6f;
     }
 
     private static void DrawGpuPolygon(IReadOnlyList<Vector3> vertices, Color color)
@@ -4870,6 +6611,14 @@ internal sealed partial class Simulator3dForm
         _gpuOverlayGraphics = null;
         _gpuOverlayBitmap?.Dispose();
         _gpuOverlayBitmap = null;
+        _gpuOverlaySceneGraphics?.Dispose();
+        _gpuOverlaySceneGraphics = null;
+        _gpuOverlaySceneBitmap?.Dispose();
+        _gpuOverlaySceneBitmap = null;
+        _gpuOverlayUiGraphics?.Dispose();
+        _gpuOverlayUiGraphics = null;
+        _gpuOverlayUiBitmap?.Dispose();
+        _gpuOverlayUiBitmap = null;
 
         if (logicalSize.Width <= 0 || logicalSize.Height <= 0)
         {
@@ -4885,47 +6634,110 @@ internal sealed partial class Simulator3dForm
         _lastGpuOverlayUploadTicks = 0;
     }
 
-    private float ResolveGpuOverlaySurfaceScale()
-        => 1f;
-
-    private void UploadGpuOverlayBitmap()
+    private void EnsureGpuOverlayMatchSurfaces()
     {
-        if (_gpuOverlayBitmap is null)
+        float overlayScale = ResolveGpuOverlaySurfaceScale();
+        Size logicalSize = ClientSize;
+        int physicalWidth = Math.Max(1, (int)MathF.Ceiling(logicalSize.Width * overlayScale));
+        int physicalHeight = Math.Max(1, (int)MathF.Ceiling(logicalSize.Height * overlayScale));
+        bool sceneReady = _gpuOverlaySceneBitmap is not null
+            && _gpuOverlaySceneGraphics is not null
+            && _gpuOverlaySceneBitmap.Width == physicalWidth
+            && _gpuOverlaySceneBitmap.Height == physicalHeight;
+        bool uiReady = _gpuOverlayUiBitmap is not null
+            && _gpuOverlayUiGraphics is not null
+            && _gpuOverlayUiBitmap.Width == physicalWidth
+            && _gpuOverlayUiBitmap.Height == physicalHeight;
+        if (sceneReady
+            && uiReady
+            && _gpuOverlayLogicalSize == logicalSize
+            && Math.Abs(_gpuOverlaySurfaceScale - overlayScale) <= 1e-3f)
         {
             return;
         }
 
-        Rectangle rect = new(0, 0, _gpuOverlayBitmap.Width, _gpuOverlayBitmap.Height);
-        BitmapData data = _gpuOverlayBitmap.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+        _gpuOverlaySceneGraphics?.Dispose();
+        _gpuOverlaySceneGraphics = null;
+        _gpuOverlaySceneBitmap?.Dispose();
+        _gpuOverlaySceneBitmap = null;
+        _gpuOverlayUiGraphics?.Dispose();
+        _gpuOverlayUiGraphics = null;
+        _gpuOverlayUiBitmap?.Dispose();
+        _gpuOverlayUiBitmap = null;
+        if (logicalSize.Width <= 0 || logicalSize.Height <= 0)
+        {
+            return;
+        }
+
+        _gpuOverlaySurfaceScale = overlayScale;
+        _gpuOverlayLogicalSize = logicalSize;
+        _gpuOverlaySceneBitmap = new Bitmap(physicalWidth, physicalHeight, PixelFormat.Format32bppArgb);
+        _gpuOverlaySceneGraphics = Graphics.FromImage(_gpuOverlaySceneBitmap);
+        ConfigureGpuOverlayGraphics(_gpuOverlaySceneGraphics);
+        _gpuOverlayUiBitmap = new Bitmap(physicalWidth, physicalHeight, PixelFormat.Format32bppArgb);
+        _gpuOverlayUiGraphics = Graphics.FromImage(_gpuOverlayUiBitmap);
+        ConfigureGpuOverlayGraphics(_gpuOverlayUiGraphics);
+        _gpuOverlaySceneTextureSize = Size.Empty;
+        _gpuOverlayUiTextureSize = Size.Empty;
+        _lastGpuOverlaySceneUploadTicks = 0;
+        _lastGpuOverlayUiUploadTicks = 0;
+        _gpuOverlaySceneDirty = true;
+        _gpuOverlayUiDirty = true;
+    }
+
+    private float ResolveGpuOverlaySurfaceScale()
+    {
+        return 1f;
+    }
+
+    private void UploadGpuOverlayBitmap()
+    {
+        UploadGpuOverlayBitmap(_gpuOverlayBitmap, ref _gpuOverlayTexture, ref _gpuOverlayTextureSize);
+    }
+
+    private void UploadGpuOverlayBitmap(Bitmap? bitmap, ref int texture, ref Size textureSize)
+    {
+        if (bitmap is null)
+        {
+            return;
+        }
+
+        Rectangle rect = new(0, 0, bitmap.Width, bitmap.Height);
+        BitmapData data = bitmap.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
         try
         {
-            if (_gpuOverlayTexture == 0)
+            if (texture == 0)
             {
-                glGenTextures(1, out _gpuOverlayTexture);
+                glGenTextures(1, out texture);
             }
 
-            glBindTexture(GlTexture2D, _gpuOverlayTexture);
+            glBindTexture(GlTexture2D, texture);
             glTexParameteri(GlTexture2D, GlTextureMinFilter, GlNearest);
             glTexParameteri(GlTexture2D, GlTextureMagFilter, GlNearest);
-            if (_gpuOverlayTextureSize != _gpuOverlayBitmap.Size)
+            if (textureSize != bitmap.Size)
             {
-                glTexImage2D(GlTexture2D, 0, GlRgba, _gpuOverlayBitmap.Width, _gpuOverlayBitmap.Height, 0, GlBgra, GlUnsignedByte, data.Scan0);
-                _gpuOverlayTextureSize = _gpuOverlayBitmap.Size;
+                glTexImage2D(GlTexture2D, 0, GlRgba, bitmap.Width, bitmap.Height, 0, GlBgra, GlUnsignedByte, data.Scan0);
+                textureSize = bitmap.Size;
             }
             else
             {
-                glTexSubImage2D(GlTexture2D, 0, 0, 0, _gpuOverlayBitmap.Width, _gpuOverlayBitmap.Height, GlBgra, GlUnsignedByte, data.Scan0);
+                glTexSubImage2D(GlTexture2D, 0, 0, 0, bitmap.Width, bitmap.Height, GlBgra, GlUnsignedByte, data.Scan0);
             }
         }
         finally
         {
-            _gpuOverlayBitmap.UnlockBits(data);
+            bitmap.UnlockBits(data);
         }
     }
 
     private void PresentGpuOverlayTexture()
     {
-        if (_gpuOverlayTexture == 0)
+        PresentGpuOverlayTexture(_gpuOverlayTexture);
+    }
+
+    private void PresentGpuOverlayTexture(int texture)
+    {
+        if (texture == 0)
         {
             return;
         }
@@ -4935,8 +6747,10 @@ internal sealed partial class Simulator3dForm
         glLoadMatrixf(ToOpenGlMatrix(Matrix4x4.Identity));
         glMatrixMode(GlModelView);
         glLoadMatrixf(ToOpenGlMatrix(Matrix4x4.Identity));
+        glEnable(GlBlend);
+        glBlendFunc(GlSrcAlpha, GlOneMinusSrcAlpha);
         glEnable(GlTexture2D);
-        glBindTexture(GlTexture2D, _gpuOverlayTexture);
+        glBindTexture(GlTexture2D, texture);
         glColor4ub(255, 255, 255, 255);
         glBegin(GlQuads);
         glTexCoord2f(0f, 0f);
@@ -4975,6 +6789,7 @@ internal sealed partial class Simulator3dForm
         DeleteGpuBuffer(ref _gpuDynamicVertexBuffer);
         DeleteGpuBuffer(ref _gpuEnergyMechanismVertexBuffer);
         DeleteGpuBuffer(ref _gpuProjectileVertexBuffer);
+        ClearGpuEntityAppearanceMeshCache();
         DeleteGpuVertexArray(ref _gpuSharedVertexArray);
         _gpuTerrainVertexCount = 0;
         _gpuDynamicVertexCapacity = 0;
@@ -4988,7 +6803,21 @@ internal sealed partial class Simulator3dForm
             glDeleteTextures(1, ref overlayTexture);
             _gpuOverlayTexture = 0;
         }
+        if (_gpuOverlaySceneTexture != 0 && _gpuContextReady && MakeGpuContextCurrent())
+        {
+            int sceneTexture = _gpuOverlaySceneTexture;
+            glDeleteTextures(1, ref sceneTexture);
+            _gpuOverlaySceneTexture = 0;
+        }
+        if (_gpuOverlayUiTexture != 0 && _gpuContextReady && MakeGpuContextCurrent())
+        {
+            int uiTexture = _gpuOverlayUiTexture;
+            glDeleteTextures(1, ref uiTexture);
+            _gpuOverlayUiTexture = 0;
+        }
         _gpuOverlayTextureSize = Size.Empty;
+        _gpuOverlaySceneTextureSize = Size.Empty;
+        _gpuOverlayUiTextureSize = Size.Empty;
         _gpuOverlayLogicalSize = Size.Empty;
         _gpuOverlaySurfaceScale = 1f;
 
@@ -5058,16 +6887,43 @@ internal sealed partial class Simulator3dForm
     private void SetTerrainCacheGpuRenderSource(string sourcePath)
     {
         string fullPath = Path.GetFullPath(sourcePath);
-        if (string.Equals(_terrainCacheGpuSourcePath, fullPath, StringComparison.OrdinalIgnoreCase))
+        string? annotationPath = ResolveTerrainCacheGpuAnnotationPath();
+        long annotationTicks = annotationPath is not null && File.Exists(annotationPath)
+            ? File.GetLastWriteTimeUtc(annotationPath).Ticks
+            : 0L;
+        if (string.Equals(_terrainCacheGpuSourcePath, fullPath, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(_terrainCacheGpuAnnotationPath, annotationPath, StringComparison.OrdinalIgnoreCase)
+            && _terrainCacheGpuAnnotationTicks == annotationTicks)
         {
             return;
         }
 
         ReleaseTerrainCacheGpuChunks(deleteBuffers: true, clearSource: true);
         _terrainCacheGpuSourcePath = fullPath;
+        _terrainCacheGpuAnnotationPath = annotationPath;
+        _terrainCacheGpuAnnotationTicks = annotationTicks;
         _terrainCacheGpuBuildFailed = false;
         _terrainCacheGpuLoadedSourcePath = null;
         _gpuTerrainBufferVersion = -1;
+    }
+
+    private string? ResolveTerrainCacheGpuAnnotationPath()
+    {
+        string annotationPath = _host.MapPreset.AnnotationPath;
+        if (string.IsNullOrWhiteSpace(annotationPath))
+        {
+            return null;
+        }
+
+        if (Path.IsPathRooted(annotationPath))
+        {
+            return Path.GetFullPath(annotationPath);
+        }
+
+        string? mapDirectory = Path.GetDirectoryName(_host.MapPreset.SourcePath);
+        return string.IsNullOrWhiteSpace(mapDirectory)
+            ? Path.GetFullPath(annotationPath)
+            : Path.GetFullPath(Path.Combine(mapDirectory, annotationPath));
     }
 
     private void ReleaseTerrainCacheGpuChunks(bool deleteBuffers, bool clearSource)
@@ -5098,6 +6954,8 @@ internal sealed partial class Simulator3dForm
         if (clearSource)
         {
             _terrainCacheGpuSourcePath = null;
+            _terrainCacheGpuAnnotationPath = null;
+            _terrainCacheGpuAnnotationTicks = 0L;
             _terrainCacheGpuBuildTask = null;
             _terrainCacheGpuBuildingSourcePath = null;
         }

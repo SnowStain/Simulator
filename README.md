@@ -19,9 +19,8 @@
   - `dotnet run --project src/Simulator.ThreeD/Simulator.ThreeD.csproj -- --start-match`
 - 启动 C# 工程：
   - `.venv\Scripts\python.exe open_csharp_project.py`
-- 启动 Python 地图查看/编辑辅助脚本：
+- 启动 Python 地图查看辅助脚本：
   - `.venv\Scripts\python.exe run_viewer.py`
-  - `.venv\Scripts\python.exe py_client\terrain_editor.py`
 
 ## 目录
 

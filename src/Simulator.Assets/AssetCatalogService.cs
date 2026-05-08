@@ -25,7 +25,6 @@ public sealed class AssetCatalogService
         "map",
         "map_presets",
         "maps",
-        "robot_venue_map_asset",
         "rules",
         "规则",
         "simulator3d",

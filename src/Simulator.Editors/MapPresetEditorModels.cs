@@ -155,6 +155,95 @@ public sealed class FacilityRegionEditorModel
     [Description("Polygon points as x,y; x,y; x,y")]
     public string PointsText { get; set; } = string.Empty;
 
+    [Category("Volume")]
+    [DisplayName("Volume Shape")]
+    [Description("box or cylinder. Buff regions should use this volume data instead of flat polygons.")]
+    public string VolumeShape
+    {
+        get => GetAdditionalString("volume_shape");
+        set => SetAdditionalString("volume_shape", string.IsNullOrWhiteSpace(value) ? "box" : value.Trim());
+    }
+
+    [Category("Volume")]
+    [DisplayName("Center X")]
+    public double CenterX
+    {
+        get => GetAdditionalDouble("center_x", (X1 + X2) * 0.5);
+        set => SetAdditionalDouble("center_x", value, removeWhenZero: false);
+    }
+
+    [Category("Volume")]
+    [DisplayName("Center Y")]
+    public double CenterY
+    {
+        get => GetAdditionalDouble("center_y", (Y1 + Y2) * 0.5);
+        set => SetAdditionalDouble("center_y", value, removeWhenZero: false);
+    }
+
+    [Category("Volume")]
+    [DisplayName("Center Z M")]
+    public double CenterZM
+    {
+        get => GetAdditionalDouble("center_z_m", Math.Max(0.05, HeightM) * 0.5);
+        set => SetAdditionalDouble("center_z_m", value, removeWhenZero: false);
+    }
+
+    [Category("Volume")]
+    [DisplayName("Size X")]
+    public double SizeX
+    {
+        get => GetAdditionalDouble("size_x", Math.Abs(X2 - X1));
+        set => SetAdditionalDouble("size_x", Math.Max(0.01, value), removeWhenZero: false);
+    }
+
+    [Category("Volume")]
+    [DisplayName("Size Y")]
+    public double SizeY
+    {
+        get => GetAdditionalDouble("size_y", Math.Abs(Y2 - Y1));
+        set => SetAdditionalDouble("size_y", Math.Max(0.01, value), removeWhenZero: false);
+    }
+
+    [Category("Volume")]
+    [DisplayName("Size Z M")]
+    public double SizeZM
+    {
+        get => GetAdditionalDouble("size_z_m", Math.Max(0.05, HeightM));
+        set => SetAdditionalDouble("size_z_m", Math.Max(0.02, value), removeWhenZero: false);
+    }
+
+    [Category("Volume")]
+    [DisplayName("Radius")]
+    public double Radius
+    {
+        get => GetAdditionalDouble("radius", Math.Max(Math.Abs(X2 - X1), Math.Abs(Y2 - Y1)) * 0.5);
+        set => SetAdditionalDouble("radius", Math.Max(0.01, value), removeWhenZero: false);
+    }
+
+    [Category("Volume")]
+    [DisplayName("Yaw Deg")]
+    public double YawDeg
+    {
+        get => GetAdditionalDouble("yaw_deg", 0.0);
+        set => SetAdditionalDouble("yaw_deg", value, removeWhenZero: true);
+    }
+
+    [Category("Volume")]
+    [DisplayName("Pitch Deg")]
+    public double PitchDeg
+    {
+        get => GetAdditionalDouble("pitch_deg", 0.0);
+        set => SetAdditionalDouble("pitch_deg", value, removeWhenZero: true);
+    }
+
+    [Category("Volume")]
+    [DisplayName("Roll Deg")]
+    public double RollDeg
+    {
+        get => GetAdditionalDouble("roll_deg", 0.0);
+        set => SetAdditionalDouble("roll_deg", value, removeWhenZero: true);
+    }
+
     [Category("设施分组")]
     [DisplayName("整体设施")]
     [Description("启用后，当前区域会被当作一个整体设施来维护，可关联底层组合体与组件。")]

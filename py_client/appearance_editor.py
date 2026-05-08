@@ -49,6 +49,7 @@ PART_LABELS = {
     'armor': '装甲',
     'armor_light': '装甲灯条',
     'barrel_light': '枪管灯条',
+    'rear_health_light': '血条灯条',
 }
 
 PART_LABELS.update({
@@ -56,6 +57,70 @@ PART_LABELS.update({
     'custom_primitive': '附加体',
     'custom_anchor': '锚点',
     'custom_link': '连杆',
+})
+
+PART_LABELS.update({
+    'first_person_camera': '第一人称相机',
+    'barrel_friction_wheel': '摩擦轮',
+})
+
+BALANCE_LEG_PARENT_PART_OPTIONS = [
+    ('balance_leg', '平衡腿整体'),
+    ('balance_leg_left', '平衡腿整体 左'),
+    ('balance_leg_right', '平衡腿整体 右'),
+    ('balance_leg_mount_front', '平衡腿前安装连杆'),
+    ('balance_leg_mount_front_left', '平衡腿前安装连杆 左'),
+    ('balance_leg_mount_front_right', '平衡腿前安装连杆 右'),
+    ('balance_leg_mount_rear', '平衡腿后安装连杆'),
+    ('balance_leg_mount_rear_left', '平衡腿后安装连杆 左'),
+    ('balance_leg_mount_rear_right', '平衡腿后安装连杆 右'),
+    ('balance_leg_mount_cross', '平衡腿安装横梁'),
+    ('balance_leg_mount_cross_left', '平衡腿安装横梁 左'),
+    ('balance_leg_mount_cross_right', '平衡腿安装横梁 右'),
+    ('balance_leg_upper_front', '平衡腿前上连杆'),
+    ('balance_leg_upper_front_left', '平衡腿前上连杆 左'),
+    ('balance_leg_upper_front_right', '平衡腿前上连杆 右'),
+    ('balance_leg_upper_rear', '平衡腿后上连杆'),
+    ('balance_leg_upper_rear_left', '平衡腿后上连杆 左'),
+    ('balance_leg_upper_rear_right', '平衡腿后上连杆 右'),
+    ('balance_leg_upper_front_hinge', '平衡腿前上铰点'),
+    ('balance_leg_upper_front_hinge_left', '平衡腿前上铰点 左'),
+    ('balance_leg_upper_front_hinge_right', '平衡腿前上铰点 右'),
+    ('balance_leg_upper_rear_hinge', '平衡腿后上铰点'),
+    ('balance_leg_upper_rear_hinge_left', '平衡腿后上铰点 左'),
+    ('balance_leg_upper_rear_hinge_right', '平衡腿后上铰点 右'),
+    ('balance_leg_lower', '平衡腿下连杆'),
+    ('balance_leg_lower_left', '平衡腿下连杆 左'),
+    ('balance_leg_lower_right', '平衡腿下连杆 右'),
+    ('balance_leg_knee_front_hinge', '平衡腿前膝铰点'),
+    ('balance_leg_knee_front_hinge_left', '平衡腿前膝铰点 左'),
+    ('balance_leg_knee_front_hinge_right', '平衡腿前膝铰点 右'),
+    ('balance_leg_knee_rear_hinge', '平衡腿后膝铰点'),
+    ('balance_leg_knee_rear_hinge_left', '平衡腿后膝铰点 左'),
+    ('balance_leg_knee_rear_hinge_right', '平衡腿后膝铰点 右'),
+    ('balance_leg_knee', '平衡腿膝点'),
+    ('balance_leg_knee_left', '平衡腿膝点 左'),
+    ('balance_leg_knee_right', '平衡腿膝点 右'),
+    ('balance_leg_foot', '平衡腿足端'),
+    ('balance_leg_foot_left', '平衡腿足端 左'),
+    ('balance_leg_foot_right', '平衡腿足端 右'),
+]
+
+BALANCE_LEG_SEGMENT_OPTIONS = [
+    ('balance_leg_upper_front', '上1连杆'),
+    ('balance_leg_upper_rear', '上2连杆'),
+    ('balance_leg_lower', '下连杆'),
+]
+
+BALANCE_LEG_PARENT_KEYS = {key for key, _label in BALANCE_LEG_PARENT_PART_OPTIONS}
+BALANCE_LEG_PARENT_KEYS.update(key.replace('balance_leg', 'rear_leg', 1) for key, _label in BALANCE_LEG_PARENT_PART_OPTIONS)
+BALANCE_LEG_PARENT_KEYS.update(key for key, _label in BALANCE_LEG_SEGMENT_OPTIONS)
+BALANCE_LEG_PARENT_KEYS.update(key.replace('balance_leg', 'rear_leg', 1) for key, _label in BALANCE_LEG_SEGMENT_OPTIONS)
+
+PART_LABELS.update(dict(BALANCE_LEG_PARENT_PART_OPTIONS))
+PART_LABELS.update({
+    key.replace('balance_leg', 'rear_leg', 1): label.replace('平衡腿', '后腿', 1)
+    for key, label in BALANCE_LEG_PARENT_PART_OPTIONS
 })
 
 CUSTOM_PARENT_PART_OPTIONS = [
@@ -69,7 +134,19 @@ CUSTOM_PARENT_PART_OPTIONS = [
     ('armor', '装甲板'),
     ('armor_light', '装甲灯条'),
     ('barrel_light', '枪管灯条'),
+    ('rear_health_light', '血条灯条'),
     ('hero_subview_camera', '小相机'),
+]
+
+CUSTOM_PARENT_PART_OPTIONS.extend([
+    ('first_person_camera', '第一人称相机'),
+    ('barrel_friction_wheel', '摩擦轮'),
+    ('balance_leg', '平衡腿'),
+])
+
+CUSTOM_PARENT_PART_STORAGE_OPTIONS = CUSTOM_PARENT_PART_OPTIONS + BALANCE_LEG_PARENT_PART_OPTIONS + [
+    (key.replace('balance_leg', 'rear_leg', 1), label.replace('平衡腿', '后腿', 1))
+    for key, label in BALANCE_LEG_PARENT_PART_OPTIONS
 ]
 
 CUSTOM_PRIMITIVE_TYPE_OPTIONS = [
@@ -83,17 +160,38 @@ CUSTOM_SCOPE_OPTIONS = [
     ('all', '全部'),
 ]
 
+ANCHOR_MODE_OPTIONS = [
+    ('fixed', '固定锚点'),
+    ('active', '活动锚点'),
+]
+
 COLOR_SWATCHES = [
     [44, 44, 44],
+    [28, 32, 38],
     [92, 96, 108],
+    [124, 128, 134],
     [166, 174, 186],
     [232, 232, 236],
     [224, 229, 234],
+    [255, 255, 255],
     [228, 76, 76],
+    [255, 114, 94],
+    [170, 36, 48],
+    [255, 140, 48],
     [58, 112, 232],
+    [42, 158, 255],
+    [40, 78, 178],
+    [42, 210, 224],
     [236, 182, 84],
+    [255, 220, 96],
+    [160, 118, 42],
     [112, 196, 132],
+    [56, 168, 98],
+    [132, 224, 176],
     [170, 128, 214],
+    [218, 118, 214],
+    [112, 82, 184],
+    [16, 122, 118],
 ]
 
 HERO_SUBVIEW_CAMERA_BODY_LENGTH_M = 0.07
@@ -518,6 +616,24 @@ def _normalize_choice(value, options, fallback):
     return normalized if normalized in allowed else str(fallback).strip().lower()
 
 
+def _is_balance_leg_parent_part(value):
+    return str(value or '').strip().lower() in BALANCE_LEG_PARENT_KEYS
+
+
+def _balance_leg_segment_from_parent_part(value):
+    normalized = str(value or '').strip().lower()
+    if normalized.startswith('rear_leg'):
+        normalized = 'balance_leg' + normalized[len('rear_leg'):]
+    for segment_key, _label in BALANCE_LEG_SEGMENT_OPTIONS:
+        if normalized == segment_key:
+            return segment_key
+    if 'upper_rear' in normalized:
+        return 'balance_leg_upper_rear'
+    if 'lower' in normalized or 'foot' in normalized:
+        return 'balance_leg_lower'
+    return 'balance_leg_upper_front'
+
+
 def _normalize_vector3(value, fallback):
     if not isinstance(value, (list, tuple)) or len(value) < 3:
         return [float(fallback[0]), float(fallback[1]), float(fallback[2])]
@@ -535,7 +651,7 @@ def _normalize_custom_primitive(item, index=0):
     return {
         'id': str(source.get('id') or f'primitive_{index + 1:02d}'),
         'name': str(source.get('name') or f'附加体 {index + 1}'),
-        'parent_part': _normalize_choice(source.get('parent_part'), CUSTOM_PARENT_PART_OPTIONS, 'body'),
+        'parent_part': _normalize_choice(source.get('parent_part'), CUSTOM_PARENT_PART_STORAGE_OPTIONS, 'body'),
         'component_scope': _normalize_choice(source.get('component_scope'), CUSTOM_SCOPE_OPTIONS, 'single'),
         'component_index': max(0, int(source.get('component_index', 0) or 0)),
         'primitive_type': _normalize_choice(source.get('primitive_type'), CUSTOM_PRIMITIVE_TYPE_OPTIONS, 'box'),
@@ -551,7 +667,10 @@ def _normalize_custom_anchor(item, index=0):
     return {
         'id': str(source.get('id') or f'anchor_{index + 1:02d}'),
         'name': str(source.get('name') or f'锚点 {index + 1}'),
-        'parent_part': _normalize_choice(source.get('parent_part'), CUSTOM_PARENT_PART_OPTIONS, 'body'),
+        'parent_part': _normalize_choice(source.get('parent_part'), CUSTOM_PARENT_PART_STORAGE_OPTIONS, 'body'),
+        'anchor_mode': _normalize_choice(source.get('anchor_mode'), ANCHOR_MODE_OPTIONS, 'fixed'),
+        'parent_link_id': str(source.get('parent_link_id') or ''),
+        'link_position_ratio': min(1.0, max(0.0, float(source.get('link_position_ratio', 0.5) or 0.5))),
         'component_scope': _normalize_choice(source.get('component_scope'), CUSTOM_SCOPE_OPTIONS, 'single'),
         'component_index': max(0, int(source.get('component_index', 0) or 0)),
         'offset_m': _normalize_vector3(source.get('offset_m'), (0.0, 0.0, 0.0)),
@@ -561,6 +680,7 @@ def _normalize_custom_anchor(item, index=0):
 
 def _normalize_custom_link(item, anchor_ids, index=0):
     source = deepcopy(item) if isinstance(item, dict) else {}
+    default_length = 0.20 if not source else 0.0
     fallback_start = anchor_ids[0] if anchor_ids else ''
     fallback_end = anchor_ids[1] if len(anchor_ids) > 1 else fallback_start
     start_anchor_id = str(source.get('start_anchor_id') or fallback_start)
@@ -576,6 +696,9 @@ def _normalize_custom_link(item, anchor_ids, index=0):
         'start_anchor_id': start_anchor_id,
         'end_anchor_id': end_anchor_id,
         'radius_m': max(0.001, round(float(source.get('radius_m', 0.012) or 0.012), 3)),
+        'width_m': max(0.001, round(float(source.get('width_m', (source.get('radius_m') or 0.012) * 2.0) or 0.024), 3)),
+        'thickness_m': max(0.001, round(float(source.get('thickness_m', (source.get('radius_m') or 0.012) * 2.0) or 0.024), 3)),
+        'length_m': max(0.0, round(float(source.get('length_m', default_length) or default_length), 3)),
         'color_rgb': _normalize_rgb_triplet(source.get('color_rgb'), [176, 182, 190]),
     }
 
@@ -591,12 +714,24 @@ def _normalize_custom_collections(profile):
     return profile
 
 
+def _normalize_field_spec_bounds(fields):
+    return fields
+
+
 def _normalize_profile_constraints(role_key, profile, forced_subtype=None):
     normalized = deepcopy(_BASE_PROFILE_TEMPLATES.get(role_key, _BASE_PROFILE_TEMPLATES['infantry']))
     if isinstance(profile, dict):
         normalized.update(deepcopy(profile))
     normalized['role_key'] = role_key
+    has_first_person_camera_x = 'first_person_camera_offset_x_m' in normalized
+    has_first_person_camera_y = 'first_person_camera_offset_y_m' in normalized
     normalized.update({key: deepcopy(value) for key, value in _default_color_profile().items() if key not in normalized})
+    normalized.setdefault('rear_health_light_length_m', 0.0)
+    normalized.setdefault('rear_health_light_width_m', 0.0)
+    normalized.setdefault('rear_health_light_height_m', 0.0)
+    normalized.setdefault('rear_health_light_offset_x_m', 0.0)
+    normalized.setdefault('rear_health_light_offset_y_m', 0.0)
+    normalized.setdefault('rear_health_light_offset_z_m', 0.0)
     _apply_climb_assist_defaults(role_key, normalized)
 
     legacy_front_length = float(normalized.get('front_climb_assist_plate_length_m', normalized.get('front_climb_assist_top_length_m', 0.05)))
@@ -627,6 +762,81 @@ def _normalize_profile_constraints(role_key, profile, forced_subtype=None):
     normalized['turret_color_rgb'] = _normalize_rgb_triplet(normalized.get('turret_color_rgb'), _default_color_profile()['turret_color_rgb'])
     normalized['armor_color_rgb'] = _normalize_rgb_triplet(normalized.get('armor_color_rgb'), _default_color_profile()['armor_color_rgb'])
     normalized['wheel_color_rgb'] = _normalize_rgb_triplet(normalized.get('wheel_color_rgb'), _default_color_profile()['wheel_color_rgb'])
+    for key in (
+        'body_front_tilt_deg',
+        'body_rear_tilt_deg',
+        'body_left_tilt_deg',
+        'body_right_tilt_deg',
+        'gimbal_relative_offset_x_m',
+        'gimbal_relative_offset_y_m',
+        'gimbal_relative_offset_z_m',
+        'barrel_offset_x_m',
+        'barrel_offset_y_m',
+        'barrel_offset_z_m',
+        'barrel_light_offset_x_m',
+        'barrel_light_offset_y_m',
+        'barrel_light_offset_z_m',
+        'barrel_octagon_long_edge_m',
+        'barrel_octagon_short_edge_m',
+        'barrel_friction_wheel_radius_m',
+        'barrel_friction_wheel_width_m',
+        'barrel_friction_wheel_height_m',
+        'barrel_friction_wheel_offset_x_m',
+        'barrel_friction_wheel_offset_y_m',
+        'barrel_friction_wheel_offset_z_m',
+        'barrel_friction_wheel_yaw_deg',
+        'barrel_friction_wheel_pitch_deg',
+        'barrel_friction_wheel_roll_deg',
+        'first_person_camera_offset_x_m',
+        'first_person_camera_offset_y_m',
+        'first_person_camera_offset_z_m',
+        'first_person_camera_yaw_deg',
+        'first_person_camera_pitch_deg',
+        'first_person_camera_roll_deg',
+    ):
+        normalized[key] = float(normalized.get(key, 0.0))
+    if not has_first_person_camera_x:
+        normalized['first_person_camera_offset_x_m'] = 0.04
+    if not has_first_person_camera_y:
+        normalized['first_person_camera_offset_y_m'] = 0.06
+    if normalized['barrel_octagon_long_edge_m'] <= 1e-9:
+        normalized['barrel_octagon_long_edge_m'] = max(0.004, float(normalized.get('barrel_radius_m', 0.0)) * 1.80)
+    if normalized['barrel_octagon_short_edge_m'] <= 1e-9:
+        normalized['barrel_octagon_short_edge_m'] = max(0.002, float(normalized.get('barrel_radius_m', 0.0)) * 0.72)
+    if normalized['barrel_friction_wheel_height_m'] <= 1e-9:
+        normalized['barrel_friction_wheel_height_m'] = float(normalized.get('barrel_friction_wheel_width_m', 0.0))
+    normalized['armor_plate_offsets_m'] = [
+        _normalize_vector3(item, (0.0, 0.0, 0.0))
+        for item in normalized.get('armor_plate_offsets_m', [])
+        if isinstance(item, (list, tuple))
+    ]
+    normalized['armor_plate_rotations_ypr_deg'] = [
+        _normalize_vector3(item, (0.0, 0.0, 0.0))
+        for item in normalized.get('armor_plate_rotations_ypr_deg', [])
+        if isinstance(item, (list, tuple))
+    ]
+    if 'armor_plate_thickness_m' not in normalized:
+        normalized['armor_plate_thickness_m'] = max(
+            0.004,
+            float(normalized.get('armor_plate_gap_m', 0.005)) * 0.75,
+            float(normalized.get('armor_plate_width_m', 0.16)) * 0.08,
+        )
+    normalized['armor_plate_thickness_m'] = float(normalized.get('armor_plate_thickness_m', 0.004))
+    normalized['armor_light_offsets_m'] = [
+        _normalize_vector3(item, (0.0, 0.0, 0.0))
+        for item in normalized.get('armor_light_offsets_m', [])
+        if isinstance(item, (list, tuple))
+    ]
+    normalized['armor_light_plate_distances_m'] = [
+        max(0.0, float(item))
+        for item in normalized.get('armor_light_plate_distances_m', [])
+        if isinstance(item, (int, float))
+    ]
+    normalized['barrel_friction_wheel_offsets_m'] = [
+        _normalize_vector3(item, (0.0, 0.0, 0.0))
+        for item in normalized.get('barrel_friction_wheel_offsets_m', [])
+        if isinstance(item, (list, tuple))
+    ]
     _normalize_custom_collections(normalized)
 
     if role_key in {'outpost', 'base', 'energy_mechanism'}:
@@ -709,7 +919,23 @@ def _profile_turret_center_height(profile):
     mount_gap = max(0.0, float(profile.get('gimbal_mount_gap_m', 0.0)))
     mount_height = max(0.0, float(profile.get('gimbal_mount_height_m', 0.0)))
     turret_half_height = max(0.0, float(profile.get('gimbal_body_height_m', 0.0)) * 0.5)
-    return body_top + mount_gap + mount_height + turret_half_height
+    return body_top + mount_gap + mount_height + turret_half_height + float(profile.get('gimbal_relative_offset_y_m', 0.0))
+
+
+def _profile_mount_offset_x(profile):
+    return float(profile.get('gimbal_offset_x_m', 0.0))
+
+
+def _profile_mount_offset_z(profile):
+    return float(profile.get('gimbal_offset_y_m', 0.0))
+
+
+def _profile_turret_offset_x(profile):
+    return _profile_mount_offset_x(profile) + float(profile.get('gimbal_relative_offset_x_m', 0.0))
+
+
+def _profile_turret_offset_z(profile):
+    return _profile_mount_offset_z(profile) + float(profile.get('gimbal_relative_offset_z_m', 0.0))
 
 
 def _knee_internal_angle_deg(anchor_point, knee_point, foot_point):
@@ -942,6 +1168,82 @@ def _balance_leg_geometry(profile, render_width_scale=1.0):
     }
 
 
+def _balance_leg_wheel_side_offset(profile, leg_geometry):
+    wheel_radius = max(0.018, float(profile.get('rear_leg_wheel_radius_m', profile.get('wheel_radius_m', 0.08))))
+    leg_half_width = max(
+        float(profile.get('rear_climb_assist_upper_width_m', 0.016)),
+        float(profile.get('rear_climb_assist_lower_width_m', 0.016)),
+    ) * 0.5
+    wheel_half_width = 0.020
+    clearance = max(0.006, wheel_radius * 0.04)
+    return float(leg_geometry['side_offset']) + leg_half_width + wheel_half_width + clearance
+
+
+def _append_preview_attachment_pose(poses, part, index, center, yaw_rad=0.0, pitch_rad=0.0, roll_rad=0.0):
+    poses.append({
+        'part': part,
+        'index': int(index),
+        'center': tuple(float(value) for value in center),
+        'yaw_rad': float(yaw_rad),
+        'pitch_rad': float(pitch_rad),
+        'roll_rad': float(roll_rad),
+    })
+
+
+def _append_preview_attachment_pose_aliases(poses, part, side_index, center, yaw_rad=0.0, pitch_rad=0.0, roll_rad=0.0):
+    _append_preview_attachment_pose(poses, part, side_index, center, yaw_rad, pitch_rad, roll_rad)
+    side_name = 'left' if int(side_index) == 0 else 'right'
+    _append_preview_attachment_pose(poses, f'{part}_{side_name}', 0, center, yaw_rad, pitch_rad, roll_rad)
+    if str(part).startswith('balance_leg'):
+        rear_leg_part = 'rear_leg' + str(part)[len('balance_leg'):]
+        _append_preview_attachment_pose(poses, rear_leg_part, side_index, center, yaw_rad, pitch_rad, roll_rad)
+        _append_preview_attachment_pose(poses, f'{rear_leg_part}_{side_name}', 0, center, yaw_rad, pitch_rad, roll_rad)
+
+
+def _append_balance_leg_preview_beam_pose(poses, part, side_index, start, end, side_z):
+    start_x, start_y = float(start[0]), float(start[1])
+    end_x, end_y = float(end[0]), float(end[1])
+    dx = end_x - start_x
+    dy = end_y - start_y
+    if math.hypot(dx, dy) <= 1e-6:
+        return
+    center = ((start_x + end_x) * 0.5, (start_y + end_y) * 0.5, float(side_z))
+    _append_preview_attachment_pose_aliases(poses, part, side_index, center, 0.0, math.atan2(dy, dx), 0.0)
+
+
+def _append_balance_leg_preview_point_pose(poses, part, side_index, point, side_z):
+    _append_preview_attachment_pose_aliases(poses, part, side_index, (float(point[0]), float(point[1]), float(side_z)))
+
+
+def _extend_balance_leg_preview_attachment_poses(poses, profile, render_width_scale):
+    leg = _balance_leg_geometry(profile, render_width_scale)
+    body_side_offset = max(0.02, float(profile['body_width_m']) * render_width_scale * 0.5 * 0.98)
+    for side_index, side_sign in enumerate((-1.0, 1.0)):
+        side_z = float(leg['side_offset']) * side_sign
+        mount_z = body_side_offset * side_sign
+        aggregate_center = (
+            (float(leg['upper_front'][0]) + float(leg['upper_rear'][0]) + float(leg['knee_center'][0]) + float(leg['foot'][0])) * 0.25,
+            (float(leg['upper_front'][1]) + float(leg['upper_rear'][1]) + float(leg['knee_center'][1]) + float(leg['foot'][1])) * 0.25,
+            side_z,
+        )
+        _append_preview_attachment_pose_aliases(poses, 'balance_leg', side_index, aggregate_center)
+        _append_preview_attachment_pose(poses, 'rear_climb', side_index, aggregate_center)
+
+        _append_preview_attachment_pose_aliases(poses, 'balance_leg_mount_front', side_index, (float(leg['upper_front'][0]), float(leg['upper_front'][1]), (mount_z + side_z) * 0.5), math.pi * 0.5)
+        _append_preview_attachment_pose_aliases(poses, 'balance_leg_mount_rear', side_index, (float(leg['upper_rear'][0]), float(leg['upper_rear'][1]), (mount_z + side_z) * 0.5), math.pi * 0.5)
+        _append_balance_leg_preview_beam_pose(poses, 'balance_leg_mount_cross', side_index, leg['upper_front'], leg['upper_rear'], mount_z)
+        _append_balance_leg_preview_beam_pose(poses, 'balance_leg_upper_front', side_index, leg['upper_front'], leg['knee_front'], side_z)
+        _append_balance_leg_preview_beam_pose(poses, 'balance_leg_upper_rear', side_index, leg['upper_rear'], leg['knee_rear'], side_z)
+        _append_balance_leg_preview_beam_pose(poses, 'balance_leg_lower', side_index, leg['knee_center'], leg['foot'], side_z)
+
+        _append_balance_leg_preview_point_pose(poses, 'balance_leg_upper_front_hinge', side_index, leg['upper_front'], side_z)
+        _append_balance_leg_preview_point_pose(poses, 'balance_leg_upper_rear_hinge', side_index, leg['upper_rear'], side_z)
+        _append_balance_leg_preview_point_pose(poses, 'balance_leg_knee_front_hinge', side_index, leg['knee_front'], side_z)
+        _append_balance_leg_preview_point_pose(poses, 'balance_leg_knee_rear_hinge', side_index, leg['knee_rear'], side_z)
+        _append_balance_leg_preview_point_pose(poses, 'balance_leg_knee', side_index, leg['knee_center'], side_z)
+        _append_balance_leg_preview_point_pose(poses, 'balance_leg_foot', side_index, leg['foot'], side_z)
+
+
 def _append_preview_face(vertices, p0, p1, p2, p3, color, normal):
     vertices.extend((*p0, *color, *normal, *p1, *color, *normal, *p2, *color, *normal))
     vertices.extend((*p0, *color, *normal, *p2, *color, *normal, *p3, *color, *normal))
@@ -1016,6 +1318,375 @@ def _preview_face_normal(p0, p1, p2):
     return tuple((normal / norm).tolist())
 
 
+def _preview_vec3_tuple(vector):
+    return (float(vector[0]), float(vector[1]), float(vector[2]))
+
+
+def _normalize_preview_axis(vector, fallback):
+    candidate = np.array(vector, dtype='f4')
+    norm = float(np.linalg.norm(candidate))
+    if norm > 1e-6:
+        return candidate / norm
+    fallback_vector = np.array(fallback, dtype='f4')
+    fallback_norm = float(np.linalg.norm(fallback_vector))
+    return fallback_vector / fallback_norm if fallback_norm > 1e-6 else np.array([1.0, 0.0, 0.0], dtype='f4')
+
+
+def _rotate_preview_vector(vector, axis, angle_rad):
+    if abs(float(angle_rad)) <= 1e-6:
+        return np.array(vector, dtype='f4')
+    normalized_axis = _normalize_preview_axis(axis, (0.0, 1.0, 0.0))
+    source = np.array(vector, dtype='f4')
+    cos_angle = math.cos(float(angle_rad))
+    sin_angle = math.sin(float(angle_rad))
+    return (
+        source * cos_angle
+        + np.cross(normalized_axis, source) * sin_angle
+        + normalized_axis * float(np.dot(normalized_axis, source)) * (1.0 - cos_angle)
+    )
+
+
+def _resolve_preview_rotated_axes(base_yaw_rad, rotation_ypr_deg):
+    cos_yaw = math.cos(float(base_yaw_rad))
+    sin_yaw = math.sin(float(base_yaw_rad))
+    forward = np.array([cos_yaw, 0.0, sin_yaw], dtype='f4')
+    right = np.array([-sin_yaw, 0.0, cos_yaw], dtype='f4')
+    up = np.array([0.0, 1.0, 0.0], dtype='f4')
+    return _resolve_preview_rotated_basis(forward, right, up, rotation_ypr_deg)
+
+
+def _resolve_preview_rotated_basis(base_forward, base_right, base_up, rotation_ypr_deg):
+    forward = _normalize_preview_axis(base_forward, (1.0, 0.0, 0.0))
+    right = _normalize_preview_axis(base_right, (0.0, 0.0, 1.0))
+    up = _normalize_preview_axis(base_up, (0.0, 1.0, 0.0))
+    rotation = list(rotation_ypr_deg or [0.0, 0.0, 0.0])
+    while len(rotation) < 3:
+        rotation.append(0.0)
+
+    def rotate_basis(axis, angle_rad):
+        nonlocal forward, right, up
+        forward = _normalize_preview_axis(_rotate_preview_vector(forward, axis, angle_rad), forward)
+        right = _normalize_preview_axis(_rotate_preview_vector(right, axis, angle_rad), right)
+        up = _normalize_preview_axis(_rotate_preview_vector(up, axis, angle_rad), up)
+
+    rotate_basis(up, math.radians(float(rotation[0])))
+    rotate_basis(right, math.radians(float(rotation[1])))
+    rotate_basis(forward, math.radians(float(rotation[2])))
+    return forward, right, up
+
+
+def _preview_local_point(parent_center, forward, right, up, local_offset):
+    offset = list(local_offset or [0.0, 0.0, 0.0])
+    while len(offset) < 3:
+        offset.append(0.0)
+    return (
+        np.array(parent_center, dtype='f4')
+        + np.array(forward, dtype='f4') * float(offset[0])
+        + np.array(up, dtype='f4') * float(offset[1])
+        + np.array(right, dtype='f4') * float(offset[2])
+    )
+
+
+def _resolve_fixed_link_end(start_point, end_point, fixed_length):
+    start_vec = np.array(start_point, dtype='f4')
+    end_vec = np.array(end_point, dtype='f4')
+    axis = end_vec - start_vec
+    distance = float(np.linalg.norm(axis))
+    if distance <= 1e-6 or fixed_length <= 1e-6:
+        return tuple(end_vec)
+    return tuple(start_vec + axis / distance * float(fixed_length))
+
+
+def _is_active_anchor(anchor):
+    return str(anchor.get('anchor_mode', 'fixed')).lower() in {'active', 'link'}
+
+
+def _resolve_preview_custom_anchor_point_variants(profile, poses):
+    def matching_poses(parent_part, component_scope, component_index):
+        for pose in poses:
+            if pose['part'] != parent_part:
+                continue
+            if component_scope == 'all' or int(pose['index']) == int(component_index):
+                yield pose
+
+    def pose_basis(pose):
+        return _resolve_preview_rotated_axes(
+            float(pose.get('yaw_rad', 0.0)),
+            [0.0, math.degrees(float(pose.get('pitch_rad', 0.0))), math.degrees(float(pose.get('roll_rad', 0.0)))],
+        )
+
+    def add_anchor_variant(target, anchor_id, resolved):
+        if not anchor_id:
+            return
+        target.setdefault(anchor_id, []).append(resolved)
+
+    def pair_anchor_variants(start_anchor_id, end_anchor_id):
+        starts = anchor_points.get(str(start_anchor_id), [])
+        ends = anchor_points.get(str(end_anchor_id), [])
+        if not starts or not ends:
+            return []
+        count = max(len(starts), len(ends))
+        return [
+            (starts[min(index, len(starts) - 1)], ends[min(index, len(ends) - 1)])
+            for index in range(count)
+        ]
+
+    anchor_points = {}
+    anchor_fallbacks = {}
+    for anchor in profile.get('custom_anchors', []):
+        parent_part = str(anchor.get('parent_part', 'body'))
+        component_scope = str(anchor.get('component_scope', 'single'))
+        component_index = int(anchor.get('component_index', 0))
+        anchor_id = str(anchor.get('id', ''))
+        for pose in matching_poses(parent_part, component_scope, component_index):
+            base_forward, base_right, base_up = pose_basis(pose)
+            forward, right, up = _resolve_preview_rotated_basis(base_forward, base_right, base_up, anchor.get('rotation_ypr_deg', [0.0, 0.0, 0.0]))
+            point = _preview_local_point(pose['center'], base_forward, base_right, base_up, anchor.get('offset_m', [0.0, 0.0, 0.0]))
+            resolved = {
+                'point': tuple(float(value) for value in point),
+                'forward': tuple(float(value) for value in forward),
+                'right': tuple(float(value) for value in right),
+                'up': tuple(float(value) for value in up),
+            }
+            if _is_active_anchor(anchor):
+                add_anchor_variant(anchor_fallbacks, anchor_id, resolved)
+            else:
+                add_anchor_variant(anchor_points, anchor_id, resolved)
+
+    link_points = {}
+    progress = True
+    for _pass in range(5):
+        if not progress:
+            break
+        progress = False
+        for link in profile.get('custom_links', []):
+            link_id = str(link.get('id', ''))
+            if link_id in link_points:
+                continue
+            pairs = pair_anchor_variants(link.get('start_anchor_id', ''), link.get('end_anchor_id', ''))
+            if not pairs:
+                continue
+            link_points[link_id] = [(start['point'], end['point']) for start, end in pairs]
+            progress = True
+
+        for anchor in profile.get('custom_anchors', []):
+            anchor_id = str(anchor.get('id', ''))
+            if not _is_active_anchor(anchor) or anchor_id in anchor_points:
+                continue
+            parent_link_id = str(anchor.get('parent_link_id', ''))
+            link_poses = link_points.get(parent_link_id)
+            if link_poses is None and not parent_link_id and link_points:
+                link_poses = next(iter(link_points.values()))
+            if not link_poses:
+                continue
+            for link_pose in link_poses:
+                start_vec = np.array(link_pose[0], dtype='f4')
+                end_vec = np.array(link_pose[1], dtype='f4')
+                axis = end_vec - start_vec
+                distance = float(np.linalg.norm(axis))
+                if distance <= 1e-6:
+                    continue
+                forward = _normalize_preview_axis(axis, (1.0, 0.0, 0.0))
+                up = np.array((0.0, 1.0, 0.0), dtype='f4')
+                if abs(float(np.dot(forward, up))) >= 0.92:
+                    up = np.array((1.0, 0.0, 0.0), dtype='f4')
+                right = _normalize_preview_axis(np.cross(up, forward), (0.0, 0.0, 1.0))
+                up = _normalize_preview_axis(np.cross(forward, right), (0.0, 1.0, 0.0))
+                ratio = min(1.0, max(0.0, float(anchor.get('link_position_ratio', 0.5))))
+                base_point = start_vec + axis * ratio
+                forward, right, up = _resolve_preview_rotated_basis(forward, right, up, anchor.get('rotation_ypr_deg', [0.0, 0.0, 0.0]))
+                point = _preview_local_point(base_point, forward, right, up, anchor.get('offset_m', [0.0, 0.0, 0.0]))
+                add_anchor_variant(anchor_points, anchor_id, {
+                    'point': tuple(float(value) for value in point),
+                    'forward': tuple(float(value) for value in forward),
+                    'right': tuple(float(value) for value in right),
+                    'up': tuple(float(value) for value in up),
+                })
+                progress = True
+
+    for anchor in profile.get('custom_anchors', []):
+        anchor_id = str(anchor.get('id', ''))
+        if _is_active_anchor(anchor) and anchor_id not in anchor_points and anchor_id in anchor_fallbacks:
+            anchor_points[anchor_id] = anchor_fallbacks[anchor_id]
+
+    return anchor_points
+
+
+def _resolve_preview_custom_anchor_points(profile, poses):
+    return {
+        anchor_id: variants[0]
+        for anchor_id, variants in _resolve_preview_custom_anchor_point_variants(profile, poses).items()
+        if variants
+    }
+
+
+def _pair_preview_anchor_variants(anchor_variants, start_anchor_id, end_anchor_id):
+    starts = anchor_variants.get(str(start_anchor_id), [])
+    ends = anchor_variants.get(str(end_anchor_id), [])
+    if not starts or not ends:
+        return []
+    count = max(len(starts), len(ends))
+    return [
+        (starts[min(index, len(starts) - 1)], ends[min(index, len(ends) - 1)])
+        for index in range(count)
+    ]
+
+
+def _first_custom_link_id(profile):
+    for link in profile.get('custom_links', []):
+        link_id = str(link.get('id', '')).strip()
+        if link_id:
+            return link_id
+    return ''
+
+
+def _append_preview_oriented_box(vertices, center, half_extents, color_rgb, forward, right, up):
+    center_vec = np.array(center, dtype='f4')
+    forward_vec = _normalize_preview_axis(forward, (1.0, 0.0, 0.0))
+    right_vec = _normalize_preview_axis(right, (0.0, 0.0, 1.0))
+    up_vec = _normalize_preview_axis(up, (0.0, 1.0, 0.0))
+    half_x, half_y, half_z = [max(0.001, float(value)) for value in half_extents]
+    color = tuple(float(channel) / 255.0 for channel in color_rgb)
+
+    def point(local_x, local_y, local_z):
+        return _preview_vec3_tuple(center_vec + forward_vec * local_x + up_vec * local_y + right_vec * local_z)
+
+    def normal(local_x, local_y, local_z):
+        return _preview_vec3_tuple(_normalize_preview_axis(forward_vec * local_x + up_vec * local_y + right_vec * local_z, (0.0, 1.0, 0.0)))
+
+    corners = {
+        'lbn': point(-half_x, -half_y, -half_z),
+        'rbn': point(half_x, -half_y, -half_z),
+        'rbs': point(half_x, -half_y, half_z),
+        'lbs': point(-half_x, -half_y, half_z),
+        'ltn': point(-half_x, half_y, -half_z),
+        'rtn': point(half_x, half_y, -half_z),
+        'rts': point(half_x, half_y, half_z),
+        'lts': point(-half_x, half_y, half_z),
+    }
+    face_specs = (
+        (('ltn', 'rtn', 'rts', 'lts'), normal(0.0, 1.0, 0.0), 1.0),
+        (('lbs', 'rbs', 'rbn', 'lbn'), normal(0.0, -1.0, 0.0), 0.42),
+        (('lbn', 'rbn', 'rtn', 'ltn'), normal(0.0, 0.0, -1.0), 0.68),
+        (('rbs', 'lbs', 'lts', 'rts'), normal(0.0, 0.0, 1.0), 0.82),
+        (('rbn', 'rbs', 'rts', 'rtn'), normal(1.0, 0.0, 0.0), 0.76),
+        (('lbs', 'lbn', 'ltn', 'lts'), normal(-1.0, 0.0, 0.0), 0.60),
+    )
+    for corner_keys, face_normal, shade in face_specs:
+        shaded_color = tuple(max(0.0, min(1.0, channel * shade)) for channel in color)
+        _append_preview_face(
+            vertices,
+            corners[corner_keys[0]],
+            corners[corner_keys[1]],
+            corners[corner_keys[2]],
+            corners[corner_keys[3]],
+            shaded_color,
+            face_normal,
+        )
+
+
+def _append_preview_oriented_cylinder(vertices, center, radius, half_width, color_rgb, forward, right, up, segments=12):
+    center_vec = np.array(center, dtype='f4')
+    forward_vec = _normalize_preview_axis(forward, (1.0, 0.0, 0.0))
+    right_vec = _normalize_preview_axis(right, (0.0, 0.0, 1.0))
+    up_vec = _normalize_preview_axis(up, (0.0, 1.0, 0.0))
+    radius = max(0.001, float(radius))
+    half_width = max(0.001, float(half_width))
+    segments = max(6, int(segments))
+    color = tuple(float(channel) / 255.0 for channel in color_rgb)
+    front_center = center_vec - forward_vec * half_width
+    back_center = center_vec + forward_vec * half_width
+
+    front_ring = []
+    back_ring = []
+    radial_normals = []
+    for index in range(segments):
+        angle = (math.tau * index) / segments
+        radial = _normalize_preview_axis(up_vec * math.cos(angle) + right_vec * math.sin(angle), up_vec)
+        radial_normals.append(radial)
+        front_ring.append(_preview_vec3_tuple(front_center + radial * radius))
+        back_ring.append(_preview_vec3_tuple(back_center + radial * radius))
+
+    front_center_tuple = _preview_vec3_tuple(front_center)
+    back_center_tuple = _preview_vec3_tuple(back_center)
+    front_normal = _preview_vec3_tuple(-forward_vec)
+    back_normal = _preview_vec3_tuple(forward_vec)
+    for index in range(segments):
+        next_index = (index + 1) % segments
+        side_normal = _preview_vec3_tuple(_normalize_preview_axis(radial_normals[index] + radial_normals[next_index], up_vec))
+        _append_preview_face(vertices, front_ring[index], front_ring[next_index], back_ring[next_index], back_ring[index], color, side_normal)
+        _append_preview_triangle(vertices, front_center_tuple, front_ring[index], front_ring[next_index], tuple(max(0.0, channel * 0.84) for channel in color), front_normal)
+        _append_preview_triangle(vertices, back_center_tuple, back_ring[next_index], back_ring[index], tuple(max(0.0, channel * 0.94) for channel in color), back_normal)
+
+
+def _resolve_barrel_octagon_edges(profile, radius):
+    radius = max(0.004, float(radius))
+    long_edge = float(profile.get('barrel_octagon_long_edge_m', 0.0) or 0.0)
+    short_edge = float(profile.get('barrel_octagon_short_edge_m', 0.0) or 0.0)
+    if long_edge <= 1e-6:
+        long_edge = radius * 1.80
+    if short_edge <= 1e-6:
+        short_edge = radius * 0.72
+    return max(0.004, long_edge), max(0.002, short_edge)
+
+
+def _barrel_octagon_section_points(long_edge, short_edge):
+    diagonal = max(0.001, float(short_edge)) / math.sqrt(2.0)
+    half_long = max(0.002, float(long_edge)) * 0.5
+    half_extent = half_long + diagonal * 0.5
+    return [
+        (-half_long, half_extent),
+        (half_long, half_extent),
+        (half_long + diagonal, half_extent - diagonal),
+        (half_long + diagonal, -half_extent + diagonal),
+        (half_long, -half_extent),
+        (-half_long, -half_extent),
+        (-half_long - diagonal, -half_extent + diagonal),
+        (-half_long - diagonal, half_extent - diagonal),
+    ]
+
+
+def _append_preview_octagonal_barrel(vertices, center, length, radius, color_rgb, profile):
+    radius = max(0.004, float(radius))
+    half_length = max(0.006, float(length) * 0.5)
+    color = tuple(float(channel) / 255.0 for channel in color_rgb)
+    long_edge, short_edge = _resolve_barrel_octagon_edges(profile, radius)
+    section = _barrel_octagon_section_points(long_edge, short_edge)
+    cx, cy, cz = center
+    rear_ring = [(cx - half_length, cy + point_y, cz + point_z) for point_z, point_y in section]
+    muzzle_ring = [(cx + half_length, cy + point_y, cz + point_z) for point_z, point_y in section]
+    muzzle_normal = (1.0, 0.0, 0.0)
+    rear_normal = (-1.0, 0.0, 0.0)
+    for index in range(1, len(section) - 1):
+        _append_preview_triangle(vertices, muzzle_ring[0], muzzle_ring[index], muzzle_ring[index + 1], tuple(min(1.0, channel * 0.94) for channel in color), muzzle_normal)
+        _append_preview_triangle(vertices, rear_ring[0], rear_ring[index + 1], rear_ring[index], tuple(max(0.0, channel * 0.72) for channel in color), rear_normal)
+    for index in range(len(section)):
+        next_index = (index + 1) % len(section)
+        shade = 0.74 if index in (0, 4) else (0.56 if index in (2, 6) else 0.64)
+        side_normal = _preview_face_normal(rear_ring[index], rear_ring[next_index], muzzle_ring[next_index])
+        _append_preview_face(
+            vertices,
+            rear_ring[index],
+            rear_ring[next_index],
+            muzzle_ring[next_index],
+            muzzle_ring[index],
+            tuple(max(0.0, min(1.0, channel * shade)) for channel in color),
+            side_normal,
+        )
+    muzzle_center = (float(center[0]) + half_length + max(0.002, radius * 0.08), float(center[1]), float(center[2]))
+    _append_preview_oriented_cylinder(
+        vertices,
+        muzzle_center,
+        radius * 0.55,
+        max(0.0025, radius * 0.10),
+        [18, 20, 24],
+        (1.0, 0.0, 0.0),
+        (0.0, 0.0, 1.0),
+        (0.0, 1.0, 0.0),
+        segments=8,
+    )
+
+
 def _append_preview_prism(vertices, bottom_points, top_points, color_rgb, yaw_rad=0.0):
     if len(bottom_points) != len(top_points) or len(bottom_points) < 3:
         return
@@ -1050,6 +1721,53 @@ def _append_preview_prism(vertices, bottom_points, top_points, color_rgb, yaw_ra
         normal = _preview_face_normal(p0, p1, p2)
         shaded_color = tuple(max(0.0, min(1.0, channel * shade)) for channel in color)
         _append_preview_face(vertices, p0, p1, p2, p3, shaded_color, normal)
+
+
+def _body_tilt_top_bounds(length_m, width_m, height_m, profile):
+    half_length = max(0.001, float(length_m) * 0.5)
+    half_width = max(0.001, float(width_m) * 0.5)
+    height = max(0.001, float(height_m))
+
+    def inset_from_tilt(key):
+        tilt_deg = max(0.0, min(65.0, float(profile.get(key, 0.0))))
+        return math.tan(math.radians(tilt_deg)) * height
+
+    front_x = half_length - inset_from_tilt('body_front_tilt_deg')
+    rear_x = -half_length + inset_from_tilt('body_rear_tilt_deg')
+    right_z = half_width - inset_from_tilt('body_right_tilt_deg')
+    left_z = -half_width + inset_from_tilt('body_left_tilt_deg')
+    min_length = min(half_length * 1.6, max(0.02, half_length * 0.20))
+    min_width = min(half_width * 1.6, max(0.02, half_width * 0.20))
+    if front_x - rear_x < min_length:
+        mid_x = (front_x + rear_x) * 0.5
+        rear_x = mid_x - min_length * 0.5
+        front_x = mid_x + min_length * 0.5
+    if right_z - left_z < min_width:
+        mid_z = (right_z + left_z) * 0.5
+        left_z = mid_z - min_width * 0.5
+        right_z = mid_z + min_width * 0.5
+    return rear_x, front_x, left_z, right_z
+
+
+def _append_preview_body_prism(vertices, center, length_m, width_m, height_m, color_rgb, profile):
+    cx, cy, cz = center
+    half_length = max(0.001, float(length_m) * 0.5)
+    half_width = max(0.001, float(width_m) * 0.5)
+    half_height = max(0.001, float(height_m) * 0.5)
+    bottom_points = [
+        (cx - half_length, cy - half_height, cz - half_width),
+        (cx + half_length, cy - half_height, cz - half_width),
+        (cx + half_length, cy - half_height, cz + half_width),
+        (cx - half_length, cy - half_height, cz + half_width),
+    ]
+    rear_x, front_x, left_z, right_z = _body_tilt_top_bounds(length_m, width_m, height_m, profile)
+    top_points = [
+        (cx + rear_x, cy + half_height, cz + left_z),
+        (cx + front_x, cy + half_height, cz + left_z),
+        (cx + front_x, cy + half_height, cz + right_z),
+        (cx + rear_x, cy + half_height, cz + right_z),
+    ]
+    _append_preview_prism(vertices, bottom_points, top_points, color_rgb)
 
 
 def _append_preview_trapezoid_plate(vertices, center, top_length, bottom_length, height, thickness, color_rgb, yaw_rad=0.0):
@@ -1213,26 +1931,61 @@ def _append_preview_beam(vertices, start_point, end_point, height, thickness, co
     _append_preview_prism(vertices, bottom_points, top_points, color_rgb, yaw_rad=yaw_rad)
 
 
-def _append_preview_cylinder(vertices, center, radius, half_width, color_rgb, segments=12, yaw_rad=0.0):
+def _rotate_preview_vector(vector, axis, angle_rad):
+    if abs(angle_rad) <= 1e-9:
+        return vector
+    axis_array = np.array(axis, dtype=float)
+    axis_norm = np.linalg.norm(axis_array)
+    if axis_norm <= 1e-9:
+        return vector
+    axis_array = axis_array / axis_norm
+    vector_array = np.array(vector, dtype=float)
+    cos_angle = math.cos(angle_rad)
+    sin_angle = math.sin(angle_rad)
+    rotated = (
+        vector_array * cos_angle
+        + np.cross(axis_array, vector_array) * sin_angle
+        + axis_array * np.dot(axis_array, vector_array) * (1.0 - cos_angle)
+    )
+    return tuple(rotated.tolist())
+
+
+def _preview_basis_from_ypr(yaw_rad=0.0, pitch_rad=0.0, roll_rad=0.0):
+    forward = (0.0, 0.0, 1.0)
+    right = (1.0, 0.0, 0.0)
+    up = (0.0, 1.0, 0.0)
+
+    def rotate_all(axis, angle_rad):
+        nonlocal forward, right, up
+        forward = _rotate_preview_vector(forward, axis, angle_rad)
+        right = _rotate_preview_vector(right, axis, angle_rad)
+        up = _rotate_preview_vector(up, axis, angle_rad)
+
+    rotate_all(up, yaw_rad)
+    rotate_all(right, pitch_rad)
+    rotate_all(forward, roll_rad)
+    return forward, right, up
+
+
+def _append_preview_cylinder(vertices, center, radius, half_width, color_rgb, segments=12, yaw_rad=0.0, pitch_rad=0.0, roll_rad=0.0):
     cx, cy, cz = center
     color = tuple(float(channel) / 255.0 for channel in color_rgb)
-    cos_yaw = math.cos(yaw_rad)
-    sin_yaw = math.sin(yaw_rad)
+    forward, right, up = _preview_basis_from_ypr(yaw_rad, pitch_rad, roll_rad)
 
     def rotate_point(point):
         point_x, point_y, point_z = point
         return (
-            point_x * cos_yaw - point_z * sin_yaw,
-            point_y,
-            point_x * sin_yaw + point_z * cos_yaw,
+            cx + right[0] * point_x + up[0] * point_y + forward[0] * point_z,
+            cy + right[1] * point_x + up[1] * point_y + forward[1] * point_z,
+            cz + right[2] * point_x + up[2] * point_y + forward[2] * point_z,
         )
 
     def rotate_normal(normal):
         normal_x, normal_y, normal_z = normal
         return (
-            normal_x * cos_yaw - normal_z * sin_yaw,
-            normal_y,
-            normal_x * sin_yaw + normal_z * cos_yaw,
+            right[0] * normal_x + up[0] * normal_y + forward[0] * normal_z,
+            right[1] * normal_x + up[1] * normal_y + forward[1] * normal_z,
+            right[2] * normal_x + up[2] * normal_y + forward[2] * normal_z,
         )
 
     front_ring = []
@@ -1241,10 +1994,10 @@ def _append_preview_cylinder(vertices, center, radius, half_width, color_rgb, se
         angle = (math.pi * 2.0 * index) / max(segments, 3)
         ring_x = math.cos(angle) * radius
         ring_y = math.sin(angle) * radius
-        front_ring.append(rotate_point((cx + ring_x, cy + ring_y, cz - half_width)))
-        back_ring.append(rotate_point((cx + ring_x, cy + ring_y, cz + half_width)))
-    front_center = rotate_point((cx, cy, cz - half_width))
-    back_center = rotate_point((cx, cy, cz + half_width))
+        front_ring.append(rotate_point((ring_x, ring_y, -half_width)))
+        back_ring.append(rotate_point((ring_x, ring_y, half_width)))
+    front_center = rotate_point((0.0, 0.0, -half_width))
+    back_center = rotate_point((0.0, 0.0, half_width))
     front_normal = rotate_normal((0.0, 0.0, -1.0))
     back_normal = rotate_normal((0.0, 0.0, 1.0))
     for index in range(segments):
@@ -1318,14 +2071,25 @@ def _body_outline_points(profile):
     ]
 
 
+def _body_outline_support_distance(profile, outward_x, outward_z):
+    points = _body_outline_points(profile)
+    if not points:
+        return 0.0
+    normal_length = math.hypot(float(outward_x), float(outward_z))
+    if normal_length <= 1e-6:
+        return 0.0
+    normal_x = float(outward_x) / normal_length
+    normal_z = float(outward_z) / normal_length
+    return max(point_x * normal_x + point_z * normal_z for point_x, point_z in points)
+
+
 def _resolved_wheel_centers(profile):
     return [component['center'] for component in _resolved_wheel_components(profile)]
 
 
 def _resolved_wheel_components(profile):
     render_width_scale = float(profile.get('body_render_width_scale', 0.82))
-    orbit_values = list(profile.get('wheel_orbit_yaws_deg', []))
-    self_values = list(profile.get('wheel_self_yaws_deg', orbit_values))
+    self_values = list(profile.get('wheel_self_yaws_deg', []))
     rear_climb_style = str(profile.get('rear_climb_assist_style', 'none'))
     leg_geometry = _balance_leg_geometry(profile, render_width_scale) if rear_climb_style == 'balance_leg' else None
     raw_positions = [position for position in profile.get('custom_wheel_positions_m', []) if isinstance(position, (list, tuple)) and len(position) >= 2]
@@ -1342,25 +2106,61 @@ def _resolved_wheel_components(profile):
         if leg_geometry is not None and index in dynamic_indices:
             side_sign = -1.0 if float(position[1]) < 0.0 else 1.0
             center_x = float(leg_geometry['foot'][0])
-            center_z = float(leg_geometry['side_offset']) * side_sign
+            center_z = _balance_leg_wheel_side_offset(profile, leg_geometry) * side_sign
             center_height_m = float(leg_geometry['foot'][1])
         else:
-            orbit_rad = math.radians(float(orbit_values[index])) if index < len(orbit_values) else 0.0
-            center_x, center_z = _rotate_xz(float(position[0]), float(position[1]) * render_width_scale, orbit_rad)
+            center_x = float(position[0])
+            center_z = float(position[1]) * render_width_scale
         spin_deg = float(self_values[index]) if index < len(self_values) else 0.0
         components.append({'center': (center_x, center_z), 'spin_rad': math.radians(spin_deg), 'center_height_m': center_height_m})
     return components
 
 
-def _resolved_armor_components(profile):
-    render_width_scale = float(profile.get('body_render_width_scale', 0.82))
-    body_half_x = float(profile['body_length_m']) * 0.5
-    body_half_z = float(profile['body_width_m']) * 0.5 * render_width_scale
+def _preview_cylinder_axes_from_runtime(axis_direction, radial_hint, spin_rad=0.0):
+    axis = _normalize_preview_axis(axis_direction, (1.0, 0.0, 0.0))
+    hint = np.array(radial_hint, dtype='f4')
+    radial_a = hint - axis * float(np.dot(hint, axis))
+    if float(np.linalg.norm(radial_a)) <= 1e-6:
+        fallback = np.array((1.0, 0.0, 0.0), dtype='f4') if abs(float(np.dot(axis, (0.0, 1.0, 0.0)))) >= 0.92 else np.array((0.0, 1.0, 0.0), dtype='f4')
+        radial_a = fallback - axis * float(np.dot(fallback, axis))
+    radial_a = _normalize_preview_axis(radial_a, (0.0, 1.0, 0.0))
+    radial_b = _normalize_preview_axis(np.cross(axis, radial_a), (0.0, 0.0, 1.0))
+    if abs(float(spin_rad)) > 1e-6:
+        spun_a = radial_a * math.cos(float(spin_rad)) + radial_b * math.sin(float(spin_rad))
+        radial_a = _normalize_preview_axis(spun_a, radial_a)
+        radial_b = _normalize_preview_axis(np.cross(axis, radial_a), radial_b)
+    return (
+        _preview_vec3_tuple(axis),
+        _preview_vec3_tuple(radial_b),
+        _preview_vec3_tuple(radial_a),
+    )
+
+
+def _preview_wheel_cylinder_axes(profile, wheel_component, spin_rad=None):
+    wheel_x, wheel_z = wheel_component['center']
+    axis = np.array((0.0, 0.0, 1.0), dtype='f4')
+    radial_hint = np.array((1.0, 0.0, 0.0), dtype='f4')
+    if str(profile.get('wheel_style', 'standard')).lower() == 'omni':
+        inward = np.array((-float(wheel_x), 0.0, -float(wheel_z)), dtype='f4')
+        if float(np.linalg.norm(inward)) > 1e-6:
+            axis = inward
+        radial_hint = np.array((0.0, 1.0, 0.0), dtype='f4')
+    resolved_spin = float(wheel_component.get('spin_rad', 0.0) if spin_rad is None else spin_rad)
+    return _preview_cylinder_axes_from_runtime(axis, radial_hint, resolved_spin)
+
+
+def _resolve_armor_plate_thickness(profile):
+    explicit = float(profile.get('armor_plate_thickness_m', -1.0))
+    if explicit >= 0.0:
+        return max(0.001, explicit)
     armor_gap = float(profile.get('armor_plate_gap_m', 0.005))
-    armor_thickness = max(0.012, armor_gap * 0.75, float(profile.get('armor_plate_width_m', 0.16)) * 0.24)
+    return max(0.004, armor_gap * 0.75, float(profile.get('armor_plate_width_m', 0.16)) * 0.08)
+
+
+def _resolved_armor_components(profile):
+    armor_gap = float(profile.get('armor_plate_gap_m', 0.005))
+    armor_thickness = _resolve_armor_plate_thickness(profile)
     armor_center_y = float(profile['body_clearance_m']) + float(profile['body_height_m']) * 0.5
-    radius_x = body_half_x + armor_gap + armor_thickness * 0.5
-    radius_z = body_half_z + armor_gap + armor_thickness * 0.5
     orbit_values = list(profile.get('armor_orbit_yaws_deg', [0.0, 180.0, 90.0, 270.0]))
     self_values = list(profile.get('armor_self_yaws_deg', orbit_values))
     components = []
@@ -1369,36 +2169,162 @@ def _resolved_armor_components(profile):
         orbit_rad = math.radians(orbit_deg)
         outward_x = math.cos(orbit_rad)
         outward_z = math.sin(orbit_rad)
-        if abs(outward_x) >= abs(outward_z):
-            sign = 1.0 if outward_x >= 0.0 else -1.0
-            center = (radius_x * sign, armor_center_y, 0.0)
-            default_yaw = 0.0 if sign > 0.0 else math.pi
-        else:
-            sign = 1.0 if outward_z >= 0.0 else -1.0
-            center = (0.0, armor_center_y, radius_z * sign)
-            default_yaw = math.pi * 0.5 if sign > 0.0 else -math.pi * 0.5
+        support_distance = _body_outline_support_distance(profile, outward_x, outward_z)
+        plate_distance = support_distance + armor_gap + armor_thickness * 0.5
+        center = (outward_x * plate_distance, armor_center_y, outward_z * plate_distance)
+        default_yaw = orbit_rad
         self_deg = float(self_values[index]) if index < len(self_values) else orbit_deg
         yaw_rad = math.radians(self_deg) if profile.get('armor_self_yaws_deg') else default_yaw
+        offsets = profile.setdefault('armor_plate_offsets_m', [])
+        while len(offsets) <= index:
+            offsets.append([0.0, 0.0, 0.0])
+        offset = _normalize_vector3(offsets[index], (0.0, 0.0, 0.0))
+        offsets[index] = offset
+        rotations = profile.setdefault('armor_plate_rotations_ypr_deg', [])
+        while len(rotations) <= index:
+            rotations.append([0.0, 0.0, 0.0])
+        rotation = _normalize_vector3(rotations[index], (0.0, 0.0, 0.0))
+        rotations[index] = rotation
+        center = (center[0] + offset[0], center[1] + offset[1], center[2] + offset[2])
         components.append({
             'center': center,
-            'yaw_rad': yaw_rad,
+            'yaw_rad': yaw_rad + math.radians(float(rotation[0])),
+            'pitch_rad': math.radians(float(rotation[1])),
+            'roll_rad': math.radians(float(rotation[2])),
         })
     return components
+
+
+def _friction_wheel_count(profile):
+    wheel_radius = max(0.0, float(profile.get('barrel_friction_wheel_radius_m', 0.0)))
+    wheel_height = max(0.0, float(profile.get('barrel_friction_wheel_height_m', profile.get('barrel_friction_wheel_width_m', 0.0))))
+    if wheel_radius <= 0.001 or wheel_height <= 0.001:
+        return 0
+    return 6 if str(profile.get('role_key', '')).lower() == 'hero' else 2
+
+
+def _friction_wheel_offset(profile, index):
+    offsets = profile.setdefault('barrel_friction_wheel_offsets_m', [])
+    while len(offsets) <= index:
+        offsets.append([0.0, 0.0, 0.0])
+    offset = _normalize_vector3(offsets[index], (0.0, 0.0, 0.0))
+    offsets[index] = offset
+    return offset
+
+
+def _friction_wheel_layout(profile, barrel_base_x, barrel_base_y, barrel_base_z, barrel_radius):
+    role_key = str(profile.get('role_key', '')).lower()
+    wheel_radius = max(0.0, float(profile.get('barrel_friction_wheel_radius_m', 0.0)))
+    wheel_height = max(0.0, float(profile.get('barrel_friction_wheel_height_m', profile.get('barrel_friction_wheel_width_m', 0.0))))
+    if wheel_radius <= 0.001 or wheel_height <= 0.001:
+        return []
+    offset_x = float(profile.get('barrel_friction_wheel_offset_x_m', 0.0))
+    offset_y = float(profile.get('barrel_friction_wheel_offset_y_m', 0.0))
+    side_offset = max(float(profile.get('barrel_friction_wheel_offset_z_m', 0.0)), float(barrel_radius) + wheel_height * 0.85)
+    base_x = float(barrel_base_x) + offset_x
+    base_y = float(barrel_base_y) + offset_y
+    base_z = float(barrel_base_z)
+    rotation_ypr = [
+        float(profile.get('barrel_friction_wheel_yaw_deg', 0.0)),
+        float(profile.get('barrel_friction_wheel_pitch_deg', 0.0)),
+        float(profile.get('barrel_friction_wheel_roll_deg', 0.0)),
+    ]
+    axis_vec = np.array([1.0, 0.0, 0.0], dtype='f4')
+    right_vec = np.array([0.0, 0.0, 1.0], dtype='f4')
+    up_vec = np.array([0.0, 1.0, 0.0], dtype='f4')
+
+    def wheel_offset_vector(index):
+        offset = _friction_wheel_offset(profile, index)
+        return axis_vec * float(offset[0]) + up_vec * float(offset[1]) + right_vec * float(offset[2])
+
+    def wheel_orientation(forward_axis, radial_hint):
+        wheel_forward = _normalize_preview_axis(forward_axis, (1.0, 0.0, 0.0))
+        wheel_right = _normalize_preview_axis(radial_hint, (0.0, 0.0, 1.0))
+        wheel_up = _normalize_preview_axis(np.cross(wheel_forward, wheel_right), (0.0, 1.0, 0.0))
+        return {
+            'kind': 'oriented_box',
+            'forward': tuple(float(value) for value in wheel_forward),
+            'right': tuple(float(value) for value in wheel_right),
+            'up': tuple(float(value) for value in wheel_up),
+        }
+
+    def wheel_yaw_from_axis(forward_axis):
+        forward_axis = _normalize_preview_axis(forward_axis, (1.0, 0.0, 0.0))
+        return math.atan2(float(forward_axis[2]), float(forward_axis[0]))
+
+    wheels = []
+    if role_key == 'hero':
+        ring_radius = max(side_offset, float(barrel_radius) + wheel_radius * 1.05)
+        group_gap = max(wheel_height * 1.35, wheel_radius * 0.55)
+        for group_index, group_shift in enumerate((-group_gap * 0.5, group_gap * 0.5)):
+            group_center = np.array([base_x + group_shift, base_y, base_z], dtype='f4')
+            for slot_index, angle_deg in enumerate((90.0, 210.0, 330.0)):
+                angle = math.radians(angle_deg)
+                index = group_index * 3 + slot_index
+                radial = _normalize_preview_axis(up_vec * math.sin(angle) + right_vec * math.cos(angle), (0.0, 1.0, 0.0))
+                tangent = _normalize_preview_axis(up_vec * math.cos(angle) - right_vec * math.sin(angle), (0.0, 0.0, 1.0))
+                wheel_axis, wheel_radial, _ = _resolve_preview_rotated_basis(tangent, axis_vec, radial, rotation_ypr)
+                center_vec = group_center + radial * ring_radius + wheel_offset_vector(index)
+                orientation = wheel_orientation(wheel_axis, wheel_radial)
+                center = tuple(float(value) for value in center_vec)
+                wheels.append((center, (wheel_height * 0.5, wheel_radius, wheel_radius), (wheel_yaw_from_axis(wheel_axis), 0.0, 0.0), index, orientation))
+    else:
+        pair_axis, pair_radial, _ = _resolve_preview_rotated_basis(right_vec, axis_vec, up_vec, rotation_ypr)
+        orientation = wheel_orientation(pair_axis, pair_radial)
+        base_center = np.array([base_x, base_y, base_z], dtype='f4')
+        left_center = base_center - right_vec * side_offset + wheel_offset_vector(0)
+        right_center = base_center + right_vec * side_offset + wheel_offset_vector(1)
+        pair_yaw = wheel_yaw_from_axis(pair_axis)
+        wheels.append((tuple(float(value) for value in left_center), (wheel_height * 0.5, wheel_radius, wheel_radius), (pair_yaw, 0.0, 0.0), 0, orientation))
+        wheels.append((tuple(float(value) for value in right_center), (wheel_height * 0.5, wheel_radius, wheel_radius), (pair_yaw, 0.0, 0.0), 1, orientation))
+    return wheels
 
 
 def _resolved_armor_light_components(profile):
     armor_components = _resolved_armor_components(profile)
     armor_half_width = float(profile.get('armor_plate_length_m', 0.16)) * 0.5
     light_half_width = max(0.005, float(profile.get('armor_light_width_m', 0.02)) * 0.5)
-    light_offset = armor_half_width + light_half_width + max(0.004, float(profile.get('armor_plate_gap_m', 0.005)) * 0.15)
+    default_distance = max(0.004, float(profile.get('armor_plate_gap_m', 0.005)) * 0.15)
+    light_offsets = profile.setdefault('armor_light_offsets_m', [])
+    light_distances = profile.setdefault('armor_light_plate_distances_m', [])
     light_components = []
     for component in armor_components:
-        offset_x, offset_z = _rotate_xz(0.0, light_offset, float(component['yaw_rad']))
-        center_x, center_y, center_z = component['center']
+        light_index_a = len(light_components) * 2
+        light_index_b = light_index_a + 1
+        while len(light_offsets) <= light_index_b:
+            light_offsets.append([0.0, 0.0, 0.0])
+        while len(light_distances) <= light_index_b:
+            light_distances.append(default_distance)
+        offset_a = _normalize_vector3(light_offsets[light_index_a], (0.0, 0.0, 0.0))
+        offset_b = _normalize_vector3(light_offsets[light_index_b], (0.0, 0.0, 0.0))
+        light_offsets[light_index_a] = offset_a
+        light_offsets[light_index_b] = offset_b
+        distance_a = max(0.0, float(light_distances[light_index_a]))
+        distance_b = max(0.0, float(light_distances[light_index_b]))
+        light_distances[light_index_a] = distance_a
+        light_distances[light_index_b] = distance_b
+        forward, right, up = _resolve_preview_rotated_axes(
+            float(component['yaw_rad']),
+            [0.0, math.degrees(float(component.get('pitch_rad', 0.0))), math.degrees(float(component.get('roll_rad', 0.0)))],
+        )
+        center = np.array(component['center'], dtype='f4')
+        forward_vec = np.array(forward, dtype='f4')
+        right_vec = np.array(right, dtype='f4')
+        up_vec = np.array(up, dtype='f4')
+        center_a = center + right_vec * (armor_half_width + light_half_width + distance_a) + forward_vec * float(offset_a[0]) + up_vec * float(offset_a[1]) + right_vec * float(offset_a[2])
+        center_b = center - right_vec * (armor_half_width + light_half_width + distance_b) + forward_vec * float(offset_b[0]) + up_vec * float(offset_b[1]) + right_vec * float(offset_b[2])
         light_components.append({
-            'center_a': (center_x + offset_x, center_y, center_z + offset_z),
-            'center_b': (center_x - offset_x, center_y, center_z - offset_z),
+            'center_a': tuple(float(value) for value in center_a),
+            'center_b': tuple(float(value) for value in center_b),
             'yaw_rad': float(component['yaw_rad']),
+            'pitch_rad': float(component.get('pitch_rad', 0.0)),
+            'roll_rad': float(component.get('roll_rad', 0.0)),
+            'orientation': {
+                'kind': 'oriented_box',
+                'forward': tuple(float(value) for value in forward),
+                'right': tuple(float(value) for value in right),
+                'up': tuple(float(value) for value in up),
+            },
         })
     return light_components
 
@@ -1503,7 +2429,7 @@ class ModernGLAppearancePreview:
 
         armor_side = max(0.04, float(profile.get('armor_plate_width_m', 0.13)))
         armor_half = armor_side * 0.5
-        armor_thickness = max(0.012, float(profile.get('armor_plate_gap_m', 0.025)))
+        armor_thickness = _resolve_armor_plate_thickness(profile)
         radius = tower_radius + 0.055
         for index, yaw in enumerate([armor_spin + 0.0, armor_spin + math.tau / 3.0, armor_spin + math.tau * 2.0 / 3.0]):
             height = lift + head_base_height - 0.07 + [0.05, 0.0, -0.05][index]
@@ -1537,7 +2463,7 @@ class ModernGLAppearancePreview:
 
         armor_side = max(0.04, float(profile.get('armor_plate_width_m', 0.13)))
         armor_half = armor_side * 0.5
-        armor_thickness = max(0.012, float(profile.get('armor_plate_gap_m', 0.025)))
+        armor_thickness = _resolve_armor_plate_thickness(profile)
         base_top_height = float(profile.get('structure_top_armor_center_height_m', height * (1.150 / 1.181)))
         base_top_offset_x = float(profile.get('structure_top_armor_offset_x_m', 0.0))
         base_top_offset_z = float(profile.get('structure_top_armor_offset_z_m', 0.0))
@@ -1732,10 +2658,23 @@ class ModernGLAppearancePreview:
         poses.append({'part': 'body', 'index': 0, 'center': (0.0, body_y, 0.0), 'yaw_rad': 0.0})
 
         for index, component in enumerate(_resolved_armor_components(profile)):
-            poses.append({'part': 'armor', 'index': index, 'center': tuple(component['center']), 'yaw_rad': float(component['yaw_rad'])})
+            poses.append({'part': 'armor', 'index': index, 'center': tuple(component['center']), 'yaw_rad': float(component['yaw_rad']), 'pitch_rad': float(component.get('pitch_rad', 0.0)), 'roll_rad': float(component.get('roll_rad', 0.0))})
         for index, component in enumerate(_resolved_armor_light_components(profile)):
-            poses.append({'part': 'armor_light', 'index': index * 2, 'center': tuple(component['center_a']), 'yaw_rad': float(component['yaw_rad'])})
-            poses.append({'part': 'armor_light', 'index': index * 2 + 1, 'center': tuple(component['center_b']), 'yaw_rad': float(component['yaw_rad'])})
+            poses.append({'part': 'armor_light', 'index': index * 2, 'center': tuple(component['center_a']), 'yaw_rad': float(component['yaw_rad']), 'pitch_rad': float(component.get('pitch_rad', 0.0)), 'roll_rad': float(component.get('roll_rad', 0.0))})
+            poses.append({'part': 'armor_light', 'index': index * 2 + 1, 'center': tuple(component['center_b']), 'yaw_rad': float(component['yaw_rad']), 'pitch_rad': float(component.get('pitch_rad', 0.0)), 'roll_rad': float(component.get('roll_rad', 0.0))})
+
+        rear_health_depth = float(profile.get('rear_health_light_width_m', 0.0))
+        if rear_health_depth <= 1e-6:
+            rear_health_depth = min(max(float(profile['body_length_m']) * 0.045, 0.018), 0.038)
+        rear_health_height = float(profile.get('rear_health_light_height_m', 0.0))
+        if rear_health_height <= 1e-6:
+            rear_health_height = min(max(float(profile['body_width_m']) * 0.035, 0.010), 0.018)
+        rear_health_center = (
+            -float(profile['body_length_m']) * 0.5 - rear_health_depth * 0.24 + float(profile.get('rear_health_light_offset_x_m', 0.0)),
+            float(profile['body_clearance_m']) + float(profile['body_height_m']) + rear_health_height * 0.58 + float(profile.get('rear_health_light_offset_y_m', 0.0)),
+            float(profile.get('rear_health_light_offset_z_m', 0.0)),
+        )
+        poses.append({'part': 'rear_health_light', 'index': 0, 'center': rear_health_center, 'yaw_rad': 0.0})
 
         for index, wheel_component in enumerate(_resolved_wheel_components(profile)):
             wheel_x, wheel_z = wheel_component['center']
@@ -1756,32 +2695,56 @@ class ModernGLAppearancePreview:
             poses.append({'part': 'front_climb', 'index': 1, 'center': (plate_center_x, plate_center_y, plate_center_z), 'yaw_rad': 0.0})
 
         if has_rear_climb:
-            rear_points = _rear_climb_points(profile, render_width_scale)
-            upper_center = ((rear_points['mount'][0] + rear_points['joint'][0]) * 0.5, (rear_points['mount'][1] + rear_points['joint'][1]) * 0.5)
-            poses.append({'part': 'rear_climb', 'index': 0, 'center': (upper_center[0], upper_center[1], -float(rear_points['side_offset'])), 'yaw_rad': 0.0})
-            poses.append({'part': 'rear_climb', 'index': 1, 'center': (upper_center[0], upper_center[1], float(rear_points['side_offset'])), 'yaw_rad': 0.0})
+            if str(profile.get('rear_climb_assist_style', 'none')) == 'balance_leg':
+                _extend_balance_leg_preview_attachment_poses(poses, profile, render_width_scale)
+            else:
+                rear_points = _rear_climb_points(profile, render_width_scale)
+                upper_center = ((rear_points['mount'][0] + rear_points['joint'][0]) * 0.5, (rear_points['mount'][1] + rear_points['joint'][1]) * 0.5)
+                poses.append({'part': 'rear_climb', 'index': 0, 'center': (upper_center[0], upper_center[1], -float(rear_points['side_offset'])), 'yaw_rad': 0.0})
+                poses.append({'part': 'rear_climb', 'index': 1, 'center': (upper_center[0], upper_center[1], float(rear_points['side_offset'])), 'yaw_rad': 0.0})
 
+        mount_offset_x = _profile_mount_offset_x(profile)
+        mount_offset_z = _profile_mount_offset_z(profile)
+        turret_offset_x = _profile_turret_offset_x(profile)
+        turret_offset_z = _profile_turret_offset_z(profile)
+        turret_center_y = _profile_turret_center_height(profile)
         if has_mount:
-            poses.append({'part': 'mount', 'index': 0, 'center': (float(profile['gimbal_offset_x_m']), _profile_mount_center_height(profile), float(profile['gimbal_offset_y_m'])), 'yaw_rad': 0.0})
+            poses.append({'part': 'mount', 'index': 0, 'center': (mount_offset_x, _profile_mount_center_height(profile), mount_offset_z), 'yaw_rad': 0.0})
         if has_turret:
-            turret_center = (float(profile['gimbal_offset_x_m']), _profile_turret_center_height(profile), float(profile['gimbal_offset_y_m']))
+            turret_center = (turret_offset_x, turret_center_y, turret_offset_z)
             poses.append({'part': 'turret', 'index': 0, 'center': turret_center, 'yaw_rad': 0.0})
             if has_barrel:
+                barrel_base_x = turret_offset_x + float(profile['gimbal_length_m']) * 0.5 + float(profile.get('barrel_offset_x_m', 0.0))
+                barrel_base_y = turret_center_y + float(profile.get('barrel_offset_y_m', 0.0))
+                barrel_base_z = turret_offset_z + float(profile.get('barrel_offset_z_m', 0.0))
                 barrel_center = (
-                    float(profile['gimbal_offset_x_m']) + float(profile['gimbal_length_m']) * 0.5 + float(profile['barrel_length_m']) * 0.5,
-                    _profile_turret_center_height(profile),
-                    float(profile['gimbal_offset_y_m']),
+                    barrel_base_x + float(profile['barrel_length_m']) * 0.5,
+                    barrel_base_y,
+                    barrel_base_z,
                 )
                 poses.append({'part': 'barrel', 'index': 0, 'center': barrel_center, 'yaw_rad': 0.0})
-                barrel_light_center_x = float(profile['gimbal_offset_x_m']) + float(profile['gimbal_length_m']) * 0.5 + float(profile['barrel_length_m']) * 0.45
+                for center, _half_extents, wheel_ypr, wheel_index, _orientation in _friction_wheel_layout(profile, barrel_base_x, barrel_base_y, barrel_base_z, float(profile.get('barrel_radius_m', 0.0))):
+                    poses.append({'part': 'barrel_friction_wheel', 'index': wheel_index, 'center': center, 'yaw_rad': wheel_ypr[0]})
+                poses.append({
+                    'part': 'first_person_camera',
+                    'index': 0,
+                    'center': (
+                        barrel_base_x + float(profile.get('first_person_camera_offset_x_m', 0.04)),
+                        barrel_base_y + float(profile.get('first_person_camera_offset_y_m', 0.06)),
+                        barrel_base_z + float(profile.get('first_person_camera_offset_z_m', 0.0)),
+                    ),
+                    'yaw_rad': math.radians(float(profile.get('first_person_camera_yaw_deg', 0.0))),
+                })
+                barrel_light_center_x = barrel_base_x + float(profile['barrel_length_m']) * 0.45 + float(profile.get('barrel_light_offset_x_m', 0.0))
+                barrel_light_center_y = barrel_base_y + float(profile.get('barrel_light_offset_y_m', 0.0))
+                barrel_light_center_z = barrel_base_z + float(profile.get('barrel_light_offset_z_m', 0.0))
                 barrel_light_offset = max(0.005, float(profile.get('barrel_light_width_m', 0.02)) * 3.0)
-                poses.append({'part': 'barrel_light', 'index': 0, 'center': (barrel_light_center_x, _profile_turret_center_height(profile), float(profile['gimbal_offset_y_m']) + barrel_light_offset), 'yaw_rad': 0.0})
-                poses.append({'part': 'barrel_light', 'index': 1, 'center': (barrel_light_center_x, _profile_turret_center_height(profile), float(profile['gimbal_offset_y_m']) - barrel_light_offset), 'yaw_rad': 0.0})
+                poses.append({'part': 'barrel_light', 'index': 0, 'center': (barrel_light_center_x, barrel_light_center_y, barrel_light_center_z + barrel_light_offset), 'yaw_rad': 0.0})
+                poses.append({'part': 'barrel_light', 'index': 1, 'center': (barrel_light_center_x, barrel_light_center_y, barrel_light_center_z - barrel_light_offset), 'yaw_rad': 0.0})
 
             if str(profile.get('role_key', '')).lower() == 'hero':
-                turret_center_x = float(profile['gimbal_offset_x_m'])
-                turret_center_y = _profile_turret_center_height(profile)
-                turret_center_z = float(profile['gimbal_offset_y_m'])
+                turret_center_x = turret_offset_x
+                turret_center_z = turret_offset_z
                 turret_width = float(profile['gimbal_width_m']) * render_width_scale
                 turret_height = float(profile['gimbal_body_height_m'])
                 camera_center = (
@@ -1810,39 +2773,40 @@ class ModernGLAppearancePreview:
             offset_m = primitive.get('offset_m', [0.0, 0.0, 0.0])
             rotation_ypr_deg = primitive.get('rotation_ypr_deg', [0.0, 0.0, 0.0])
             color_rgb = primitive.get('color_rgb', [188, 192, 198])
-            yaw_rad = math.radians(float(rotation_ypr_deg[0] if len(rotation_ypr_deg) >= 1 else 0.0))
             for pose in matching_poses(parent_part, component_scope, component_index):
-                px, py, pz = pose['center']
-                ox, oy, oz = offset_m
-                center = (px + float(ox), py + float(oy), pz + float(oz))
+                base_forward, base_right, base_up = _resolve_preview_rotated_axes(float(pose['yaw_rad']), [0.0, math.degrees(float(pose.get('pitch_rad', 0.0))), math.degrees(float(pose.get('roll_rad', 0.0)))])
+                forward, right, up = _resolve_preview_rotated_basis(base_forward, base_right, base_up, rotation_ypr_deg)
+                center = _preview_local_point(pose['center'], base_forward, base_right, base_up, offset_m)
                 primitive_type = str(primitive.get('primitive_type', 'box'))
                 sx, sy, sz = [max(0.002, float(value)) for value in size_m[:3]]
                 if primitive_type == 'cylinder':
-                    _append_preview_cylinder(vertices, center, max(sy, sz) * 0.5, sx * 0.5, color_rgb, yaw_rad=pose['yaw_rad'] + yaw_rad)
+                    _append_preview_oriented_cylinder(vertices, center, max(sy, sz) * 0.5, sx * 0.5, color_rgb, forward, right, up, segments=12)
                 else:
-                    _append_preview_box(vertices, center, (sx * 0.5, sy * 0.5, sz * 0.5), color_rgb, yaw_rad=pose['yaw_rad'] + yaw_rad)
+                    _append_preview_oriented_box(vertices, center, (sx * 0.5, sy * 0.5, sz * 0.5), color_rgb, forward, right, up)
 
-        anchor_points = {}
+        anchor_variants = _resolve_preview_custom_anchor_point_variants(profile, poses)
         for anchor in profile.get('custom_anchors', []):
-            parent_part = str(anchor.get('parent_part', 'body'))
-            component_scope = str(anchor.get('component_scope', 'single'))
-            component_index = int(anchor.get('component_index', 0))
-            offset_m = anchor.get('offset_m', [0.0, 0.0, 0.0])
-            pose = next(iter(matching_poses(parent_part, component_scope, component_index)), None)
-            if pose is None:
-                continue
-            px, py, pz = pose['center']
-            point = (px + float(offset_m[0]), py + float(offset_m[1]), pz + float(offset_m[2]))
-            anchor_points[str(anchor.get('id', ''))] = point
-            _append_preview_box(vertices, point, (0.008, 0.008, 0.008), [232, 196, 92], yaw_rad=0.0)
+            is_active = _is_active_anchor(anchor)
+            for resolved_anchor in anchor_variants.get(str(anchor.get('id', '')), []):
+                _append_preview_oriented_box(
+                    vertices,
+                    resolved_anchor['point'],
+                    (0.011, 0.011, 0.011) if is_active else (0.008, 0.008, 0.008),
+                    [96, 210, 255] if is_active else [232, 196, 92],
+                    resolved_anchor['forward'],
+                    resolved_anchor['right'],
+                    resolved_anchor['up'])
 
         for link in profile.get('custom_links', []):
-            start_point = anchor_points.get(str(link.get('start_anchor_id', '')))
-            end_point = anchor_points.get(str(link.get('end_anchor_id', '')))
-            if start_point is None or end_point is None:
-                continue
-            radius = max(0.001, float(link.get('radius_m', 0.012)))
-            _append_preview_beam(vertices, start_point, end_point, radius * 2.0, radius * 2.0, link.get('color_rgb', [176, 182, 190]), yaw_rad=0.0)
+            for start_anchor, end_anchor in _pair_preview_anchor_variants(anchor_variants, link.get('start_anchor_id', ''), link.get('end_anchor_id', '')):
+                start_point = start_anchor['point']
+                end_point = end_anchor['point']
+                radius = max(0.001, float(link.get('radius_m', 0.012)))
+                width = max(0.001, float(link.get('width_m', radius * 2.0)))
+                thickness = max(0.001, float(link.get('thickness_m', radius * 2.0)))
+                fixed_length = max(0.0, float(link.get('length_m', 0.0) or 0.0))
+                resolved_end = _resolve_fixed_link_end(start_point, end_point, fixed_length)
+                _append_preview_beam(vertices, start_point, resolved_end, width, thickness, link.get('color_rgb', [176, 182, 190]), yaw_rad=0.0)
 
     def _build_geometry(self, profile):
         if str(profile.get('role_key', '')).lower() in {'outpost', 'base', 'energy_mechanism'}:
@@ -1876,11 +2840,14 @@ class ModernGLAppearancePreview:
                 [max(0, min(255, int(channel * 0.82 + 20))) for channel in profile['body_color_rgb']],
             )
         else:
-            _append_preview_box(
+            _append_preview_body_prism(
                 vertices,
                 (0.0, body_y, 0.0),
-                (float(profile['body_length_m']) * 0.5, body_half_height, float(profile['body_width_m']) * 0.5 * render_width_scale),
+                float(profile['body_length_m']),
+                float(profile['body_width_m']) * render_width_scale,
+                float(profile['body_height_m']),
                 profile['body_color_rgb'],
+                profile,
             )
             _append_preview_box(
                 vertices,
@@ -1890,42 +2857,35 @@ class ModernGLAppearancePreview:
             )
 
         wheel_radius = max(0.018, float(profile['wheel_radius_m']))
-        wheel_half_z = max(0.018, float(profile['wheel_radius_m']) * (0.22 if str(profile.get('wheel_style', 'standard')) == 'omni' else 0.32))
+        wheel_half_z = 0.020
         for wheel_component in _resolved_wheel_components(profile):
             wheel_x, wheel_z = wheel_component['center']
             wheel_center_y = float(wheel_component.get('center_height_m', wheel_radius))
-            _append_preview_cylinder(
+            wheel_axis, wheel_right, wheel_up = _preview_wheel_cylinder_axes(profile, wheel_component)
+            _append_preview_oriented_cylinder(
                 vertices,
                 (float(wheel_x), wheel_center_y, float(wheel_z)),
                 wheel_radius,
                 wheel_half_z,
                 profile['wheel_color_rgb'],
+                wheel_axis,
+                wheel_right,
+                wheel_up,
+                segments=14,
             )
-            spoke_dx, spoke_dy = _rotate_xz(wheel_radius * 0.72, 0.0, float(wheel_component['spin_rad']))
-            _append_preview_beam(
+            hub_axis, hub_right, hub_up = _preview_cylinder_axes_from_runtime(wheel_axis, (0.0, 1.0, 0.0), 0.0)
+            hub_color = [max(0, min(255, int(channel * 0.84 + 38))) for channel in profile['wheel_color_rgb']]
+            _append_preview_oriented_cylinder(
                 vertices,
-                (float(wheel_x) - spoke_dx, wheel_center_y - spoke_dy, float(wheel_z)),
-                (float(wheel_x) + spoke_dx, wheel_center_y + spoke_dy, float(wheel_z)),
-                max(0.006, wheel_radius * 0.18),
-                max(0.006, wheel_half_z * 0.70),
-                [188, 192, 198],
+                (float(wheel_x), wheel_center_y, float(wheel_z)),
+                max(0.007, wheel_radius * 0.24),
+                max(0.008, wheel_half_z * 1.10),
+                hub_color,
+                hub_axis,
+                hub_right,
+                hub_up,
+                segments=10,
             )
-            marker_dx, marker_dy = _rotate_xz(wheel_radius * 0.56, wheel_radius * 0.18, float(wheel_component['spin_rad']))
-            marker_half = max(0.005, wheel_radius * 0.12)
-            marker_half_z = max(0.004, wheel_half_z * 0.22)
-            _append_preview_box(
-                vertices,
-                (float(wheel_x) + marker_dx, wheel_center_y + marker_dy, float(wheel_z)),
-                (max(0.004, marker_half * 0.70), max(0.004, marker_half * 0.70), max(0.004, wheel_half_z * 0.88)),
-                [236, 182, 84],
-            )
-            for marker_sign in (-1.0, 1.0):
-                _append_preview_box(
-                    vertices,
-                    (float(wheel_x) + marker_dx, wheel_center_y + marker_dy, float(wheel_z) + wheel_half_z * 0.72 * marker_sign),
-                    (marker_half, marker_half, marker_half_z),
-                    [236, 182, 84],
-                )
 
         body_half_x = float(profile['body_length_m']) * 0.5
         body_half_z = float(profile['body_width_m']) * 0.5 * render_width_scale
@@ -1974,34 +2934,64 @@ class ModernGLAppearancePreview:
 
         armor_half_h = float(profile['armor_plate_height_m']) * 0.5
         armor_color = profile['armor_color_rgb']
-        armor_thickness = max(0.012, float(profile.get('armor_plate_gap_m', 0.005)) * 0.75, float(profile.get('armor_plate_width_m', 0.16)) * 0.24)
+        armor_thickness = _resolve_armor_plate_thickness(profile)
         armor_half_width = float(profile['armor_plate_length_m']) * 0.5
         for component in _resolved_armor_components(profile):
-            _append_preview_box(
+            armor_forward, armor_right, armor_up = _resolve_preview_rotated_axes(
+                float(component['yaw_rad']),
+                [0.0, math.degrees(float(component.get('pitch_rad', 0.0))), math.degrees(float(component.get('roll_rad', 0.0)))],
+            )
+            _append_preview_oriented_box(
                 vertices,
                 component['center'],
                 (armor_thickness * 0.5, armor_half_h, armor_half_width),
                 armor_color,
-                yaw_rad=float(component['yaw_rad']),
+                armor_forward,
+                armor_right,
+                armor_up,
             )
         armor_light_color = [110, 168, 255]
         armor_light_half_x = float(profile.get('armor_light_length_m', 0.10)) * 0.5
         armor_light_half_y = max(0.005, float(profile.get('armor_light_height_m', 0.02)) * 0.5)
         armor_light_half_z = max(0.005, float(profile.get('armor_light_width_m', 0.02)) * 0.5)
         for component in _resolved_armor_light_components(profile):
-            _append_preview_box(vertices, component['center_a'], (armor_light_half_z, armor_light_half_y, armor_light_half_x), armor_light_color, yaw_rad=float(component['yaw_rad']))
-            _append_preview_box(vertices, component['center_b'], (armor_light_half_z, armor_light_half_y, armor_light_half_x), armor_light_color, yaw_rad=float(component['yaw_rad']))
+            orientation = component['orientation']
+            _append_preview_oriented_box(vertices, component['center_a'], (armor_light_half_z, armor_light_half_y, armor_light_half_x), armor_light_color, orientation['forward'], orientation['right'], orientation['up'])
+            _append_preview_oriented_box(vertices, component['center_b'], (armor_light_half_z, armor_light_half_y, armor_light_half_x), armor_light_color, orientation['forward'], orientation['right'], orientation['up'])
+
+        rear_health_length = float(profile.get('rear_health_light_length_m', 0.0))
+        if rear_health_length <= 1e-6:
+            rear_health_length = max(0.08, float(profile['body_width_m']) * render_width_scale * 0.74)
+        rear_health_width = float(profile.get('rear_health_light_width_m', 0.0))
+        if rear_health_width <= 1e-6:
+            rear_health_width = min(max(float(profile['body_length_m']) * 0.045, 0.018), 0.038)
+        rear_health_height = float(profile.get('rear_health_light_height_m', 0.0))
+        if rear_health_height <= 1e-6:
+            rear_health_height = min(max(float(profile['body_width_m']) * 0.035, 0.010), 0.018)
+        rear_health_center = (
+            -float(profile['body_length_m']) * 0.5 - rear_health_width * 0.24 + float(profile.get('rear_health_light_offset_x_m', 0.0)),
+            float(profile['body_clearance_m']) + float(profile['body_height_m']) + rear_health_height * 0.58 + float(profile.get('rear_health_light_offset_y_m', 0.0)),
+            float(profile.get('rear_health_light_offset_z_m', 0.0)),
+        )
+        _append_preview_box(
+            vertices,
+            rear_health_center,
+            (rear_health_width * 0.5, rear_health_height * 0.5, rear_health_length * 0.5),
+            [255, 36, 40],
+        )
 
         if has_turret:
-            turret_offset_x = float(profile['gimbal_offset_x_m'])
-            turret_offset_z = float(profile['gimbal_offset_y_m'])
+            mount_offset_x = _profile_mount_offset_x(profile)
+            mount_offset_z = _profile_mount_offset_z(profile)
+            turret_offset_x = _profile_turret_offset_x(profile)
+            turret_offset_z = _profile_turret_offset_z(profile)
             mount_center_y = _profile_mount_center_height(profile)
             turret_center_y = _profile_turret_center_height(profile)
             if (float(profile.get('gimbal_mount_height_m', 0.0)) + float(profile.get('gimbal_mount_gap_m', 0.0))) > 1e-6:
                 connector_half_height = max(0.02, (float(profile.get('gimbal_mount_gap_m', 0.0)) + float(profile.get('gimbal_mount_height_m', 0.0))) * 0.5)
                 _append_preview_box(
                     vertices,
-                    (turret_offset_x, mount_center_y, turret_offset_z),
+                    (mount_offset_x, mount_center_y, mount_offset_z),
                     (max(0.02, float(profile['gimbal_mount_length_m']) * 0.5), connector_half_height, max(0.02, float(profile['gimbal_mount_width_m']) * 0.5 * render_width_scale)),
                     [96, 100, 112],
                 )
@@ -2014,18 +3004,38 @@ class ModernGLAppearancePreview:
             if has_barrel:
                 barrel_length = float(profile['barrel_length_m'])
                 barrel_radius = max(0.005, float(profile['barrel_radius_m']))
+                barrel_base_x = turret_offset_x + float(profile['gimbal_length_m']) * 0.5 + float(profile.get('barrel_offset_x_m', 0.0))
+                barrel_base_y = turret_center_y + float(profile.get('barrel_offset_y_m', 0.0))
+                barrel_base_z = turret_offset_z + float(profile.get('barrel_offset_z_m', 0.0))
+                _append_preview_octagonal_barrel(
+                    vertices,
+                    (barrel_base_x + barrel_length * 0.5, barrel_base_y, barrel_base_z),
+                    barrel_length,
+                    barrel_radius,
+                    profile['turret_color_rgb'],
+                    profile,
+                )
+                for center, half_extents, _wheel_ypr, _wheel_index, orientation in _friction_wheel_layout(profile, barrel_base_x, barrel_base_y, barrel_base_z, barrel_radius):
+                    _append_preview_oriented_cylinder(vertices, center, half_extents[1], half_extents[0], profile['turret_color_rgb'], orientation['forward'], orientation['right'], orientation['up'], segments=14)
                 _append_preview_box(
                     vertices,
-                    (turret_offset_x + float(profile['gimbal_length_m']) * 0.5 + barrel_length * 0.5, turret_center_y, turret_offset_z),
-                    (barrel_length * 0.5, barrel_radius, barrel_radius),
-                    profile['turret_color_rgb'],
+                    (
+                        barrel_base_x + float(profile.get('first_person_camera_offset_x_m', 0.04)),
+                        barrel_base_y + float(profile.get('first_person_camera_offset_y_m', 0.06)),
+                        barrel_base_z + float(profile.get('first_person_camera_offset_z_m', 0.0)),
+                    ),
+                    (0.012, 0.012, 0.012),
+                    [80, 210, 220],
+                    yaw_rad=math.radians(float(profile.get('first_person_camera_yaw_deg', 0.0))),
                 )
                 barrel_light_half_x = float(profile.get('barrel_light_length_m', 0.10)) * 0.5
                 barrel_light_half_y = max(0.005, float(profile.get('barrel_light_height_m', 0.02)) * 0.5)
                 barrel_light_half_z = max(0.005, float(profile.get('barrel_light_width_m', 0.02)) * 0.5)
-                barrel_light_center_x = turret_offset_x + float(profile['gimbal_length_m']) * 0.5 + barrel_length * 0.45
-                _append_preview_box(vertices, (barrel_light_center_x, turret_center_y, turret_offset_z + barrel_light_half_z * 3.0), (barrel_light_half_x, barrel_light_half_y, barrel_light_half_z), armor_light_color)
-                _append_preview_box(vertices, (barrel_light_center_x, turret_center_y, turret_offset_z - barrel_light_half_z * 3.0), (barrel_light_half_x, barrel_light_half_y, barrel_light_half_z), armor_light_color)
+                barrel_light_center_x = barrel_base_x + barrel_length * 0.45 + float(profile.get('barrel_light_offset_x_m', 0.0))
+                barrel_light_center_y = barrel_base_y + float(profile.get('barrel_light_offset_y_m', 0.0))
+                barrel_light_center_z = barrel_base_z + float(profile.get('barrel_light_offset_z_m', 0.0))
+                _append_preview_box(vertices, (barrel_light_center_x, barrel_light_center_y, barrel_light_center_z + barrel_light_half_z * 3.0), (barrel_light_half_x, barrel_light_half_y, barrel_light_half_z), armor_light_color)
+                _append_preview_box(vertices, (barrel_light_center_x, barrel_light_center_y, barrel_light_center_z - barrel_light_half_z * 3.0), (barrel_light_half_x, barrel_light_half_y, barrel_light_half_z), armor_light_color)
 
             if str(profile.get('role_key', '')).lower() == 'hero':
                 turret_width = float(profile['gimbal_width_m']) * render_width_scale
@@ -2084,7 +3094,7 @@ class ModernGLAppearancePreview:
         self.vbo = self.ctx.buffer(vertex_array.tobytes())
         self.vao = self.ctx.vertex_array(self.program, [(self.vbo, '3f 3f 3f', 'in_position', 'in_color', 'in_normal')])
 
-    def render_scene(self, profile, size, yaw=0.72, pitch=0.42):
+    def render_scene(self, profile, size, yaw=0.72, pitch=0.42, zoom=1.0):
         width, height = int(size[0]), int(size[1])
         if width <= 1 or height <= 1:
             return None
@@ -2103,7 +3113,8 @@ class ModernGLAppearancePreview:
             return None
 
         target = np.array([0.0, float(profile['body_clearance_m']) + float(profile['body_height_m']) * 0.45, 0.0], dtype='f4')
-        distance = max(1.4, self.bounds_radius * 2.9)
+        zoom = max(0.45, min(3.00, float(zoom)))
+        distance = max(0.55, self.bounds_radius * 2.9 / zoom)
         eye = np.array([
             math.sin(yaw) * math.cos(pitch) * distance,
             math.sin(pitch) * distance + self.bounds_radius * 0.25,
@@ -2114,7 +3125,7 @@ class ModernGLAppearancePreview:
         mvp = projection @ view
 
         framebuffer.use()
-        framebuffer.clear(0.00, 0.10, 0.13, 1.0)
+        framebuffer.clear(0.91, 0.925, 0.945, 1.0)
         ctx.enable(mgl.DEPTH_TEST)
         ctx.disable(mgl.CULL_FACE)
         program['u_mvp'].write(mvp.T.astype('f4').tobytes())
@@ -2148,6 +3159,7 @@ class AppearanceEditorApp:
         self.preview_action_progress = 0.5
         self.preview_3d_yaw = 0.72
         self.preview_3d_pitch = 0.42
+        self.preview_zoom = 1.0
         self._apply_role_preview_defaults(self.current_role)
         self.field_scroll = 0
         self.field_scroll_drag_active = False
@@ -2157,6 +3169,8 @@ class AppearanceEditorApp:
         self.preview_action_tabs = []
         self.infantry_subtype_tabs = []
         self.preview_part_hitboxes = []
+        self._preview_surface_cache = {}
+        self._preview_overlay_cache = {}
         self.component_control_actions = []
         self.custom_collection_actions = []
         self.color_palette_actions = []
@@ -2176,7 +3190,7 @@ class AppearanceEditorApp:
 
         pygame.init()
         pygame.key.set_repeat(240, 40)
-        pygame.display.set_caption('车辆外貌编辑器')
+        pygame.display.set_caption('车辆外观编辑器')
         self.window_width = 1460
         self.window_height = 900
         self.screen = pygame.display.set_mode((self.window_width, self.window_height), pygame.RESIZABLE)
@@ -2186,18 +3200,22 @@ class AppearanceEditorApp:
         self.small_font = pygame.font.SysFont('microsoftyaheiui', 16)
         self.tiny_font = pygame.font.SysFont('microsoftyaheiui', 13)
         self.colors = {
-            'bg': (17, 21, 27),
-            'panel': (26, 31, 38),
-            'panel_alt': (32, 38, 46),
-            'panel_border': (82, 92, 106),
-            'text': (232, 237, 242),
-            'muted': (166, 174, 184),
+            'bg': (226, 230, 235),
+            'panel': (240, 243, 247),
+            'panel_alt': (232, 236, 241),
+            'panel_soft': (238, 241, 245),
+            'field_row': (228, 232, 238),
+            'field_row_active': (242, 245, 249),
+            'panel_border': (172, 181, 193),
+            'text': (28, 34, 42),
+            'muted': (132, 141, 154),
+            'value': (154, 162, 174),
             'accent': (255, 166, 72),
-            'accent_dim': (96, 68, 38),
+            'accent_dim': (255, 226, 188),
             'success': (88, 176, 118),
             'danger': (196, 92, 92),
-            'preview_bg': (13, 16, 21),
-            'grid': (55, 61, 69),
+            'preview_bg': (232, 236, 241),
+            'grid': (196, 202, 212),
         }
         self.field_specs = self._build_field_specs()
         self.preview_renderer_3d = ModernGLAppearancePreview()
@@ -2222,7 +3240,7 @@ class AppearanceEditorApp:
     @staticmethod
     def _write_json_file(path, payload):
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, 'w', encoding='utf-8') as file:
+        with open(path, 'w', encoding='utf-8-sig') as file:
             json.dump(payload, file, ensure_ascii=False, indent=2)
 
     def _profile_file_path(self, role_key):
@@ -2300,6 +3318,11 @@ class AppearanceEditorApp:
         else:
             self.preview_3d_yaw = 0.72
             self.preview_3d_pitch = 0.42
+        self.preview_zoom = 1.0
+
+    def _adjust_preview_zoom(self, wheel_delta):
+        scale = 1.12 ** float(wheel_delta)
+        self.preview_zoom = max(0.45, min(3.00, float(self.preview_zoom) * scale))
 
     def _runtime_preview_team(self):
         if self._runtime_preview_role() == 'energy_mechanism':
@@ -2352,7 +3375,7 @@ class AppearanceEditorApp:
         if refresh:
             self._cleanup_runtime_preview_process()
         elif self.runtime_preview_process is not None and self.runtime_preview_process.poll() is None:
-            self.status_text = 'C# 局内预览已在运行，可直接点击刷新预览'
+            self.status_text = 'C# 局内预览已在运行，可以直接点击刷新预览'
             return
 
         workspace_root = WORKSPACE_ROOT
@@ -2412,8 +3435,14 @@ class AppearanceEditorApp:
     def _component_part_count(self, profile, part):
         if part == 'wheel':
             return len(profile.get('custom_wheel_positions_m', []))
-        if part in {'armor', 'armor_light'}:
+        if part == 'barrel_friction_wheel':
+            return _friction_wheel_count(profile)
+        if part == 'armor':
             return 4
+        if part == 'armor_light':
+            return 8
+        if part == 'rear_health_light':
+            return 1
         if part == 'custom_primitive':
             return len(profile.get('custom_primitives', []))
         if part == 'custom_anchor':
@@ -2427,7 +3456,7 @@ class AppearanceEditorApp:
             return True
         if getattr(self, 'current_role', None) in {'outpost', 'base', 'energy_mechanism'}:
             return False
-        return part in {'wheel', 'armor', 'armor_light'}
+        return part in {'wheel', 'armor', 'armor_light', 'rear_health_light', 'barrel_friction_wheel'}
 
     def _custom_collection_key(self, part):
         mapping = {
@@ -2449,6 +3478,7 @@ class AppearanceEditorApp:
         target_part = part or self.selected_part
         if target_part not in {'custom_primitive', 'custom_anchor', 'custom_link'}:
             return True
+        self.selected_part = target_part
         profile = self._current_profile()
         key = self._custom_collection_key(target_part)
         if key is None:
@@ -2461,6 +3491,7 @@ class AppearanceEditorApp:
             return True
         collection.append(self._custom_item_default(target_part, profile=profile))
         self.selected_component_index = 0
+        self.selected_component_scope = 'single'
         _normalize_custom_collections(profile)
         self._persist_current_profile(profile)
         return True
@@ -2481,14 +3512,23 @@ class AppearanceEditorApp:
     def _custom_choice_options(self, spec, profile=None):
         if spec.get('choice_key') == 'parent_part':
             return CUSTOM_PARENT_PART_OPTIONS
+        if spec.get('choice_key') == 'balance_leg_segment':
+            return BALANCE_LEG_SEGMENT_OPTIONS
         if spec.get('choice_key') == 'component_scope':
             return CUSTOM_SCOPE_OPTIONS
+        if spec.get('choice_key') == 'anchor_mode':
+            return ANCHOR_MODE_OPTIONS
         if spec.get('choice_key') == 'primitive_type':
             return CUSTOM_PRIMITIVE_TYPE_OPTIONS
         if spec.get('choice_key') in {'start_anchor_id', 'end_anchor_id'}:
             profile = profile or self._current_profile()
             anchors = profile.get('custom_anchors', [])
             return [(str(anchor.get('id', '')), str(anchor.get('name') or anchor.get('id') or '锚点')) for anchor in anchors]
+        if spec.get('choice_key') == 'parent_link_id':
+            profile = profile or self._current_profile()
+            links = profile.get('custom_links', [])
+            options = [(str(link.get('id', '')), str(link.get('name') or link.get('id') or '连杆')) for link in links]
+            return options or [('', '无可用连杆')]
         return []
 
     def _custom_item_default(self, part, profile=None):
@@ -2506,6 +3546,10 @@ class AppearanceEditorApp:
         key = self._custom_collection_key(part)
         if key is None:
             return
+        self.selected_part = part
+        self.selected_component_scope = 'single'
+        self.selected_field_index = 0
+        self.field_scroll = 0
         profile = self._current_profile()
         if part == 'custom_link':
             self._ensure_minimum_custom_anchors(2, profile=profile)
@@ -2556,26 +3600,62 @@ class AppearanceEditorApp:
             {'part': 'body', 'label': '视觉宽度系数', 'kind': 'number', 'key': 'body_render_width_scale', 'min': 0.45, 'max': 10.00, 'step': 0.01},
             {'part': 'body', 'label': '底盘高度', 'kind': 'number', 'key': 'body_height_m', 'min': 0.10, 'max': 2.40, 'step': 0.01},
             {'part': 'body', 'label': '离地间隙', 'kind': 'number', 'key': 'body_clearance_m', 'min': 0.02, 'max': 2.00, 'step': 0.01},
+            {'part': 'body', 'label': '前面倾角', 'kind': 'number', 'key': 'body_front_tilt_deg', 'min': 0.0, 'max': 65.0, 'step': 1.0},
+            {'part': 'body', 'label': '后面倾角', 'kind': 'number', 'key': 'body_rear_tilt_deg', 'min': 0.0, 'max': 65.0, 'step': 1.0},
+            {'part': 'body', 'label': '左面倾角', 'kind': 'number', 'key': 'body_left_tilt_deg', 'min': 0.0, 'max': 65.0, 'step': 1.0},
+            {'part': 'body', 'label': '右面倾角', 'kind': 'number', 'key': 'body_right_tilt_deg', 'min': 0.0, 'max': 65.0, 'step': 1.0},
             {'part': 'turret', 'label': '云台长度', 'kind': 'number', 'key': 'gimbal_length_m', 'min': 0.10, 'max': 2.00, 'step': 0.01},
             {'part': 'turret', 'label': '云台宽度', 'kind': 'number', 'key': 'gimbal_width_m', 'min': 0.05, 'max': 2.00, 'step': 0.01},
             {'part': 'turret', 'label': '云台厚度', 'kind': 'number', 'key': 'gimbal_body_height_m', 'min': 0.05, 'max': 2.00, 'step': 0.01},
-            {'part': 'turret', 'label': '云台偏移X', 'kind': 'number', 'key': 'gimbal_offset_x_m', 'min': -0.30, 'max': 2.00, 'step': 0.01},
-            {'part': 'turret', 'label': '云台偏移Y', 'kind': 'number', 'key': 'gimbal_offset_y_m', 'min': -0.30, 'max': 2.00, 'step': 0.01},
+            {'part': 'turret', 'label': '云台偏移 X', 'kind': 'number', 'key': 'gimbal_offset_x_m', 'min': -0.30, 'max': 2.00, 'step': 0.01},
+            {'part': 'turret', 'label': '云台偏移 Y', 'kind': 'number', 'key': 'gimbal_offset_y_m', 'min': -0.30, 'max': 2.00, 'step': 0.01},
+            {'part': 'turret', 'label': '相对连接件 X', 'kind': 'number', 'key': 'gimbal_relative_offset_x_m', 'min': -1.00, 'max': 1.00, 'step': 0.01},
+            {'part': 'turret', 'label': '相对连接件 Y', 'kind': 'number', 'key': 'gimbal_relative_offset_y_m', 'min': -1.00, 'max': 1.00, 'step': 0.01},
+            {'part': 'turret', 'label': '相对连接件 Z', 'kind': 'number', 'key': 'gimbal_relative_offset_z_m', 'min': -1.00, 'max': 1.00, 'step': 0.01},
             {'part': 'mount', 'label': '连接件长度', 'kind': 'number', 'key': 'gimbal_mount_length_m', 'min': 0.04, 'max': 2.00, 'step': 0.01},
             {'part': 'mount', 'label': '连接件宽度', 'kind': 'number', 'key': 'gimbal_mount_width_m', 'min': 0.04, 'max': 2.00, 'step': 0.01},
             {'part': 'mount', 'label': '连接件高度', 'kind': 'number', 'key': 'gimbal_mount_height_m', 'min': 0.04, 'max': 2.00, 'step': 0.01},
             {'part': 'barrel', 'label': '枪管长度', 'kind': 'number', 'key': 'barrel_length_m', 'min': 0.00, 'max': 2.00, 'step': 0.01},
             {'part': 'barrel', 'label': '枪管半径', 'kind': 'number', 'key': 'barrel_radius_m', 'min': 0.005, 'max': 2.00, 'step': 0.001},
+            {'part': 'barrel', 'label': '八棱长边', 'kind': 'number', 'key': 'barrel_octagon_long_edge_m', 'min': 0.002, 'max': 0.20, 'step': 0.001},
+            {'part': 'barrel', 'label': '八棱短边', 'kind': 'number', 'key': 'barrel_octagon_short_edge_m', 'min': 0.001, 'max': 0.20, 'step': 0.001},
+            {'part': 'barrel', 'label': '枪管相对云台 X', 'kind': 'number', 'key': 'barrel_offset_x_m', 'min': -1.00, 'max': 1.00, 'step': 0.01},
+            {'part': 'barrel', 'label': '枪管相对云台 Y', 'kind': 'number', 'key': 'barrel_offset_y_m', 'min': -1.00, 'max': 1.00, 'step': 0.01},
+            {'part': 'barrel', 'label': '枪管相对云台 Z', 'kind': 'number', 'key': 'barrel_offset_z_m', 'min': -1.00, 'max': 1.00, 'step': 0.01},
+            {'part': 'barrel_friction_wheel', 'label': '摩擦轮半径', 'kind': 'number', 'key': 'barrel_friction_wheel_radius_m', 'min': 0.00, 'max': 0.20, 'step': 0.001},
+            {'part': 'barrel_friction_wheel', 'label': '摩擦轮高度', 'kind': 'number', 'key': 'barrel_friction_wheel_height_m', 'min': 0.00, 'max': 0.20, 'step': 0.001},
+            {'part': 'barrel_friction_wheel', 'label': '摩擦轮 X', 'kind': 'number', 'key': 'barrel_friction_wheel_offset_x_m', 'min': -0.50, 'max': 0.50, 'step': 0.005},
+            {'part': 'barrel_friction_wheel', 'label': '摩擦轮 Y', 'kind': 'number', 'key': 'barrel_friction_wheel_offset_y_m', 'min': -0.50, 'max': 0.50, 'step': 0.005},
+            {'part': 'barrel_friction_wheel', 'label': '摩擦轮左右距', 'kind': 'number', 'key': 'barrel_friction_wheel_offset_z_m', 'min': 0.00, 'max': 0.50, 'step': 0.005},
+            {'part': 'barrel_friction_wheel', 'label': '摩擦轮 Pitch', 'kind': 'number', 'key': 'barrel_friction_wheel_pitch_deg', 'min': -180.0, 'max': 180.0, 'step': 1.0},
+            {'part': 'barrel_friction_wheel', 'label': '摩擦轮 Yaw', 'kind': 'number', 'key': 'barrel_friction_wheel_yaw_deg', 'min': -180.0, 'max': 180.0, 'step': 1.0},
+            {'part': 'barrel_friction_wheel', 'label': '摩擦轮 Roll', 'kind': 'number', 'key': 'barrel_friction_wheel_roll_deg', 'min': -180.0, 'max': 180.0, 'step': 1.0},
+            {'part': 'first_person_camera', 'label': '镜头 X', 'kind': 'number', 'key': 'first_person_camera_offset_x_m', 'min': -1.00, 'max': 1.00, 'step': 0.01},
+            {'part': 'first_person_camera', 'label': '镜头 Y', 'kind': 'number', 'key': 'first_person_camera_offset_y_m', 'min': -1.00, 'max': 1.00, 'step': 0.01},
+            {'part': 'first_person_camera', 'label': '镜头 Z', 'kind': 'number', 'key': 'first_person_camera_offset_z_m', 'min': -1.00, 'max': 1.00, 'step': 0.01},
+            {'part': 'first_person_camera', 'label': '镜头 Yaw', 'kind': 'number', 'key': 'first_person_camera_yaw_deg', 'min': -180.0, 'max': 180.0, 'step': 1.0},
+            {'part': 'first_person_camera', 'label': '镜头 Pitch', 'kind': 'number', 'key': 'first_person_camera_pitch_deg', 'min': -180.0, 'max': 180.0, 'step': 1.0},
+            {'part': 'first_person_camera', 'label': '镜头 Roll', 'kind': 'number', 'key': 'first_person_camera_roll_deg', 'min': -180.0, 'max': 180.0, 'step': 1.0},
             {'part': 'armor', 'label': '装甲宽度', 'kind': 'number', 'key': 'armor_plate_width_m', 'min': 0.00, 'max': 2.00, 'step': 0.01},
             {'part': 'armor', 'label': '装甲长度', 'kind': 'number', 'key': 'armor_plate_length_m', 'min': 0.00, 'max': 2.00, 'step': 0.01},
             {'part': 'armor', 'label': '装甲高度', 'kind': 'number', 'key': 'armor_plate_height_m', 'min': 0.00, 'max': 2.00, 'step': 0.01},
             {'part': 'armor', 'label': '装甲间距', 'kind': 'number', 'key': 'armor_plate_gap_m', 'min': 0.002, 'max': 2.00, 'step': 0.002},
+            {'part': 'armor', 'label': '装甲厚度', 'kind': 'number', 'key': 'armor_plate_thickness_m', 'min': 0.000, 'max': 0.50, 'step': 0.001},
             {'part': 'armor_light', 'label': '灯条长度', 'kind': 'number', 'key': 'armor_light_length_m', 'min': 0.001, 'max': 2.00, 'step': 0.001},
             {'part': 'armor_light', 'label': '灯条宽度', 'kind': 'number', 'key': 'armor_light_width_m', 'min': 0.005, 'max': 2.00, 'step': 0.005},
             {'part': 'armor_light', 'label': '灯条高度', 'kind': 'number', 'key': 'armor_light_height_m', 'min': 0.005, 'max': 2.00, 'step': 0.005},
-            {'part': 'barrel_light', 'label': '灯条长度', 'kind': 'number', 'key': 'barrel_light_length_m', 'min': 0.04, 'max': 2.00, 'step': 0.005},
-            {'part': 'barrel_light', 'label': '灯条宽度', 'kind': 'number', 'key': 'barrel_light_width_m', 'min': 0.005, 'max': 2.00, 'step': 0.005},
-            {'part': 'barrel_light', 'label': '灯条高度', 'kind': 'number', 'key': 'barrel_light_height_m', 'min': 0.005, 'max': 2.00, 'step': 0.005},
+            {'part': 'barrel_light', 'label': '枪管灯条长度', 'kind': 'number', 'key': 'barrel_light_length_m', 'min': 0.04, 'max': 2.00, 'step': 0.005},
+            {'part': 'barrel_light', 'label': '枪管灯条宽度', 'kind': 'number', 'key': 'barrel_light_width_m', 'min': 0.005, 'max': 2.00, 'step': 0.005},
+            {'part': 'barrel_light', 'label': '枪管灯条高度', 'kind': 'number', 'key': 'barrel_light_height_m', 'min': 0.005, 'max': 2.00, 'step': 0.005},
+            {'part': 'barrel_light', 'label': '相对枪管 X', 'kind': 'number', 'key': 'barrel_light_offset_x_m', 'min': -1.00, 'max': 1.00, 'step': 0.01},
+            {'part': 'barrel_light', 'label': '相对枪管 Y', 'kind': 'number', 'key': 'barrel_light_offset_y_m', 'min': -1.00, 'max': 1.00, 'step': 0.01},
+            {'part': 'barrel_light', 'label': '相对枪管 Z', 'kind': 'number', 'key': 'barrel_light_offset_z_m', 'min': -1.00, 'max': 1.00, 'step': 0.01},
+            {'part': 'rear_health_light', 'label': '血条灯条长度', 'kind': 'number', 'key': 'rear_health_light_length_m', 'min': 0.0, 'max': 2.00, 'step': 0.005},
+            {'part': 'rear_health_light', 'label': '血条灯条宽度', 'kind': 'number', 'key': 'rear_health_light_width_m', 'min': 0.0, 'max': 2.00, 'step': 0.005},
+            {'part': 'rear_health_light', 'label': '血条灯条高度', 'kind': 'number', 'key': 'rear_health_light_height_m', 'min': 0.0, 'max': 2.00, 'step': 0.005},
+            {'part': 'rear_health_light', 'label': '血条灯条 X', 'kind': 'number', 'key': 'rear_health_light_offset_x_m', 'min': -2.00, 'max': 2.00, 'step': 0.01},
+            {'part': 'rear_health_light', 'label': '血条灯条 Y', 'kind': 'number', 'key': 'rear_health_light_offset_y_m', 'min': -2.00, 'max': 2.00, 'step': 0.01},
+            {'part': 'rear_health_light', 'label': '血条灯条 Z', 'kind': 'number', 'key': 'rear_health_light_offset_z_m', 'min': -2.00, 'max': 2.00, 'step': 0.01},
             {'part': 'wheel', 'label': '轮半径', 'kind': 'number', 'key': 'wheel_radius_m', 'min': 0.03, 'max': 2.00, 'step': 0.005},
             {'part': 'front_climb', 'label': '上底宽', 'kind': 'number', 'key': 'front_climb_assist_top_length_m', 'min': 0.02, 'max': 2.00, 'step': 0.005},
             {'part': 'front_climb', 'label': '下底宽', 'kind': 'number', 'key': 'front_climb_assist_bottom_length_m', 'min': 0.01, 'max': 2.00, 'step': 0.005},
@@ -2594,6 +3674,7 @@ class AppearanceEditorApp:
             {'part': 'rear_climb', 'label': '上铰点前移', 'kind': 'number', 'key': 'rear_climb_assist_mount_offset_x_m', 'min': 0.00, 'max': 2.00, 'step': 0.005},
             {'part': 'rear_climb', 'label': '上铰点高度', 'kind': 'number', 'key': 'rear_climb_assist_mount_height_m', 'min': 0.02, 'max': 2.00, 'step': 0.005},
             {'part': 'rear_climb', 'label': '铰链内收', 'kind': 'number', 'key': 'rear_climb_assist_inner_offset_m', 'min': 0.00, 'max': 2.00, 'step': 0.005},
+            {'part': 'rear_climb', 'label': '平衡轮 X', 'kind': 'balance_wheel_x', 'step': 0.01},
         ]
         fields.append({'part': 'body', 'label': '结构整体离地', 'kind': 'number', 'key': 'structure_base_lift_m', 'min': 0.00, 'max': 1.20, 'step': 0.01})
         fields.extend([
@@ -2682,7 +3763,7 @@ class AppearanceEditorApp:
                 fields.append({'part': part, 'label': f'{label} {channel_label}', 'kind': 'color', 'color_key': color_key, 'channel': channel_index, 'min': 0, 'max': 255, 'step': 1})
         for channel_index, channel_label in enumerate(('R', 'G', 'B')):
             fields.append({'part': 'armor_light', 'label': f'灯臂 {channel_label}', 'kind': 'color', 'color_key': 'wheel_color_rgb', 'channel': channel_index, 'min': 0, 'max': 255, 'step': 1, 'roles': {'energy_mechanism'}})
-        return fields
+        return _normalize_field_spec_bounds(fields)
 
     def _profile_has_turret(self, profile):
         if str(profile.get('role_key', '')).lower() == 'energy_mechanism':
@@ -2729,10 +3810,16 @@ class AppearanceEditorApp:
             ]
             for channel_index, channel_label in enumerate(('R', 'G', 'B')):
                 fields.append({'part': 'custom_primitive', 'label': f'颜色 {channel_label}', 'kind': 'custom_color', 'key': 'color_rgb', 'channel': channel_index, 'min': 0, 'max': 255, 'step': 1})
-            return fields
+            item = self._custom_item_for_spec({'part': 'custom_primitive'}, profile=profile)
+            if item is not None and _is_balance_leg_parent_part(item.get('parent_part')):
+                fields.insert(1, {'part': 'custom_primitive', 'label': '腿部连杆', 'kind': 'choice', 'choice_key': 'balance_leg_segment'})
+            return _normalize_field_spec_bounds(fields)
         if self.selected_part == 'custom_anchor':
-            return [
+            fields = [
+                {'part': 'custom_anchor', 'label': '锚点模式', 'kind': 'choice', 'choice_key': 'anchor_mode'},
                 {'part': 'custom_anchor', 'label': '父部件', 'kind': 'choice', 'choice_key': 'parent_part'},
+                {'part': 'custom_anchor', 'label': '父连杆', 'kind': 'choice', 'choice_key': 'parent_link_id'},
+                {'part': 'custom_anchor', 'label': '连杆位置', 'kind': 'custom_number', 'key': 'link_position_ratio', 'min': 0.0, 'max': 1.0, 'step': 0.01},
                 {'part': 'custom_anchor', 'label': '作用范围', 'kind': 'choice', 'choice_key': 'component_scope'},
                 {'part': 'custom_anchor', 'label': '部件索引', 'kind': 'custom_number', 'key': 'component_index', 'min': 0, 'max': 32, 'step': 1},
                 {'part': 'custom_anchor', 'label': '偏移 X', 'kind': 'custom_vector', 'key': 'offset_m', 'axis': 0, 'min': -2.00, 'max': 2.00, 'step': 0.01},
@@ -2742,20 +3829,27 @@ class AppearanceEditorApp:
                 {'part': 'custom_anchor', 'label': 'Pitch', 'kind': 'custom_vector', 'key': 'rotation_ypr_deg', 'axis': 1, 'min': -180.0, 'max': 180.0, 'step': 1.0},
                 {'part': 'custom_anchor', 'label': 'Roll', 'kind': 'custom_vector', 'key': 'rotation_ypr_deg', 'axis': 2, 'min': -180.0, 'max': 180.0, 'step': 1.0},
             ]
+            item = self._custom_item_for_spec({'part': 'custom_anchor'}, profile=profile)
+            if item is not None and _is_balance_leg_parent_part(item.get('parent_part')):
+                fields.insert(2, {'part': 'custom_anchor', 'label': '腿部连杆', 'kind': 'choice', 'choice_key': 'balance_leg_segment'})
+            return _normalize_field_spec_bounds(fields)
         if self.selected_part == 'custom_link':
             fields = [
                 {'part': 'custom_link', 'label': '起点锚点', 'kind': 'choice', 'choice_key': 'start_anchor_id'},
                 {'part': 'custom_link', 'label': '终点锚点', 'kind': 'choice', 'choice_key': 'end_anchor_id'},
                 {'part': 'custom_link', 'label': '半径', 'kind': 'custom_number', 'key': 'radius_m', 'min': 0.001, 'max': 0.20, 'step': 0.001},
+                {'part': 'custom_link', 'label': '宽度', 'kind': 'custom_number', 'key': 'width_m', 'min': 0.001, 'max': 0.20, 'step': 0.001},
+                {'part': 'custom_link', 'label': '厚度', 'kind': 'custom_number', 'key': 'thickness_m', 'min': 0.001, 'max': 0.20, 'step': 0.001},
+                {'part': 'custom_link', 'label': '定长', 'kind': 'custom_number', 'key': 'length_m', 'min': 0.0, 'max': 2.00, 'step': 0.01},
             ]
             for channel_index, channel_label in enumerate(('R', 'G', 'B')):
                 fields.append({'part': 'custom_link', 'label': f'颜色 {channel_label}', 'kind': 'custom_color', 'key': 'color_rgb', 'channel': channel_index, 'min': 0, 'max': 255, 'step': 1})
-            return fields
+            return _normalize_field_spec_bounds(fields)
         if self.selected_part == 'turret' and not self._profile_has_turret(profile):
             return []
         if self.selected_part == 'mount' and not self._profile_has_mount(profile):
             return []
-        if self.selected_part in {'barrel', 'barrel_light'} and not self._profile_has_barrel(profile):
+        if self.selected_part in {'barrel', 'barrel_light', 'barrel_friction_wheel', 'first_person_camera'} and not self._profile_has_barrel(profile):
             return []
         if self.selected_part == 'front_climb' and not self._profile_has_front_climb(profile):
             return []
@@ -2769,6 +3863,22 @@ class AppearanceEditorApp:
             if self.selected_component_scope == 'single' and profile.get('custom_wheel_positions_m'):
                 fields.append({'part': 'wheel', 'label': f'轮 {self.selected_component_index + 1} X', 'kind': 'wheel_component', 'component_index': self.selected_component_index, 'axis': 0, 'min': -0.80, 'max': 2.00, 'step': 0.01})
                 fields.append({'part': 'wheel', 'label': f'轮 {self.selected_component_index + 1} Y', 'kind': 'wheel_component', 'component_index': self.selected_component_index, 'axis': 1, 'min': -0.80, 'max': 2.00, 'step': 0.01})
+        if self.selected_part == 'armor' and self.selected_component_scope == 'single':
+            labels = ('装甲偏移 X', '装甲偏移 Y', '装甲偏移 Z')
+            for axis, label in enumerate(labels):
+                fields.append({'part': 'armor', 'label': f'{label} {self.selected_component_index + 1}', 'kind': 'component_vector', 'vector_key': 'armor_plate_offsets_m', 'component_index': self.selected_component_index, 'axis': axis, 'min': -2.00, 'max': 1.00, 'step': 0.01})
+            rotation_labels = ('装甲 Yaw', '装甲 Pitch', '装甲 Roll')
+            for axis, label in enumerate(rotation_labels):
+                fields.append({'part': 'armor', 'label': f'{label} {self.selected_component_index + 1}', 'kind': 'component_vector', 'vector_key': 'armor_plate_rotations_ypr_deg', 'component_index': self.selected_component_index, 'axis': axis, 'min': -180.0, 'max': 180.0, 'step': 1.0})
+        if self.selected_part == 'armor_light' and self.selected_component_scope == 'single':
+            labels = ('灯条偏移 X', '灯条偏移 Y', '灯条偏移 Z')
+            for axis, label in enumerate(labels):
+                fields.append({'part': 'armor_light', 'label': f'{label} {self.selected_component_index + 1}', 'kind': 'component_vector', 'vector_key': 'armor_light_offsets_m', 'component_index': self.selected_component_index, 'axis': axis, 'min': -2.00, 'max': 2.00, 'step': 0.005})
+            fields.append({'part': 'armor_light', 'label': f'距装甲板 {self.selected_component_index + 1}', 'kind': 'component_number', 'list_key': 'armor_light_plate_distances_m', 'component_index': self.selected_component_index, 'min': 0.000, 'max': 1.00, 'step': 0.001, 'default': max(0.004, float(profile.get('armor_plate_gap_m', 0.005)) * 0.15)})
+        if self.selected_part == 'barrel_friction_wheel' and self.selected_component_scope == 'single':
+            labels = ('摩擦轮单体 X', '摩擦轮单体 Y', '摩擦轮单体 Z')
+            for axis, label in enumerate(labels):
+                fields.append({'part': 'barrel_friction_wheel', 'label': f'{label} {self.selected_component_index + 1}', 'kind': 'component_vector', 'vector_key': 'barrel_friction_wheel_offsets_m', 'component_index': self.selected_component_index, 'axis': axis, 'min': -2.00, 'max': 2.00, 'step': 0.005})
         orbit_key, self_key = self._current_component_angle_keys()
         if orbit_key is not None and self.current_role not in {'outpost', 'base', 'energy_mechanism'}:
             orbit_label = '相对机器人轴心 Yaw'
@@ -2778,7 +3888,7 @@ class AppearanceEditorApp:
                 self_label = '轮自转角（自身 Z 轴）'
             fields.append({'part': self.selected_part, 'label': orbit_label, 'kind': 'component_angle', 'angle_key': orbit_key, 'min': -180.0, 'max': 180.0, 'step': 1.0})
             fields.append({'part': self.selected_part, 'label': self_label, 'kind': 'component_angle', 'angle_key': self_key, 'min': -180.0, 'max': 180.0, 'step': 1.0})
-        return fields
+        return _normalize_field_spec_bounds(fields)
 
     def _current_profile(self):
         if self.current_role != 'infantry':
@@ -2814,6 +3924,10 @@ class AppearanceEditorApp:
         if not collection and create:
             collection.append(self._custom_item_default(part, profile=profile))
             self.selected_component_index = 0
+            self.selected_component_scope = 'single'
+            self.selected_part = part
+            _normalize_custom_collections(profile)
+            collection = profile.setdefault(key, [])
         if not collection:
             return None
         index = max(0, min(self.selected_component_index, len(collection) - 1))
@@ -2826,7 +3940,13 @@ class AppearanceEditorApp:
             if item is None:
                 return 0
             options = self._custom_choice_options(spec, profile=profile)
-            current = str(item.get(spec['choice_key'], options[0][0] if options else ''))
+            if spec.get('choice_key') == 'parent_part':
+                raw_parent = str(item.get('parent_part', options[0][0] if options else ''))
+                current = 'balance_leg' if _is_balance_leg_parent_part(raw_parent) else raw_parent
+            elif spec.get('choice_key') == 'balance_leg_segment':
+                current = _balance_leg_segment_from_parent_part(item.get('parent_part', 'balance_leg_upper_front'))
+            else:
+                current = str(item.get(spec['choice_key'], options[0][0] if options else ''))
             for index, (option_key, _label) in enumerate(options):
                 if option_key == current:
                     return index
@@ -2850,6 +3970,25 @@ class AppearanceEditorApp:
             return float(profile.get(spec['key'], 0.0))
         if spec['kind'] == 'wheel_component':
             return float(profile['custom_wheel_positions_m'][spec['component_index']][spec['axis']])
+        if spec['kind'] == 'balance_wheel_x':
+            positions = [position for position in profile.get('custom_wheel_positions_m', []) if isinstance(position, (list, tuple)) and len(position) >= 2]
+            return min((float(position[0]) for position in positions), default=-float(profile.get('body_length_m', 0.60)) * 0.39)
+        if spec['kind'] == 'component_vector':
+            values = profile.setdefault(spec['vector_key'], [])
+            index = int(spec.get('component_index', self.selected_component_index))
+            while len(values) <= index:
+                values.append([0.0, 0.0, 0.0])
+            vector = _normalize_vector3(values[index], (0.0, 0.0, 0.0))
+            values[index] = vector
+            return float(vector[spec['axis']])
+        if spec['kind'] == 'component_number':
+            values = profile.setdefault(spec['list_key'], [])
+            index = int(spec.get('component_index', self.selected_component_index))
+            default_value = float(spec.get('default', 0.0))
+            while len(values) <= index:
+                values.append(default_value)
+            values[index] = float(values[index])
+            return float(values[index])
         if spec['kind'] == 'component_angle':
             values = profile.get(spec['angle_key'], [])
             if self.selected_component_scope == 'all':
@@ -2866,6 +4005,12 @@ class AppearanceEditorApp:
             return float(max(0, min(len(options) - 1, int(round(float(value))))))
 
         numeric_value = float(value)
+        if spec.get('key') == 'component_index':
+            return float(max(0, int(round(numeric_value))))
+        if spec['kind'] in {'color', 'custom_color'}:
+            return max(0.0, min(255.0, numeric_value))
+        if spec.get('unbounded', True):
+            return numeric_value
         min_value = spec.get('min', numeric_value)
         max_value = spec.get('max', numeric_value)
         min_value = numeric_value if min_value is None else float(min_value)
@@ -2885,7 +4030,18 @@ class AppearanceEditorApp:
             if not options:
                 return
             option_index = max(0, min(int(round(clamped)), len(options) - 1))
-            item[spec['choice_key']] = options[option_index][0]
+            option_key = options[option_index][0]
+            if spec.get('choice_key') == 'parent_part':
+                if option_key == 'balance_leg':
+                    item['parent_part'] = _balance_leg_segment_from_parent_part(item.get('parent_part', 'balance_leg_upper_front'))
+                else:
+                    item['parent_part'] = option_key
+            elif spec.get('choice_key') == 'balance_leg_segment':
+                item['parent_part'] = option_key
+            else:
+                item[spec['choice_key']] = option_key
+                if spec.get('choice_key') == 'anchor_mode' and option_key == 'active' and not str(item.get('parent_link_id', '')).strip():
+                    item['parent_link_id'] = _first_custom_link_id(profile)
             _normalize_custom_collections(profile)
             self._persist_current_profile(profile)
             return
@@ -2935,6 +4091,34 @@ class AppearanceEditorApp:
             return
         if spec['kind'] == 'wheel_component':
             profile['custom_wheel_positions_m'][spec['component_index']][spec['axis']] = round(float(clamped), 3)
+            return
+        if spec['kind'] == 'balance_wheel_x':
+            positions = profile.setdefault('custom_wheel_positions_m', [])
+            if not positions:
+                profile['custom_wheel_positions_m'] = _build_default_wheel_positions(profile)
+                positions = profile['custom_wheel_positions_m']
+            for index, position in enumerate(list(positions)):
+                if not isinstance(position, list) or len(position) < 2:
+                    continue
+                positions[index][0] = round(float(clamped), 3)
+            self._persist_current_profile(profile)
+            return
+        if spec['kind'] == 'component_vector':
+            values = profile.setdefault(spec['vector_key'], [])
+            index = int(spec.get('component_index', self.selected_component_index))
+            while len(values) <= index:
+                values.append([0.0, 0.0, 0.0])
+            vector = _normalize_vector3(values[index], (0.0, 0.0, 0.0))
+            vector[spec['axis']] = round(float(clamped), 3)
+            values[index] = vector
+            return
+        if spec['kind'] == 'component_number':
+            values = profile.setdefault(spec['list_key'], [])
+            index = int(spec.get('component_index', self.selected_component_index))
+            default_value = float(spec.get('default', 0.0))
+            while len(values) <= index:
+                values.append(default_value)
+            values[index] = round(float(clamped), 3)
             return
         if spec['kind'] == 'component_angle':
             values = list(profile.get(spec['angle_key'], []))
@@ -3051,7 +4235,7 @@ class AppearanceEditorApp:
         if spec['kind'] in {'choice'}:
             self._set_field_value(spec, self._field_value(spec) + 1)
             return True
-        if spec['kind'] in {'number', 'color', 'custom_number', 'custom_vector', 'custom_color', 'wheel_component', 'component_angle'}:
+        if spec['kind'] in {'number', 'color', 'custom_number', 'custom_vector', 'custom_color', 'wheel_component', 'balance_wheel_x', 'component_vector', 'component_angle'}:
             return self._begin_numeric_input()
         return False
 
@@ -3072,6 +4256,8 @@ class AppearanceEditorApp:
             'custom_vector',
             'custom_color',
             'wheel_component',
+            'balance_wheel_x',
+            'component_vector',
             'component_angle',
         }
         if (double_click or begin_on_single_click) and self._begin_field_editor(field_index):
@@ -3109,6 +4295,12 @@ class AppearanceEditorApp:
             return True
         if event.key == pygame.K_ESCAPE:
             self.active_numeric_input = None
+            return True
+        if event.key in {pygame.K_LEFT, pygame.K_RIGHT}:
+            direction = -1 if event.key == pygame.K_LEFT else 1
+            modifiers = pygame.key.get_mods()
+            self._commit_numeric_input()
+            self._adjust_selected(direction, fast=bool(modifiers & pygame.KMOD_SHIFT))
             return True
         if event.key == pygame.K_BACKSPACE:
             self.active_numeric_input['buffer'] = str(self.active_numeric_input.get('buffer', ''))[:-1]
@@ -3295,10 +4487,16 @@ class AppearanceEditorApp:
         yield ('body', (0.0, body_y, 0.0), (float(profile['body_length_m']) * 0.5, float(profile['body_height_m']) * 0.5, float(profile['body_width_m']) * 0.5 * render_width_scale))
 
         wheel_radius = max(0.018, float(profile['wheel_radius_m']))
-        wheel_half_z = max(0.018, float(profile['wheel_radius_m']) * (0.22 if str(profile.get('wheel_style', 'standard')) == 'omni' else 0.32))
+        wheel_half_z = 0.020
         for wheel_component in _resolved_wheel_components(profile):
             wheel_x, wheel_z = wheel_component['center']
-            yield ('wheel', (float(wheel_x), float(wheel_component.get('center_height_m', wheel_radius)), float(wheel_z)), (wheel_radius, wheel_radius, wheel_half_z))
+            wheel_axis, wheel_right, wheel_up = _preview_wheel_cylinder_axes(profile, wheel_component)
+            yield (
+                'wheel',
+                (float(wheel_x), float(wheel_component.get('center_height_m', wheel_radius)), float(wheel_z)),
+                (wheel_half_z, wheel_radius, wheel_radius),
+                {'kind': 'oriented_box', 'forward': wheel_axis, 'right': wheel_right, 'up': wheel_up},
+            )
 
         body_half_x = float(profile['body_length_m']) * 0.5
         body_half_z = float(profile['body_width_m']) * 0.5 * render_width_scale
@@ -3318,17 +4516,40 @@ class AppearanceEditorApp:
                 yield ('front_climb', (body_half_x * 0.78, body_y + float(profile['body_height_m']) * 0.22, plate_center_z * side_sign), (plate_top_length * 0.28, max(0.012, plate_height * 0.18), plate_width * 0.6))
 
         armor_half_h = float(profile['armor_plate_height_m']) * 0.5
-        armor_thickness = max(0.012, float(profile.get('armor_plate_gap_m', 0.005)) * 0.75, float(profile.get('armor_plate_width_m', 0.16)) * 0.24)
+        armor_thickness = _resolve_armor_plate_thickness(profile)
         armor_half_width = float(profile['armor_plate_length_m']) * 0.5
         for component in _resolved_armor_components(profile):
-            yield ('armor', component['center'], (armor_thickness * 0.5, armor_half_h, armor_half_width))
+            armor_forward, armor_right, armor_up = _resolve_preview_rotated_axes(
+                float(component['yaw_rad']),
+                [0.0, math.degrees(float(component.get('pitch_rad', 0.0))), math.degrees(float(component.get('roll_rad', 0.0)))],
+            )
+            yield ('armor', component['center'], (armor_thickness * 0.5, armor_half_h, armor_half_width), {'kind': 'oriented_box', 'forward': tuple(float(value) for value in armor_forward), 'right': tuple(float(value) for value in armor_right), 'up': tuple(float(value) for value in armor_up)})
 
         armor_light_half_x = float(profile.get('armor_light_length_m', 0.10)) * 0.5
         armor_light_half_y = max(0.005, float(profile.get('armor_light_height_m', 0.02)) * 0.5)
         armor_light_half_z = max(0.005, float(profile.get('armor_light_width_m', 0.02)) * 0.5)
         for component in _resolved_armor_light_components(profile):
-            yield ('armor_light', component['center_a'], (armor_light_half_z, armor_light_half_y, armor_light_half_x))
-            yield ('armor_light', component['center_b'], (armor_light_half_z, armor_light_half_y, armor_light_half_x))
+            yield ('armor_light', component['center_a'], (armor_light_half_z, armor_light_half_y, armor_light_half_x), component['orientation'])
+            yield ('armor_light', component['center_b'], (armor_light_half_z, armor_light_half_y, armor_light_half_x), component['orientation'])
+
+        rear_health_length = float(profile.get('rear_health_light_length_m', 0.0))
+        if rear_health_length <= 1e-6:
+            rear_health_length = max(0.08, float(profile['body_width_m']) * render_width_scale * 0.74)
+        rear_health_width = float(profile.get('rear_health_light_width_m', 0.0))
+        if rear_health_width <= 1e-6:
+            rear_health_width = min(max(float(profile['body_length_m']) * 0.045, 0.018), 0.038)
+        rear_health_height = float(profile.get('rear_health_light_height_m', 0.0))
+        if rear_health_height <= 1e-6:
+            rear_health_height = min(max(float(profile['body_width_m']) * 0.035, 0.010), 0.018)
+        yield (
+            'rear_health_light',
+            (
+                -float(profile['body_length_m']) * 0.5 - rear_health_width * 0.24 + float(profile.get('rear_health_light_offset_x_m', 0.0)),
+                float(profile['body_clearance_m']) + float(profile['body_height_m']) + rear_health_height * 0.58 + float(profile.get('rear_health_light_offset_y_m', 0.0)),
+                float(profile.get('rear_health_light_offset_z_m', 0.0)),
+            ),
+            (rear_health_width * 0.5, rear_health_height * 0.5, rear_health_length * 0.5),
+        )
 
         if has_rear_climb:
             if str(profile.get('rear_climb_assist_style', 'none')) == 'balance_leg':
@@ -3340,9 +4561,9 @@ class AppearanceEditorApp:
                 hinge_radius = float(leg_geometry['hinge_radius'])
                 for side_sign in (-1.0, 1.0):
                     side_z = float(leg_geometry['side_offset']) * side_sign
-                    yield ('rear_climb', ((leg_geometry['upper_front'][0] + leg_geometry['knee_front'][0]) * 0.5, (leg_geometry['upper_front'][1] + leg_geometry['knee_front'][1]) * 0.5, side_z), (float(profile.get('rear_climb_assist_upper_length_m', 0.09)) * 0.5, upper_height * 0.5, upper_width * 0.5))
-                    yield ('rear_climb', ((leg_geometry['upper_rear'][0] + leg_geometry['knee_rear'][0]) * 0.5, (leg_geometry['upper_rear'][1] + leg_geometry['knee_rear'][1]) * 0.5, side_z), (float(profile.get('rear_climb_assist_upper_length_m', 0.09)) * 0.5, upper_height * 0.5, upper_width * 0.5))
-                    yield ('rear_climb', ((leg_geometry['knee_center'][0] + leg_geometry['foot'][0]) * 0.5, (leg_geometry['knee_center'][1] + leg_geometry['foot'][1]) * 0.5, side_z), (float(profile.get('rear_climb_assist_lower_length_m', 0.00)) * 0.5, lower_height * 0.5, lower_width * 0.5))
+                    yield ('rear_climb', (0.0, 0.0, 0.0), (0.001, 0.001, 0.001), {'kind': 'beam', 'start': (leg_geometry['upper_front'][0], leg_geometry['upper_front'][1], side_z), 'end': (leg_geometry['knee_front'][0], leg_geometry['knee_front'][1], side_z), 'height': upper_height, 'thickness': upper_width})
+                    yield ('rear_climb', (0.0, 0.0, 0.0), (0.001, 0.001, 0.001), {'kind': 'beam', 'start': (leg_geometry['upper_rear'][0], leg_geometry['upper_rear'][1], side_z), 'end': (leg_geometry['knee_rear'][0], leg_geometry['knee_rear'][1], side_z), 'height': upper_height, 'thickness': upper_width})
+                    yield ('rear_climb', (0.0, 0.0, 0.0), (0.001, 0.001, 0.001), {'kind': 'beam', 'start': (leg_geometry['knee_center'][0], leg_geometry['knee_center'][1], side_z), 'end': (leg_geometry['foot'][0], leg_geometry['foot'][1], side_z), 'height': lower_height, 'thickness': lower_width})
                     yield ('rear_climb', (leg_geometry['upper_front'][0], leg_geometry['upper_front'][1], side_z), (hinge_radius, hinge_radius, hinge_radius))
                     yield ('rear_climb', (leg_geometry['upper_rear'][0], leg_geometry['upper_rear'][1], side_z), (hinge_radius, hinge_radius, hinge_radius))
                     yield ('rear_climb', (leg_geometry['knee_front'][0], leg_geometry['knee_front'][1], side_z), (hinge_radius, hinge_radius, hinge_radius))
@@ -3355,20 +4576,22 @@ class AppearanceEditorApp:
                 lower_height = float(profile.get('rear_climb_assist_lower_height_m', 0.016))
                 for side_sign in (-1.0, 1.0):
                     side_z = float(rear_points['side_offset']) * side_sign
-                    yield ('rear_climb', ((rear_points['mount'][0] + rear_points['joint'][0]) * 0.5, (rear_points['mount'][1] + rear_points['joint'][1]) * 0.5, side_z), (float(profile.get('rear_climb_assist_upper_length_m', 0.09)) * 0.5, upper_height * 0.5, upper_width * 0.5))
-                    yield ('rear_climb', ((rear_points['joint'][0] + rear_points['foot'][0]) * 0.5, (rear_points['joint'][1] + rear_points['foot'][1]) * 0.5, side_z), (float(profile.get('rear_climb_assist_lower_length_m', 0.00)) * 0.5, lower_height * 0.5, lower_width * 0.5))
+                    yield ('rear_climb', (0.0, 0.0, 0.0), (0.001, 0.001, 0.001), {'kind': 'beam', 'start': (rear_points['mount'][0], rear_points['mount'][1], side_z), 'end': (rear_points['joint'][0], rear_points['joint'][1], side_z), 'height': upper_height, 'thickness': upper_width})
+                    yield ('rear_climb', (0.0, 0.0, 0.0), (0.001, 0.001, 0.001), {'kind': 'beam', 'start': (rear_points['joint'][0], rear_points['joint'][1], side_z), 'end': (rear_points['foot'][0], rear_points['foot'][1], side_z), 'height': lower_height, 'thickness': lower_width})
                     yield ('rear_climb', (rear_points['joint'][0], rear_points['joint'][1], side_z), (max(upper_height, lower_height) * 0.75, max(upper_height, lower_height) * 0.75, max(upper_width, lower_width) * 0.55))
 
         if has_mount or has_turret:
-            turret_offset_x = float(profile['gimbal_offset_x_m'])
-            turret_offset_z = float(profile['gimbal_offset_y_m'])
+            mount_offset_x = _profile_mount_offset_x(profile)
+            mount_offset_z = _profile_mount_offset_z(profile)
+            turret_offset_x = _profile_turret_offset_x(profile)
+            turret_offset_z = _profile_turret_offset_z(profile)
             mount_center_y = _profile_mount_center_height(profile)
             turret_center_y = _profile_turret_center_height(profile)
             if has_mount:
                 connector_half_height = max(0.02, (float(profile.get('gimbal_mount_gap_m', 0.0)) + float(profile.get('gimbal_mount_height_m', 0.0))) * 0.5)
                 yield (
                     'mount',
-                    (turret_offset_x, mount_center_y, turret_offset_z),
+                    (mount_offset_x, mount_center_y, mount_offset_z),
                     (max(0.02, float(profile['gimbal_mount_length_m']) * 0.5), connector_half_height, max(0.02, float(profile['gimbal_mount_width_m']) * 0.5 * render_width_scale)),
                 )
             if has_turret:
@@ -3380,17 +4603,34 @@ class AppearanceEditorApp:
                 if has_barrel:
                     barrel_length = float(profile['barrel_length_m'])
                     barrel_radius = max(0.005, float(profile['barrel_radius_m']))
+                    barrel_base_x = turret_offset_x + float(profile['gimbal_length_m']) * 0.5 + float(profile.get('barrel_offset_x_m', 0.0))
+                    barrel_base_y = turret_center_y + float(profile.get('barrel_offset_y_m', 0.0))
+                    barrel_base_z = turret_offset_z + float(profile.get('barrel_offset_z_m', 0.0))
                     yield (
                         'barrel',
-                        (turret_offset_x + float(profile['gimbal_length_m']) * 0.5 + barrel_length * 0.5, turret_center_y, turret_offset_z),
+                        (barrel_base_x + barrel_length * 0.5, barrel_base_y, barrel_base_z),
                         (barrel_length * 0.5, barrel_radius, barrel_radius),
+                    )
+                    for center, half_extents, _wheel_ypr, _wheel_index, orientation in _friction_wheel_layout(profile, barrel_base_x, barrel_base_y, barrel_base_z, barrel_radius):
+                        yield ('barrel_friction_wheel', center, half_extents, orientation)
+                    yield (
+                        'first_person_camera',
+                        (
+                            barrel_base_x + float(profile.get('first_person_camera_offset_x_m', 0.04)),
+                            barrel_base_y + float(profile.get('first_person_camera_offset_y_m', 0.06)),
+                            barrel_base_z + float(profile.get('first_person_camera_offset_z_m', 0.0)),
+                        ),
+                        (0.012, 0.012, 0.012),
+                        math.radians(float(profile.get('first_person_camera_yaw_deg', 0.0))),
                     )
                     barrel_light_half_x = float(profile.get('barrel_light_length_m', 0.10)) * 0.5
                     barrel_light_half_y = max(0.005, float(profile.get('barrel_light_height_m', 0.02)) * 0.5)
                     barrel_light_half_z = max(0.005, float(profile.get('barrel_light_width_m', 0.02)) * 0.5)
-                    barrel_light_center_x = turret_offset_x + float(profile['gimbal_length_m']) * 0.5 + barrel_length * 0.45
-                    yield ('barrel_light', (barrel_light_center_x, turret_center_y, turret_offset_z + barrel_light_half_z * 3.0), (barrel_light_half_x, barrel_light_half_y, barrel_light_half_z))
-                    yield ('barrel_light', (barrel_light_center_x, turret_center_y, turret_offset_z - barrel_light_half_z * 3.0), (barrel_light_half_x, barrel_light_half_y, barrel_light_half_z))
+                    barrel_light_center_x = barrel_base_x + barrel_length * 0.45 + float(profile.get('barrel_light_offset_x_m', 0.0))
+                    barrel_light_center_y = barrel_base_y + float(profile.get('barrel_light_offset_y_m', 0.0))
+                    barrel_light_center_z = barrel_base_z + float(profile.get('barrel_light_offset_z_m', 0.0))
+                    yield ('barrel_light', (barrel_light_center_x, barrel_light_center_y, barrel_light_center_z + barrel_light_half_z * 3.0), (barrel_light_half_x, barrel_light_half_y, barrel_light_half_z))
+                    yield ('barrel_light', (barrel_light_center_x, barrel_light_center_y, barrel_light_center_z - barrel_light_half_z * 3.0), (barrel_light_half_x, barrel_light_half_y, barrel_light_half_z))
 
             if role_key == 'hero':
                 turret_width = float(profile['gimbal_width_m']) * render_width_scale
@@ -3402,17 +4642,85 @@ class AppearanceEditorApp:
                 )
                 yield ('hero_subview_camera', camera_center, (HERO_SUBVIEW_CAMERA_BODY_LENGTH_M * 0.5, HERO_SUBVIEW_CAMERA_BODY_HEIGHT_M * 0.5, HERO_SUBVIEW_CAMERA_BODY_WIDTH_M * 0.5))
 
-        for primitive in profile.get('custom_primitives', []):
+        attachment_pose_resolver = getattr(self.preview_renderer_3d, '_preview_attachment_part_poses', None)
+        attachment_poses = attachment_pose_resolver(profile) if callable(attachment_pose_resolver) else []
+
+        def matching_attachment_poses(parent_part, component_scope, component_index):
+            for pose in attachment_poses:
+                if pose['part'] != parent_part:
+                    continue
+                if component_scope == 'all' or int(pose['index']) == int(component_index):
+                    yield pose
+
+        for primitive_index, primitive in enumerate(profile.get('custom_primitives', [])):
+            parent_part = str(primitive.get('parent_part', 'body'))
+            component_scope = str(primitive.get('component_scope', 'single'))
+            component_index = int(primitive.get('component_index', 0))
             size_m = primitive.get('size_m', [0.06, 0.04, 0.04])
             offset_m = primitive.get('offset_m', [0.0, 0.0, 0.0])
-            yield ('custom_primitive', (float(offset_m[0]), body_y + float(offset_m[1]), float(offset_m[2])), (max(0.002, float(size_m[0])) * 0.5, max(0.002, float(size_m[1])) * 0.5, max(0.002, float(size_m[2])) * 0.5))
+            rotation_ypr_deg = primitive.get('rotation_ypr_deg', [0.0, 0.0, 0.0])
+            half_extents = (
+                max(0.002, float(size_m[0])) * 0.5,
+                max(0.002, float(size_m[1])) * 0.5,
+                max(0.002, float(size_m[2])) * 0.5,
+            )
+            for pose in matching_attachment_poses(parent_part, component_scope, component_index):
+                base_forward, base_right, base_up = _resolve_preview_rotated_axes(
+                    float(pose['yaw_rad']),
+                    [0.0, math.degrees(float(pose.get('pitch_rad', 0.0))), math.degrees(float(pose.get('roll_rad', 0.0)))],
+                )
+                forward, right, up = _resolve_preview_rotated_basis(base_forward, base_right, base_up, rotation_ypr_deg)
+                center = _preview_local_point(pose['center'], base_forward, base_right, base_up, offset_m)
+                yield (
+                    'custom_primitive',
+                    tuple(float(value) for value in center),
+                    half_extents,
+                    {
+                        'kind': 'oriented_box',
+                        'forward': tuple(float(value) for value in forward),
+                        'right': tuple(float(value) for value in right),
+                        'up': tuple(float(value) for value in up),
+                        'component_index': primitive_index,
+                    },
+                )
 
-        for anchor in profile.get('custom_anchors', []):
-            offset_m = anchor.get('offset_m', [0.0, 0.0, 0.0])
-            yield ('custom_anchor', (float(offset_m[0]), body_y + float(offset_m[1]), float(offset_m[2])), (0.01, 0.01, 0.01))
+        anchor_variants = _resolve_preview_custom_anchor_point_variants(profile, attachment_poses)
+        for anchor_index, anchor in enumerate(profile.get('custom_anchors', [])):
+            for resolved_anchor in anchor_variants.get(str(anchor.get('id', '')), []):
+                yield (
+                    'custom_anchor',
+                    resolved_anchor['point'],
+                    (0.011, 0.011, 0.011) if _is_active_anchor(anchor) else (0.008, 0.008, 0.008),
+                    {
+                        'kind': 'oriented_box',
+                        'forward': tuple(float(value) for value in resolved_anchor['forward']),
+                        'right': tuple(float(value) for value in resolved_anchor['right']),
+                        'up': tuple(float(value) for value in resolved_anchor['up']),
+                        'component_index': anchor_index,
+                        'active_anchor': _is_active_anchor(anchor),
+                    },
+                )
 
-        for link in profile.get('custom_links', []):
-            yield ('custom_link', (0.0, body_y, 0.0), (0.03, 0.03, 0.03))
+        for link_index, link in enumerate(profile.get('custom_links', [])):
+            for start_anchor, end_anchor in _pair_preview_anchor_variants(anchor_variants, link.get('start_anchor_id', ''), link.get('end_anchor_id', '')):
+                start_point = start_anchor['point']
+                end_point = end_anchor['point']
+                radius = max(0.001, float(link.get('radius_m', 0.012)))
+                fixed_length = max(0.0, float(link.get('length_m', 0.0) or 0.0))
+                resolved_end = _resolve_fixed_link_end(start_point, end_point, fixed_length)
+                yield (
+                    'custom_link',
+                    (0.0, body_y, 0.0),
+                    (0.001, 0.001, 0.001),
+                    {
+                        'kind': 'beam',
+                        'start': start_point,
+                        'end': resolved_end,
+                        'height': max(0.001, float(link.get('width_m', radius * 2.0))),
+                        'thickness': max(0.001, float(link.get('thickness_m', radius * 2.0))),
+                        'component_index': link_index,
+                    },
+                )
 
     def _iter_structure_3d_preview_primitives(self, profile, role_key):
         if role_key == 'outpost':
@@ -3422,16 +4730,16 @@ class AppearanceEditorApp:
             tower_radius = max(0.18, top_diameter * 0.36)
             base_width = max(0.30, float(profile.get('body_length_m', 0.65)))
             armor_side = max(0.04, float(profile.get('armor_plate_width_m', 0.13)))
-            armor_thickness = max(0.012, float(profile.get('armor_plate_gap_m', 0.025)))
+            armor_thickness = _resolve_armor_plate_thickness(profile)
             radius = tower_radius + 0.055
             head_base_height = tower_height * (1.318 / 1.578)
             armor_spin = float(profile.get('_preview_outpost_armor_yaw_rad', 0.0))
             yield ('body', (0.0, lift + tower_height * 0.48, 0.0), (base_width * 0.45, tower_height * 0.52, base_width * 0.45))
             yield ('body', (0.03, lift + tower_height - 0.05, 0.0), (0.105, 0.06, 0.09))
-            yield ('armor', (math.cos(armor_spin) * radius, lift + tower_height - 0.055, math.sin(armor_spin) * radius), (armor_side * 0.5, armor_side * 0.5, armor_thickness * 0.5))
+            yield ('armor', (math.cos(armor_spin) * radius, lift + tower_height - 0.055, math.sin(armor_spin) * radius), (armor_side * 0.5, armor_side * 0.5, armor_thickness * 0.5), armor_spin)
             for index, yaw in enumerate([0.0, math.tau / 3.0, math.tau * 2.0 / 3.0]):
                 height = lift + head_base_height - 0.07 + [0.05, 0.0, -0.05][index]
-                yield ('armor', (math.cos(yaw + armor_spin) * radius, height, math.sin(yaw + armor_spin) * radius), (armor_thickness * 0.5, armor_side * 0.5, armor_side * 0.5))
+                yield ('armor', (math.cos(yaw + armor_spin) * radius, height, math.sin(yaw + armor_spin) * radius), (armor_thickness * 0.5, armor_side * 0.5, armor_side * 0.5), yaw + armor_spin)
             yield ('armor_light', (radius * 0.68, lift + tower_height * 0.48, 0.0), (0.020, tower_height * 0.22, 0.000))
             return
 
@@ -3505,7 +4813,7 @@ class AppearanceEditorApp:
         width = max(0.7, float(profile.get('body_width_m', 1.609))) * max(0.4, float(profile.get('body_render_width_scale', 1.0)))
         height = max(0.5, float(profile.get('body_height_m', 1.181)))
         armor_side = max(0.04, float(profile.get('armor_plate_width_m', 0.13)))
-        armor_thickness = max(0.012, float(profile.get('armor_plate_gap_m', 0.025)))
+        armor_thickness = _resolve_armor_plate_thickness(profile)
         open_ratio = max(0.0, min(1.0, float(profile.get('_preview_base_open_ratio', 0.0))))
         yield ('body', (0.0, height * 0.47, 0.0), (length * 0.50, height * 0.50, width * 0.50))
         yield ('body', (0.0, height * 0.58, 0.0), (0.055, min(height * 0.33, 0.3915), 0.06))
@@ -3531,27 +4839,125 @@ class AppearanceEditorApp:
         screen_y = (1.0 - (float(ndc[1]) * 0.5 + 0.5)) * height
         return (screen_x, screen_y)
 
-    def _build_3d_preview_hitboxes(self, rect, profile, yaw=None, pitch=None):
+    def _preview_3d_box_corners(self, center, half_extents, yaw_rad=0.0, pitch_rad=0.0, roll_rad=0.0):
+        cx, cy, cz = [float(value) for value in center]
+        hx, hy, hz = [max(0.001, float(value)) for value in half_extents]
+        forward, right, up = _preview_basis_from_ypr(float(yaw_rad), float(pitch_rad), float(roll_rad))
+        corners = []
+        for local_x in (-hx, hx):
+            for local_y in (-hy, hy):
+                for local_z in (-hz, hz):
+                    corners.append((
+                        cx + right[0] * local_x + up[0] * local_y + forward[0] * local_z,
+                        cy + right[1] * local_x + up[1] * local_y + forward[1] * local_z,
+                        cz + right[2] * local_x + up[2] * local_y + forward[2] * local_z,
+                    ))
+        return corners
+
+    def _preview_3d_oriented_box_corners(self, center, half_extents, forward, right, up):
+        cx, cy, cz = [float(value) for value in center]
+        hx, hy, hz = [max(0.001, float(value)) for value in half_extents]
+        forward_vec = _normalize_preview_axis(forward, (1.0, 0.0, 0.0))
+        right_vec = _normalize_preview_axis(right, (0.0, 0.0, 1.0))
+        up_vec = _normalize_preview_axis(up, (0.0, 1.0, 0.0))
+        corners = []
+        center_vec = np.array([cx, cy, cz], dtype='f4')
+        for local_x in (-hx, hx):
+            for local_y in (-hy, hy):
+                for local_z in (-hz, hz):
+                    point = center_vec + forward_vec * local_x + up_vec * local_y + right_vec * local_z
+                    corners.append(tuple(float(value) for value in point))
+        return corners
+
+    def _preview_3d_beam_corners(self, start_point, end_point, height, thickness):
+        start_x, start_y, start_z = [float(value) for value in start_point]
+        end_x, end_y, end_z = [float(value) for value in end_point]
+        delta_x = end_x - start_x
+        delta_y = end_y - start_y
+        length = math.hypot(delta_x, delta_y)
+        if length <= 1e-6:
+            half = max(0.001, float(height) * 0.5)
+            return self._preview_3d_box_corners(start_point, (half, half, max(0.001, float(thickness) * 0.5)))
+        side_x = -delta_y / length
+        side_y = delta_x / length
+        half_height = max(0.001, float(height) * 0.5)
+        half_thickness = max(0.001, float(thickness) * 0.5)
+        return [
+            (start_x + side_x * half_height, start_y + side_y * half_height, start_z - half_thickness),
+            (end_x + side_x * half_height, end_y + side_y * half_height, end_z - half_thickness),
+            (end_x - side_x * half_height, end_y - side_y * half_height, end_z - half_thickness),
+            (start_x - side_x * half_height, start_y - side_y * half_height, start_z - half_thickness),
+            (start_x + side_x * half_height, start_y + side_y * half_height, start_z + half_thickness),
+            (end_x + side_x * half_height, end_y + side_y * half_height, end_z + half_thickness),
+            (end_x - side_x * half_height, end_y - side_y * half_height, end_z + half_thickness),
+            (start_x - side_x * half_height, start_y - side_y * half_height, start_z + half_thickness),
+        ]
+
+    def _preview_3d_primitive_corners(self, primitive):
+        if len(primitive) >= 4 and isinstance(primitive[3], dict) and primitive[3].get('kind') == 'beam':
+            return self._preview_3d_beam_corners(
+                primitive[3]['start'],
+                primitive[3]['end'],
+                primitive[3]['height'],
+                primitive[3]['thickness'],
+            )
+        if len(primitive) >= 4 and isinstance(primitive[3], dict) and primitive[3].get('kind') == 'oriented_box':
+            return self._preview_3d_oriented_box_corners(
+                primitive[1],
+                primitive[2],
+                primitive[3]['forward'],
+                primitive[3]['right'],
+                primitive[3]['up'],
+            )
+        part, center, half_extents = primitive[:3]
+        ypr = primitive[3] if len(primitive) >= 4 and not isinstance(primitive[3], dict) else 0.0
+        if isinstance(ypr, (list, tuple)) and len(ypr) >= 3:
+            return self._preview_3d_box_corners(center, half_extents, ypr[0], ypr[1], ypr[2])
+        return self._preview_3d_box_corners(center, half_extents, float(ypr))
+
+    def _preview_3d_primitive_center(self, primitive):
+        if len(primitive) >= 4 and isinstance(primitive[3], dict) and primitive[3].get('kind') == 'beam':
+            start = primitive[3]['start']
+            end = primitive[3]['end']
+            return (
+                (float(start[0]) + float(end[0])) * 0.5,
+                (float(start[1]) + float(end[1])) * 0.5,
+                (float(start[2]) + float(end[2])) * 0.5,
+            )
+        return primitive[1]
+
+    def _preview_3d_primitive_component_index(self, primitive, part_counts):
+        part = primitive[0]
+        if len(primitive) >= 4 and isinstance(primitive[3], dict) and 'component_index' in primitive[3]:
+            return int(primitive[3]['component_index'])
+        component_index = part_counts.get(part, 0)
+        part_counts[part] = component_index + 1
+        return component_index
+
+    def _resolve_3d_preview_camera(self, rect, profile, yaw=None, pitch=None):
         if '_terrain_scene_look_at' not in globals() or '_terrain_scene_perspective_matrix' not in globals():
-            return
+            return None
         width, height = rect.size
         if width <= 1 or height <= 1:
-            return
-        role_key = str(profile.get('role_key', '')).lower()
-        structure_lift = float(profile.get('structure_base_lift_m', 0.0)) if role_key in {'outpost', 'base', 'energy_mechanism'} else 0.0
-        target = np.array([0.0, structure_lift + float(profile['body_clearance_m']) + float(profile['body_height_m']) * 0.45, 0.0], dtype='f4')
-        bounds_radius = max(
-            0.6,
-            float(profile['body_length_m']) * 0.9,
-            float(profile['body_width_m']) * 0.9,
-            float(profile.get('gimbal_length_m', 0.0)) + float(profile.get('barrel_length_m', 0.0)) * 0.8,
-            structure_lift + _profile_turret_center_height(profile) + 0.25,
-            structure_lift + float(profile.get('body_height_m', 0.0)) + 0.25,
-        )
-        if role_key == 'energy_mechanism':
-            target = np.array([0.0, float(profile.get('structure_rotor_center_height_m', 1.23)), 0.0], dtype='f4')
-            bounds_radius = max(bounds_radius, self.preview_renderer_3d._structure_bounds_radius(profile) if self.preview_renderer_3d is not None else 1.5)
-        distance = max(1.4, bounds_radius * 2.9)
+            return None
+        target = np.array([0.0, float(profile['body_clearance_m']) + float(profile['body_height_m']) * 0.45, 0.0], dtype='f4')
+        bounds_radius = 0.6
+        if self.preview_renderer_3d is not None:
+            geometry_key = self.preview_renderer_3d._profile_geometry_key(profile)
+            if geometry_key != self.preview_renderer_3d.geometry_key:
+                self.preview_renderer_3d._build_geometry(profile)
+                self.preview_renderer_3d.geometry_key = geometry_key
+            bounds_radius = max(bounds_radius, float(getattr(self.preview_renderer_3d, 'bounds_radius', 0.6)))
+        else:
+            bounds_radius = max(
+                bounds_radius,
+                float(profile['body_length_m']) * 0.9,
+                float(profile['body_width_m']) * 0.9,
+                float(profile.get('gimbal_length_m', 0.0)) + float(profile.get('barrel_length_m', 0.0)) * 0.8,
+                _profile_turret_center_height(profile) + 0.25,
+            )
+        zoom = max(0.45, min(3.00, float(getattr(self, 'preview_zoom', 1.0))))
+        distance = max(0.55, bounds_radius * 2.9 / zoom)
         yaw = self.preview_3d_yaw if yaw is None else float(yaw)
         pitch = self.preview_3d_pitch if pitch is None else float(pitch)
         eye = np.array([
@@ -3561,40 +4967,128 @@ class AppearanceEditorApp:
         ], dtype='f4') + target
         projection = _terrain_scene_perspective_matrix(math.radians(42.0), width / max(height, 1), 0.05, max(8.0, distance * 6.0))
         view = _terrain_scene_look_at(eye, target, np.array([0.0, 1.0, 0.0], dtype='f4'))
-        mvp = projection @ view
-        hitboxes = []
-        for part, center, half_extents in self._iter_3d_preview_primitives(profile):
-            cx, cy, cz = center
-            hx, hy, hz = half_extents
-            projected = []
-            for offset_x in (-hx, hx):
-                for offset_y in (-hy, hy):
-                    for offset_z in (-hz, hz):
-                        point = self._project_3d_preview_point((cx + offset_x, cy + offset_y, cz + offset_z), mvp, (width, height))
-                        if point is not None:
-                            projected.append(point)
-            if not projected:
-                continue
-            xs = [point[0] for point in projected]
-            ys = [point[1] for point in projected]
-            box = pygame.Rect(int(min(xs)), int(min(ys)), max(6, int(max(xs) - min(xs))), max(6, int(max(ys) - min(ys))))
+        return projection @ view, eye
+
+    def _build_3d_preview_hitboxes(self, rect, profile, yaw=None, pitch=None):
+        for entry in self._get_3d_preview_overlay_entries(rect, profile, yaw=yaw, pitch=pitch):
+            box = entry['box'].copy()
             box.move_ip(rect.x, rect.y)
-            distance_to_eye = float(np.linalg.norm(np.array(center, dtype='f4') - eye))
-            hitboxes.append((distance_to_eye, part, box.inflate(8, 8)))
-        for _, part, box in sorted(hitboxes, key=lambda item: item[0], reverse=True):
-            self.preview_part_hitboxes.append((part, box))
+            part = entry['part']
+            component_index = entry['component_index']
+            self.preview_part_hitboxes.append((part, box, component_index))
+
+    def _draw_selected_preview_outlines(self, rect, profile, yaw=None, pitch=None):
+        if self.selected_part is None:
+            return
+        edge_indices = (
+            (0, 1), (0, 2), (0, 4), (3, 1), (3, 2), (3, 7),
+            (5, 1), (5, 4), (5, 7), (6, 2), (6, 4), (6, 7),
+        )
+        for entry in self._get_3d_preview_overlay_entries(rect, profile, yaw=yaw, pitch=pitch):
+            part = entry['part']
+            component_index = entry['component_index']
+            if part != self.selected_part:
+                continue
+            if (
+                component_index is not None
+                and self.selected_component_scope == 'single'
+                and self._part_supports_component_selection(part)
+                    and int(component_index) != int(self.selected_component_index)
+            ):
+                continue
+            projected = entry['projected']
+            for start_index, end_index in edge_indices:
+                start = projected[start_index]
+                end = projected[end_index]
+                if start is None or end is None:
+                    continue
+                pygame.draw.line(
+                    self.screen,
+                    self.colors['accent'],
+                    (rect.x + int(start[0]), rect.y + int(start[1])),
+                    (rect.x + int(end[0]), rect.y + int(end[1])),
+                    3,
+                )
+
+    def _preview_render_cache_key(self, profile, size, yaw, pitch):
+        try:
+            geometry_key = self.preview_renderer_3d._profile_geometry_key(profile) if self.preview_renderer_3d is not None else json.dumps(profile, sort_keys=True, ensure_ascii=True)
+        except Exception:
+            geometry_key = str(id(profile))
+        return (
+            geometry_key,
+            int(size[0]),
+            int(size[1]),
+            round(float(yaw), 4),
+            round(float(pitch), 4),
+            round(float(self.preview_zoom), 4),
+        )
+
+    def _get_preview_surface(self, profile, size, yaw, pitch):
+        if self.preview_renderer_3d is None:
+            return None
+        key = self._preview_render_cache_key(profile, size, yaw, pitch)
+        cached = self._preview_surface_cache.get(key)
+        if cached is not None:
+            return cached
+        surface = self.preview_renderer_3d.render_scene(profile, size, yaw=yaw, pitch=pitch, zoom=self.preview_zoom)
+        if surface is not None:
+            if len(self._preview_surface_cache) >= 8:
+                self._preview_surface_cache.pop(next(iter(self._preview_surface_cache)))
+            self._preview_surface_cache[key] = surface
+        return surface
+
+    def _get_3d_preview_overlay_entries(self, rect, profile, yaw=None, pitch=None):
+        key = self._preview_render_cache_key(profile, rect.size, yaw if yaw is not None else self.preview_3d_yaw, pitch if pitch is not None else self.preview_3d_pitch)
+        cached = self._preview_overlay_cache.get(key)
+        if cached is not None:
+            return cached
+        camera = self._resolve_3d_preview_camera(rect, profile, yaw=yaw, pitch=pitch)
+        if camera is None:
+            return []
+        mvp, eye = camera
+        width, height = rect.size
+        entries = []
+        part_counts = {}
+        for primitive in self._iter_3d_preview_primitives(profile):
+            part, _center, _half_extents = primitive[:3]
+            projected = []
+            for corner in self._preview_3d_primitive_corners(primitive):
+                point = self._project_3d_preview_point(corner, mvp, (width, height))
+                projected.append(point)
+            visible = [point for point in projected if point is not None]
+            if not visible:
+                continue
+            xs = [point[0] for point in visible]
+            ys = [point[1] for point in visible]
+            box = pygame.Rect(int(min(xs)), int(min(ys)), max(6, int(max(xs) - min(xs))), max(6, int(max(ys) - min(ys))))
+            distance_to_eye = float(np.linalg.norm(np.array(self._preview_3d_primitive_center(primitive), dtype='f4') - eye))
+            component_index = self._preview_3d_primitive_component_index(primitive, part_counts)
+            entries.append({
+                'part': part,
+                'component_index': component_index,
+                'box': box,
+                'projected': projected,
+                'distance': distance_to_eye,
+            })
+        entries.sort(key=lambda item: item['distance'], reverse=True)
+        if len(self._preview_overlay_cache) >= 8:
+            self._preview_overlay_cache.pop(next(iter(self._preview_overlay_cache)))
+        self._preview_overlay_cache[key] = entries
+        return entries
 
     def _draw_projected_preview(self, rect, profile, *, yaw, pitch, title, hint=None, interactive=False):
         pygame.draw.rect(self.screen, self.colors['preview_bg'], rect, border_radius=12)
         pygame.draw.rect(self.screen, self.colors['panel_border'], rect, 1, border_radius=12)
         self._draw_text(title, self.font, self.colors['text'], (rect.x + 14, rect.y + 12))
         content_rect = pygame.Rect(rect.x + 10, rect.y + 44, rect.width - 20, rect.height - 56)
-        preview_surface = self.preview_renderer_3d.render_scene(profile, content_rect.size, yaw=yaw, pitch=pitch) if self.preview_renderer_3d is not None else None
+        preview_surface = self._get_preview_surface(profile, content_rect.size, yaw, pitch)
         pygame.draw.rect(self.screen, self.colors['preview_bg'], content_rect, border_radius=10)
         pygame.draw.rect(self.screen, self.colors['panel_border'], content_rect, 1, border_radius=10)
         if preview_surface is not None:
             self.screen.blit(preview_surface, content_rect.topleft)
             self._build_3d_preview_hitboxes(content_rect, profile, yaw=yaw, pitch=pitch)
+            self._draw_selected_preview_outlines(content_rect, profile, yaw=yaw, pitch=pitch)
         else:
             fallback = '3D 投影不可用'
             detail = self.preview_renderer_3d.error if self.preview_renderer_3d is not None else MODERNGL_PREVIEW_ERROR
@@ -3943,12 +5437,13 @@ class AppearanceEditorApp:
         if self.preview_mode == 'side':
             self._draw_projected_preview(content_rect, profile, yaw=math.pi * 0.5, pitch=0.18, title='侧视投影')
             return
-        preview_surface = self.preview_renderer_3d.render_scene(profile, content_rect.size, yaw=self.preview_3d_yaw, pitch=self.preview_3d_pitch) if self.preview_renderer_3d is not None else None
+        preview_surface = self._get_preview_surface(profile, content_rect.size, self.preview_3d_yaw, self.preview_3d_pitch)
         pygame.draw.rect(self.screen, self.colors['preview_bg'], content_rect, border_radius=12)
         pygame.draw.rect(self.screen, self.colors['panel_border'], content_rect, 1, border_radius=12)
         if preview_surface is not None:
             self.screen.blit(preview_surface, content_rect.topleft)
             self._build_3d_preview_hitboxes(content_rect, profile, yaw=self.preview_3d_yaw, pitch=self.preview_3d_pitch)
+            self._draw_selected_preview_outlines(content_rect, profile, yaw=self.preview_3d_yaw, pitch=self.preview_3d_pitch)
         else:
             title = '3D 预览不可用'
             detail = self.preview_renderer_3d.error if self.preview_renderer_3d is not None else MODERNGL_PREVIEW_ERROR
@@ -3977,6 +5472,7 @@ class AppearanceEditorApp:
 
     def _select_custom_part(self, part):
         self.selected_part = part
+        self.selected_component_scope = 'single'
         self.selected_field_index = 0
         self.field_scroll = 0
         self.active_numeric_input = None
@@ -3995,10 +5491,60 @@ class AppearanceEditorApp:
                 return True
         return False
 
+    def _custom_children_for_selected_part(self, profile):
+        if self.selected_part in {None, 'custom_primitive', 'custom_anchor', 'custom_link'}:
+            return []
+        selected_part = str(self.selected_part)
+        selected_index = int(self.selected_component_index)
+
+        def matches_parent(item):
+            if str(item.get('parent_part', 'body')) != selected_part:
+                return False
+            scope = str(item.get('component_scope', 'single'))
+            return scope == 'all' or int(item.get('component_index', 0) or 0) == selected_index
+
+        items = []
+        anchors_by_id = {str(anchor.get('id', '')): anchor for anchor in profile.get('custom_anchors', [])}
+        for index, primitive in enumerate(profile.get('custom_primitives', [])):
+            if matches_parent(primitive):
+                items.append(('custom_primitive', index, primitive.get('name') or primitive.get('id') or f'附加体 {index + 1}'))
+        for index, anchor in enumerate(profile.get('custom_anchors', [])):
+            if matches_parent(anchor):
+                items.append(('custom_anchor', index, anchor.get('name') or anchor.get('id') or f'锚点 {index + 1}'))
+        for index, link in enumerate(profile.get('custom_links', [])):
+            start_anchor = anchors_by_id.get(str(link.get('start_anchor_id', '')))
+            end_anchor = anchors_by_id.get(str(link.get('end_anchor_id', '')))
+            if (isinstance(start_anchor, dict) and matches_parent(start_anchor)) or (isinstance(end_anchor, dict) and matches_parent(end_anchor)):
+                items.append(('custom_link', index, link.get('name') or link.get('id') or f'连杆 {index + 1}'))
+        return items
+
+    def _draw_custom_children_panel(self, rect, child_items):
+        if not child_items:
+            return
+        pygame.draw.rect(self.screen, self.colors['panel_alt'], rect, border_radius=8)
+        pygame.draw.rect(self.screen, self.colors['panel_border'], rect, 1, border_radius=8)
+        self._draw_text('子部件', self.tiny_font, self.colors['muted'], (rect.x + 10, rect.y + 7))
+        x = rect.x + 10
+        y = rect.y + 28
+        for part_key, index, label in child_items[:6]:
+            button_rect = pygame.Rect(x, y, min(132, rect.right - x - 8), 24)
+            pygame.draw.rect(self.screen, self.colors['field_row'], button_rect, border_radius=6)
+            pygame.draw.rect(self.screen, self.colors['panel_border'], button_rect, 1, border_radius=6)
+            text = f'{PART_LABELS.get(part_key, part_key)} {index + 1}'
+            rendered = self.tiny_font.render(text, True, self.colors['text'])
+            self.screen.blit(rendered, rendered.get_rect(midleft=(button_rect.x + 7, button_rect.centery)))
+            self.custom_collection_actions.append((button_rect, f'select_item:{part_key}:{index}'))
+            x = button_rect.right + 8
+            if x + 96 > rect.right:
+                x = rect.x + 10
+                y += 28
+                if y + 24 > rect.bottom - 4:
+                    break
+
     def _draw_fields_panel(self, rect):
         pygame.draw.rect(self.screen, self.colors['panel'], rect, border_radius=12)
         pygame.draw.rect(self.screen, self.colors['panel_border'], rect, 1, border_radius=12)
-        title = f'{PART_LABELS.get(self.selected_part, "可调参数")}参数' if self.selected_part is not None else '选择部件'
+        title = f'{PART_LABELS.get(self.selected_part, "可调")}参数' if self.selected_part is not None else '选择部件'
         self._draw_text(title, self.font, self.colors['text'], (rect.x + 14, rect.y + 12))
         self.component_control_actions = []
         self.custom_collection_actions = []
@@ -4034,7 +5580,7 @@ class AppearanceEditorApp:
                 self.component_control_actions.append((button_rect, action))
             pygame.draw.rect(self.screen, self.colors['panel_alt'], label_rect, border_radius=7)
             pygame.draw.rect(self.screen, self.colors['panel_border'], label_rect, 1, border_radius=7)
-            unit_text = '全部' if self.selected_component_scope == 'all' else f'单位体 {self.selected_component_index + 1}/{max(1, count)}'
+            unit_text = '全部' if self.selected_component_scope == 'all' else f'单体位 {self.selected_component_index + 1}/{max(1, count)}'
             rendered = self.small_font.render(unit_text, True, self.colors['text'])
             self.screen.blit(rendered, rendered.get_rect(center=label_rect.center))
             for action, button_rect, label in (
@@ -4042,7 +5588,7 @@ class AppearanceEditorApp:
                 ('component_cycle:1', next_rect, '>'),
             ):
                 enabled = self.selected_component_scope != 'all' and count > 1
-                pygame.draw.rect(self.screen, self.colors['panel_alt'] if enabled else (42, 46, 52), button_rect, border_radius=7)
+                pygame.draw.rect(self.screen, self.colors['panel_alt'] if enabled else (220, 225, 232), button_rect, border_radius=7)
                 pygame.draw.rect(self.screen, self.colors['panel_border'], button_rect, 1, border_radius=7)
                 rendered = self.small_font.render(label, True, self.colors['text'] if enabled else self.colors['muted'])
                 self.screen.blit(rendered, rendered.get_rect(center=button_rect.center))
@@ -4061,13 +5607,24 @@ class AppearanceEditorApp:
                 rendered = self.small_font.render(label, True, self.colors['text'])
                 self.screen.blit(rendered, rendered.get_rect(center=button_rect.center))
                 self.custom_collection_actions.append((button_rect, action))
+        visible_fields = self._visible_field_specs()
+        active_color_spec = None
+        if visible_fields:
+            active_index = max(0, min(self.selected_field_index, len(visible_fields) - 1))
+            candidate_spec = visible_fields[active_index]
+            if candidate_spec['kind'] in {'color', 'custom_color'}:
+                active_color_spec = candidate_spec
         content_top_inset = self._field_content_top_inset()
-        content_rect = pygame.Rect(rect.x + 8, rect.y + content_top_inset, rect.width - 20, rect.height - content_top_inset - 12)
+        palette_reserved_height = 62 if active_color_spec is not None else 0
+        profile_for_children = self._current_profile()
+        child_items = self._custom_children_for_selected_part(profile_for_children)
+        child_reserved_height = 86 if child_items else 0
+        content_rect = pygame.Rect(rect.x + 8, rect.y + content_top_inset, rect.width - 20, rect.height - content_top_inset - 12 - palette_reserved_height - child_reserved_height)
         pygame.draw.rect(self.screen, self.colors['panel_alt'], content_rect, border_radius=8)
         if self.selected_part is None:
             hint_lines = [
-                '右侧预览中点击部件后，这里才会出现对应的长宽高与颜色参数。',
-                '当前可选：底盘、车轮、前爬升板、后腿机构、云台、枪管、连接件、装甲板、装甲灯条、枪管灯条；能量机关额外支持装配机构。',
+                '在右侧预览中点击部件后，这里会显示对应的长宽高、偏移和颜色参数。',
+                '当前可选：底盘、车轮、前爬升板、后腿机构、云台、枪管、连接件、装甲板、灯条、摩擦轮和相机。',
             ]
             for index, line in enumerate(hint_lines):
                 self._draw_text(line, self.small_font, self.colors['muted'], (content_rect.x + 16, content_rect.y + 18 + index * 26))
@@ -4084,7 +5641,7 @@ class AppearanceEditorApp:
                 continue
             spec = payload
             active = field_index == self.selected_field_index
-            pygame.draw.rect(self.screen, self.colors['panel_alt'] if active else (31, 36, 42), row_rect, border_radius=6)
+            pygame.draw.rect(self.screen, self.colors['field_row_active'] if active else self.colors['field_row'], row_rect, border_radius=6)
             pygame.draw.rect(self.screen, self.colors['accent'] if active else self.colors['panel_border'], row_rect, 1, border_radius=6)
             value = self._field_value(spec)
             if isinstance(self.active_numeric_input, dict) and int(self.active_numeric_input.get('field_index', -1)) == field_index:
@@ -4097,23 +5654,47 @@ class AppearanceEditorApp:
                     value_text = options[option_index][1] if options else '-'
                 else:
                     value_text = f'{value:.3f}' if spec['kind'] not in {'color', 'custom_color'} else f'{int(value)}'
-                value_color = self.colors['muted']
+                value_color = self.colors['value']
             self._draw_text(spec['label'], self.small_font, self.colors['text'], (row_rect.x + 10, row_rect.y + 5))
             value_surface = self.small_font.render(value_text, True, value_color)
             self.screen.blit(value_surface, value_surface.get_rect(right=row_rect.right - 10, centery=row_rect.centery))
         self.screen.set_clip(old_clip)
 
-        visible_fields = self._visible_field_specs()
-        if visible_fields:
-            active_index = max(0, min(self.selected_field_index, len(visible_fields) - 1))
-            active_spec = visible_fields[active_index]
-            if active_spec['kind'] in {'color', 'custom_color'}:
-                palette_y = rect.bottom - 44
-                for swatch_index, color_rgb in enumerate(COLOR_SWATCHES):
-                    swatch_rect = pygame.Rect(rect.x + 16 + swatch_index * 28, palette_y, 22, 22)
-                    pygame.draw.rect(self.screen, tuple(color_rgb), swatch_rect, border_radius=5)
-                    pygame.draw.rect(self.screen, self.colors['panel_border'], swatch_rect, 1, border_radius=5)
-                    self.color_palette_actions.append((swatch_rect, tuple(color_rgb)))
+        if child_items:
+            child_rect = pygame.Rect(content_rect.x, content_rect.bottom + 8, content_rect.width, max(0, child_reserved_height - 10))
+            self._draw_custom_children_panel(child_rect, child_items)
+
+        if active_color_spec is not None:
+            palette_x = rect.x + 16
+            palette_y = rect.bottom - 58
+            swatch_size = 20
+            swatch_gap = 6
+            preview_size = 44
+            active_color = []
+            for channel_index in range(3):
+                spec_copy = dict(active_color_spec)
+                spec_copy['channel'] = channel_index
+                active_color.append(max(0, min(255, int(round(float(self._field_value(spec_copy)))))))
+            preview_rect = pygame.Rect(palette_x, palette_y + 1, preview_size, preview_size)
+            pygame.draw.rect(self.screen, tuple(active_color), preview_rect, border_radius=7)
+            pygame.draw.rect(self.screen, self.colors['panel_border'], preview_rect, 1, border_radius=7)
+            swatch_start_x = palette_x + preview_size + 12
+            available_width = max(swatch_size, rect.right - swatch_start_x - 16)
+            max_columns = max(1, min(len(COLOR_SWATCHES), (available_width + swatch_gap) // (swatch_size + swatch_gap)))
+            for swatch_index, color_rgb in enumerate(COLOR_SWATCHES):
+                swatch_col = swatch_index % max_columns
+                swatch_row = swatch_index // max_columns
+                swatch_rect = pygame.Rect(
+                    swatch_start_x + swatch_col * (swatch_size + swatch_gap),
+                    palette_y + swatch_row * (swatch_size + swatch_gap),
+                    swatch_size,
+                    swatch_size,
+                )
+                pygame.draw.rect(self.screen, tuple(color_rgb), swatch_rect, border_radius=5)
+                pygame.draw.rect(self.screen, self.colors['panel_border'], swatch_rect, 1, border_radius=5)
+                if list(color_rgb) == active_color:
+                    pygame.draw.rect(self.screen, self.colors['accent'], swatch_rect.inflate(4, 4), 2, border_radius=7)
+                self.color_palette_actions.append((swatch_rect, tuple(color_rgb)))
 
         max_scroll = max(0, content_height - content_rect.height)
         if max_scroll > 0:
@@ -4127,12 +5708,12 @@ class AppearanceEditorApp:
             self.field_scrollbar_thumb_rect = thumb_rect
 
     def _draw_header(self):
-        self._draw_text('车辆外貌编辑器', self.title_font, self.colors['text'], (28, 22))
+        self._draw_text('车辆外观编辑器', self.title_font, self.colors['text'], (28, 22))
         self._draw_text('保存后的预设会在后续创建单位时自动应用', self.small_font, self.colors['muted'], (30, 52))
         self.runtime_preview_buttons = self._runtime_preview_button_rects()
         for action, label, rect in self.runtime_preview_buttons:
             enabled = action == 'launch' or self.current_role in {'base', 'outpost', 'energy_mechanism'}
-            fill = self.colors['accent'] if action == 'launch' and enabled else (self.colors['panel_alt'] if enabled else (42, 46, 52))
+            fill = self.colors['accent'] if action == 'launch' and enabled else (self.colors['panel_alt'] if enabled else (220, 225, 232))
             pygame.draw.rect(self.screen, fill, rect, border_radius=8)
             pygame.draw.rect(self.screen, self.colors['panel_border'], rect, 1, border_radius=8)
             text_color = (20, 22, 24) if action == 'launch' and enabled else (self.colors['text'] if enabled else self.colors['muted'])
@@ -4216,6 +5797,12 @@ class AppearanceEditorApp:
                 return
         for action_rect, action in self.custom_collection_actions:
             if action_rect.collidepoint(pos):
+                if action.startswith('select_item:'):
+                    _, part_key, index_text = action.split(':', 2)
+                    self._select_custom_part(part_key)
+                    self.selected_component_index = max(0, int(index_text))
+                    self.active_numeric_input = None
+                    return
                 verb, payload = action.split(':', 1)
                 if verb == 'select':
                     self._select_custom_part(payload)
@@ -4244,14 +5831,36 @@ class AppearanceEditorApp:
             ratio = relative / max(1, self.field_scrollbar_track_rect.height - thumb_height)
             self._set_field_scroll(field_panel, ratio * self._max_field_scroll(field_panel))
             return
-        for part, hitbox in reversed(self.preview_part_hitboxes):
+        hit_candidates = []
+        part_priority = {
+            'barrel_friction_wheel': 0,
+            'barrel_light': 1,
+            'first_person_camera': 1,
+            'armor_light': 2,
+            'barrel': 3,
+            'armor': 4,
+            'turret': 5,
+            'mount': 6,
+            'body': 7,
+        }
+        for depth_order, item in enumerate(reversed(self.preview_part_hitboxes)):
+            part = item[0]
+            hitbox = item[1]
+            component_index = item[2] if len(item) >= 3 else None
             if hitbox.collidepoint(pos):
-                self.selected_part = part
-                self.selected_field_index = 0
-                self.field_scroll = 0
+                hit_candidates.append((part_priority.get(part, 10), hitbox.width * hitbox.height, depth_order, part, component_index))
+        if hit_candidates:
+            _, _, _, part, component_index = sorted(hit_candidates, key=lambda item: (item[0], item[1], item[2]))[0]
+            self.selected_part = part
+            self.selected_field_index = 0
+            self.field_scroll = 0
+            if component_index is not None and self._part_supports_component_selection(part):
+                self.selected_component_scope = 'single'
+                self.selected_component_index = int(component_index)
+            else:
                 self.selected_component_index = 0
-                self.active_numeric_input = None
-                return
+            self.active_numeric_input = None
+            return
         if self.preview_content_rect is not None and self.preview_content_rect.collidepoint(pos) and self.preview_mode != '3d':
             self.selected_part = None
             self.active_numeric_input = None
@@ -4311,13 +5920,14 @@ class AppearanceEditorApp:
                 self.preview_3d_pitch = max(0.12, min(1.12, self.preview_3d_pitch - rel_y * 0.010))
                 return
         if event.type == pygame.MOUSEWHEEL:
-            if self.field_panel_rect is not None and self.field_panel_rect.collidepoint(pygame.mouse.get_pos()):
+            mouse_pos = pygame.mouse.get_pos()
+            if self.preview_content_rect is not None and self.preview_content_rect.collidepoint(mouse_pos):
+                self._adjust_preview_zoom(event.y)
+                return
+            if self.field_panel_rect is not None and self.field_panel_rect.collidepoint(mouse_pos):
                 self._set_field_scroll(self.field_panel_rect, self.field_scroll - event.y * 36)
                 return
-            if self.preview_mode == '3d' and self.preview_content_rect is not None and self.preview_content_rect.collidepoint(pygame.mouse.get_pos()):
-                self.preview_3d_pitch = max(0.12, min(1.12, self.preview_3d_pitch + event.y * 0.04))
-                return
-            self._adjust_selected(event.y, fast=bool(pygame.key.get_mods() & pygame.KMOD_SHIFT))
+            self._adjust_preview_zoom(event.y)
             return
         if event.type != pygame.KEYDOWN:
             return

@@ -327,6 +327,9 @@ internal static class FineTerrainEnergyMechanismVisualCache
                 int start = Math.Clamp(range.StartIndex, 0, indices.Length);
                 int end = Math.Clamp(range.StartIndex + Math.Max(0, range.IndexCount), start, indices.Length);
                 end -= (end - start) % 3;
+                Color? componentOverrideColor = TryResolveComponentColorOverride(runtimeScene, range.ComponentId, out Color overrideColor)
+                    ? overrideColor
+                    : null;
                 for (int triangleIndex = start; triangleIndex < end; triangleIndex += 3)
                 {
                     int i0 = checked((int)indices[triangleIndex]);
@@ -346,12 +349,28 @@ internal static class FineTerrainEnergyMechanismVisualCache
                         v0.Position,
                         v1.Position,
                         v2.Position,
-                        ResolveTriangleColor(v0.Color, v1.Color, v2.Color)));
+                        componentOverrideColor ?? ResolveTriangleColor(v0.Color, v1.Color, v2.Color)));
                 }
             }
         }
 
         return result;
+    }
+
+    private static bool TryResolveComponentColorOverride(RuntimeReferenceScene runtimeScene, int componentId, out Color color)
+    {
+        color = default;
+        if (!runtimeScene.ComponentColorOverrides.TryGetValue(componentId, out Vector4 value))
+        {
+            return false;
+        }
+
+        color = Color.FromArgb(
+            Math.Clamp((int)MathF.Round((value.W <= 0f ? 1f : value.W) * 255f), 0, 255),
+            Math.Clamp((int)MathF.Round(value.X * 255f), 0, 255),
+            Math.Clamp((int)MathF.Round(value.Y * 255f), 0, 255),
+            Math.Clamp((int)MathF.Round(value.Z * 255f), 0, 255));
+        return color.A > 0;
     }
 
     private static void ResolveUnitGeometry(

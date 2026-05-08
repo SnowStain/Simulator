@@ -1,4 +1,4 @@
-# 自瞄、吊射与统一控制链路
+﻿# 自瞄、吊射与统一控制链路
 
 ## 1. 目标
 
@@ -539,6 +539,7 @@ t_{plate} = t_{now} + t_{lead}
 
 - 右键按住后进入自动控制
 - `yaw / pitch` 都由自瞄接管
+- 强锁模式会在控制帧生成和主机应用控制帧两层清零鼠标 `yaw / pitch` 增量，避免鼠标移动信号混入云台硬锁
 - 当预测板与屏幕准心满足重合条件时自动发射
 - 不再需要 `Ctrl` 作为单独发射键
 
@@ -834,10 +835,10 @@ t_\text{lead} \approx \frac{\|P_\text{target}(t_\text{now}+t_\text{lead})-P_\tex
 
 42mm 吊射日志中出现过 `lead_s > 0` 但 `lead_m = 0` 的情况。根因是精细前哨站模型同步到 `RuntimeOutpostTargets` 后只保存了当前帧装甲板位置，规则层请求 `now + leadTime` 时仍然拿到当前帧目标，导致 EKF 链路虽然算出了飞行时间，但未来装甲板中心没有移动。
 
-现在运行时会同时保存 `RuntimeOutpostTargetsGameTimeSec`。当规则层请求未来时刻时，会按前哨站旋转轴把 `outpost_ring_*` 从同步帧投影到目标时刻：
+现在运行时会同时保存 `RuntimeOutpostTargetsGameTimeSec`。当规则层请求未来时刻时，会按前哨站旋转轴把 `outpost_ring_*` 从同步帧投影到目标时刻。精细前哨站的旋转来自模型空间 Y 轴，而模型到玩法 world 坐标会同时翻转 X/Z，所以玩法平面里的投影角速度要取反：
 
 ```text
-theta = rotation(t_future) - rotation(t_source)
+theta = -(rotation(t_future) - rotation(t_source))
 dx = plateX - pivotX
 dy = plateY - pivotY
 futureX = pivotX + dx * cos(theta) - dy * sin(theta)
@@ -854,13 +855,24 @@ futureYaw = plateYaw + theta
 窗口判定同时检查：
 
 ```text
-normalAngle <= 45 deg
-abs(horizontalOffset) <= plateWidth * 0.46 + leadTolerance
-abs(verticalOffset) <= plateHeight * 0.46 + leadTolerance
-distance(impactPoint, predictedAimPoint) <= max(plateWidth, plateHeight) * 0.52 + leadTolerance
+弹道穿过预测蓝框所在平面
+正向入射点积 >= 0.010
+abs(相对蓝框中心的水平偏移) <= 装甲板宽度 * 0.24 + 提前量容差
+abs(相对蓝框中心的垂直偏移) <= 装甲板高度 * 0.26 + 提前量容差
+abs(中心高度误差) <= clamp(max(0.055m, 装甲板高度 * 0.34 + 提前量容差), 0.055m, 0.145m)
 ```
 
-`leadTolerance` 现在比旧版本更收敛，避免还没有到蓝色预测圈附近就提前开火。左下角吊射面板会额外扫描未来约 2.4s 的装甲板窗口，显示“现在发射”“等待 Ns 后发射”或“当前姿态 2.4s 内无合适窗口”，用于说明应该等到哪个窗口期再出手。
+`leadTolerance` 只覆盖 42mm 弹丸半径和少量飞行时间误差，自动扳机必须等当前弹道落点进入蓝色预测框的中心区域才真正开火。左下角吊射面板会额外扫描未来约 2.4s 的装甲板窗口，显示“现在发射”“等待 Ns 后发射”或“当前姿态 2.4s 内无合适窗口”，用于说明应该等到哪个窗口期再出手。
+
+### 吊射 pitch 的垂直平面解算
+
+英雄吊射锁定结构装甲板时，yaw 先按结构中轴或预测装甲板方向确定，pitch 不再直接用英雄到装甲板中心点的欧氏距离计算，而是使用“锁定装甲板中心点所在的垂直平面”。每帧都会根据英雄当前位置、底盘高度、炮口姿态、42mm 弹速和空气阻力重新计算炮口到该垂直平面的前向距离，然后求解高抛弹道 pitch。
+
+这样英雄移动、部署状态变化、落地减震或目标预测点变化时，pitch 会实时跟随更新；自动扳机也会用同一个垂直平面判断弹道高度误差，只有落点进入蓝色预测框中心区域才允许开火。
+
+### 英雄云台惯量与重力
+
+英雄云台按重型云台处理。手控模式下，鼠标输入会先经过阻尼和每帧角速度上限，再叠加一个随仰角增大的向下重力下坠量；强锁模式下不接收鼠标输入，但自瞄输出层仍会降低英雄 `yaw / pitch` 最大响应速度，并让向上抬 pitch 的步进受到重力扭矩抑制、向下回落更快。当前横向 yaw 惯量按 `0.8` 缩放，等价于减少约 `20%` 的横向惯量：yaw 输出时间常数降低，yaw 角速度上限相应放宽；pitch 的重力扭矩和纵向惯量不随这次调整改变。这样英雄吊射不会像轻型云台一样瞬间贴角，同时不会让自动扳机脱离同一份弹道解。
 
 ### 引导模式
 

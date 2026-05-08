@@ -167,23 +167,15 @@ public sealed class MapPresetService
 
         MapCoordinateSystemDefinition coordinateSystem = ParseCoordinateSystem(map);
         var facilities = new List<FacilityRegion>();
-        if (map["facilities"] is JsonArray facilitiesArray)
+        foreach (JsonObject regionNode in EnumerateFacilityNodes(map, path))
         {
-            foreach (JsonNode? item in facilitiesArray)
+            FacilityRegion facility = ParseFacility(regionNode);
+            if (string.Equals(facility.Type, "dog_hole", StringComparison.OrdinalIgnoreCase))
             {
-                if (item is not JsonObject regionNode)
-                {
-                    continue;
-                }
-
-                FacilityRegion facility = ParseFacility(regionNode);
-                if (string.Equals(facility.Type, "dog_hole", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                facilities.Add(facility);
+                continue;
             }
+
+            facilities.Add(facility);
         }
 
         facilities.AddRange(MapAnnotationFacilitySynthesizer.CreateMissingFacilities(
@@ -289,6 +281,66 @@ public sealed class MapPresetService
             Points = points,
             AdditionalProperties = additionalProperties.Count == 0 ? null : additionalProperties,
         };
+    }
+
+    private static IEnumerable<JsonObject> EnumerateFacilityNodes(JsonObject map, string presetPath)
+    {
+        if (map["facilities"] is JsonArray facilitiesArray)
+        {
+            foreach (JsonNode? item in facilitiesArray)
+            {
+                if (item is JsonObject regionNode)
+                {
+                    yield return regionNode;
+                }
+            }
+        }
+
+        foreach (string relativePath in EnumerateFacilityFilePaths(map))
+        {
+            JsonObject? document = LoadRelativeObject(presetPath, relativePath);
+            JsonArray? externalFacilities = document?["facilities"] as JsonArray;
+            if (externalFacilities is null)
+            {
+                continue;
+            }
+
+            foreach (JsonNode? item in externalFacilities)
+            {
+                if (item is JsonObject regionNode)
+                {
+                    yield return regionNode;
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<string> EnumerateFacilityFilePaths(JsonObject map)
+    {
+        if (map["facility_files"] is JsonArray files)
+        {
+            foreach (JsonNode? fileNode in files)
+            {
+                string? value = fileNode?.ToString();
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    yield return value.Trim();
+                }
+            }
+        }
+
+        string? singlePath = map["facilities_path"]?.ToString();
+        if (!string.IsNullOrWhiteSpace(singlePath))
+        {
+            yield return singlePath.Trim();
+        }
+    }
+
+    private static JsonObject? LoadRelativeObject(string presetPath, string relativeOrAbsolutePath)
+    {
+        string presetDirectory = Path.GetDirectoryName(presetPath) ?? string.Empty;
+        var store = new MapDocumentStore();
+        return store.TryLoadRelative(presetDirectory, relativeOrAbsolutePath);
     }
 
     private readonly record struct LockedDogHoleFacility(

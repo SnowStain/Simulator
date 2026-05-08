@@ -5,6 +5,7 @@
 如果要快速进入代码，建议按下面顺序读：
 
 1. [架构总览](architecture/README.md)
+   - [局域网架构](architecture/lan-network-architecture.md)
 2. [给 C# 初学者的完整项目教程](tutorials/csharp-beginner-project-guide.md)
 3. [地图处理与缓存链路](algorithms/map-processing.md)
 4. [碰撞、运动与地形贴合](algorithms/terrain-motion.md)

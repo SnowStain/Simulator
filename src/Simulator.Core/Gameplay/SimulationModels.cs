@@ -45,6 +45,8 @@ public sealed class SimulationProjectile
 
     public int RicochetCount { get; set; }
 
+    public int GroundRicochetCount { get; set; }
+
     public bool HasAppliedDamage { get; set; }
 
     public double RemainingLifeSec { get; set; } = 3.0;
@@ -102,9 +104,21 @@ public sealed class SimulationEntity
 
     public double JumpCrouchDurationSec { get; set; }
 
+    public double StepClimbPoseBlend { get; set; }
+
+    public double StepClimbPoseVelocity { get; set; }
+
     public double LandingCompressionM { get; set; }
 
     public double LandingCompressionVelocityMps { get; set; }
+
+    public double ChassisImpactShakeTimerSec { get; set; }
+
+    public double ChassisImpactShakeDurationSec { get; set; }
+
+    public double ChassisImpactShakeIntensity { get; set; }
+
+    public double ChassisImpactShakeDirectionDeg { get; set; }
 
     public double LedgeLaunchTimerSec { get; set; }
 
@@ -114,9 +128,33 @@ public sealed class SimulationEntity
 
     public double ChassisRollDeg { get; set; }
 
+    public double ChassisPitchVelocityDegPerSec { get; set; }
+
+    public double ChassisRollVelocityDegPerSec { get; set; }
+
+    public double LastChassisVelocityXMps { get; set; }
+
+    public double LastChassisVelocityYMps { get; set; }
+
+    public double VisualLegLeftFootXM { get; set; } = double.NaN;
+
+    public double VisualLegLeftFootYM { get; set; } = double.NaN;
+
+    public double VisualLegRightFootXM { get; set; } = double.NaN;
+
+    public double VisualLegRightFootYM { get; set; } = double.NaN;
+
     public double TurretYawDeg { get; set; }
 
     public double GimbalPitchDeg { get; set; }
+
+    public double TurretYawCommandVelocityDegPerSec { get; set; }
+
+    public double GimbalPitchCommandVelocityDegPerSec { get; set; }
+
+    public double TurretYawControlIntegralDeg { get; set; }
+
+    public double GimbalPitchControlIntegralDeg { get; set; }
 
     public bool AutoAimRequested { get; set; }
 
@@ -177,6 +215,10 @@ public sealed class SimulationEntity
     public double HeroLobPitchHoldDeg { get; set; }
 
     public double HeroLobPitchHoldTargetHeightM { get; set; }
+
+    public string HeroLobAutoFireWindowKey { get; set; } = string.Empty;
+
+    public double HeroLobAutoFireWindowReadyUntilSec { get; set; }
 
     public double HeroDeploymentYawCorrectionDeg { get; set; }
 
@@ -404,9 +446,13 @@ public sealed class SimulationEntity
 
     public IReadOnlyList<ArmorPlateTarget>? RuntimeOutpostTargets { get; set; }
 
+    public double RuntimeOutpostTargetsGameTimeSec { get; set; } = double.NaN;
+
     public IReadOnlyList<ArmorPlateTarget>? RuntimeBaseTargets { get; set; }
 
     public double WheelRadiusM { get; set; } = 0.08;
+
+    public double RearLegWheelRadiusM { get; set; } = 0.08;
 
     public IReadOnlyList<(double X, double Y)> WheelOffsetsM { get; set; } =
         Array.Empty<(double X, double Y)>();
@@ -416,6 +462,12 @@ public sealed class SimulationEntity
 
     public IReadOnlyList<double> ArmorSelfYawsDeg { get; set; } =
         Array.Empty<double>();
+
+    public IReadOnlyList<(double X, double Y, double Z)> ArmorPlateOffsetsM { get; set; } =
+        Array.Empty<(double X, double Y, double Z)>();
+
+    public IReadOnlyList<(double Yaw, double Pitch, double Roll)> ArmorPlateRotationsYprDeg { get; set; } =
+        Array.Empty<(double Yaw, double Pitch, double Roll)>();
 
     public double GimbalLengthM { get; set; } = 0.26;
 
@@ -429,6 +481,12 @@ public sealed class SimulationEntity
 
     public double GimbalOffsetYM { get; set; }
 
+    public double GimbalRelativeOffsetXM { get; set; }
+
+    public double GimbalRelativeOffsetYM { get; set; }
+
+    public double GimbalRelativeOffsetZM { get; set; }
+
     public double GimbalMountGapM { get; set; } = 0.10;
 
     public double GimbalMountLengthM { get; set; } = 0.10;
@@ -440,6 +498,12 @@ public sealed class SimulationEntity
     public double BarrelLengthM { get; set; } = 0.12;
 
     public double BarrelRadiusM { get; set; } = 0.016;
+
+    public double BarrelOffsetXM { get; set; }
+
+    public double BarrelOffsetYM { get; set; }
+
+    public double BarrelOffsetZM { get; set; }
 
     public double ArmorPlateWidthM { get; set; } = 0.16;
 
@@ -460,6 +524,57 @@ public sealed class SimulationEntity
     public double BarrelLightWidthM { get; set; } = 0.01;
 
     public double BarrelLightHeightM { get; set; } = 0.03;
+
+    public double BarrelLightOffsetXM { get; set; }
+
+    public double BarrelLightOffsetYM { get; set; }
+
+    public double BarrelLightOffsetZM { get; set; }
+
+    public double RearHealthLightLengthM { get; set; }
+
+    public double RearHealthLightWidthM { get; set; }
+
+    public double RearHealthLightHeightM { get; set; }
+
+    public double RearHealthLightOffsetXM { get; set; }
+
+    public double RearHealthLightOffsetYM { get; set; }
+
+    public double RearHealthLightOffsetZM { get; set; }
+
+    public double BarrelFrictionWheelRadiusM { get; set; }
+
+    public double BarrelFrictionWheelWidthM { get; set; }
+
+    public double BarrelFrictionWheelHeightM { get; set; }
+
+    public double BarrelFrictionWheelOffsetXM { get; set; }
+
+    public double BarrelFrictionWheelOffsetYM { get; set; }
+
+    public double BarrelFrictionWheelOffsetZM { get; set; }
+
+    public double BarrelFrictionWheelYawDeg { get; set; }
+
+    public double BarrelFrictionWheelPitchDeg { get; set; }
+
+    public double BarrelFrictionWheelRollDeg { get; set; }
+
+    public IReadOnlyList<(double X, double Y, double Z)> BarrelFrictionWheelOffsetsM { get; set; } =
+        Array.Empty<(double X, double Y, double Z)>();
+
+    public double FirstPersonCameraOffsetXM { get; set; }
+
+    public double FirstPersonCameraOffsetYM { get; set; }
+
+    public double FirstPersonCameraOffsetZM { get; set; }
+
+    public double FirstPersonCameraYawDeg { get; set; }
+
+    public double FirstPersonCameraPitchDeg { get; set; }
+
+    public double FirstPersonCameraRollDeg { get; set; }
 
     public double FrontClimbAssistTopLengthM { get; set; } = 0.05;
 
@@ -529,6 +644,8 @@ public sealed class SimulationEntity
 
     public double RespawnTimerSec { get; set; }
 
+    public double RespawnInitialTimerSec { get; set; }
+
     public double WeakTimerSec { get; set; }
 
     public double RespawnAmmoLockTimerSec { get; set; }
@@ -562,6 +679,16 @@ public sealed class SimulationEntity
     public double MiningProgressSec { get; set; }
 
     public double ExchangeProgressSec { get; set; }
+
+    public double FortCaptureProgressSec { get; set; }
+
+    public double FortEnemyOccupationProgressSec { get; set; }
+
+    public string FortActiveFacilityId { get; set; } = string.Empty;
+
+    public int FortReserveAmmo { get; set; }
+
+    public int FortReserveAmmoCap { get; set; }
 
     public double DeadZoneTimerSec { get; set; }
 
@@ -607,6 +734,15 @@ public sealed class SimulationEntity
 
     public bool ConsumeAmmoForShot()
     {
+        if (!UnlimitedAmmo
+            && FortReserveAmmo > 0
+            && !string.Equals(AmmoType, "none", StringComparison.OrdinalIgnoreCase))
+        {
+            FortReserveAmmo--;
+            ShotsFired++;
+            return true;
+        }
+
         if (string.Equals(AmmoType, "42mm", StringComparison.OrdinalIgnoreCase))
         {
             if (!UnlimitedAmmo && Ammo42Mm <= 0)
@@ -668,11 +804,14 @@ public sealed class SimulationTeamState
     {
         Team = team;
         Gold = initialGold;
+        TotalGoldEarned = initialGold;
     }
 
     public string Team { get; }
 
     public double Gold { get; set; }
+
+    public double TotalGoldEarned { get; set; }
 
     public double EnergyActivationTimerSec { get; set; }
 
@@ -735,6 +874,8 @@ public sealed class SimulationTeamState
     public double EnergyBuffDamageTakenMult { get; set; } = 1.0;
 
     public double EnergyBuffCoolingMult { get; set; } = 1.0;
+
+    public bool BaseArmorForcedOpen { get; set; }
 }
 
 public sealed class SimulationWorldState

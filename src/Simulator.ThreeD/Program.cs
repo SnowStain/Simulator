@@ -20,7 +20,12 @@ internal static class Program
         Application.SetCompatibleTextRenderingDefault(false);
         if (string.IsNullOrWhiteSpace(options.OpenEditor))
         {
-            SimulatorOpenTkApplication.Run(options);
+            if (SimulatorOpenTkApplication.TryRun(options))
+            {
+                return;
+            }
+
+            Application.Run(new Simulator3dForm(options));
             return;
         }
 

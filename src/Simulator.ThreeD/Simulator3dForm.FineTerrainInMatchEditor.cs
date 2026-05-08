@@ -448,6 +448,7 @@ internal sealed partial class Simulator3dForm
             _fineTerrainInMatchAnnotationDocument!.Save();
             _fineTerrainInMatchEditDirty = false;
             InvalidateFineTerrainVisualScenes();
+            _host.ReloadTerrainCollisionAnnotations();
             string fileName = Path.GetFileName(_fineTerrainInMatchAnnotationDocument.SourcePath);
             SetFineTerrainInMatchStatus(
                 stayInEditMode

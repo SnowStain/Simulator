@@ -52,6 +52,14 @@ public sealed class SimulationBootstrapService
                     continue;
                 }
 
+                if (IsPlaceholderOnlyRobotDefinition(key, robotTypes))
+                {
+                    SimulatorRuntimeLog.Append(
+                        "simulation_bootstrap.log",
+                        $"{DateTime.Now:HH:mm:ss.fff} skip_placeholder_robot team={team} key={key} type={robotTypes?[key]?.ToString() ?? string.Empty}");
+                    continue;
+                }
+
                 string roleKey = ResolveRoleKey(key, robotTypes);
                 string entityType = string.Equals(roleKey, "sentry", StringComparison.OrdinalIgnoreCase)
                     ? "sentry"
@@ -515,6 +523,8 @@ public sealed class SimulationBootstrapService
                 "工程" => "engineer",
                 "步兵" => "infantry",
                 "哨兵" => "sentry",
+                "\u4e91\u53f0\u624b" => "gimbal",
+                "gimbal" or "gunner" or "operator" => "gimbal",
                 _ => normalized.ToLowerInvariant(),
             };
         }
@@ -535,6 +545,25 @@ public sealed class SimulationBootstrapService
         }
 
         return "infantry";
+    }
+
+    private static bool IsPlaceholderOnlyRobotDefinition(string robotKey, JsonObject? robotTypes)
+    {
+        string safeRobotKey = robotKey ?? string.Empty;
+        string normalizedKey = safeRobotKey.Trim().ToLowerInvariant();
+        if (normalizedKey is "robot_6" or "robot_06" or "r6")
+        {
+            return true;
+        }
+
+        string? typeText = robotTypes?[safeRobotKey]?.ToString();
+        if (string.IsNullOrWhiteSpace(typeText))
+        {
+            return false;
+        }
+
+        string normalizedType = typeText.Trim().ToLowerInvariant();
+        return normalizedType is "\u4e91\u53f0\u624b" or "gimbal" or "gunner" or "operator";
     }
 
     private static double ResolveMetersPerWorldUnit(JsonObject config, MapPresetDefinition mapPreset)

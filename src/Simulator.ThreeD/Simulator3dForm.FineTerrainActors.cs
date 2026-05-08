@@ -7,7 +7,9 @@ namespace Simulator.ThreeD;
 
 internal sealed partial class Simulator3dForm
 {
-    private const double FineTerrainEnergyDoubleFlashDurationSec = 0.96;
+    private const double FineTerrainEnergyDoubleFlashDurationSec = 0.80;
+    private const double FineTerrainEnergyCompletionFlashDurationSec = 3.20;
+    private const double FineTerrainEnergyFlashIntervalSec = 0.20;
     private FineTerrainEnergyMechanismVisualScene? _fineTerrainEnergyScene;
     private string? _fineTerrainEnergySceneKey;
     private Task<FineTerrainEnergyMechanismVisualScene?>? _fineTerrainEnergySceneLoadTask;
@@ -20,6 +22,8 @@ internal sealed partial class Simulator3dForm
     private string? _fineTerrainBaseSceneKey;
     private Task<FineTerrainBaseVisualScene?>? _fineTerrainBaseSceneLoadTask;
     private string? _fineTerrainBaseSceneLoadingKey;
+    private FineTerrainAnnotationDocument? _fineTerrainCollisionAnnotation;
+    private string? _fineTerrainCollisionAnnotationKey;
     private SimulationWorldState? _fineTerrainRuntimeTargetSyncWorld;
     private double _fineTerrainRuntimeTargetSyncGameTimeSec = double.NaN;
     private FineTerrainEnergyMechanismVisualScene? _fineTerrainRuntimeTargetSyncEnergyScene;
@@ -114,7 +118,10 @@ internal sealed partial class Simulator3dForm
                     unit.SideLengthM,
                     unit.WidthM,
                     unit.HeightSpanM,
-                    unit.RingScore));
+                    unit.RingScore,
+                    worldNormal.X,
+                    worldNormal.Y,
+                    worldNormal.Z));
             }
 
             targetsByTeam[item.Team] = targets
@@ -135,6 +142,7 @@ internal sealed partial class Simulator3dForm
             if (string.Equals(entity.EntityType, "outpost", StringComparison.OrdinalIgnoreCase))
             {
                 entity.RuntimeOutpostTargets = null;
+                entity.RuntimeOutpostTargetsGameTimeSec = double.NaN;
             }
         }
 
@@ -213,6 +221,7 @@ internal sealed partial class Simulator3dForm
             entity.RuntimeOutpostTargets = targets
                 .OrderBy(candidate => candidate.Id, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
+            entity.RuntimeOutpostTargetsGameTimeSec = _host.World.GameTimeSec;
         }
     }
 
@@ -243,7 +252,6 @@ internal sealed partial class Simulator3dForm
             Matrix4x4 transform = ResolveFineTerrainBaseCompositeTransform(scene.WorldScale, item, entity, includeSlide: true);
             Vector3 sceneAlignmentOffset = Vector3.Zero;
             List<ArmorPlateTarget> targets = entity.RuntimeBaseTargets?.ToList() ?? new List<ArmorPlateTarget>(2);
-            targets.RemoveAll(candidate => string.Equals(candidate.Id, "base_top_slide", StringComparison.OrdinalIgnoreCase));
 
             foreach (FineTerrainBaseUnitVisualItem unit in item.Units)
             {
@@ -252,12 +260,18 @@ internal sealed partial class Simulator3dForm
                     continue;
                 }
 
-                Vector3 centerModel = Vector3.Transform(unit.LocalCentroidModel, transform);
+                Matrix4x4 unitTransform = ResolveFineTerrainBaseUnitTransform(
+                    scene.WorldScale,
+                    item,
+                    unit,
+                    transform,
+                    entity);
+                Vector3 centerModel = Vector3.Transform(unit.LocalCentroidModel, unitTransform);
                 (double worldX, double worldY, double heightM) = ModelPointToWorld(centerModel, scene.WorldScale);
                 worldX += sceneAlignmentOffset.X / Math.Max(_host.World.MetersPerWorldUnit, 1e-6);
                 worldY += sceneAlignmentOffset.Z / Math.Max(_host.World.MetersPerWorldUnit, 1e-6);
                 heightM += sceneAlignmentOffset.Y;
-                Vector3 normalTipModel = Vector3.Transform(unit.LocalCentroidModel + unit.LocalNormalModel, transform);
+                Vector3 normalTipModel = Vector3.Transform(unit.LocalCentroidModel + unit.LocalNormalModel, unitTransform);
                 (double normalWorldX, double normalWorldY, double normalHeightM) = ModelPointToWorld(normalTipModel, scene.WorldScale);
                 normalWorldX += sceneAlignmentOffset.X / Math.Max(_host.World.MetersPerWorldUnit, 1e-6);
                 normalWorldY += sceneAlignmentOffset.Z / Math.Max(_host.World.MetersPerWorldUnit, 1e-6);
@@ -287,7 +301,10 @@ internal sealed partial class Simulator3dForm
                     yawDeg,
                     unit.SideLengthM,
                     unit.WidthM,
-                    unit.HeightSpanM));
+                    unit.HeightSpanM,
+                    NormalXM: worldNormal.X,
+                    NormalYM: worldNormal.Y,
+                    NormalZM: worldNormal.Z));
             }
 
             entity.RuntimeBaseTargets = targets
@@ -391,7 +408,6 @@ internal sealed partial class Simulator3dForm
             IReadOnlyList<ArmorPlateTarget> plates = Array.Empty<ArmorPlateTarget>();
             Matrix4x4 transform;
             Vector3 sceneAlignmentOffset = Vector3.Zero;
-            string? lockedPlateId = null;
             if (entity is not null)
             {
                 plates = SimulationCombatMath.GetArmorPlateTargets(
@@ -401,7 +417,6 @@ internal sealed partial class Simulator3dForm
                     includeOutpostTopArmor: true);
                 transform = ResolveFineTerrainOutpostCompositeTransform(item, entity);
                 sceneAlignmentOffset = ResolveFineTerrainOutpostSceneAlignmentOffset(scene.WorldScale, entity, item, plates);
-                lockedPlateId = ResolveLockedPlateIdFor(entity);
             }
             else
             {
@@ -419,41 +434,14 @@ internal sealed partial class Simulator3dForm
 
             if (item.Triangles.Count > 0)
             {
-                if (entity is not null && !entity.IsAlive)
-                {
-                    if (!TryDrawGpuFineTerrainTintedUnitMesh(
-                            _fineTerrainOutpostBodyMeshCache,
-                            _fineTerrainOutpostSceneKey ?? string.Empty,
-                            $"{item.Team}|{item.Name}|dead_body",
-                            scene.WorldScale,
-                            item.PivotModel,
-                            item.Triangles,
-                            transform,
-                            sceneAlignmentOffset,
-                            Color.FromArgb(248, 8, 9, 11),
-                            0.92f,
-                            Vector3.Zero))
-                    {
-                        DrawFineTerrainColoredTriangles(
-                            null,
-                            scene.WorldScale,
-                            item.Triangles,
-                            transform,
-                            sceneAlignmentOffset,
-                            Color.FromArgb(248, 8, 9, 11),
-                            0.92f);
-                    }
-                }
-                else if (!TryDrawGpuFineTerrainOutpostBody(scene.WorldScale, item, transform, sceneAlignmentOffset))
+                if (!TryDrawGpuFineTerrainOutpostBody(scene.WorldScale, item, transform, sceneAlignmentOffset))
                 {
                     DrawFineTerrainColoredTriangles(
                         null,
                         scene.WorldScale,
                         item.Triangles,
                         transform,
-                        sceneAlignmentOffset,
-                        null,
-                        0f);
+                        sceneAlignmentOffset);
                 }
 
                 drawn = true;
@@ -466,14 +454,9 @@ internal sealed partial class Simulator3dForm
                     continue;
                 }
 
-                bool locked = string.Equals(lockedPlateId, unit.PlateId, StringComparison.OrdinalIgnoreCase) && !unit.IsLightStrip;
-                float flashIntensity = 0f;
-                bool flashing = entity is not null
-                    && IsStructurePlateFlashActive(entity.Id, unit.PlateId, out flashIntensity)
-                    && unit.IsLightStrip;
-                ResolveFineTerrainOutpostUnitTint(item.Team, unit.IsLightStrip, locked, flashing, flashIntensity, entity?.IsAlive ?? true, out Color? tint, out float tintStrength);
-
-                if (TryDrawGpuFineTerrainTintedUnitMesh(
+                Color? flashOverride = ResolveStructurePlateFlashOverride(entity, unit.PlateId);
+                if (flashOverride is null
+                    && TryDrawGpuFineTerrainUnitMesh(
                     _fineTerrainOutpostUnitMeshCache,
                     _fineTerrainOutpostSceneKey ?? string.Empty,
                     $"{item.Team}|{item.Name}|{unit.Name}",
@@ -482,8 +465,6 @@ internal sealed partial class Simulator3dForm
                     unit.Triangles,
                     transform,
                     sceneAlignmentOffset,
-                    tint,
-                    tintStrength,
                     Vector3.Zero))
                 {
                     drawn = true;
@@ -496,8 +477,8 @@ internal sealed partial class Simulator3dForm
                     unit.Triangles,
                     transform,
                     sceneAlignmentOffset,
-                    tint,
-                    tintStrength);
+                    Vector3.Zero,
+                    flashOverride);
                 drawn = true;
             }
         }
@@ -530,9 +511,7 @@ internal sealed partial class Simulator3dForm
                     scene.WorldScale,
                     item.Triangles,
                     transform,
-                    Vector3.Zero,
-                    null,
-                    0f);
+                    Vector3.Zero);
                 drawn = true;
             }
 
@@ -543,16 +522,12 @@ internal sealed partial class Simulator3dForm
                     continue;
                 }
 
-                ResolveFineTerrainOutpostUnitTint(item.Team, unit.IsLightStrip, locked: false, flashing: false, flashIntensity: 0f, isAlive: true, out Color? tint, out float tintStrength);
-
                 DrawFineTerrainColoredTriangles(
                     graphics,
                     scene.WorldScale,
                     unit.Triangles,
                     transform,
-                    Vector3.Zero,
-                    tint,
-                    tintStrength);
+                    Vector3.Zero);
                 drawn = true;
             }
         }
@@ -572,9 +547,12 @@ internal sealed partial class Simulator3dForm
         foreach (FineTerrainBaseVisualItem item in scene.Items)
         {
             SimulationEntity? entity = ResolveFineTerrainBaseEntity(item.Team);
-            string? lockedPlateId = entity is null ? null : ResolveLockedPlateIdFor(entity);
             Matrix4x4 compositeTransform = ResolveFineTerrainBaseCompositeTransform(scene.WorldScale, item, entity, includeSlide: true);
             Vector3 sceneAlignmentOffset = Vector3.Zero;
+            bool outerPanelComposite = FineTerrainBaseVisualCache.IsBaseOuterPanelCompositeName(item.Name);
+            bool armorOpening = entity is not null
+                && outerPanelComposite
+                && ResolveBaseArmorOpenProgress(entity) > 1e-4f;
             if (!IsFineTerrainItemPotentiallyVisible(
                     ModelToScenePoint(Vector3.Transform(item.PivotModel, compositeTransform), scene.WorldScale) + sceneAlignmentOffset,
                     1.15f,
@@ -583,7 +561,7 @@ internal sealed partial class Simulator3dForm
                 continue;
             }
 
-            if (item.Triangles.Count > 0)
+            if (!armorOpening && item.Triangles.Count > 0)
             {
                 if (!TryDrawGpuFineTerrainBaseBody(scene.WorldScale, item, compositeTransform, sceneAlignmentOffset))
                 {
@@ -592,9 +570,7 @@ internal sealed partial class Simulator3dForm
                         scene.WorldScale,
                         item.Triangles,
                         compositeTransform,
-                        sceneAlignmentOffset,
-                        null,
-                        0f);
+                        sceneAlignmentOffset);
                 }
                 drawn = true;
             }
@@ -606,24 +582,25 @@ internal sealed partial class Simulator3dForm
                     continue;
                 }
 
-                bool locked = string.Equals(lockedPlateId, unit.PlateId, StringComparison.OrdinalIgnoreCase) && !unit.IsLightStrip;
-                float flashDarkness = 0f;
-                bool flashing = entity is not null
-                    && IsStructurePlateFlashActive(entity.Id, unit.PlateId, out flashDarkness)
-                    && unit.IsLightStrip;
-                ResolveFineTerrainBaseUnitTint(item.Team, unit.IsLightStrip, locked, flashing, flashDarkness, out Color? tint, out float tintStrength);
-
-                if (TryDrawGpuFineTerrainTintedUnitMesh(
+                Matrix4x4 unitTransform = entity is null
+                    ? compositeTransform
+                    : ResolveFineTerrainBaseUnitTransform(
+                        scene.WorldScale,
+                        item,
+                        unit,
+                        compositeTransform,
+                        entity);
+                Color? flashOverride = ResolveStructurePlateFlashOverride(entity, unit.PlateId);
+                if (flashOverride is null
+                    && TryDrawGpuFineTerrainUnitMesh(
                     _fineTerrainBaseUnitMeshCache,
                     _fineTerrainBaseSceneKey ?? string.Empty,
                     $"{item.Team}|{item.Name}|{unit.Name}",
                     scene.WorldScale,
                     item.PivotModel,
                     unit.Triangles,
-                    compositeTransform,
+                    unitTransform,
                     sceneAlignmentOffset,
-                    tint,
-                    tintStrength,
                     Vector3.Zero))
                 {
                     drawn = true;
@@ -634,10 +611,10 @@ internal sealed partial class Simulator3dForm
                     null,
                     scene.WorldScale,
                     unit.Triangles,
-                    compositeTransform,
+                    unitTransform,
                     sceneAlignmentOffset,
-                    tint,
-                    tintStrength);
+                    Vector3.Zero,
+                    flashOverride);
                 drawn = true;
             }
         }
@@ -657,20 +634,21 @@ internal sealed partial class Simulator3dForm
         foreach (FineTerrainBaseVisualItem item in scene.Items)
         {
             SimulationEntity? entity = ResolveFineTerrainBaseEntity(item.Team);
-            string? lockedPlateId = entity is null ? null : ResolveLockedPlateIdFor(entity);
             Matrix4x4 compositeTransform = ResolveFineTerrainBaseCompositeTransform(scene.WorldScale, item, entity, includeSlide: true);
             Vector3 sceneAlignmentOffset = Vector3.Zero;
+            bool outerPanelComposite = FineTerrainBaseVisualCache.IsBaseOuterPanelCompositeName(item.Name);
+            bool armorOpening = entity is not null
+                && outerPanelComposite
+                && ResolveBaseArmorOpenProgress(entity) > 1e-4f;
 
-            if (item.Triangles.Count > 0)
+            if (!armorOpening && item.Triangles.Count > 0)
             {
                 DrawFineTerrainColoredTriangles(
                     graphics,
                     scene.WorldScale,
                     item.Triangles,
                     compositeTransform,
-                    sceneAlignmentOffset,
-                    null,
-                    0f);
+                    sceneAlignmentOffset);
                 drawn = true;
             }
 
@@ -681,20 +659,20 @@ internal sealed partial class Simulator3dForm
                     continue;
                 }
 
-                bool locked = string.Equals(lockedPlateId, unit.PlateId, StringComparison.OrdinalIgnoreCase) && !unit.IsLightStrip;
-                float flashDarkness = 0f;
-                bool flashing = entity is not null
-                    && IsStructurePlateFlashActive(entity.Id, unit.PlateId, out flashDarkness)
-                    && unit.IsLightStrip;
-                ResolveFineTerrainBaseUnitTint(item.Team, unit.IsLightStrip, locked, flashing, flashDarkness, out Color? tint, out float tintStrength);
+                Matrix4x4 unitTransform = entity is null
+                    ? compositeTransform
+                    : ResolveFineTerrainBaseUnitTransform(
+                        scene.WorldScale,
+                        item,
+                        unit,
+                        compositeTransform,
+                        entity);
                 DrawFineTerrainColoredTriangles(
                     graphics,
                     scene.WorldScale,
                     unit.Triangles,
-                    compositeTransform,
-                    sceneAlignmentOffset,
-                    tint,
-                    tintStrength);
+                    unitTransform,
+                    sceneAlignmentOffset);
                 drawn = true;
             }
         }
@@ -756,13 +734,9 @@ internal sealed partial class Simulator3dForm
         }
 
         float activatedRatio = ResolveFineTerrainEnergyActivationRatio(teamState);
-        float flashPulse = 0f;
-        bool recentFlash = teamState.EnergyLastHitArmIndex >= 0
-            && IsFineTerrainEnergyTripleFlashActive(_host.World.GameTimeSec, teamState.EnergyLastHitFlashEndSec, out flashPulse);
         Color teamColor = ResolveTeamColor(item.Team);
-        Color litColor = recentFlash
-            ? BlendColor(teamColor, Color.White, 0.22f + flashPulse * 0.20f)
-            : teamColor;
+        bool completionFlashBlack = IsFineTerrainEnergyCompletionFlashBlack(_host.World.GameTimeSec, teamState);
+        Color litColor = completionFlashBlack ? Color.FromArgb(236, 8, 9, 11) : teamColor;
         Color darkColor = Color.FromArgb(236, 8, 9, 11);
 
         if (_gpuGeometryPass && UseGpuRenderer)
@@ -922,151 +896,75 @@ internal sealed partial class Simulator3dForm
         _ = worldScale;
         _ = compositeTransform;
         _ = sceneAlignmentOffset;
-        if (!_host.World.Teams.TryGetValue(item.Team, out SimulationTeamState? teamState))
+        if (!ShouldRenderGeneratedEnergyMechanismRingOverlays())
         {
             return;
         }
+        // Ring highlight feedback is folded into the ring-unit pass so the lit
+        // color replaces the dark authored ring instead of stacking over it.
+    }
 
-        SimulationEntity? mechanism = ResolveFineTerrainEnergyMechanismEntity();
-        if (mechanism is null)
+    private bool TryResolveFineTerrainEnergyRingHighlightColor(
+        FineTerrainEnergyMechanismVisualItem item,
+        FineTerrainEnergyMechanismUnitVisualItem unit,
+        out Color color)
+    {
+        color = default;
+        if (unit.Kind != FineTerrainEnergyUnitKind.Ring
+            || unit.RingScore <= 0
+            || !_host.World.Teams.TryGetValue(item.Team, out SimulationTeamState? teamState))
         {
-            return;
+            return false;
         }
 
+        Color teamColor = ResolveMapTeamLineColor(item.Team);
         bool showActive = string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
             && teamState.EnergyNextModuleDelaySec <= 1e-6
             && teamState.EnergyCurrentLitMask != 0;
-        bool showLastHit = teamState.EnergyLastHitArmIndex >= 0
-            && teamState.EnergyLastRingScore > 0
+        bool completionFlashDark = IsFineTerrainEnergyCompletionFlashBlack(_host.World.GameTimeSec, teamState);
+        int persistentRingScore = unit.ArmIndex >= 0 && unit.ArmIndex < teamState.EnergyHitRingsByArm.Length
+            ? Math.Clamp(teamState.EnergyHitRingsByArm[unit.ArmIndex], 0, 10)
+            : 0;
+        bool activeArm = showActive && (teamState.EnergyCurrentLitMask & (1 << unit.ArmIndex)) != 0;
+        bool hitFlashing = teamState.EnergyLastHitArmIndex == unit.ArmIndex
+            && teamState.EnergyLastRingScore == unit.RingScore
             && _host.World.GameTimeSec <= teamState.EnergyLastHitFlashEndSec;
-        bool hasPersistentRings = false;
-        for (int index = 0; index < teamState.EnergyHitRingsByArm.Length; index++)
+        bool hitFlashDark = hitFlashing
+            && IsFineTerrainEnergyHitFlashBlack(_host.World.GameTimeSec, teamState.EnergyLastHitFlashEndSec);
+
+        if (activeArm && persistentRingScore <= 0)
         {
-            if (teamState.EnergyHitRingsByArm[index] > 0)
+            if (unit.RingScore == 4)
             {
-                hasPersistentRings = true;
-                break;
+                color = ResolveEnergyMechanismRingLitColor(teamColor, emphasized: false);
+                return true;
             }
+
+            if (unit.RingScore == 7)
+            {
+                color = ResolveEnergyMechanismRingLitColor(teamColor, emphasized: true);
+                return true;
+            }
+
+            return false;
         }
 
-        if (!showActive && !showLastHit && !hasPersistentRings)
+        if (persistentRingScore <= 0 || persistentRingScore != unit.RingScore)
         {
-            return;
+            return false;
         }
 
-        double metersPerWorldUnit = Math.Max(_host.World.MetersPerWorldUnit, 1e-6);
-        Color teamColor = ResolveTeamColor(item.Team);
-        Color activeColor = Color.FromArgb(
-            244,
-            Math.Min(255, teamColor.R + 52),
-            Math.Min(255, teamColor.G + 52),
-            Math.Min(255, teamColor.B + 52));
-        Color ringHitColor = Color.FromArgb(
-            250,
-            Math.Min(255, teamColor.R + 70),
-            Math.Min(255, teamColor.G + 70),
-            Math.Min(255, teamColor.B + 70));
-        Color ringSteadyColor = Color.FromArgb(232, teamColor);
-
-        foreach (ArmorPlateTarget plate in SimulationCombatMath.GetEnergyMechanismTargets(
-                     mechanism,
-                     metersPerWorldUnit,
-                     _host.World.GameTimeSec,
-                     item.Team,
-                     teamState))
-        {
-            if (!SimulationCombatMath.TryParseEnergyArmIndex(plate.Id, out _, out int armIndex))
-            {
-                continue;
-            }
-
-            Vector3 diskCenter = ToScenePoint(plate.X, plate.Y, (float)plate.HeightM);
-            ResolveEnergyDiskAxes(plate, out Vector3 normal, out Vector3 upAxis);
-            float diskRadius = Math.Max(0.06f, (float)Math.Max(plate.WidthM, plate.HeightSpanM) * 0.5f);
-            int persistentRingScore = armIndex >= 0 && armIndex < teamState.EnergyHitRingsByArm.Length
-                ? Math.Clamp(teamState.EnergyHitRingsByArm[armIndex], 0, 10)
-                : 0;
-            int overlayRingScore = showActive
-                ? 1
-                : persistentRingScore > 0
-                    ? persistentRingScore
-                    : Math.Max(1, plate.EnergyRingScore);
-            if (TryResolveFineTerrainEnergyOverlayPose(
-                    item,
-                    worldScale,
-                    compositeTransform,
-                    sceneAlignmentOffset,
-                    armIndex,
-                    overlayRingScore,
-                    out Vector3 overlayCenter,
-                    out Vector3 overlayNormal,
-                    out Vector3 overlayUpAxis))
-            {
-                diskCenter = overlayCenter;
-                normal = overlayNormal;
-                upAxis = overlayUpAxis;
-            }
-
-            if (persistentRingScore <= 0)
-            {
-                continue;
-            }
-
-            float outer = diskRadius * (11 - persistentRingScore) / 10f;
-            float inner = persistentRingScore >= 10 ? 0f : diskRadius * (10 - persistentRingScore) / 10f;
-            bool flashing = showLastHit
-                && teamState.EnergyLastHitArmIndex == armIndex
-                && teamState.EnergyLastRingScore == persistentRingScore;
-            Color ringColor = flashing
-                ? (((_host.World.GameTimeSec * 6.25) % 1.0) < 0.5
-                    ? Color.FromArgb(232, 8, 9, 11)
-                    : ringSteadyColor)
-                : ringSteadyColor;
-
-            if (graphics is null)
-            {
-                DrawGpuAnnulusDoubleSided(
-                    diskCenter,
-                    normal,
-                    upAxis,
-                    inner,
-                    Math.Max(inner + (flashing ? 0.004f : 0.003f), outer),
-                    ringColor,
-                    24,
-                    flashing ? 0.0140f : 0.0130f);
-            }
-            else
-            {
-                DrawCpuAnnulusDoubleSided(
-                    graphics,
-                    diskCenter,
-                    normal,
-                    upAxis,
-                    inner,
-                    Math.Max(inner + (flashing ? 0.004f : 0.003f), outer),
-                    ringColor,
-                    24,
-                    flashing ? 0.0140f : 0.0130f);
-            }
-        }
+        color = completionFlashDark || hitFlashDark
+            ? ResolveEnergyMechanismRingFlashColor(teamColor)
+            : ResolveEnergyMechanismRingLitColor(teamColor, emphasized: hitFlashing || persistentRingScore >= 7);
+        return true;
     }
 
-    private bool TryResolveFineTerrainEnergyOverlayPose(
+    private static FineTerrainEnergyMechanismUnitVisualItem? ResolveFineTerrainEnergyRingUnit(
         FineTerrainEnergyMechanismVisualItem item,
-        FineTerrainWorldScale worldScale,
-        Matrix4x4 compositeTransform,
-        Vector3 sceneAlignmentOffset,
         int armIndex,
-        int preferredRingScore,
-        out Vector3 center,
-        out Vector3 normal,
-        out Vector3 upAxis)
-    {
-        center = Vector3.Zero;
-        normal = Vector3.UnitX;
-        upAxis = Vector3.UnitY;
-
-        FineTerrainEnergyMechanismUnitVisualItem? unit = item.Units
+        int preferredRingScore)
+        => item.Units
             .Where(candidate => candidate.Kind == FineTerrainEnergyUnitKind.Ring && candidate.ArmIndex == armIndex)
             .OrderBy(candidate =>
             {
@@ -1075,47 +973,134 @@ internal sealed partial class Simulator3dForm
             })
             .ThenBy(candidate => candidate.RingScore <= 0 ? int.MaxValue : candidate.RingScore)
             .FirstOrDefault();
-        if (unit is null)
+
+    private void DrawFineTerrainEnergyRingOverlayTriangles(
+        Graphics? graphics,
+        FineTerrainWorldScale worldScale,
+        FineTerrainEnergyMechanismVisualItem item,
+        FineTerrainEnergyMechanismUnitVisualItem ringUnit,
+        Matrix4x4 transform,
+        Vector3 sceneAlignmentOffset,
+        Color ringColor)
+    {
+        if (ringUnit.Triangles.Count == 0)
         {
-            return false;
+            return;
         }
 
-        center = ModelToScenePoint(Vector3.Transform(unit.LocalCenterModel, compositeTransform), worldScale)
-            + sceneAlignmentOffset
-            + ResolveFineTerrainEnergyUnitSceneLift(unit, worldScale, compositeTransform);
-        Vector3 normalTipScene = ModelToScenePoint(
-            Vector3.Transform(unit.LocalCenterModel + unit.LocalNormalModel, compositeTransform),
-            worldScale) + sceneAlignmentOffset;
-        Vector3 sceneNormal = normalTipScene - center;
-        if (sceneNormal.LengthSquared() <= 1e-8f)
+        Color fill = IsDarkFlashColor(ringColor)
+            ? Color.FromArgb(248, 2, 3, 4)
+            : Color.FromArgb(255, ringColor.R, ringColor.G, ringColor.B);
+        Vector3 extraSceneOffset = ResolveFineTerrainEnergyUnitSceneLift(ringUnit, worldScale, transform)
+            + ResolveFineTerrainEnergyUnitNormalOffset(ringUnit, worldScale, transform, 0.0180f);
+        ResolveFineTerrainEnergyRingOverlayPose(
+            item,
+            ringUnit,
+            worldScale,
+            transform,
+            sceneAlignmentOffset,
+            extraSceneOffset,
+            out Vector3 ringCenter,
+            out Vector3 ringNormal,
+            out Vector3 ringUp,
+            out float innerRadius,
+            out float outerRadius);
+
+        if (_gpuGeometryPass && UseGpuRenderer)
         {
-            return false;
+            foreach (FineTerrainColoredTriangle triangle in ringUnit.Triangles)
+            {
+                Vector3 a = ModelToScenePoint(Vector3.Transform(triangle.A, transform), worldScale) + sceneAlignmentOffset + extraSceneOffset;
+                Vector3 b = ModelToScenePoint(Vector3.Transform(triangle.B, transform), worldScale) + sceneAlignmentOffset + extraSceneOffset;
+                Vector3 c = ModelToScenePoint(Vector3.Transform(triangle.C, transform), worldScale) + sceneAlignmentOffset + extraSceneOffset;
+                AppendOrDrawGpuTriangle(a, b, c, fill);
+                AppendOrDrawGpuTriangle(a, c, b, fill);
+            }
+
+            return;
         }
 
-        normal = Vector3.Normalize(sceneNormal);
-        Vector3 pivotScene = ModelToScenePoint(Vector3.Transform(item.PivotModel, compositeTransform), worldScale) + sceneAlignmentOffset;
-        Vector3 radial = center - pivotScene;
-        Vector3 tangentUp = radial - normal * Vector3.Dot(radial, normal);
-        if (tangentUp.LengthSquared() <= 1e-8f)
+        if (graphics is null)
         {
-            Vector3 worldUp = MathF.Abs(Vector3.Dot(normal, Vector3.UnitY)) > 0.98f
-                ? Vector3.UnitZ
-                : Vector3.UnitY;
-            tangentUp = worldUp - normal * Vector3.Dot(worldUp, normal);
+            return;
         }
 
-        if (tangentUp.LengthSquared() <= 1e-8f)
+        var faces = new List<ProjectedFace>(Math.Min(ringUnit.Triangles.Count, 384));
+        foreach (FineTerrainColoredTriangle triangle in ringUnit.Triangles)
         {
-            tangentUp = Vector3.UnitZ;
+            Vector3 a = ModelToScenePoint(Vector3.Transform(triangle.A, transform), worldScale) + sceneAlignmentOffset + extraSceneOffset;
+            Vector3 b = ModelToScenePoint(Vector3.Transform(triangle.B, transform), worldScale) + sceneAlignmentOffset + extraSceneOffset;
+            Vector3 c = ModelToScenePoint(Vector3.Transform(triangle.C, transform), worldScale) + sceneAlignmentOffset + extraSceneOffset;
+            if (TryBuildProjectedFace(new[] { a, b, c }, fill, fill, out ProjectedFace face))
+            {
+                faces.Add(face);
+            }
         }
 
-        upAxis = Vector3.Normalize(tangentUp);
-        return true;
+        if (faces.Count > 0)
+        {
+            DrawProjectedFaceBatch(graphics, faces, 0.98f);
+        }
+
     }
 
-    private static bool IsFineTerrainEnergyTripleFlashActive(double currentTimeSec, double flashEndTimeSec, out float pulse)
+    private void ResolveFineTerrainEnergyRingOverlayPose(
+        FineTerrainEnergyMechanismVisualItem item,
+        FineTerrainEnergyMechanismUnitVisualItem ringUnit,
+        FineTerrainWorldScale worldScale,
+        Matrix4x4 transform,
+        Vector3 sceneAlignmentOffset,
+        Vector3 extraSceneOffset,
+        out Vector3 center,
+        out Vector3 normal,
+        out Vector3 upAxis,
+        out float innerRadius,
+        out float outerRadius)
     {
-        pulse = 0f;
+        center = ModelToScenePoint(Vector3.Transform(ringUnit.LocalCenterModel, transform), worldScale)
+            + sceneAlignmentOffset
+            + extraSceneOffset;
+        Vector3 normalTipScene = ModelToScenePoint(
+            Vector3.Transform(ringUnit.LocalCenterModel + ringUnit.LocalNormalModel, transform),
+            worldScale) + sceneAlignmentOffset;
+        Vector3 sceneNormal = normalTipScene - center;
+        normal = sceneNormal.LengthSquared() <= 1e-8f ? Vector3.UnitY : Vector3.Normalize(sceneNormal);
+
+        Vector3 pivotScene = ModelToScenePoint(Vector3.Transform(item.PivotModel, transform), worldScale) + sceneAlignmentOffset;
+        Vector3 radial = center - pivotScene;
+        Vector3 tangent = radial - normal * Vector3.Dot(radial, normal);
+        if (tangent.LengthSquared() <= 1e-8f)
+        {
+            tangent = MathF.Abs(Vector3.Dot(normal, Vector3.UnitY)) > 0.96f
+                ? Vector3.UnitX
+                : Vector3.UnitY;
+            tangent -= normal * Vector3.Dot(tangent, normal);
+        }
+
+        upAxis = tangent.LengthSquared() <= 1e-8f ? Vector3.UnitZ : Vector3.Normalize(tangent);
+        float measuredRadius = Math.Max(0.020f, (float)Math.Max(ringUnit.WidthM, ringUnit.HeightSpanM) * 0.54f);
+        float bandWidth = Math.Clamp(measuredRadius * 0.34f, 0.014f, 0.045f);
+        outerRadius = measuredRadius + bandWidth * 0.18f;
+        innerRadius = Math.Max(0.002f, outerRadius - bandWidth);
+    }
+
+    private static bool IsDarkFlashColor(Color color)
+        => color.R <= 16 && color.G <= 16 && color.B <= 16;
+
+    private static Color ResolveEnergyMechanismRingLitColor(Color teamColor, bool emphasized)
+    {
+        Color tinted = BlendColor(teamColor, Color.White, emphasized ? 0.42f : 0.26f);
+        return Color.FromArgb(emphasized ? 255 : 248, tinted);
+    }
+
+    private static Color ResolveEnergyMechanismRingFlashColor(Color teamColor)
+    {
+        Color tinted = BlendColor(teamColor, Color.Black, 0.24f);
+        return Color.FromArgb(242, tinted);
+    }
+
+    private static bool IsFineTerrainEnergyHitFlashBlack(double currentTimeSec, double flashEndTimeSec)
+    {
         double remainingSec = flashEndTimeSec - currentTimeSec;
         if (remainingSec <= 1e-6)
         {
@@ -1124,10 +1109,26 @@ internal sealed partial class Simulator3dForm
 
         double clampedRemainingSec = Math.Min(FineTerrainEnergyDoubleFlashDurationSec, remainingSec);
         double elapsedSec = FineTerrainEnergyDoubleFlashDurationSec - clampedRemainingSec;
-        double phaseDurationSec = FineTerrainEnergyDoubleFlashDurationSec / 6.0;
-        int phaseIndex = Math.Clamp((int)(elapsedSec / Math.Max(phaseDurationSec, 1e-6)), 0, 5);
-        pulse = phaseIndex is 0 or 2 or 4 ? 1.0f : 0.18f;
-        return true;
+        int phaseIndex = Math.Clamp((int)(elapsedSec / FineTerrainEnergyFlashIntervalSec), 0, 3);
+        return phaseIndex is 0 or 2;
+    }
+
+    private static bool IsFineTerrainEnergyCompletionFlashBlack(double currentTimeSec, SimulationTeamState teamState)
+    {
+        if (!string.Equals(teamState.EnergyMechanismState, "activated", StringComparison.OrdinalIgnoreCase)
+            || teamState.EnergyStateStartTimeSec <= 1e-6)
+        {
+            return false;
+        }
+
+        double elapsedSec = currentTimeSec - teamState.EnergyStateStartTimeSec;
+        if (elapsedSec < 0.0 || elapsedSec >= FineTerrainEnergyCompletionFlashDurationSec)
+        {
+            return false;
+        }
+
+        int phaseIndex = Math.Clamp((int)(elapsedSec / FineTerrainEnergyFlashIntervalSec), 0, 15);
+        return phaseIndex % 2 == 0;
     }
 
     private SimulationEntity? ResolveFineTerrainEnergyMechanismEntity()
@@ -1144,112 +1145,6 @@ internal sealed partial class Simulator3dForm
         }
 
         return null;
-    }
-
-    private static void ResolveFineTerrainEnergyUnitBaseTint(
-        FineTerrainEnergyMechanismUnitVisualItem unit,
-        out Color tint,
-        out float tintStrength)
-    {
-        switch (unit.Kind)
-        {
-            case FineTerrainEnergyUnitKind.LightArm:
-                tint = Color.FromArgb(244, 8, 9, 11);
-                tintStrength = 0.98f;
-                return;
-            case FineTerrainEnergyUnitKind.CenterMark:
-                tint = Color.FromArgb(232, 38, 40, 44);
-                tintStrength = 0.86f;
-                return;
-            default:
-                tint = Color.FromArgb(232, 54, 57, 63);
-                tintStrength = 0.82f;
-                return;
-        }
-    }
-
-    private bool TryResolveFineTerrainEnergyUnitDynamicTint(
-        string team,
-        FineTerrainEnergyMechanismUnitVisualItem unit,
-        out Color tint,
-        out float tintStrength)
-    {
-        tint = Color.Empty;
-        tintStrength = 0f;
-        if (!_host.World.Teams.TryGetValue(team, out SimulationTeamState? teamState))
-        {
-            return false;
-        }
-
-        Color teamColor = ResolveTeamColor(team);
-        bool activatingState = string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase);
-        bool activatedState = string.Equals(teamState.EnergyMechanismState, "activated", StringComparison.OrdinalIgnoreCase)
-            && teamState.EnergyBuffTimerSec > 1e-6;
-        bool showActive = activatingState
-            && teamState.EnergyNextModuleDelaySec <= 1e-6
-            && teamState.EnergyCurrentLitMask != 0;
-        bool activeArm = unit.ArmIndex >= 0
-            && showActive
-            && (teamState.EnergyCurrentLitMask & (1 << unit.ArmIndex)) != 0;
-        int persistentRingScore = unit.ArmIndex >= 0 && unit.ArmIndex < teamState.EnergyHitRingsByArm.Length
-            ? Math.Clamp(teamState.EnergyHitRingsByArm[unit.ArmIndex], 0, 10)
-            : 0;
-        float flashPulse = 0f;
-        bool recentHitArm = unit.ArmIndex >= 0
-            && teamState.EnergyLastHitArmIndex == unit.ArmIndex
-            && IsFineTerrainEnergyTripleFlashActive(_host.World.GameTimeSec, teamState.EnergyLastHitFlashEndSec, out flashPulse);
-
-        switch (unit.Kind)
-        {
-            case FineTerrainEnergyUnitKind.Ring:
-            {
-                bool hitFlash = unit.RingScore > 0
-                    && recentHitArm
-                    && teamState.EnergyLastRingScore == unit.RingScore;
-                bool persistent = unit.RingScore > 0 && persistentRingScore == unit.RingScore;
-                bool pendingActive = activeArm
-                    && persistentRingScore <= 0
-                    && (unit.RingScore == 4 || unit.RingScore == 7);
-                if (!hitFlash && !persistent && !pendingActive)
-                {
-                    return false;
-                }
-
-                tint = hitFlash
-                    ? (flashPulse > 0.5f ? Color.FromArgb(238, 8, 9, 11) : Color.FromArgb(240, teamColor))
-                    : pendingActive
-                        ? Color.FromArgb(236, BlendColor(teamColor, Color.White, 0.10f))
-                        : Color.FromArgb(240, BlendColor(teamColor, Color.White, 0.18f));
-                tintStrength = hitFlash
-                    ? 1.0f
-                    : pendingActive
-                        ? 0.94f
-                        : 0.98f;
-                return true;
-            }
-
-            case FineTerrainEnergyUnitKind.LightArm:
-            {
-                bool lit = activatedState || activeArm || persistentRingScore > 0;
-                if (!recentHitArm && !lit)
-                {
-                    return false;
-                }
-
-                tint = recentHitArm
-                    ? (flashPulse > 0.5f ? Color.FromArgb(238, 8, 9, 11) : Color.FromArgb(236, teamColor))
-                    : Color.FromArgb(activeArm ? 248 : activatedState ? 236 : 228, teamColor);
-                tintStrength = recentHitArm
-                    ? 1.0f
-                    : 0.96f;
-                return true;
-            }
-
-            case FineTerrainEnergyUnitKind.CenterMark:
-                return false;
-        }
-
-        return false;
     }
 
     private void DrawFineTerrainEnergyUnitTriangles(
@@ -1271,17 +1166,18 @@ internal sealed partial class Simulator3dForm
                 continue;
             }
 
-            ResolveFineTerrainEnergyUnitBaseTint(unit, out Color baseTint, out float tintStrength);
-            Color tint = baseTint;
-            if (TryResolveFineTerrainEnergyUnitDynamicTint(item.Team, unit, out Color dynamicTint, out float dynamicStrength))
+            Vector3 extraSceneOffset = ResolveFineTerrainEnergyUnitSceneLift(unit, worldScale, compositeTransform);
+            Color? overrideColor = TryResolveFineTerrainEnergyRingHighlightColor(item, unit, out Color litColor)
+                ? litColor
+                : null;
+            if (overrideColor is not null)
             {
-                tint = dynamicTint;
-                tintStrength = dynamicStrength;
+                extraSceneOffset += ResolveFineTerrainEnergyUnitNormalOffset(unit, worldScale, compositeTransform, 0.0085f);
             }
 
-            Vector3 extraSceneOffset = ResolveFineTerrainEnergyUnitSceneLift(unit, worldScale, compositeTransform);
-            if (graphics is null
-                && TryDrawGpuFineTerrainTintedUnitMesh(
+            if (overrideColor is null
+                && graphics is null
+                && TryDrawGpuFineTerrainUnitMesh(
                     _fineTerrainEnergyUnitMeshCache,
                     _fineTerrainEnergySceneKey ?? string.Empty,
                     $"{item.CompositeId}|{unit.Name}",
@@ -1290,8 +1186,6 @@ internal sealed partial class Simulator3dForm
                     unit.Triangles,
                     compositeTransform,
                     sceneAlignmentOffset,
-                    tint,
-                    tintStrength,
                     extraSceneOffset))
             {
                 continue;
@@ -1303,9 +1197,8 @@ internal sealed partial class Simulator3dForm
                 unit.Triangles,
                 compositeTransform,
                 sceneAlignmentOffset,
-                tint,
-                tintStrength,
-                extraSceneOffset);
+                extraSceneOffset,
+                overrideColor);
         }
     }
 
@@ -1540,7 +1433,7 @@ internal sealed partial class Simulator3dForm
         };
     }
 
-    private bool TryDrawGpuFineTerrainTintedUnitMesh(
+    private bool TryDrawGpuFineTerrainUnitMesh(
         Dictionary<string, FineTerrainStaticMeshCache> cacheMap,
         string sceneKey,
         string meshKey,
@@ -1549,8 +1442,6 @@ internal sealed partial class Simulator3dForm
         IReadOnlyList<FineTerrainColoredTriangle> triangles,
         Matrix4x4 compositeTransform,
         Vector3 sceneAlignmentOffset,
-        Color? tint,
-        float tintStrength,
         Vector3 extraSceneOffset)
     {
         if (!_gpuBufferApiReady || _glGenBuffers is null || _glBindBuffer is null || _glBufferData is null)
@@ -1558,13 +1449,10 @@ internal sealed partial class Simulator3dForm
             return false;
         }
 
-        string tintKey = tint is null
-            ? "none"
-            : $"{tint.Value.ToArgb():X8}_{Math.Clamp((int)MathF.Round(tintStrength * 1000f), 0, 1000)}";
-        string cacheKey = $"{sceneKey}|{meshKey}|{tintKey}";
+        string cacheKey = $"{sceneKey}|{meshKey}";
         if (!cacheMap.TryGetValue(cacheKey, out FineTerrainStaticMeshCache? cache))
         {
-            cache = BuildFineTerrainTintedMeshCache(worldScale, pivotModel, triangles, tint, tintStrength);
+            cache = BuildFineTerrainMeshCache(worldScale, pivotModel, triangles);
             if (cache is null)
             {
                 return false;
@@ -1583,12 +1471,10 @@ internal sealed partial class Simulator3dForm
         return true;
     }
 
-    private FineTerrainStaticMeshCache? BuildFineTerrainTintedMeshCache(
+    private FineTerrainStaticMeshCache? BuildFineTerrainMeshCache(
         FineTerrainWorldScale worldScale,
         Vector3 pivotModel,
-        IReadOnlyList<FineTerrainColoredTriangle> triangles,
-        Color? tint,
-        float tintStrength)
+        IReadOnlyList<FineTerrainColoredTriangle> triangles)
     {
         if (triangles.Count == 0)
         {
@@ -1599,7 +1485,7 @@ internal sealed partial class Simulator3dForm
         var vertices = new List<GpuVertex>(triangles.Count * 3);
         foreach (FineTerrainColoredTriangle triangle in triangles)
         {
-            Color fill = ResolveFineTerrainTriangleColor(triangle.Color, tint, tintStrength);
+            Color fill = ResolveFineTerrainTriangleColor(triangle.Color);
             vertices.Add(new GpuVertex(ModelToScenePoint(triangle.A, worldScale) - pivotScene, fill));
             vertices.Add(new GpuVertex(ModelToScenePoint(triangle.B, worldScale) - pivotScene, fill));
             vertices.Add(new GpuVertex(ModelToScenePoint(triangle.C, worldScale) - pivotScene, fill));
@@ -1764,6 +1650,23 @@ internal sealed partial class Simulator3dForm
         return ToScenePoint(worldX, worldY, (float)heightM);
     }
 
+    private Vector3 CollisionShapeModelToScenePoint(Vector3 modelPoint, FineTerrainWorldScale worldScale)
+    {
+        double fieldLengthM = _host.MapPreset.FieldLengthM > 1e-6
+            ? _host.MapPreset.FieldLengthM
+            : Math.Max(1e-6, worldScale.MapLengthXMeters);
+        double fieldWidthM = _host.MapPreset.FieldWidthM > 1e-6
+            ? _host.MapPreset.FieldWidthM
+            : Math.Max(1e-6, worldScale.MapLengthZMeters);
+        double centeredXMeters = (modelPoint.X - worldScale.ModelCenter.X) * worldScale.XMetersPerModelUnit;
+        double centeredZMeters = (modelPoint.Z - worldScale.ModelCenter.Z) * worldScale.ZMetersPerModelUnit;
+        double metersPerWorldUnit = Math.Max(_host.World.MetersPerWorldUnit, 1e-6);
+        double worldX = (fieldLengthM * 0.5 + centeredXMeters) / metersPerWorldUnit;
+        double worldY = (fieldWidthM * 0.5 + centeredZMeters) / metersPerWorldUnit;
+        double heightM = Math.Max(0.0, (modelPoint.Y - worldScale.ModelMinY) * worldScale.YMetersPerModelUnit);
+        return ToScenePoint(worldX, worldY, (float)heightM);
+    }
+
     private (double WorldX, double WorldY, double HeightM) ModelPointToWorld(Vector3 modelPoint, FineTerrainWorldScale worldScale)
     {
         (double worldX, double worldY, _) = FineTerrainAnnotationWorldSpace.ModelPointToWorld(
@@ -1838,20 +1741,17 @@ internal sealed partial class Simulator3dForm
 
             Matrix4x4 transform = ResolveFineTerrainOutpostCompositeTransform(item, entity);
             Vector3 sceneAlignmentOffset = ResolveFineTerrainOutpostSceneAlignmentOffset(scene.WorldScale, entity, item, plates);
-            bool drawBody = renderPass != StructureRenderPass.DynamicArmor;
+            bool outerPanelComposite = FineTerrainBaseVisualCache.IsBaseOuterPanelCompositeName(item.Name);
+            bool drawBody = renderPass != StructureRenderPass.DynamicArmor && !outerPanelComposite;
             bool drawUnits = renderPass != StructureRenderPass.StaticBody;
             if (drawBody && item.Triangles.Count > 0)
             {
-                Color? bodyTint = entity.IsAlive ? null : Color.FromArgb(248, 8, 9, 11);
-                float bodyTintStrength = entity.IsAlive ? 0f : 0.92f;
                 DrawFineTerrainColoredTriangles(
                     graphics,
                     scene.WorldScale,
                     item.Triangles,
                     transform,
-                    sceneAlignmentOffset,
-                    bodyTint,
-                    bodyTintStrength);
+                    sceneAlignmentOffset);
                 drawn = true;
             }
 
@@ -1867,18 +1767,15 @@ internal sealed partial class Simulator3dForm
                     continue;
                 }
 
-                bool locked = entity.IsAlive && string.Equals(lockedPlateId, unit.PlateId, StringComparison.OrdinalIgnoreCase) && !unit.IsLightStrip;
-                bool flashing = IsStructurePlateFlashActive(entity.Id, unit.PlateId, out float flashIntensity) && unit.IsLightStrip;
-                ResolveFineTerrainOutpostUnitTint(item.Team, unit.IsLightStrip, locked, flashing, flashIntensity, entity.IsAlive, out Color? tint, out float tintStrength);
-
+                Color? flashOverride = ResolveStructurePlateFlashOverride(entity, unit.PlateId);
                 DrawFineTerrainColoredTriangles(
                     graphics,
                     scene.WorldScale,
                     unit.Triangles,
                     transform,
                     sceneAlignmentOffset,
-                    tint,
-                    tintStrength);
+                    Vector3.Zero,
+                    flashOverride);
                 drawn = true;
             }
         }
@@ -1904,7 +1801,9 @@ internal sealed partial class Simulator3dForm
 
             Matrix4x4 compositeTransform = ResolveFineTerrainBaseCompositeTransform(scene.WorldScale, item, entity, includeSlide: true);
             Vector3 sceneAlignmentOffset = Vector3.Zero;
-            bool drawBody = renderPass != StructureRenderPass.DynamicArmor;
+            bool outerPanelComposite = FineTerrainBaseVisualCache.IsBaseOuterPanelCompositeName(item.Name);
+            bool armorOpening = outerPanelComposite && ResolveBaseArmorOpenProgress(entity) > 1e-4f;
+            bool drawBody = renderPass != StructureRenderPass.DynamicArmor && !armorOpening;
             bool drawUnits = renderPass != StructureRenderPass.StaticBody;
             if (drawBody && item.Triangles.Count > 0)
             {
@@ -1913,9 +1812,7 @@ internal sealed partial class Simulator3dForm
                     scene.WorldScale,
                     item.Triangles,
                     compositeTransform,
-                    sceneAlignmentOffset,
-                    null,
-                    0f);
+                    sceneAlignmentOffset);
                 drawn = true;
             }
 
@@ -1931,91 +1828,26 @@ internal sealed partial class Simulator3dForm
                     continue;
                 }
 
-                bool locked = string.Equals(lockedPlateId, unit.PlateId, StringComparison.OrdinalIgnoreCase) && !unit.IsLightStrip;
-                float flashDarkness = 0f;
-                bool flashing = IsStructurePlateFlashActive(entity.Id, unit.PlateId, out flashDarkness) && unit.IsLightStrip;
-                ResolveFineTerrainBaseUnitTint(item.Team, unit.IsLightStrip, locked, flashing, flashDarkness, out Color? tint, out float tintStrength);
+                Matrix4x4 unitTransform = ResolveFineTerrainBaseUnitTransform(
+                    scene.WorldScale,
+                    item,
+                    unit,
+                    compositeTransform,
+                    entity);
+                Color? flashOverride = ResolveStructurePlateFlashOverride(entity, unit.PlateId);
                 DrawFineTerrainColoredTriangles(
                     graphics,
                     scene.WorldScale,
                     unit.Triangles,
-                    compositeTransform,
+                    unitTransform,
                     sceneAlignmentOffset,
-                    tint,
-                    tintStrength);
+                    Vector3.Zero,
+                    flashOverride);
                 drawn = true;
             }
         }
 
         return drawn;
-    }
-
-    private void ResolveFineTerrainOutpostUnitTint(
-        string team,
-        bool isLightStrip,
-        bool locked,
-        bool flashing,
-        float flashIntensity,
-        bool isAlive,
-        out Color? tint,
-        out float tintStrength)
-    {
-        tint = null;
-        tintStrength = 0f;
-        if (!isAlive)
-        {
-            tint = Color.FromArgb(244, 8, 9, 11);
-            tintStrength = 1.0f;
-            return;
-        }
-
-        if (locked)
-        {
-            tint = Color.FromArgb(255, 255, 214, 86);
-            tintStrength = 0.70f;
-            return;
-        }
-
-        if (!isLightStrip)
-        {
-            return;
-        }
-
-        if (flashing && flashIntensity > 0.5f)
-        {
-            tint = Color.FromArgb(238, 8, 9, 11);
-            tintStrength = 1.0f;
-        }
-    }
-
-    private void ResolveFineTerrainBaseUnitTint(
-        string team,
-        bool isLightStrip,
-        bool locked,
-        bool flashing,
-        float flashDarkness,
-        out Color? tint,
-        out float tintStrength)
-    {
-        tint = null;
-        tintStrength = 0f;
-        if (locked)
-        {
-            tint = Color.FromArgb(255, 255, 214, 86);
-            tintStrength = 0.70f;
-            return;
-        }
-
-        if (!isLightStrip)
-        {
-            return;
-        }
-
-        if (flashing && flashDarkness > 0.5f)
-        {
-            tint = Color.FromArgb(238, 8, 9, 11);
-            tintStrength = 0.98f;
-        }
     }
 
     private void DrawFineTerrainEnergyArmStripFeedback(
@@ -2136,18 +1968,7 @@ internal sealed partial class Simulator3dForm
         Color fallbackColor)
     {
         Color source = triangle.Color.A <= 0 ? fallbackColor : triangle.Color;
-        return NormalizeFineTerrainEnergyBodyColor(source);
-    }
-
-    private static Color NormalizeFineTerrainEnergyBodyColor(Color source)
-    {
-        float luminance = (source.R * 0.2126f + source.G * 0.7152f + source.B * 0.0722f) / 255f;
-        int baseValue = Math.Clamp((int)MathF.Round(42f + luminance * 44f), 34, 96);
-        return Color.FromArgb(
-            source.A <= 0 ? 236 : source.A,
-            baseValue,
-            Math.Clamp(baseValue + 4, 0, 255),
-            Math.Clamp(baseValue + 10, 0, 255));
+        return source;
     }
 
     private float ResolveFineTerrainEnergyActivationRatio(SimulationTeamState teamState)
@@ -2276,6 +2097,25 @@ internal sealed partial class Simulator3dForm
         return Vector3.Normalize(sceneNormal) * liftMeters;
     }
 
+    private Vector3 ResolveFineTerrainEnergyUnitNormalOffset(
+        FineTerrainEnergyMechanismUnitVisualItem unit,
+        FineTerrainWorldScale worldScale,
+        Matrix4x4 compositeTransform,
+        float liftMeters)
+    {
+        if (liftMeters <= 1e-6f)
+        {
+            return Vector3.Zero;
+        }
+
+        Vector3 centerScene = ModelToScenePoint(Vector3.Transform(unit.LocalCenterModel, compositeTransform), worldScale);
+        Vector3 normalTipScene = ModelToScenePoint(Vector3.Transform(unit.LocalCenterModel + unit.LocalNormalModel, compositeTransform), worldScale);
+        Vector3 sceneNormal = normalTipScene - centerScene;
+        return sceneNormal.LengthSquared() <= 1e-8f
+            ? Vector3.Zero
+            : Vector3.Normalize(sceneNormal) * liftMeters;
+    }
+
     private bool HasFineTerrainOutpostForTeam(string team)
     {
         FineTerrainOutpostVisualScene? scene = ResolveFineTerrainOutpostScene();
@@ -2295,17 +2135,13 @@ internal sealed partial class Simulator3dForm
         FineTerrainWorldScale worldScale,
         IReadOnlyList<FineTerrainColoredTriangle> triangles,
         Matrix4x4 transform,
-        Vector3 sceneAlignmentOffset,
-        Color? tint,
-        float tintStrength)
+        Vector3 sceneAlignmentOffset)
         => DrawFineTerrainColoredTriangles(
             graphics,
             worldScale,
             triangles,
             transform,
             sceneAlignmentOffset,
-            tint,
-            tintStrength,
             Vector3.Zero);
 
     private void DrawFineTerrainColoredTriangles(
@@ -2314,9 +2150,24 @@ internal sealed partial class Simulator3dForm
         IReadOnlyList<FineTerrainColoredTriangle> triangles,
         Matrix4x4 transform,
         Vector3 sceneAlignmentOffset,
-        Color? tint,
-        float tintStrength,
         Vector3 extraSceneOffset)
+        => DrawFineTerrainColoredTriangles(
+            graphics,
+            worldScale,
+            triangles,
+            transform,
+            sceneAlignmentOffset,
+            extraSceneOffset,
+            null);
+
+    private void DrawFineTerrainColoredTriangles(
+        Graphics? graphics,
+        FineTerrainWorldScale worldScale,
+        IReadOnlyList<FineTerrainColoredTriangle> triangles,
+        Matrix4x4 transform,
+        Vector3 sceneAlignmentOffset,
+        Vector3 extraSceneOffset,
+        Color? overrideColor)
     {
         if (_gpuGeometryPass && UseGpuRenderer)
         {
@@ -2325,7 +2176,7 @@ internal sealed partial class Simulator3dForm
                 Vector3 a = ModelToScenePoint(Vector3.Transform(triangle.A, transform), worldScale) + sceneAlignmentOffset + extraSceneOffset;
                 Vector3 b = ModelToScenePoint(Vector3.Transform(triangle.B, transform), worldScale) + sceneAlignmentOffset + extraSceneOffset;
                 Vector3 c = ModelToScenePoint(Vector3.Transform(triangle.C, transform), worldScale) + sceneAlignmentOffset + extraSceneOffset;
-                AppendOrDrawGpuTriangle(a, b, c, ResolveFineTerrainTriangleColor(triangle.Color, tint, tintStrength));
+                AppendOrDrawGpuTriangle(a, b, c, overrideColor ?? ResolveFineTerrainTriangleColor(triangle.Color));
             }
 
             return;
@@ -2347,7 +2198,7 @@ internal sealed partial class Simulator3dForm
             Vector3 a = ModelToScenePoint(Vector3.Transform(triangle.A, transform), worldScale) + sceneAlignmentOffset + extraSceneOffset;
             Vector3 b = ModelToScenePoint(Vector3.Transform(triangle.B, transform), worldScale) + sceneAlignmentOffset + extraSceneOffset;
             Vector3 c = ModelToScenePoint(Vector3.Transform(triangle.C, transform), worldScale) + sceneAlignmentOffset + extraSceneOffset;
-            Color fill = ResolveFineTerrainTriangleColor(triangle.Color, tint, tintStrength);
+            Color fill = overrideColor ?? ResolveFineTerrainTriangleColor(triangle.Color);
             Color edge = Color.FromArgb(Math.Min(255, fill.A + 14), BlendColor(fill, Color.Black, 0.24f));
             if (TryBuildProjectedFace(new[] { a, b, c }, fill, edge, out ProjectedFace face))
             {
@@ -2369,17 +2220,22 @@ internal sealed partial class Simulator3dForm
         DrawProjectedFaceBatch(graphics, faces, 0.92f);
     }
 
-    private static Color ResolveFineTerrainTriangleColor(Color source, Color? tint, float tintStrength)
+    private static Color ResolveFineTerrainTriangleColor(Color source)
     {
         Color fill = source.A <= 0 ? Color.FromArgb(236, 224, 232, 240) : source;
-        if (tint is null || tintStrength <= 1e-4f)
+        return fill;
+    }
+
+    private Color? ResolveStructurePlateFlashOverride(SimulationEntity? entity, string plateId)
+    {
+        if (entity is null || string.IsNullOrWhiteSpace(plateId))
         {
-            return fill;
+            return null;
         }
 
-        Color blended = BlendColor(fill, tint.Value, Math.Clamp(tintStrength, 0f, 1f));
-        int alpha = Math.Clamp(Math.Max((int)fill.A, (int)tint.Value.A), 0, 255);
-        return Color.FromArgb(alpha, blended);
+        return IsStructurePlateFlashActive(entity.Id, plateId, out float intensity) && intensity > 0.5f
+            ? Color.FromArgb(246, 2, 3, 4)
+            : null;
     }
 
     private Vector3 ResolveFineTerrainOutpostSceneAlignmentOffset(
@@ -2589,6 +2445,16 @@ internal sealed partial class Simulator3dForm
             return baseTransform;
         }
 
+        if (FineTerrainBaseVisualCache.IsBaseOuterPanelCompositeName(item.Name))
+        {
+            return baseTransform;
+        }
+
+        if (!FineTerrainBaseVisualCache.IsBaseTopArmorCompositeName(item.Name))
+        {
+            return baseTransform;
+        }
+
         if (!TryResolveFineTerrainBaseReferenceUnit(item, out FineTerrainBaseUnitVisualItem? referenceUnit)
             || referenceUnit is null)
         {
@@ -2609,6 +2475,98 @@ internal sealed partial class Simulator3dForm
         }
 
         return Matrix4x4.CreateTranslation(slideAxisModel * slideModelUnits) * baseTransform;
+    }
+
+    private Matrix4x4 ResolveFineTerrainBaseUnitTransform(
+        FineTerrainWorldScale worldScale,
+        FineTerrainBaseVisualItem item,
+        FineTerrainBaseUnitVisualItem unit,
+        Matrix4x4 compositeTransform,
+        SimulationEntity entity)
+    {
+        if (!FineTerrainBaseVisualCache.IsBaseOuterPanelCompositeName(item.Name)
+            || !IsFineTerrainBaseMiddlePanel(unit.PlateId))
+        {
+            return compositeTransform;
+        }
+
+        float openProgress = ResolveBaseArmorOpenProgress(entity);
+        if (openProgress <= 1e-4f)
+        {
+            return compositeTransform;
+        }
+
+        Vector3 openOffsetModel = new(
+            0f,
+            -0.30f / MathF.Max(worldScale.YMetersPerModelUnit, 1e-6f),
+            -0.30f / MathF.Max(worldScale.ZMetersPerModelUnit, 1e-6f));
+        return compositeTransform
+            * Matrix4x4.CreateTranslation(openOffsetModel * openProgress);
+    }
+
+    private static bool IsFineTerrainBaseMiddlePanel(string plateId)
+        => string.Equals(plateId, "base_middle_front", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(plateId, "base_middle_left", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(plateId, "base_middle_right", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(plateId, "base_middle", StringComparison.OrdinalIgnoreCase);
+
+    private static Vector3 ResolveFineTerrainBaseFallbackPanelNormal(string plateId)
+    {
+        if (plateId.Contains("left", StringComparison.OrdinalIgnoreCase))
+        {
+            return -Vector3.UnitX;
+        }
+
+        if (plateId.Contains("right", StringComparison.OrdinalIgnoreCase))
+        {
+            return Vector3.UnitX;
+        }
+
+        return -Vector3.UnitZ;
+    }
+
+    private static Vector3 ResolveFineTerrainBasePanelHingePivotModel(
+        FineTerrainBaseUnitVisualItem unit,
+        Vector3 normalModel,
+        FineTerrainWorldScale worldScale)
+    {
+        if (unit.Triangles.Count == 0)
+        {
+            return unit.LocalCentroidModel;
+        }
+
+        Vector3 min = new(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity);
+        Vector3 max = new(float.NegativeInfinity, float.NegativeInfinity, float.NegativeInfinity);
+        foreach (FineTerrainColoredTriangle triangle in unit.Triangles)
+        {
+            Include(triangle.A);
+            Include(triangle.B);
+            Include(triangle.C);
+        }
+
+        Vector3 center = (min + max) * 0.5f;
+        float bottomY = min.Y;
+        float inwardModelUnits = ResolveFineTerrainModelDistanceForMeters(worldScale, normalModel, 0.018f);
+        center.Y = bottomY;
+        center -= normalModel * inwardModelUnits;
+        return center;
+
+        void Include(Vector3 point)
+        {
+            min = Vector3.Min(min, point);
+            max = Vector3.Max(max, point);
+        }
+    }
+
+    private static Vector3 ResolveFineTerrainBaseOuterPanelOpenOffsetModel(FineTerrainWorldScale worldScale)
+    {
+        float y = MathF.Abs(worldScale.YMetersPerModelUnit) <= 1e-6f
+            ? 0f
+            : -0.5f / worldScale.YMetersPerModelUnit;
+        float z = MathF.Abs(worldScale.ZMetersPerModelUnit) <= 1e-6f
+            ? 0f
+            : -0.5f / worldScale.ZMetersPerModelUnit;
+        return new Vector3(0f, y, z);
     }
 
     private bool TryResolveFineTerrainBaseTopSlideTarget(
@@ -2838,8 +2796,8 @@ internal sealed partial class Simulator3dForm
         }
 
         string mapPath = Path.Combine(_host.ProjectRootPath, "maps", "rmuc2026", "map.json");
-        string annotationPath = Path.Combine(_host.ProjectRootPath, "maps", "rmuc26map", "RMUC2026_MAP.component_roles.json");
-        string terrainCachePath = Path.Combine(_host.ProjectRootPath, "maps", "rmuc26map", "RMUC2026_MAP.terraincache.lz4");
+        string annotationPath = Path.Combine(_host.ProjectRootPath, "maps", "rmuc2026", "RMUC2026_MAP.component_roles.json");
+        string terrainCachePath = Path.Combine(_host.ProjectRootPath, "maps", "rmuc2026", "RMUC2026_MAP.terraincache.lz4");
         if (!File.Exists(annotationPath) || !File.Exists(terrainCachePath))
         {
             return _host.MapPreset;
@@ -3003,5 +2961,286 @@ internal sealed partial class Simulator3dForm
             _fineTerrainBaseSceneLoadTask = null;
             _fineTerrainBaseSceneLoadingKey = null;
         }
+    }
+
+    private FineTerrainAnnotationDocument? ResolveFineTerrainCollisionAnnotation()
+    {
+        string annotationPath = _host.MapPreset.AnnotationPath;
+        if (string.IsNullOrWhiteSpace(annotationPath) || !File.Exists(annotationPath))
+        {
+            _fineTerrainCollisionAnnotation = null;
+            _fineTerrainCollisionAnnotationKey = null;
+            return null;
+        }
+
+        string cacheKey = $"{Path.GetFullPath(annotationPath)}|{File.GetLastWriteTimeUtc(annotationPath).Ticks}";
+        if (_fineTerrainCollisionAnnotation is not null
+            && string.Equals(_fineTerrainCollisionAnnotationKey, cacheKey, StringComparison.OrdinalIgnoreCase))
+        {
+            return _fineTerrainCollisionAnnotation;
+        }
+
+        _fineTerrainCollisionAnnotation = FineTerrainAnnotationDocument.TryLoad(annotationPath);
+        _fineTerrainCollisionAnnotationKey = cacheKey;
+        return _fineTerrainCollisionAnnotation;
+    }
+
+    private bool TryDrawFineTerrainCollisionShapes(Graphics graphics)
+    {
+        FineTerrainAnnotationDocument? annotation = ResolveFineTerrainCollisionAnnotation();
+        if (annotation is null || annotation.CollisionShapes.Count == 0)
+        {
+            return false;
+        }
+
+        bool drew = false;
+        foreach (FineTerrainCollisionShapeAnnotation shape in annotation.CollisionShapes)
+        {
+            drew |= TryDrawFineTerrainCollisionShape(graphics, annotation.WorldScale, shape);
+        }
+
+        return drew;
+    }
+
+    private bool TryDrawGpuFineTerrainCollisionShapes()
+    {
+        FineTerrainAnnotationDocument? annotation = ResolveFineTerrainCollisionAnnotation();
+        if (annotation is null || annotation.CollisionShapes.Count == 0)
+        {
+            return false;
+        }
+
+        bool drew = false;
+        foreach (FineTerrainCollisionShapeAnnotation shape in annotation.CollisionShapes)
+        {
+            drew |= TryDrawGpuFineTerrainCollisionShape(annotation.WorldScale, shape);
+        }
+
+        return drew;
+    }
+
+    private bool TryDrawFineTerrainCollisionShape(
+        Graphics graphics,
+        FineTerrainWorldScale worldScale,
+        FineTerrainCollisionShapeAnnotation shape)
+    {
+        Color fillColor = Color.FromArgb(104, 0, 210, 255);
+        Color edgeColor = Color.FromArgb(245, 0, 232, 255);
+        IReadOnlyList<Vector3> bottom = BuildCollisionShapeBottomFootprint(shape, worldScale, out float height);
+        if (bottom.Count < 3 || height <= 1e-4f)
+        {
+            return false;
+        }
+
+        Vector3 offset = Vector3.UnitY * height;
+        var top = bottom.Select(point => point + offset).ToArray();
+        DrawGeneralPrism(graphics, bottom, top, fillColor, edgeColor, null);
+        return true;
+    }
+
+    private bool TryDrawGpuFineTerrainCollisionShape(FineTerrainWorldScale worldScale, FineTerrainCollisionShapeAnnotation shape)
+    {
+        Color fillColor = Color.FromArgb(96, 0, 210, 255);
+        Color edgeColor = Color.FromArgb(245, 0, 232, 255);
+        IReadOnlyList<Vector3> bottom = BuildCollisionShapeBottomFootprint(shape, worldScale, out float height);
+        if (bottom.Count < 3 || height <= 1e-4f)
+        {
+            return false;
+        }
+
+        Vector3 offset = Vector3.UnitY * height;
+        var top = bottom.Select(point => point + offset).ToArray();
+        DrawGpuGeneralPrism(bottom, top, fillColor);
+        for (int index = 0; index < bottom.Count; index++)
+        {
+            int next = (index + 1) % bottom.Count;
+            DrawGpuLine(bottom[index], bottom[next], edgeColor);
+            DrawGpuLine(top[index], top[next], edgeColor);
+            DrawGpuLine(bottom[index], top[index], edgeColor);
+        }
+
+        return true;
+    }
+
+    private IReadOnlyList<Vector3> BuildCollisionShapeBottomFootprint(
+        FineTerrainCollisionShapeAnnotation shape,
+        FineTerrainWorldScale worldScale,
+        out float height)
+    {
+        IReadOnlyList<Vector3> modelVertices = BuildCollisionShapeModelVertices(shape);
+        if (modelVertices.Count < 3)
+        {
+            height = 0f;
+            return Array.Empty<Vector3>();
+        }
+
+        var sceneVertices = modelVertices
+            .Select(vertex => CollisionShapeModelToScenePoint(vertex, worldScale))
+            .ToArray();
+        float minY = sceneVertices.Min(vertex => vertex.Y);
+        float maxY = sceneVertices.Max(vertex => vertex.Y);
+        height = Math.Max(0.03f, maxY - minY);
+        Vector2[] hull = BuildSceneFootprintHull(sceneVertices.Select(vertex => new Vector2(vertex.X, vertex.Z)).ToArray());
+        if (hull.Length < 3)
+        {
+            return Array.Empty<Vector3>();
+        }
+
+        return hull.Select(point => new Vector3(point.X, minY, point.Y)).ToArray();
+    }
+
+    private static IReadOnlyList<Vector3> BuildCollisionShapeModelVertices(FineTerrainCollisionShapeAnnotation shape)
+    {
+        string shapeType = shape.ShapeType.Trim();
+        if (shapeType.Equals("polyhedron", StringComparison.OrdinalIgnoreCase)
+            && shape.VerticesModel.Count >= 3)
+        {
+            return shape.VerticesModel.Select(vertex => vertex.ToVector3()).ToArray();
+        }
+
+        Vector3 modelCenter = shape.PositionModel.ToVector3();
+        Vector3 ypr = shape.YprDegrees.ToVector3();
+        Matrix4x4 rotation = Matrix4x4.CreateFromYawPitchRoll(
+            ypr.X * MathF.PI / 180f,
+            ypr.Y * MathF.PI / 180f,
+            ypr.Z * MathF.PI / 180f);
+
+        if (shapeType.Equals("cylinder", StringComparison.OrdinalIgnoreCase))
+        {
+            const int Segments = 20;
+            float radius = Math.Max(0.001f, shape.RadiusModel);
+            float halfHeight = Math.Max(0.001f, shape.HeightModel) * 0.5f;
+            var vertices = new Vector3[Segments * 2];
+            for (int index = 0; index < Segments; index++)
+            {
+                float radians = MathF.Tau * index / Segments;
+                Vector3 radial = new(MathF.Cos(radians) * radius, 0f, MathF.Sin(radians) * radius);
+                vertices[index] = modelCenter + Vector3.Transform(radial - Vector3.UnitY * halfHeight, rotation);
+                vertices[index + Segments] = modelCenter + Vector3.Transform(radial + Vector3.UnitY * halfHeight, rotation);
+            }
+
+            return vertices;
+        }
+
+        if (shapeType.Equals("quad_prism", StringComparison.OrdinalIgnoreCase)
+            || shapeType.Equals("rect_prism", StringComparison.OrdinalIgnoreCase)
+            || shapeType.Equals("square_prism", StringComparison.OrdinalIgnoreCase))
+        {
+            Vector3 prismSize = shape.SizeModel.ToVector3();
+            float halfHeight = Math.Max(0.001f, shape.HeightModel > 1e-4f ? shape.HeightModel : prismSize.Y) * 0.5f;
+            float halfX = Math.Max(0.001f, prismSize.X) * 0.5f;
+            float halfZ = Math.Max(0.001f, Math.Abs(prismSize.Z) > 1e-4f ? prismSize.Z : prismSize.X) * 0.5f;
+            Vector3[] bottom =
+            {
+                new(-halfX, -halfHeight, -halfZ),
+                new(halfX, -halfHeight, -halfZ),
+                new(halfX, -halfHeight, halfZ),
+                new(-halfX, -halfHeight, halfZ),
+            };
+            return BuildCollisionShapePrismModelVertices(modelCenter, rotation, bottom, halfHeight);
+        }
+
+        if (shapeType.Equals("hex_prism", StringComparison.OrdinalIgnoreCase)
+            || shapeType.Equals("hexagon_prism", StringComparison.OrdinalIgnoreCase))
+        {
+            float radius = Math.Max(0.001f, shape.RadiusModel);
+            float halfHeight = Math.Max(0.001f, shape.HeightModel) * 0.5f;
+            var bottom = new Vector3[6];
+            for (int index = 0; index < bottom.Length; index++)
+            {
+                float radians = MathF.Tau * index / bottom.Length + MathF.PI / 6f;
+                bottom[index] = new Vector3(
+                    MathF.Cos(radians) * radius,
+                    -halfHeight,
+                    MathF.Sin(radians) * radius);
+            }
+
+            return BuildCollisionShapePrismModelVertices(modelCenter, rotation, bottom, halfHeight);
+        }
+
+        Vector3 size = shape.SizeModel.ToVector3();
+        Vector3 half = new(
+            Math.Max(0.001f, size.X) * 0.5f,
+            Math.Max(0.001f, size.Y) * 0.5f,
+            Math.Max(0.001f, size.Z) * 0.5f);
+        var boxVertices = new Vector3[8];
+        int cursor = 0;
+        foreach (float localZ in new[] { -half.Z, half.Z })
+        {
+            foreach (float localY in new[] { -half.Y, half.Y })
+            {
+                foreach (float localX in new[] { -half.X, half.X })
+                {
+                    boxVertices[cursor++] = modelCenter + Vector3.Transform(new Vector3(localX, localY, localZ), rotation);
+                }
+            }
+        }
+
+        return boxVertices;
+    }
+
+    private static IReadOnlyList<Vector3> BuildCollisionShapePrismModelVertices(
+        Vector3 center,
+        Matrix4x4 rotation,
+        IReadOnlyList<Vector3> bottom,
+        float halfHeight)
+    {
+        var vertices = new Vector3[bottom.Count * 2];
+        for (int index = 0; index < bottom.Count; index++)
+        {
+            Vector3 basePoint = bottom[index];
+            vertices[index] = center + Vector3.Transform(basePoint, rotation);
+            vertices[index + bottom.Count] = center + Vector3.Transform(
+                new Vector3(basePoint.X, halfHeight, basePoint.Z),
+                rotation);
+        }
+
+        return vertices;
+    }
+
+    private static Vector2[] BuildSceneFootprintHull(IReadOnlyList<Vector2> points)
+    {
+        var sorted = points
+            .OrderBy(point => point.X)
+            .ThenBy(point => point.Y)
+            .DistinctBy(point => ((int)MathF.Round(point.X * 1000f), (int)MathF.Round(point.Y * 1000f)))
+            .ToArray();
+        if (sorted.Length <= 2)
+        {
+            return sorted;
+        }
+
+        static float Cross(Vector2 origin, Vector2 a, Vector2 b)
+            => (a.X - origin.X) * (b.Y - origin.Y) - (a.Y - origin.Y) * (b.X - origin.X);
+
+        var hull = new List<Vector2>(sorted.Length * 2);
+        foreach (Vector2 point in sorted)
+        {
+            while (hull.Count >= 2 && Cross(hull[^2], hull[^1], point) <= 0f)
+            {
+                hull.RemoveAt(hull.Count - 1);
+            }
+
+            hull.Add(point);
+        }
+
+        int lowerCount = hull.Count;
+        for (int index = sorted.Length - 2; index >= 0; index--)
+        {
+            Vector2 point = sorted[index];
+            while (hull.Count > lowerCount && Cross(hull[^2], hull[^1], point) <= 0f)
+            {
+                hull.RemoveAt(hull.Count - 1);
+            }
+
+            hull.Add(point);
+        }
+
+        if (hull.Count > 1)
+        {
+            hull.RemoveAt(hull.Count - 1);
+        }
+
+        return hull.ToArray();
     }
 }

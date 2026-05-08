@@ -32,6 +32,7 @@ internal sealed class AppearanceProfileCatalog
 
         if (!File.Exists(appearancePath))
         {
+            CopySentryProfileIntoInfantryMecanumSlot(profiles);
             return new AppearanceProfileCatalog(profiles);
         }
 
@@ -40,6 +41,7 @@ internal sealed class AppearanceProfileCatalog
             RobotAppearanceRoot root = RobotAppearanceJsonSerializer.LoadFromFile(appearancePath);
             if (root.Profiles.Count == 0)
             {
+                CopySentryProfileIntoInfantryMecanumSlot(profiles);
                 return new AppearanceProfileCatalog(profiles);
             }
 
@@ -59,10 +61,13 @@ internal sealed class AppearanceProfileCatalog
                     profiles[CompositeKey(roleKey, subtypeKey)] = ParseProfile(effectiveSubtype, profiles[roleKey]);
                 }
             }
+
+            CopySentryProfileIntoInfantryMecanumSlot(profiles);
         }
         catch
         {
             // Keep defaults when appearance parsing fails.
+            CopySentryProfileIntoInfantryMecanumSlot(profiles);
         }
 
         return new AppearanceProfileCatalog(profiles);
@@ -147,28 +152,70 @@ internal sealed class AppearanceProfileCatalog
             WheelOffsetsM = wheelOffsets.Count > 0 ? wheelOffsets : defaults.WheelOffsetsM,
             ArmorOrbitYawsDeg = source.ArmorOrbitYawsDeg.Count > 0 ? source.ArmorOrbitYawsDeg.Select(value => (float)value).ToArray() : defaults.ArmorOrbitYawsDeg,
             ArmorSelfYawsDeg = source.ArmorSelfYawsDeg.Count > 0 ? source.ArmorSelfYawsDeg.Select(value => (float)value).ToArray() : defaults.ArmorSelfYawsDeg,
+            ArmorPlateOffsetsM = source.ArmorPlateOffsetsM.Count > 0 ? source.ArmorPlateOffsetsM.Select(offset => ReadVector3(offset, Vector3.Zero)).ToArray() : defaults.ArmorPlateOffsetsM,
+            ArmorPlateRotationsYprDeg = source.ArmorPlateRotationsYprDeg.Count > 0 ? source.ArmorPlateRotationsYprDeg.Select(rotation => ReadVector3(rotation, Vector3.Zero)).ToArray() : defaults.ArmorPlateRotationsYprDeg,
+            BarrelFrictionWheelOffsetsM = source.BarrelFrictionWheelOffsetsM.Count > 0 ? source.BarrelFrictionWheelOffsetsM.Select(offset => ReadVector3(offset, Vector3.Zero)).ToArray() : defaults.BarrelFrictionWheelOffsetsM,
             GimbalLengthM = Math.Max(0f, (float)source.GimbalLengthM),
             GimbalWidthM = Math.Max(0f, (float)source.GimbalWidthM),
             GimbalBodyHeightM = Math.Max(0f, (float)source.GimbalBodyHeightM),
             GimbalHeightM = Math.Max(0f, (float)source.GimbalHeightM),
             GimbalOffsetXM = (float)source.GimbalOffsetXM,
             GimbalOffsetYM = (float)source.GimbalOffsetYM,
+            GimbalRelativeOffsetXM = (float)source.GimbalRelativeOffsetXM,
+            GimbalRelativeOffsetYM = (float)source.GimbalRelativeOffsetYM,
+            GimbalRelativeOffsetZM = (float)source.GimbalRelativeOffsetZM,
+            BodyFrontTiltDeg = Math.Clamp((float)source.BodyFrontTiltDeg, 0f, 65f),
+            BodyRearTiltDeg = Math.Clamp((float)source.BodyRearTiltDeg, 0f, 65f),
+            BodyLeftTiltDeg = Math.Clamp((float)source.BodyLeftTiltDeg, 0f, 65f),
+            BodyRightTiltDeg = Math.Clamp((float)source.BodyRightTiltDeg, 0f, 65f),
             GimbalMountGapM = Math.Max(0f, (float)source.GimbalMountGapM),
             GimbalMountLengthM = Math.Max(0f, (float)source.GimbalMountLengthM),
             GimbalMountWidthM = Math.Max(0f, (float)source.GimbalMountWidthM),
             GimbalMountHeightM = Math.Max(0f, (float)source.GimbalMountHeightM),
             BarrelLengthM = Math.Max(0f, (float)source.BarrelLengthM),
             BarrelRadiusM = Math.Max(0f, (float)source.BarrelRadiusM),
+            BarrelOctagonLongEdgeM = Math.Max(0f, (float)(source.BarrelOctagonLongEdgeM <= 0 ? defaults.BarrelOctagonLongEdgeM : source.BarrelOctagonLongEdgeM)),
+            BarrelOctagonShortEdgeM = Math.Max(0f, (float)(source.BarrelOctagonShortEdgeM <= 0 ? defaults.BarrelOctagonShortEdgeM : source.BarrelOctagonShortEdgeM)),
+            BarrelOffsetXM = (float)source.BarrelOffsetXM,
+            BarrelOffsetYM = (float)source.BarrelOffsetYM,
+            BarrelOffsetZM = (float)source.BarrelOffsetZM,
             ArmorPlateWidthM = Math.Max(0.03f, (float)(source.ArmorPlateWidthM <= 0 ? defaults.ArmorPlateWidthM : source.ArmorPlateWidthM)),
             ArmorPlateLengthM = Math.Max(0.03f, (float)(source.ArmorPlateLengthM <= 0 ? defaults.ArmorPlateLengthM : source.ArmorPlateLengthM)),
             ArmorPlateHeightM = Math.Max(0.03f, (float)(source.ArmorPlateHeightM <= 0 ? defaults.ArmorPlateHeightM : source.ArmorPlateHeightM)),
             ArmorPlateGapM = Math.Max(0.003f, (float)(source.ArmorPlateGapM <= 0 ? defaults.ArmorPlateGapM : source.ArmorPlateGapM)),
+            ArmorPlateThicknessM = source.ArmorPlateThicknessM >= 0 ? Math.Max(0f, (float)source.ArmorPlateThicknessM) : defaults.ArmorPlateThicknessM,
             ArmorLightLengthM = Math.Max(0.004f, (float)(source.ArmorLightLengthM <= 0 ? defaults.ArmorLightLengthM : source.ArmorLightLengthM)),
             ArmorLightWidthM = Math.Max(0.003f, (float)(source.ArmorLightWidthM <= 0 ? defaults.ArmorLightWidthM : source.ArmorLightWidthM)),
             ArmorLightHeightM = Math.Max(0.004f, (float)(source.ArmorLightHeightM <= 0 ? defaults.ArmorLightHeightM : source.ArmorLightHeightM)),
+            ArmorLightOffsetsM = source.ArmorLightOffsetsM.Count > 0 ? source.ArmorLightOffsetsM.Select(offset => ReadVector3(offset, Vector3.Zero)).ToArray() : defaults.ArmorLightOffsetsM,
+            ArmorLightPlateDistancesM = source.ArmorLightPlateDistancesM.Count > 0 ? source.ArmorLightPlateDistancesM.Select(value => Math.Max(0f, (float)value)).ToArray() : defaults.ArmorLightPlateDistancesM,
             BarrelLightLengthM = Math.Max(0.004f, (float)(source.BarrelLightLengthM <= 0 ? defaults.BarrelLightLengthM : source.BarrelLightLengthM)),
             BarrelLightWidthM = Math.Max(0.003f, (float)(source.BarrelLightWidthM <= 0 ? defaults.BarrelLightWidthM : source.BarrelLightWidthM)),
             BarrelLightHeightM = Math.Max(0.003f, (float)(source.BarrelLightHeightM <= 0 ? defaults.BarrelLightHeightM : source.BarrelLightHeightM)),
+            BarrelLightOffsetXM = (float)source.BarrelLightOffsetXM,
+            BarrelLightOffsetYM = (float)source.BarrelLightOffsetYM,
+            BarrelLightOffsetZM = (float)source.BarrelLightOffsetZM,
+            RearHealthLightLengthM = Math.Max(0f, (float)source.RearHealthLightLengthM),
+            RearHealthLightWidthM = Math.Max(0f, (float)source.RearHealthLightWidthM),
+            RearHealthLightHeightM = Math.Max(0f, (float)source.RearHealthLightHeightM),
+            RearHealthLightOffsetXM = (float)source.RearHealthLightOffsetXM,
+            RearHealthLightOffsetYM = (float)source.RearHealthLightOffsetYM,
+            RearHealthLightOffsetZM = (float)source.RearHealthLightOffsetZM,
+            BarrelFrictionWheelRadiusM = Math.Max(0f, (float)source.BarrelFrictionWheelRadiusM),
+            BarrelFrictionWheelWidthM = Math.Max(0f, (float)source.BarrelFrictionWheelWidthM),
+            BarrelFrictionWheelHeightM = Math.Max(0f, (float)source.BarrelFrictionWheelHeightM),
+            BarrelFrictionWheelOffsetXM = (float)source.BarrelFrictionWheelOffsetXM,
+            BarrelFrictionWheelOffsetYM = (float)source.BarrelFrictionWheelOffsetYM,
+            BarrelFrictionWheelOffsetZM = (float)source.BarrelFrictionWheelOffsetZM,
+            BarrelFrictionWheelYawDeg = (float)source.BarrelFrictionWheelYawDeg,
+            BarrelFrictionWheelPitchDeg = (float)source.BarrelFrictionWheelPitchDeg,
+            BarrelFrictionWheelRollDeg = (float)source.BarrelFrictionWheelRollDeg,
+            FirstPersonCameraOffsetXM = (float)source.FirstPersonCameraOffsetXM,
+            FirstPersonCameraOffsetYM = (float)source.FirstPersonCameraOffsetYM,
+            FirstPersonCameraOffsetZM = (float)source.FirstPersonCameraOffsetZM,
+            FirstPersonCameraYawDeg = (float)source.FirstPersonCameraYawDeg,
+            FirstPersonCameraPitchDeg = (float)source.FirstPersonCameraPitchDeg,
+            FirstPersonCameraRollDeg = (float)source.FirstPersonCameraRollDeg,
             FrontClimbAssistTopLengthM = Math.Max(0.01f, (float)(source.FrontClimbAssistTopLengthM <= 0 ? defaults.FrontClimbAssistTopLengthM : source.FrontClimbAssistTopLengthM)),
             FrontClimbAssistBottomLengthM = Math.Max(0.01f, (float)(source.FrontClimbAssistBottomLengthM <= 0 ? defaults.FrontClimbAssistBottomLengthM : source.FrontClimbAssistBottomLengthM)),
             FrontClimbAssistPlateWidthM = Math.Max(0.008f, (float)(source.FrontClimbAssistPlateWidthM <= 0 ? defaults.FrontClimbAssistPlateWidthM : source.FrontClimbAssistPlateWidthM)),
@@ -245,6 +292,9 @@ internal sealed class AppearanceProfileCatalog
             string.IsNullOrWhiteSpace(source.Id) ? $"anchor_{Guid.NewGuid():N}" : source.Id.Trim(),
             source.Name?.Trim() ?? string.Empty,
             string.IsNullOrWhiteSpace(source.ParentPart) ? "body" : source.ParentPart.Trim(),
+            string.IsNullOrWhiteSpace(source.AnchorMode) ? "fixed" : source.AnchorMode.Trim(),
+            string.IsNullOrWhiteSpace(source.ParentLinkId) ? string.Empty : source.ParentLinkId.Trim(),
+            Math.Clamp((float)source.LinkPositionRatio, 0f, 1f),
             string.IsNullOrWhiteSpace(source.ComponentScope) ? "single" : source.ComponentScope.Trim(),
             Math.Max(0, source.ComponentIndex),
             ReadVector3(source.OffsetM, Vector3.Zero),
@@ -260,6 +310,9 @@ internal sealed class AppearanceProfileCatalog
             source.StartAnchorId?.Trim() ?? string.Empty,
             source.EndAnchorId?.Trim() ?? string.Empty,
             Math.Max(0.001f, (float)source.RadiusM),
+            Math.Max(0.001f, (float)source.WidthM),
+            Math.Max(0.001f, (float)source.ThicknessM),
+            Math.Max(0f, (float)source.LengthM),
             ColorFromRgb(source.ColorRgb, Color.FromArgb(176, 182, 190)));
     }
 
@@ -300,6 +353,19 @@ internal sealed class AppearanceProfileCatalog
             "energy_mechanism" => RobotAppearanceProfile.CreateDefault(2.06f, 1.30f, 2.30f, 0.0f, "energy_mechanism"),
             _ => RobotAppearanceProfile.CreateDefault(0.48f, 0.48f, 0.18f, 0.10f, "infantry"),
         };
+
+    private static void CopySentryProfileIntoInfantryMecanumSlot(Dictionary<string, RobotAppearanceProfile> profiles)
+    {
+        RobotAppearanceProfile sentryProfile = profiles.TryGetValue("sentry", out RobotAppearanceProfile? resolvedSentry)
+            ? resolvedSentry
+            : GetDefaultProfileForRole("sentry");
+
+        profiles[CompositeKey("infantry", "mecanum_wheel")] = sentryProfile with
+        {
+            RoleKey = "infantry",
+            ChassisSubtype = "mecanum_wheel",
+        };
+    }
 
     public RobotAppearanceProfile Resolve(string roleKey, string? subtypeOverride = null)
     {
@@ -423,28 +489,70 @@ internal sealed class AppearanceProfileCatalog
             WheelOffsetsM = ReadWheelOffsets(primary, fallback, bodyLength, bodyWidth, defaults.WheelOffsetsM),
             ArmorOrbitYawsDeg = ReadFloatArray(primary, fallback, defaults.ArmorOrbitYawsDeg, "armor_orbit_yaws_deg"),
             ArmorSelfYawsDeg = ReadFloatArray(primary, fallback, defaults.ArmorSelfYawsDeg, "armor_self_yaws_deg"),
+            ArmorPlateOffsetsM = ReadVector3Array(primary, fallback, defaults.ArmorPlateOffsetsM, "armor_plate_offsets_m"),
+            ArmorPlateRotationsYprDeg = ReadVector3Array(primary, fallback, defaults.ArmorPlateRotationsYprDeg, "armor_plate_rotations_ypr_deg"),
+            BarrelFrictionWheelOffsetsM = ReadVector3Array(primary, fallback, defaults.BarrelFrictionWheelOffsetsM, "barrel_friction_wheel_offsets_m"),
             GimbalLengthM = Math.Max(0f, ReadFloat(primary, fallback, defaults.GimbalLengthM, "gimbal_length_m")),
             GimbalWidthM = Math.Max(0f, ReadFloat(primary, fallback, defaults.GimbalWidthM, "gimbal_width_m")),
             GimbalBodyHeightM = Math.Max(0f, ReadFloat(primary, fallback, defaults.GimbalBodyHeightM, "gimbal_body_height_m")),
             GimbalHeightM = Math.Max(0f, ReadFloat(primary, fallback, defaults.GimbalHeightM, "gimbal_height_m")),
             GimbalOffsetXM = ReadFloat(primary, fallback, defaults.GimbalOffsetXM, "gimbal_offset_x_m"),
             GimbalOffsetYM = ReadFloat(primary, fallback, defaults.GimbalOffsetYM, "gimbal_offset_y_m"),
+            GimbalRelativeOffsetXM = ReadFloat(primary, fallback, defaults.GimbalRelativeOffsetXM, "gimbal_relative_offset_x_m"),
+            GimbalRelativeOffsetYM = ReadFloat(primary, fallback, defaults.GimbalRelativeOffsetYM, "gimbal_relative_offset_y_m"),
+            GimbalRelativeOffsetZM = ReadFloat(primary, fallback, defaults.GimbalRelativeOffsetZM, "gimbal_relative_offset_z_m"),
+            BodyFrontTiltDeg = Math.Clamp(ReadFloat(primary, fallback, defaults.BodyFrontTiltDeg, "body_front_tilt_deg"), 0f, 65f),
+            BodyRearTiltDeg = Math.Clamp(ReadFloat(primary, fallback, defaults.BodyRearTiltDeg, "body_rear_tilt_deg"), 0f, 65f),
+            BodyLeftTiltDeg = Math.Clamp(ReadFloat(primary, fallback, defaults.BodyLeftTiltDeg, "body_left_tilt_deg"), 0f, 65f),
+            BodyRightTiltDeg = Math.Clamp(ReadFloat(primary, fallback, defaults.BodyRightTiltDeg, "body_right_tilt_deg"), 0f, 65f),
             GimbalMountGapM = Math.Max(0f, ReadFloat(primary, fallback, defaults.GimbalMountGapM, "gimbal_mount_gap_m")),
             GimbalMountLengthM = Math.Max(0f, ReadFloat(primary, fallback, defaults.GimbalMountLengthM, "gimbal_mount_length_m")),
             GimbalMountWidthM = Math.Max(0f, ReadFloat(primary, fallback, defaults.GimbalMountWidthM, "gimbal_mount_width_m")),
             GimbalMountHeightM = Math.Max(0f, ReadFloat(primary, fallback, defaults.GimbalMountHeightM, "gimbal_mount_height_m")),
             BarrelLengthM = Math.Max(0f, ReadFloat(primary, fallback, defaults.BarrelLengthM, "barrel_length_m")),
             BarrelRadiusM = Math.Max(0f, ReadFloat(primary, fallback, defaults.BarrelRadiusM, "barrel_radius_m")),
+            BarrelOctagonLongEdgeM = Math.Max(0f, ReadFloat(primary, fallback, defaults.BarrelOctagonLongEdgeM, "barrel_octagon_long_edge_m")),
+            BarrelOctagonShortEdgeM = Math.Max(0f, ReadFloat(primary, fallback, defaults.BarrelOctagonShortEdgeM, "barrel_octagon_short_edge_m")),
+            BarrelOffsetXM = ReadFloat(primary, fallback, defaults.BarrelOffsetXM, "barrel_offset_x_m"),
+            BarrelOffsetYM = ReadFloat(primary, fallback, defaults.BarrelOffsetYM, "barrel_offset_y_m"),
+            BarrelOffsetZM = ReadFloat(primary, fallback, defaults.BarrelOffsetZM, "barrel_offset_z_m"),
             ArmorPlateWidthM = Math.Max(0.03f, ReadFloat(primary, fallback, defaults.ArmorPlateWidthM, "armor_plate_width_m")),
             ArmorPlateLengthM = Math.Max(0.03f, ReadFloat(primary, fallback, defaults.ArmorPlateLengthM, "armor_plate_length_m")),
             ArmorPlateHeightM = Math.Max(0.03f, ReadFloat(primary, fallback, defaults.ArmorPlateHeightM, "armor_plate_height_m")),
             ArmorPlateGapM = Math.Max(0.003f, ReadFloat(primary, fallback, defaults.ArmorPlateGapM, "armor_plate_gap_m")),
+            ArmorPlateThicknessM = Math.Max(0f, ReadFloat(primary, fallback, defaults.ArmorPlateThicknessM, "armor_plate_thickness_m")),
             ArmorLightLengthM = Math.Max(0.004f, ReadFloat(primary, fallback, defaults.ArmorLightLengthM, "armor_light_length_m")),
             ArmorLightWidthM = Math.Max(0.003f, ReadFloat(primary, fallback, defaults.ArmorLightWidthM, "armor_light_width_m")),
             ArmorLightHeightM = Math.Max(0.004f, ReadFloat(primary, fallback, defaults.ArmorLightHeightM, "armor_light_height_m")),
+            ArmorLightOffsetsM = ReadVector3Array(primary, fallback, defaults.ArmorLightOffsetsM, "armor_light_offsets_m"),
+            ArmorLightPlateDistancesM = ReadFloatArray(primary, fallback, defaults.ArmorLightPlateDistancesM, "armor_light_plate_distances_m"),
             BarrelLightLengthM = Math.Max(0.004f, ReadFloat(primary, fallback, defaults.BarrelLightLengthM, "barrel_light_length_m")),
             BarrelLightWidthM = Math.Max(0.003f, ReadFloat(primary, fallback, defaults.BarrelLightWidthM, "barrel_light_width_m")),
             BarrelLightHeightM = Math.Max(0.003f, ReadFloat(primary, fallback, defaults.BarrelLightHeightM, "barrel_light_height_m")),
+            BarrelLightOffsetXM = ReadFloat(primary, fallback, defaults.BarrelLightOffsetXM, "barrel_light_offset_x_m"),
+            BarrelLightOffsetYM = ReadFloat(primary, fallback, defaults.BarrelLightOffsetYM, "barrel_light_offset_y_m"),
+            BarrelLightOffsetZM = ReadFloat(primary, fallback, defaults.BarrelLightOffsetZM, "barrel_light_offset_z_m"),
+            RearHealthLightLengthM = Math.Max(0f, ReadFloat(primary, fallback, defaults.RearHealthLightLengthM, "rear_health_light_length_m")),
+            RearHealthLightWidthM = Math.Max(0f, ReadFloat(primary, fallback, defaults.RearHealthLightWidthM, "rear_health_light_width_m")),
+            RearHealthLightHeightM = Math.Max(0f, ReadFloat(primary, fallback, defaults.RearHealthLightHeightM, "rear_health_light_height_m")),
+            RearHealthLightOffsetXM = ReadFloat(primary, fallback, defaults.RearHealthLightOffsetXM, "rear_health_light_offset_x_m"),
+            RearHealthLightOffsetYM = ReadFloat(primary, fallback, defaults.RearHealthLightOffsetYM, "rear_health_light_offset_y_m"),
+            RearHealthLightOffsetZM = ReadFloat(primary, fallback, defaults.RearHealthLightOffsetZM, "rear_health_light_offset_z_m"),
+            BarrelFrictionWheelRadiusM = Math.Max(0f, ReadFloat(primary, fallback, defaults.BarrelFrictionWheelRadiusM, "barrel_friction_wheel_radius_m")),
+            BarrelFrictionWheelWidthM = Math.Max(0f, ReadFloat(primary, fallback, defaults.BarrelFrictionWheelWidthM, "barrel_friction_wheel_width_m")),
+            BarrelFrictionWheelHeightM = Math.Max(0f, ReadFloat(primary, fallback, defaults.BarrelFrictionWheelHeightM > 0f ? defaults.BarrelFrictionWheelHeightM : defaults.BarrelFrictionWheelWidthM, "barrel_friction_wheel_height_m")),
+            BarrelFrictionWheelOffsetXM = ReadFloat(primary, fallback, defaults.BarrelFrictionWheelOffsetXM, "barrel_friction_wheel_offset_x_m"),
+            BarrelFrictionWheelOffsetYM = ReadFloat(primary, fallback, defaults.BarrelFrictionWheelOffsetYM, "barrel_friction_wheel_offset_y_m"),
+            BarrelFrictionWheelOffsetZM = ReadFloat(primary, fallback, defaults.BarrelFrictionWheelOffsetZM, "barrel_friction_wheel_offset_z_m"),
+            BarrelFrictionWheelYawDeg = ReadFloat(primary, fallback, defaults.BarrelFrictionWheelYawDeg, "barrel_friction_wheel_yaw_deg"),
+            BarrelFrictionWheelPitchDeg = ReadFloat(primary, fallback, defaults.BarrelFrictionWheelPitchDeg, "barrel_friction_wheel_pitch_deg"),
+            BarrelFrictionWheelRollDeg = ReadFloat(primary, fallback, defaults.BarrelFrictionWheelRollDeg, "barrel_friction_wheel_roll_deg"),
+            FirstPersonCameraOffsetXM = ReadFloat(primary, fallback, defaults.FirstPersonCameraOffsetXM, "first_person_camera_offset_x_m"),
+            FirstPersonCameraOffsetYM = ReadFloat(primary, fallback, defaults.FirstPersonCameraOffsetYM, "first_person_camera_offset_y_m"),
+            FirstPersonCameraOffsetZM = ReadFloat(primary, fallback, defaults.FirstPersonCameraOffsetZM, "first_person_camera_offset_z_m"),
+            FirstPersonCameraYawDeg = ReadFloat(primary, fallback, defaults.FirstPersonCameraYawDeg, "first_person_camera_yaw_deg"),
+            FirstPersonCameraPitchDeg = ReadFloat(primary, fallback, defaults.FirstPersonCameraPitchDeg, "first_person_camera_pitch_deg"),
+            FirstPersonCameraRollDeg = ReadFloat(primary, fallback, defaults.FirstPersonCameraRollDeg, "first_person_camera_roll_deg"),
             FrontClimbAssistTopLengthM = Math.Max(0.01f, ReadFloat(primary, fallback, defaults.FrontClimbAssistTopLengthM, "front_climb_assist_top_length_m")),
             FrontClimbAssistBottomLengthM = Math.Max(0.01f, ReadFloat(primary, fallback, defaults.FrontClimbAssistBottomLengthM, "front_climb_assist_bottom_length_m")),
             FrontClimbAssistPlateWidthM = Math.Max(0.008f, ReadFloat(primary, fallback, defaults.FrontClimbAssistPlateWidthM, "front_climb_assist_plate_width_m")),
@@ -701,6 +809,50 @@ internal sealed class AppearanceProfileCatalog
             }
 
             result.Add(new Vector2(x, y));
+        }
+
+        return result;
+    }
+
+    private static IReadOnlyList<Vector3> ReadVector3Array(
+        JsonObject primary,
+        JsonObject fallback,
+        IReadOnlyList<Vector3> defaultValue,
+        string key)
+    {
+        List<Vector3> values = ParseVector3Array(primary[key] as JsonArray);
+        if (values.Count > 0)
+        {
+            return values;
+        }
+
+        values = ParseVector3Array(fallback[key] as JsonArray);
+        return values.Count > 0 ? values : defaultValue;
+    }
+
+    private static List<Vector3> ParseVector3Array(JsonArray? array)
+    {
+        var result = new List<Vector3>();
+        if (array is null)
+        {
+            return result;
+        }
+
+        foreach (JsonNode? item in array)
+        {
+            if (item is not JsonArray triple || triple.Count < 3)
+            {
+                continue;
+            }
+
+            if (!TryReadFloat(triple[0], out float x)
+                || !TryReadFloat(triple[1], out float y)
+                || !TryReadFloat(triple[2], out float z))
+            {
+                continue;
+            }
+
+            result.Add(new Vector3(x, y, z));
         }
 
         return result;
@@ -1017,6 +1169,10 @@ internal sealed record RobotAppearanceProfile
 
     public IReadOnlyList<float> ArmorSelfYawsDeg { get; init; } = Array.Empty<float>();
 
+    public IReadOnlyList<Vector3> ArmorPlateOffsetsM { get; init; } = Array.Empty<Vector3>();
+
+    public IReadOnlyList<Vector3> ArmorPlateRotationsYprDeg { get; init; } = Array.Empty<Vector3>();
+
     public float GimbalLengthM { get; init; } = 0.26f;
 
     public float GimbalWidthM { get; init; } = 0.16f;
@@ -1028,6 +1184,20 @@ internal sealed record RobotAppearanceProfile
     public float GimbalOffsetXM { get; init; }
 
     public float GimbalOffsetYM { get; init; }
+
+    public float GimbalRelativeOffsetXM { get; init; }
+
+    public float GimbalRelativeOffsetYM { get; init; }
+
+    public float GimbalRelativeOffsetZM { get; init; }
+
+    public float BodyFrontTiltDeg { get; init; }
+
+    public float BodyRearTiltDeg { get; init; }
+
+    public float BodyLeftTiltDeg { get; init; }
+
+    public float BodyRightTiltDeg { get; init; }
 
     public float GimbalMountGapM { get; init; } = 0.10f;
 
@@ -1041,6 +1211,16 @@ internal sealed record RobotAppearanceProfile
 
     public float BarrelRadiusM { get; init; } = 0.016f;
 
+    public float BarrelOctagonLongEdgeM { get; init; }
+
+    public float BarrelOctagonShortEdgeM { get; init; }
+
+    public float BarrelOffsetXM { get; init; }
+
+    public float BarrelOffsetYM { get; init; }
+
+    public float BarrelOffsetZM { get; init; }
+
     public float ArmorPlateWidthM { get; init; } = 0.16f;
 
     public float ArmorPlateLengthM { get; init; } = 0.16f;
@@ -1049,17 +1229,73 @@ internal sealed record RobotAppearanceProfile
 
     public float ArmorPlateGapM { get; init; } = 0.02f;
 
+    public float ArmorPlateThicknessM { get; init; } = -1f;
+
     public float ArmorLightLengthM { get; init; } = 0.04f;
 
     public float ArmorLightWidthM { get; init; } = 0.005f;
 
     public float ArmorLightHeightM { get; init; } = 0.08f;
 
+    public IReadOnlyList<Vector3> ArmorLightOffsetsM { get; init; } = Array.Empty<Vector3>();
+
+    public IReadOnlyList<float> ArmorLightPlateDistancesM { get; init; } = Array.Empty<float>();
+
     public float BarrelLightLengthM { get; init; } = 0.10f;
 
     public float BarrelLightWidthM { get; init; } = 0.01f;
 
     public float BarrelLightHeightM { get; init; } = 0.03f;
+
+    public float BarrelLightOffsetXM { get; init; }
+
+    public float BarrelLightOffsetYM { get; init; }
+
+    public float BarrelLightOffsetZM { get; init; }
+
+    public float RearHealthLightLengthM { get; init; }
+
+    public float RearHealthLightWidthM { get; init; }
+
+    public float RearHealthLightHeightM { get; init; }
+
+    public float RearHealthLightOffsetXM { get; init; }
+
+    public float RearHealthLightOffsetYM { get; init; }
+
+    public float RearHealthLightOffsetZM { get; init; }
+
+    public float BarrelFrictionWheelRadiusM { get; init; } = 0.026f;
+
+    public float BarrelFrictionWheelWidthM { get; init; } = 0.018f;
+
+    public float BarrelFrictionWheelHeightM { get; init; } = 0.018f;
+
+    public float BarrelFrictionWheelOffsetXM { get; init; } = 0.030f;
+
+    public float BarrelFrictionWheelOffsetYM { get; init; }
+
+    public float BarrelFrictionWheelOffsetZM { get; init; } = 0.050f;
+
+    public float BarrelFrictionWheelYawDeg { get; init; }
+
+    public float BarrelFrictionWheelPitchDeg { get; init; }
+
+    public float BarrelFrictionWheelRollDeg { get; init; }
+
+    public IReadOnlyList<Vector3> BarrelFrictionWheelOffsetsM { get; init; } = Array.Empty<Vector3>();
+
+    public float FirstPersonCameraOffsetXM { get; init; } = 0.04f;
+
+    public float FirstPersonCameraOffsetYM { get; init; } = 0.06f;
+
+    public float FirstPersonCameraOffsetZM { get; init; }
+
+    public float FirstPersonCameraYawDeg { get; init; }
+
+    public float FirstPersonCameraPitchDeg { get; init; }
+
+    public float FirstPersonCameraRollDeg { get; init; }
 
     public float FrontClimbAssistTopLengthM { get; init; } = 0.05f;
 
@@ -1194,21 +1430,30 @@ internal sealed record RobotAppearanceProfile
         entity.StructureCantileverLengthM = StructureCantileverLengthM;
         entity.StructureCantileverOffsetYM = StructureCantileverOffsetYM;
         entity.WheelRadiusM = WheelRadiusM;
+        entity.RearLegWheelRadiusM = RearLegWheelRadiusM;
         entity.WheelOffsetsM = WheelOffsetsM.Select(offset => ((double)offset.X, (double)offset.Y)).ToArray();
         entity.ArmorOrbitYawsDeg = ArmorOrbitYawsDeg.Select(value => (double)value).ToArray();
         entity.ArmorSelfYawsDeg = ArmorSelfYawsDeg.Select(value => (double)value).ToArray();
+        entity.ArmorPlateOffsetsM = ArmorPlateOffsetsM.Select(offset => ((double)offset.X, (double)offset.Y, (double)offset.Z)).ToArray();
+        entity.ArmorPlateRotationsYprDeg = ArmorPlateRotationsYprDeg.Select(rotation => ((double)rotation.X, (double)rotation.Y, (double)rotation.Z)).ToArray();
         entity.GimbalLengthM = GimbalLengthM;
         entity.GimbalWidthM = GimbalWidthM;
         entity.GimbalBodyHeightM = GimbalBodyHeightM;
         entity.GimbalHeightM = GimbalHeightM;
         entity.GimbalOffsetXM = GimbalOffsetXM;
         entity.GimbalOffsetYM = GimbalOffsetYM;
+        entity.GimbalRelativeOffsetXM = GimbalRelativeOffsetXM;
+        entity.GimbalRelativeOffsetYM = GimbalRelativeOffsetYM;
+        entity.GimbalRelativeOffsetZM = GimbalRelativeOffsetZM;
         entity.GimbalMountGapM = GimbalMountGapM;
         entity.GimbalMountLengthM = GimbalMountLengthM;
         entity.GimbalMountWidthM = GimbalMountWidthM;
         entity.GimbalMountHeightM = GimbalMountHeightM;
         entity.BarrelLengthM = BarrelLengthM;
         entity.BarrelRadiusM = BarrelRadiusM;
+        entity.BarrelOffsetXM = BarrelOffsetXM;
+        entity.BarrelOffsetYM = BarrelOffsetYM;
+        entity.BarrelOffsetZM = BarrelOffsetZM;
         entity.ArmorPlateWidthM = ArmorPlateWidthM;
         entity.ArmorPlateLengthM = ArmorPlateLengthM;
         entity.ArmorPlateHeightM = ArmorPlateHeightM;
@@ -1219,6 +1464,31 @@ internal sealed record RobotAppearanceProfile
         entity.BarrelLightLengthM = BarrelLightLengthM;
         entity.BarrelLightWidthM = BarrelLightWidthM;
         entity.BarrelLightHeightM = BarrelLightHeightM;
+        entity.BarrelLightOffsetXM = BarrelLightOffsetXM;
+        entity.BarrelLightOffsetYM = BarrelLightOffsetYM;
+        entity.BarrelLightOffsetZM = BarrelLightOffsetZM;
+        entity.RearHealthLightLengthM = RearHealthLightLengthM;
+        entity.RearHealthLightWidthM = RearHealthLightWidthM;
+        entity.RearHealthLightHeightM = RearHealthLightHeightM;
+        entity.RearHealthLightOffsetXM = RearHealthLightOffsetXM;
+        entity.RearHealthLightOffsetYM = RearHealthLightOffsetYM;
+        entity.RearHealthLightOffsetZM = RearHealthLightOffsetZM;
+        entity.BarrelFrictionWheelRadiusM = BarrelFrictionWheelRadiusM;
+        entity.BarrelFrictionWheelWidthM = BarrelFrictionWheelWidthM;
+        entity.BarrelFrictionWheelHeightM = BarrelFrictionWheelHeightM > 0f ? BarrelFrictionWheelHeightM : BarrelFrictionWheelWidthM;
+        entity.BarrelFrictionWheelOffsetXM = BarrelFrictionWheelOffsetXM;
+        entity.BarrelFrictionWheelOffsetYM = BarrelFrictionWheelOffsetYM;
+        entity.BarrelFrictionWheelOffsetZM = BarrelFrictionWheelOffsetZM;
+        entity.BarrelFrictionWheelYawDeg = BarrelFrictionWheelYawDeg;
+        entity.BarrelFrictionWheelPitchDeg = BarrelFrictionWheelPitchDeg;
+        entity.BarrelFrictionWheelRollDeg = BarrelFrictionWheelRollDeg;
+        entity.BarrelFrictionWheelOffsetsM = BarrelFrictionWheelOffsetsM.Select(offset => ((double)offset.X, (double)offset.Y, (double)offset.Z)).ToArray();
+        entity.FirstPersonCameraOffsetXM = FirstPersonCameraOffsetXM;
+        entity.FirstPersonCameraOffsetYM = FirstPersonCameraOffsetYM;
+        entity.FirstPersonCameraOffsetZM = FirstPersonCameraOffsetZM;
+        entity.FirstPersonCameraYawDeg = FirstPersonCameraYawDeg;
+        entity.FirstPersonCameraPitchDeg = FirstPersonCameraPitchDeg;
+        entity.FirstPersonCameraRollDeg = FirstPersonCameraRollDeg;
         entity.FrontClimbAssistTopLengthM = FrontClimbAssistTopLengthM;
         entity.FrontClimbAssistBottomLengthM = FrontClimbAssistBottomLengthM;
         entity.FrontClimbAssistPlateWidthM = FrontClimbAssistPlateWidthM;
@@ -1244,14 +1514,13 @@ internal sealed record RobotAppearanceProfile
         entity.ChassisDriveIdleDrawW = ChassisDriveIdleDrawW;
         entity.ChassisDriveRpmCoeff = ChassisDriveRpmCoeff;
         entity.ChassisDriveAccelCoeff = ChassisDriveAccelCoeff;
-        entity.MassKg = 20.0;
+        entity.MassKg = ResolveRobotMassKg(entity.RoleKey, ChassisSubtype);
 
         if (entity.RoleKey.Equals("base", StringComparison.OrdinalIgnoreCase)
             || entity.RoleKey.Equals("outpost", StringComparison.OrdinalIgnoreCase))
         {
-            double structureRadiusM = entity.RoleKey.Equals("base", StringComparison.OrdinalIgnoreCase)
-                ? Math.Max(BodyLengthM, BodyWidthM * BodyRenderWidthScale) * 0.58
-                : Math.Max(BodyLengthM, BodyWidthM * BodyRenderWidthScale) * 0.62;
+            (double structureHalfLengthM, double structureHalfWidthM) = EntityCollisionModel.ResolveConservativeHalfExtents(entity);
+            double structureRadiusM = Math.Sqrt(structureHalfLengthM * structureHalfLengthM + structureHalfWidthM * structureHalfWidthM);
             entity.CollisionRadiusWorld = Math.Max(0.35, structureRadiusM) / Math.Max(metersPerWorldUnit, 1e-6);
             return;
         }
@@ -1260,9 +1529,10 @@ internal sealed record RobotAppearanceProfile
         {
             bool omni = string.Equals(ChassisSubtype, "omni_wheel", StringComparison.OrdinalIgnoreCase);
             bool balance = ChassisSubtype.Contains("balance", StringComparison.OrdinalIgnoreCase);
+            bool mecanum = ChassisSubtype.Contains("mecanum", StringComparison.OrdinalIgnoreCase);
             entity.StepClimbDurationSec = omni ? 0.75 : 1.0;
-            entity.DirectStepHeightM = omni ? 0.025 : 0.06;
-            entity.MaxStepClimbHeightM = omni ? 0.035 : balance ? 0.50 : 0.25;
+            entity.DirectStepHeightM = omni ? 0.025 : mecanum ? 0.05 : 0.06;
+            entity.MaxStepClimbHeightM = omni ? 0.035 : balance ? 0.20 : 0.25;
             entity.ChassisSupportsJump = balance || entity.ChassisSupportsJump;
         }
         else if (entity.RoleKey.Equals("engineer", StringComparison.OrdinalIgnoreCase))
@@ -1290,8 +1560,7 @@ internal sealed record RobotAppearanceProfile
             entity.MaxStepClimbHeightM = 0.35;
         }
 
-        double halfLengthM = Math.Max(0.08, BodyLengthM * 0.5);
-        double halfWidthM = Math.Max(0.08, BodyWidthM * BodyRenderWidthScale * 0.5);
+        (double halfLengthM, double halfWidthM) = EntityCollisionModel.ResolveConservativeHalfExtents(entity);
         double collisionRadiusM = Math.Max(0.14, Math.Sqrt(halfLengthM * halfLengthM + halfWidthM * halfWidthM) + 0.015);
         entity.CollisionRadiusWorld = collisionRadiusM / Math.Max(metersPerWorldUnit, 1e-6);
     }
@@ -1318,6 +1587,39 @@ internal sealed record RobotAppearanceProfile
         }
 
         return "mecanum";
+    }
+
+    private static double ResolveRobotMassKg(string roleKey, string chassisSubtype)
+    {
+        if (roleKey.Equals("infantry", StringComparison.OrdinalIgnoreCase)
+            && chassisSubtype.Contains("mecanum", StringComparison.OrdinalIgnoreCase))
+        {
+            return 18.0;
+        }
+
+        if (roleKey.Equals("hero", StringComparison.OrdinalIgnoreCase))
+        {
+            return 23.0;
+        }
+
+        if (roleKey.Equals("engineer", StringComparison.OrdinalIgnoreCase))
+        {
+            return 20.0;
+        }
+
+        if (roleKey.Equals("sentry", StringComparison.OrdinalIgnoreCase))
+        {
+            return 18.0;
+        }
+
+        if (roleKey.Equals("infantry", StringComparison.OrdinalIgnoreCase))
+        {
+            return chassisSubtype.Contains("balance", StringComparison.OrdinalIgnoreCase)
+                ? 16.0
+                : 18.0;
+        }
+
+        return 20.0;
     }
 
     public static RobotAppearanceProfile CreateDefault(float bodyLength, float bodyWidth, float bodyHeight, float bodyClearance, string roleKey)
@@ -1490,6 +1792,9 @@ internal sealed record RobotAppearanceAnchor(
     string Id,
     string Name,
     string ParentPart,
+    string AnchorMode,
+    string ParentLinkId,
+    float LinkPositionRatio,
     string ComponentScope,
     int ComponentIndex,
     Vector3 OffsetM,
@@ -1501,4 +1806,7 @@ internal sealed record RobotAppearanceLink(
     string StartAnchorId,
     string EndAnchorId,
     float RadiusM,
+    float WidthM,
+    float ThicknessM,
+    float LengthM,
     Color Color);

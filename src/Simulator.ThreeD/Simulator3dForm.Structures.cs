@@ -30,6 +30,8 @@ internal sealed partial class Simulator3dForm
     private const float BaseTopArmorSlideAmplitudeM = 0.34f;
     private const float BaseTopArmorSlideSpeedRadPerSec = MathF.PI * 0.7f;
     private const float BaseTopArmorTiltDeg = 27.5f;
+    private const float BaseOuterArmorOpenAngleDeg = 27.5f;
+    private const float BaseOuterArmorOpenSpeedPerSec = 1.65f;
     private const float StructureArmorPlateSideM = 0.13f;
     private const float StructureArmorPlateThicknessM = 0.025f;
 
@@ -39,6 +41,9 @@ internal sealed partial class Simulator3dForm
         StaticBody,
         DynamicArmor,
     }
+
+    private static Color ResolveNeutralFacilityAccentColor(bool alive)
+        => alive ? Color.FromArgb(255, 118, 128, 138) : Color.FromArgb(255, 48, 52, 58);
 
     private float DrawOutpostModel(
         Graphics graphics,
@@ -55,7 +60,7 @@ internal sealed partial class Simulator3dForm
 
         center += Vector3.UnitY * baseLiftM;
         float yaw = (float)(entity.AngleDeg * Math.PI / 180.0);
-        Color teamColor = entity.IsAlive ? ResolveTeamColor(entity.Team) : Color.FromArgb(255, 8, 9, 11);
+        Color facilityAccent = ResolveNeutralFacilityAccentColor(entity.IsAlive);
         Color bodyColor = ResolveDeepGrayMaterial(profile.BodyColor, entity.IsAlive, 0.00f);
         Color edgeColor = Color.FromArgb(entity.IsAlive ? 252 : 216, BlendColor(bodyColor, Color.Black, 0.16f));
         Color darkBody = ResolveDeepGrayMaterial(profile.BodyColor, entity.IsAlive, -0.06f);
@@ -165,7 +170,7 @@ internal sealed partial class Simulator3dForm
                 0.030f,
                 ringYaw,
                 Color.FromArgb(255, BlendColor(bodyColor, Color.White, 0.08f)),
-                Color.FromArgb(252, BlendColor(teamColor, Color.Black, 0.18f)),
+                Color.FromArgb(252, BlendColor(facilityAccent, Color.Black, 0.18f)),
                 24);
 
             DrawCylinderSolid(
@@ -193,17 +198,17 @@ internal sealed partial class Simulator3dForm
     private void DrawOutpostArmorPlate(Graphics graphics, SimulationEntity entity, RobotAppearanceProfile profile, ArmorPlateTarget plate, bool locked)
     {
         bool topPlate = string.Equals(plate.Id, "outpost_top", StringComparison.OrdinalIgnoreCase);
-        Color teamColor = entity.IsAlive ? ResolveTeamColor(entity.Team) : Color.FromArgb(255, 8, 9, 11);
+        Color facilityAccent = ResolveNeutralFacilityAccentColor(entity.IsAlive);
         bool effectiveLocked = entity.IsAlive && locked;
         Color plateColor = effectiveLocked
             ? Color.FromArgb(255, 255, 210, 76)
             : entity.IsAlive
-                ? Color.FromArgb(255, BlendColor(teamColor, Color.White, 0.24f))
+                ? Color.FromArgb(255, BlendColor(facilityAccent, Color.White, 0.18f))
                 : Color.FromArgb(255, 12, 13, 16);
         Color edgeColor = effectiveLocked
             ? Color.FromArgb(255, 255, 242, 142)
             : entity.IsAlive
-                ? Color.FromArgb(255, BlendColor(teamColor, Color.Black, 0.12f))
+                ? Color.FromArgb(255, BlendColor(facilityAccent, Color.Black, 0.16f))
                 : Color.FromArgb(255, 4, 5, 6);
         Color backingColor = Color.FromArgb(255, 42, 46, 54);
         Color backingEdge = Color.FromArgb(255, 18, 20, 24);
@@ -289,7 +294,6 @@ internal sealed partial class Simulator3dForm
         float yaw = (float)(entity.AngleDeg * Math.PI / 180.0);
         Vector3 forward = new(MathF.Cos(yaw), 0f, MathF.Sin(yaw));
         Vector3 right = new(-forward.Z, 0f, forward.X);
-        Color teamColor = ResolveTeamColor(entity.Team);
         Color bodyColor = ResolveDeepGrayMaterial(profile.BodyColor, entity.IsAlive, 0.00f);
         Color armorColor = ResolveDeepGrayMaterial(profile.ArmorColor, entity.IsAlive, 0.02f);
         Color darkColor = ResolveDeepGrayMaterial(profile.BodyColor, entity.IsAlive, -0.09f);
@@ -419,10 +423,7 @@ internal sealed partial class Simulator3dForm
                     null);
             }
 
-            if (entity.Health < BaseArmorOpenThresholdHealth)
-            {
-                DrawBaseExpandedArmor(graphics, center, yaw, entity, profile, baseLength, baseWidth, baseHeight, armorColor, edgeColor, lockedPlateId);
-            }
+            DrawBaseExpandedArmor(graphics, center, yaw, entity, profile, baseLength, baseWidth, baseHeight, armorColor, edgeColor, lockedPlateId);
         }
 
         return baseHeight + 0.20f;
@@ -454,7 +455,6 @@ internal sealed partial class Simulator3dForm
     {
         Vector3 forward = new(MathF.Cos(yaw), 0f, MathF.Sin(yaw));
         Vector3 right = new(-forward.Z, 0f, forward.X);
-        Color teamColor = ResolveTeamColor(entity.Team);
 
         for (int sideIndex = 0; sideIndex < 2; sideIndex++)
         {
@@ -562,7 +562,7 @@ internal sealed partial class Simulator3dForm
         float depth,
         float height)
     {
-        Color teamColor = ResolveTeamColor(entity.Team);
+        Color facilityAccent = ResolveNeutralFacilityAccentColor(entity.IsAlive);
         float healthRatio = entity.MaxHealth <= 1e-6
             ? 0f
             : (float)Math.Clamp(entity.Health / entity.MaxHealth, 0.0, 1.0);
@@ -601,8 +601,8 @@ internal sealed partial class Simulator3dForm
             fillLength,
             safeDepth * 1.08f,
             safeHeight * 1.08f,
-            Color.FromArgb(entity.IsAlive ? 255 : 180, teamColor),
-            Color.FromArgb(255, BlendColor(teamColor, Color.Black, 0.18f)),
+            Color.FromArgb(entity.IsAlive ? 255 : 180, facilityAccent),
+            Color.FromArgb(255, BlendColor(facilityAccent, Color.Black, 0.18f)),
             null);
     }
 
@@ -621,23 +621,25 @@ internal sealed partial class Simulator3dForm
     {
         Vector3 forward = new(MathF.Cos(yaw), 0f, MathF.Sin(yaw));
         Vector3 right = new(-forward.Z, 0f, forward.X);
-        float openAngle = (profile.StructureSideArmorOpenAngleDeg > 1e-4f ? profile.StructureSideArmorOpenAngleDeg : 27.5f) * MathF.PI / 180f;
-        float outwardOffset = profile.StructureSideArmorOutwardOffsetM > 1e-4f ? profile.StructureSideArmorOutwardOffsetM : 0.12f;
+        float openProgress = ResolveBaseArmorOpenProgress(entity);
+        if (openProgress <= 1e-4f)
+        {
+            return;
+        }
+
+        Vector3 openOffset = (-Vector3.UnitY - forward) * (0.30f * openProgress);
+        float panelForwardOffset = Math.Max(baseLength * 0.01f, 0.015f);
         for (int sideIndex = 0; sideIndex < 2; sideIndex++)
         {
             float sideSign = sideIndex == 0 ? -1f : 1f;
             Vector3 sideDirection = right * sideSign;
-            Vector3 panelUp = Vector3.Normalize(Vector3.UnitY * MathF.Cos(openAngle) + sideDirection * MathF.Sin(openAngle));
-            Vector3 panelRight = Vector3.Cross(panelUp, forward);
-            if (Vector3.Dot(panelRight, sideDirection) < 0f)
-            {
-                panelRight = -panelRight;
-            }
-
+            Vector3 panelUp = Vector3.UnitY;
+            Vector3 panelRight = sideDirection;
             Vector3 panelCenter = center
-                + sideDirection * (baseWidth * 0.33f + outwardOffset)
-                + forward * (-baseLength * 0.05f)
-                + Vector3.UnitY * (baseHeight * 0.58f);
+                + sideDirection * baseWidth * 0.41f
+                + forward * (-panelForwardOffset)
+                + Vector3.UnitY * (baseHeight * 0.58f)
+                + openOffset;
             DrawOrientedBoxSolid(
                 graphics,
                 panelCenter,
@@ -664,39 +666,72 @@ internal sealed partial class Simulator3dForm
                 null);
         }
 
-        Color teamColor = ResolveTeamColor(entity.Team);
-        Color coreColor = string.Equals(lockedPlateId, "base_core", StringComparison.OrdinalIgnoreCase)
-            ? Color.FromArgb(255, 255, 211, 84)
-            : Color.FromArgb(255, BlendColor(teamColor, Color.FromArgb(180, 42, 36), 0.48f));
-        Vector3 coreCenter = center + forward * (baseLength * 0.15f) + Vector3.UnitY * (baseHeight * 0.70f);
-        if (!IsTerrainOccludingPoint(coreCenter))
-        {
-        float plateSide = ResolveStructureArmorPlateSideM(entity);
-        float plateThickness = ResolveStructureArmorPlateThicknessM(entity);
+        Vector3 centerPanelUp = Vector3.UnitY;
+        Vector3 centerPanelRight = right;
+        Vector3 centerPanelForward = forward;
+
+        Vector3 centerPanelCenter = center
+            + forward * baseLength * 0.41f
+            + Vector3.UnitY * (baseHeight * 0.56f)
+            + openOffset;
         DrawOrientedBoxSolid(
             graphics,
-            coreCenter,
-            forward,
-            right,
-            Vector3.UnitY,
-            plateThickness * 1.16f,
-            plateSide * 1.08f,
-            plateSide * 1.08f,
+            centerPanelCenter,
+            centerPanelRight,
+            centerPanelForward,
+            centerPanelUp,
+            baseWidth * 0.30f,
+            0.075f,
+            baseHeight * 0.50f,
             Color.FromArgb(255, 42, 46, 54),
             Color.FromArgb(255, 18, 20, 24),
             null);
         DrawOrientedBoxSolid(
             graphics,
-            coreCenter,
-            forward,
-            right,
-            Vector3.UnitY,
-            plateThickness,
-            plateSide,
-            plateSide,
-            coreColor,
-            Color.FromArgb(255, BlendColor(coreColor, Color.Black, 0.18f)),
+            centerPanelCenter + forward * 0.006f,
+            centerPanelRight,
+            centerPanelForward,
+            centerPanelUp,
+            baseWidth * 0.26f,
+            0.048f,
+            baseHeight * 0.43f,
+            Color.FromArgb(255, BlendColor(armorColor, Color.White, 0.08f)),
+            edgeColor,
             null);
+
+        Color facilityAccent = ResolveNeutralFacilityAccentColor(entity.IsAlive);
+        Color coreColor = string.Equals(lockedPlateId, "base_core", StringComparison.OrdinalIgnoreCase)
+            ? Color.FromArgb(255, 255, 211, 84)
+            : Color.FromArgb(255, BlendColor(facilityAccent, Color.FromArgb(180, 184, 188), 0.32f));
+        Vector3 coreCenter = center + forward * (baseLength * 0.18f) + Vector3.UnitY * (baseHeight * 0.70f);
+        if (!IsTerrainOccludingPoint(coreCenter))
+        {
+            float plateSide = ResolveStructureArmorPlateSideM(entity);
+            float plateThickness = ResolveStructureArmorPlateThicknessM(entity);
+            DrawOrientedBoxSolid(
+                graphics,
+                coreCenter,
+                forward,
+                right,
+                Vector3.UnitY,
+                plateThickness * 1.16f,
+                plateSide * 1.08f,
+                plateSide * 1.08f,
+                Color.FromArgb(255, 42, 46, 54),
+                Color.FromArgb(255, 18, 20, 24),
+                null);
+            DrawOrientedBoxSolid(
+                graphics,
+                coreCenter,
+                forward,
+                right,
+                Vector3.UnitY,
+                plateThickness,
+                plateSide,
+                plateSide,
+                coreColor,
+                Color.FromArgb(255, BlendColor(coreColor, Color.Black, 0.18f)),
+                null);
         }
 
         DrawOrientedBoxSolid(
@@ -708,9 +743,50 @@ internal sealed partial class Simulator3dForm
             0.12f,
             0.12f,
             Math.Min(baseHeight * 0.66f, BaseCoreColumnHeightM),
-            Color.FromArgb(255, BlendColor(coreColor, Color.FromArgb(255, 64, 48), 0.38f)),
+            Color.FromArgb(255, BlendColor(coreColor, Color.FromArgb(160, 166, 172), 0.38f)),
             Color.FromArgb(248, BlendColor(coreColor, Color.White, 0.08f)),
             null);
+    }
+
+    private float ResolveBaseArmorOpenProgress(SimulationEntity entity)
+    {
+        bool forcedOpen = _host.World.Teams.TryGetValue(entity.Team, out SimulationTeamState? teamState)
+            && teamState.BaseArmorForcedOpen;
+        float target = entity.Health <= BaseArmorOpenThresholdHealth || forcedOpen ? 1f : 0f;
+        double now = _frameClock.Elapsed.TotalSeconds;
+        if (target >= 1f)
+        {
+            _baseArmorOpenAnimations[entity.Id] = (1f, now);
+            return 1f;
+        }
+
+        if (!_baseArmorOpenAnimations.TryGetValue(entity.Id, out (float Progress, double TimeSec) state)
+            || !double.IsFinite(state.TimeSec))
+        {
+            state = (target, now);
+        }
+
+        double dt = Math.Clamp(now - state.TimeSec, 0.0, 0.10);
+        float maxStep = (float)(BaseOuterArmorOpenSpeedPerSec * dt);
+        float progress = state.Progress;
+        if (progress < target)
+        {
+            progress = Math.Min(target, progress + maxStep);
+        }
+        else if (progress > target)
+        {
+            progress = Math.Max(target, progress - maxStep);
+        }
+
+        progress = SmoothStep(progress);
+        _baseArmorOpenAnimations[entity.Id] = (progress, now);
+        return progress;
+    }
+
+    private static float SmoothStep(float value)
+    {
+        float t = Math.Clamp(value, 0f, 1f);
+        return t * t * (3f - 2f * t);
     }
 
     private void DrawOutpostHead(
@@ -727,7 +803,7 @@ internal sealed partial class Simulator3dForm
         Vector3 forward = new(MathF.Cos(yaw), 0f, MathF.Sin(yaw));
         Vector3 right = new(-forward.Z, 0f, forward.X);
         Color darkColor = BlendColor(capColor, Color.Black, 0.38f);
-        Color teamColor = ResolveTeamColor(entity.Team);
+        Color facilityAccent = ResolveNeutralFacilityAccentColor(entity.IsAlive);
 
         Vector3 neckCenter = center + Vector3.UnitY * (headBaseHeight + 0.05f);
         DrawOrientedBoxSolid(
@@ -787,8 +863,8 @@ internal sealed partial class Simulator3dForm
             0.055f,
             0.055f,
             0.040f,
-            Color.FromArgb(entity.IsAlive ? 255 : 220, BlendColor(teamColor, Color.FromArgb(96, 255, 130), 0.45f)),
-            Color.FromArgb(255, BlendColor(teamColor, Color.White, 0.18f)),
+            Color.FromArgb(entity.IsAlive ? 255 : 220, BlendColor(facilityAccent, Color.FromArgb(180, 190, 196), 0.32f)),
+            Color.FromArgb(255, BlendColor(facilityAccent, Color.White, 0.18f)),
             null);
     }
 
@@ -805,7 +881,7 @@ internal sealed partial class Simulator3dForm
     {
         Vector3 forward = new(MathF.Cos(yaw), 0f, MathF.Sin(yaw));
         Vector3 right = new(-forward.Z, 0f, forward.X);
-        Color teamColor = ResolveTeamColor(entity.Team);
+        Color facilityAccent = ResolveNeutralFacilityAccentColor(entity.IsAlive);
         float detectorWidth = Math.Min((profile.StructureDetectorWidthM > 1e-4f ? profile.StructureDetectorWidthM : BaseDetectorWidthM) / BaseDiagramWidthM * baseWidth, baseWidth * 0.88f);
         float bridgeCenterHeight = profile.StructureDetectorBridgeCenterHeightM > 1e-4f ? profile.StructureDetectorBridgeCenterHeightM : baseHeight * (BaseDetectorBridgeCenterHeightM / BaseDiagramHeightM);
         float sensorCenterHeight = profile.StructureDetectorSensorCenterHeightM > 1e-4f ? profile.StructureDetectorSensorCenterHeightM : baseHeight * (BaseDetectorSensorCenterHeightM / BaseDiagramHeightM);
@@ -832,8 +908,8 @@ internal sealed partial class Simulator3dForm
             0.050f,
             Math.Max(0.030f, (profile.StructureDetectorHeightM > 1e-4f ? profile.StructureDetectorHeightM : BaseDetectorHeightM) * 0.50f),
             yaw,
-            Color.FromArgb(entity.IsAlive ? 255 : 220, BlendColor(teamColor, Color.FromArgb(96, 255, 130), 0.45f)),
-            Color.FromArgb(255, BlendColor(teamColor, Color.White, 0.18f)),
+            Color.FromArgb(entity.IsAlive ? 255 : 220, BlendColor(facilityAccent, Color.FromArgb(180, 190, 196), 0.32f)),
+            Color.FromArgb(255, BlendColor(facilityAccent, Color.White, 0.18f)),
             16);
     }
 
@@ -857,7 +933,7 @@ internal sealed partial class Simulator3dForm
     }
 
     private static float ResolveBaseTopArmorSlideM(double gameTimeSec)
-        => MathF.Sin((float)gameTimeSec * BaseTopArmorSlideSpeedRadPerSec) * BaseTopArmorSlideAmplitudeM;
+        => 0f;
 
     private static float ResolveStructureArmorPlateSideM(SimulationEntity entity)
         => Math.Clamp((float)Math.Max(entity.ArmorPlateWidthM, entity.ArmorPlateHeightM), 0.04f, 0.60f);
@@ -1056,9 +1132,7 @@ internal sealed partial class Simulator3dForm
         var faces = new List<ProjectedFace>(segments);
         var outerLoop = new List<Vector3>(segments);
         var innerLoop = new List<Vector3>(segments);
-        Color edgeColor = Color.FromArgb(
-            fillColor.A,
-            BlendColor(fillColor, Color.Black, 0.18f));
+        Color edgeColor = ResolveEnergyMechanismAnnulusEdgeColor(fillColor);
         for (int index = 0; index < segments; index++)
         {
             float angle0 = MathF.Tau * index / segments;
@@ -1083,11 +1157,27 @@ internal sealed partial class Simulator3dForm
 
         faces.Sort((left, rightFace) => rightFace.AverageDepth.CompareTo(left.AverageDepth));
         DrawProjectedFaceBatch(graphics, faces, 0.9f);
-        Color highlightColor = Color.FromArgb(
-            Math.Min(255, (int)fillColor.A),
-            BlendColor(fillColor, Color.White, 0.32f));
+        Color highlightColor = ResolveEnergyMechanismAnnulusHighlightColor(fillColor);
         DrawProjectedLoop(graphics, outerLoop, highlightColor, 1.45f);
         DrawProjectedLoop(graphics, innerLoop, edgeColor, 1.15f);
+    }
+
+    private static Color ResolveEnergyMechanismAnnulusEdgeColor(Color fillColor)
+    {
+        bool darkFill = IsDarkFlashColor(fillColor);
+        Color edge = darkFill
+            ? BlendColor(fillColor, Color.White, 0.22f)
+            : BlendColor(fillColor, Color.Black, 0.08f);
+        return Color.FromArgb(fillColor.A, edge);
+    }
+
+    private static Color ResolveEnergyMechanismAnnulusHighlightColor(Color fillColor)
+    {
+        bool darkFill = IsDarkFlashColor(fillColor);
+        Color highlight = darkFill
+            ? BlendColor(fillColor, Color.White, 0.38f)
+            : BlendColor(fillColor, Color.White, 0.28f);
+        return Color.FromArgb(Math.Min(255, (int)fillColor.A), highlight);
     }
 
     private void DrawProjectedLoop(Graphics graphics, IReadOnlyList<Vector3> loop, Color color, float width)
@@ -1120,6 +1210,13 @@ internal sealed partial class Simulator3dForm
 
     private void DrawEnergyMechanismStateOverlay(Graphics graphics, double centerWorldX, double centerWorldY)
     {
+        // Keep CPU fallback consistent with the GPU path: the energy mechanism uses
+        // its original model rings only, without generated score overlay annuli.
+        if (!ShouldRenderGeneratedEnergyMechanismRingOverlays())
+        {
+            return;
+        }
+
         if (!TryResolveEnergyMechanismEntity(centerWorldX, centerWorldY, out SimulationEntity? mechanism))
         {
             return;
@@ -1128,9 +1225,9 @@ internal sealed partial class Simulator3dForm
         double metersPerWorldUnit = Math.Max(_host.World.MetersPerWorldUnit, 1e-6);
         foreach (SimulationTeamState teamState in _host.World.Teams.Values)
         {
-            bool showActive = string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
-                && teamState.EnergyNextModuleDelaySec <= 1e-6
+            bool showPending = string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
                 && teamState.EnergyCurrentLitMask != 0;
+            bool showActive = showPending && teamState.EnergyNextModuleDelaySec <= 1e-6;
             bool showActivated = string.Equals(teamState.EnergyMechanismState, "activated", StringComparison.OrdinalIgnoreCase)
                 && teamState.EnergyBuffTimerSec > 1e-6;
             bool showLastHit = teamState.EnergyLastHitArmIndex >= 0 && teamState.EnergyLastRingScore > 0;
@@ -1144,17 +1241,17 @@ internal sealed partial class Simulator3dForm
                 }
             }
 
-            if (!showActive && !showActivated && !showLastHit && !hasPersistentRings)
+            if (!showPending && !showActivated && !showLastHit && !hasPersistentRings)
             {
                 continue;
             }
 
-            Color teamColor = ResolveTeamColor(teamState.Team);
-            Color activeColor = Color.FromArgb(232, Math.Min(255, (int)teamColor.R + 45), Math.Min(255, (int)teamColor.G + 45), Math.Min(255, (int)teamColor.B + 45));
-            Color activatedColor = Color.FromArgb(210, teamColor.R, teamColor.G, teamColor.B);
-            Color ringHitColor = Color.FromArgb(245, Math.Min(255, (int)teamColor.R + 58), Math.Min(255, (int)teamColor.G + 58), Math.Min(255, (int)teamColor.B + 58));
-            Color ringSteadyColor = Color.FromArgb(204, teamColor.R, teamColor.G, teamColor.B);
-            foreach (ArmorPlateTarget plate in SimulationCombatMath.GetEnergyMechanismTargets(mechanism!, metersPerWorldUnit, _host.World.GameTimeSec, teamState.Team, teamState))
+            Color teamColor = ResolveMapTeamLineColor(teamState.Team);
+            Color activeColor = ResolveEnergyMechanismRingLitColor(teamColor, emphasized: showActive);
+            Color ringSteadyColor = ResolveEnergyMechanismRingLitColor(teamColor, emphasized: false);
+            bool completionFlashBlack = IsFineTerrainEnergyCompletionFlashBlack(_host.World.GameTimeSec, teamState);
+            foreach (ArmorPlateTarget plate in SelectEnergyMechanismOverlayDisks(
+                         SimulationCombatMath.GetEnergyMechanismTargets(mechanism!, metersPerWorldUnit, _host.World.GameTimeSec, teamState.Team, teamState)))
             {
                 if (!SimulationCombatMath.TryParseEnergyArmIndex(plate.Id, out _, out int armIndex))
                 {
@@ -1167,33 +1264,104 @@ internal sealed partial class Simulator3dForm
                 int persistentRingScore = armIndex >= 0 && armIndex < teamState.EnergyHitRingsByArm.Length
                     ? Math.Clamp(teamState.EnergyHitRingsByArm[armIndex], 0, 10)
                     : 0;
-                if (persistentRingScore <= 0)
+                bool activeArm = showPending && (teamState.EnergyCurrentLitMask & (1 << armIndex)) != 0;
+                if (persistentRingScore <= 0 && !activeArm)
                 {
                     continue;
                 }
 
-                float outer = diskRadius * (11 - persistentRingScore) / 10f;
-                float inner = persistentRingScore >= 10 ? 0f : diskRadius * (10 - persistentRingScore) / 10f;
-                bool flashing = showLastHit
+                void DrawRingScore(int ringScore, Color ringColor, bool emphasized)
+                {
+                    float outer = diskRadius * (11 - ringScore) / 10f;
+                    float inner = ringScore >= 10 ? 0f : diskRadius * (10 - ringScore) / 10f;
+                    DrawCpuAnnulusDoubleSided(
+                        graphics,
+                        diskCenter,
+                        normal,
+                        upAxis,
+                        inner,
+                        Math.Max(inner + (emphasized ? 0.004f : 0.003f), outer),
+                        ringColor,
+                        24,
+                        emphasized ? 0.0140f : 0.0130f);
+                }
+
+                if (activeArm && persistentRingScore <= 0)
+                {
+                    DrawRingScore(4, activeColor, emphasized: false);
+                    DrawRingScore(7, activeColor, emphasized: true);
+                    continue;
+                }
+
+                bool hitFlashing = showLastHit
                     && teamState.EnergyLastHitArmIndex == armIndex
                     && _host.World.GameTimeSec <= teamState.EnergyLastHitFlashEndSec;
-                Color ringColor = flashing
-                    ? (((_host.World.GameTimeSec * 6.25) % 1.0) < 0.5
-                        ? Color.FromArgb(232, 8, 9, 11)
-                        : ringSteadyColor)
+                bool hitFlashBlack = hitFlashing
+                    && IsFineTerrainEnergyHitFlashBlack(_host.World.GameTimeSec, teamState.EnergyLastHitFlashEndSec);
+                Color ringColor = completionFlashBlack || hitFlashBlack
+                    ? ResolveEnergyMechanismRingFlashColor(teamColor)
                     : ringSteadyColor;
-                DrawCpuAnnulusDoubleSided(
-                    graphics,
-                    diskCenter,
-                    normal,
-                    upAxis,
-                    inner,
-                    Math.Max(inner + (flashing ? 0.004f : 0.003f), outer),
-                    ringColor,
-                    24,
-                    flashing ? 0.0140f : 0.0130f);
+                DrawRingScore(persistentRingScore, ringColor, hitFlashing || completionFlashBlack);
             }
         }
+    }
+
+    private static IReadOnlyList<ArmorPlateTarget> SelectEnergyMechanismOverlayDisks(IEnumerable<ArmorPlateTarget> targets)
+    {
+        var selectedByArm = new Dictionary<string, ArmorPlateTarget>(StringComparer.OrdinalIgnoreCase);
+        foreach (ArmorPlateTarget target in targets)
+        {
+            if (!SimulationCombatMath.TryParseEnergyArmIndex(target.Id, out string team, out int armIndex))
+            {
+                continue;
+            }
+
+            string key = $"{team}:{armIndex}";
+            if (!selectedByArm.TryGetValue(key, out ArmorPlateTarget existing)
+                || IsPreferredEnergyOverlayDisk(target, existing))
+            {
+                selectedByArm[key] = target;
+            }
+        }
+
+        return selectedByArm.Values
+            .OrderBy(candidate => SimulationCombatMath.TryParseEnergyArmIndex(candidate.Id, out string team, out int armIndex) ? $"{team}:{armIndex:00}" : candidate.Id, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static bool IsPreferredEnergyOverlayDisk(ArmorPlateTarget candidate, ArmorPlateTarget current)
+    {
+        int candidateRank = ResolveEnergyOverlayRingRank(candidate);
+        int currentRank = ResolveEnergyOverlayRingRank(current);
+        if (candidateRank != currentRank)
+        {
+            return candidateRank < currentRank;
+        }
+
+        double candidateDiameter = Math.Max(candidate.WidthM, candidate.HeightSpanM);
+        double currentDiameter = Math.Max(current.WidthM, current.HeightSpanM);
+        if (Math.Abs(candidateDiameter - currentDiameter) > 1e-6)
+        {
+            return candidateDiameter > currentDiameter;
+        }
+
+        return string.Compare(candidate.Id, current.Id, StringComparison.OrdinalIgnoreCase) < 0;
+    }
+
+    private static int ResolveEnergyOverlayRingRank(ArmorPlateTarget plate)
+    {
+        int ringScore = plate.EnergyRingScore;
+        if (ringScore <= 0)
+        {
+            _ = SimulationCombatMath.TryParseEnergyRingScore(plate.Id, out ringScore);
+        }
+
+        return ringScore switch
+        {
+            1 => 0,
+            <= 0 => 1,
+            _ => ringScore,
+        };
     }
 
     private bool TryResolveEnergyMechanismEntity(double centerWorldX, double centerWorldY, out SimulationEntity? mechanism)

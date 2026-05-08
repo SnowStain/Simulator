@@ -44,11 +44,13 @@ internal static class AutoAimVisibility
         ArmorPlateTarget plate,
         double metersPerWorldUnit)
     {
-        (double muzzleX, double muzzleY, double muzzleHeightM) = SimulationCombatMath.ComputeMuzzlePoint(world, shooter);
+        (double visionX, double visionY, double visionHeightM, double forwardX, double forwardY, double forwardZ) =
+            SimulationCombatMath.ComputeFirstPersonCameraPose(world, shooter);
         Vector3 start = new(
-            (float)(muzzleX * metersPerWorldUnit),
-            (float)muzzleHeightM,
-            (float)(muzzleY * metersPerWorldUnit));
+            (float)(visionX * metersPerWorldUnit),
+            (float)visionHeightM,
+            (float)(visionY * metersPerWorldUnit));
+        Vector3 cameraForward = Vector3.Normalize(new Vector3((float)forwardX, (float)forwardZ, (float)forwardY));
 
         float centerX = (float)(plate.X * metersPerWorldUnit);
         float centerY = (float)plate.HeightM;
@@ -100,7 +102,7 @@ internal static class AutoAimVisibility
 
         bool CanSeeSample(Vector3 sample)
         {
-            return IsSampleInsideFirstPersonFov(shooter, start, sample)
+            return IsSampleInsideFirstPersonFov(shooter, start, sample, cameraForward)
                 && !IsTerrainOccluding(runtimeGrid, metersPerWorldUnit, start, sample)
                 && !IsTargetBodyOccludingPlate(metersPerWorldUnit, target, plate, start, sample)
                 && !IsEntityOccluding(world, metersPerWorldUnit, shooter, target, start, sample);
@@ -131,31 +133,29 @@ internal static class AutoAimVisibility
             return cachedVisible;
         }
 
-        (double muzzleX, double muzzleY, double muzzleHeightM) = SimulationCombatMath.ComputeMuzzlePoint(world, shooter);
+        (double visionX, double visionY, double visionHeightM, double forwardX, double forwardY, double forwardZ) =
+            SimulationCombatMath.ComputeFirstPersonCameraPose(world, shooter);
         Vector3 start = new(
-            (float)(muzzleX * metersPerWorldUnit),
-            (float)muzzleHeightM,
-            (float)(muzzleY * metersPerWorldUnit));
+            (float)(visionX * metersPerWorldUnit),
+            (float)visionHeightM,
+            (float)(visionY * metersPerWorldUnit));
+        Vector3 cameraForward = Vector3.Normalize(new Vector3((float)forwardX, (float)forwardZ, (float)forwardY));
         Vector3 sample = new(
             (float)(worldX * metersPerWorldUnit),
             (float)heightM,
             (float)(worldY * metersPerWorldUnit));
-        bool visible = IsSampleInsideFirstPersonFov(shooter, start, sample)
+        bool visible = IsSampleInsideFirstPersonFov(shooter, start, sample, cameraForward)
             && !IsTerrainOccluding(runtimeGrid, metersPerWorldUnit, start, sample)
             && !IsEntityOccluding(world, metersPerWorldUnit, shooter, target, start, sample);
         StoreCachedVisibility(cacheKey, visible);
         return visible;
     }
 
-    private static bool IsSampleInsideFirstPersonFov(SimulationEntity shooter, Vector3 start, Vector3 sample)
+    private static bool IsSampleInsideFirstPersonFov(SimulationEntity shooter, Vector3 start, Vector3 sample, Vector3 cameraForward)
     {
         if (SimulationCombatMath.IsHeroLobAutoAimMode(shooter)
-            && string.Equals(shooter.RoleKey, "hero", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        if (!shooter.IsPlayerControlled)
+            && string.Equals(shooter.RoleKey, "hero", StringComparison.OrdinalIgnoreCase)
+            && shooter.IsPlayerControlled)
         {
             return true;
         }
@@ -167,10 +167,18 @@ internal static class AutoAimVisibility
             return true;
         }
 
+        if (cameraForward.LengthSquared() <= 1e-8f)
+        {
+            cameraForward = Vector3.UnitX;
+        }
+
+        cameraForward = Vector3.Normalize(cameraForward);
+        double cameraYawDeg = Math.Atan2(cameraForward.Z, cameraForward.X) * 180.0 / Math.PI;
+        double cameraPitchDeg = Math.Atan2(cameraForward.Y, Math.Sqrt(cameraForward.X * cameraForward.X + cameraForward.Z * cameraForward.Z)) * 180.0 / Math.PI;
         double yawDeg = Math.Atan2(delta.Z, delta.X) * 180.0 / Math.PI;
         double pitchDeg = Math.Atan2(delta.Y, horizontal) * 180.0 / Math.PI;
-        double yawError = Math.Abs(SimulationCombatMath.NormalizeSignedDeg(yawDeg - shooter.TurretYawDeg));
-        double pitchError = Math.Abs(pitchDeg - shooter.GimbalPitchDeg);
+        double yawError = Math.Abs(SimulationCombatMath.NormalizeSignedDeg(yawDeg - cameraYawDeg));
+        double pitchError = Math.Abs(pitchDeg - cameraPitchDeg);
         return yawError <= 66.0 && pitchError <= 50.0;
     }
 

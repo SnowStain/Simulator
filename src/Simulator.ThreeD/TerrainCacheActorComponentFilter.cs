@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Simulator.Core;
 using Simulator.Core.Map;
 
 namespace Simulator.ThreeD;
@@ -25,8 +26,26 @@ internal static class TerrainCacheActorComponentFilter
         }
 
         var result = new HashSet<int>();
-        using FileStream stream = File.OpenRead(annotationPath);
-        using JsonDocument document = JsonDocument.Parse(stream);
+        JsonDocument document;
+        try
+        {
+            using FileStream stream = File.Open(
+                annotationPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+            document = JsonDocument.Parse(stream);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
+        {
+            SimulatorRuntimeLog.Append(
+                "terrain_annotation_load.log",
+                $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} actor_filter_failed path={annotationPath} {exception.GetType().Name}:{exception.Message}");
+            return result;
+        }
+
+        using (document)
+        {
         if (document.RootElement.TryGetProperty("Composites", out JsonElement composites)
             && composites.ValueKind == JsonValueKind.Array)
         {
@@ -86,6 +105,7 @@ internal static class TerrainCacheActorComponentFilter
                     }
                 }
             }
+        }
         }
 
         lock (Gate)

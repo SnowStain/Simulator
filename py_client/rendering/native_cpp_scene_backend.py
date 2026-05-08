@@ -362,7 +362,7 @@ class NativeCppTerrainSceneBackend:
         terrain_light_comp = max(0.72, min(1.30, base_terrain_comp + pitch_abs * 0.0022))
         entity_light_comp = max(0.72, min(1.24, base_entity_comp + pitch_abs * 0.0016))
         prefer_grid_terrain = bool(simulator_cfg.get('native_cpp_prefer_grid_terrain', True))
-        asset_root = Path(__file__).resolve().parents[2] / 'robot_venue_map_asset'
+        asset_root = Path(__file__).resolve().parents[2] / 'artifacts' / 'robot_venue_map_asset'
         terrain_asset = asset_root / 'venue_map_pybullet.obj'
         scene_payload = {
             'terrain_revision': int(getattr(map_manager, 'raster_version', 0)),

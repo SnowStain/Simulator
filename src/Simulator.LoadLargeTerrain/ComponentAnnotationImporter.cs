@@ -69,9 +69,9 @@ internal static class ComponentAnnotationImporter
             SourcePath = Path.GetFullPath(path),
             ActorComponentIds = file.ActorComponentIds ?? [],
             Composites = composites,
-            ComponentTerrainLabels = file.Components?
+            ComponentTerrainLabels = LoadComponents(path, file)
                 .Where(item => item.Id.HasValue && !string.IsNullOrWhiteSpace(item.TerrainLabel))
-                .ToDictionary(item => item.Id!.Value, item => item.TerrainLabel!.Trim()) ?? new Dictionary<int, string>(),
+                .ToDictionary(item => item.Id!.Value, item => item.TerrainLabel!.Trim()),
             ComponentColorOverrides = file.ComponentColorOverrides?
                 .Where(item => item.ComponentId.HasValue)
                 .ToDictionary(
@@ -183,9 +183,54 @@ internal static class ComponentAnnotationImporter
 
         public ComponentAnnotation[]? Components { get; init; }
 
+        public string[]? ComponentFiles { get; init; }
+
         public ComponentColorOverrideAnnotation[]? ComponentColorOverrides { get; init; }
 
         public CollisionShapeAnnotation[]? CollisionShapes { get; init; }
+    }
+
+    private static IEnumerable<ComponentAnnotation> LoadComponents(string manifestPath, ComponentAnnotationFile file)
+    {
+        if (file.Components is not null)
+        {
+            foreach (ComponentAnnotation component in file.Components)
+            {
+                yield return component;
+            }
+        }
+
+        if (file.ComponentFiles is null || file.ComponentFiles.Length == 0)
+        {
+            yield break;
+        }
+
+        string manifestDirectory = Path.GetDirectoryName(Path.GetFullPath(manifestPath)) ?? Directory.GetCurrentDirectory();
+        foreach (string relativePath in file.ComponentFiles)
+        {
+            if (string.IsNullOrWhiteSpace(relativePath))
+            {
+                continue;
+            }
+
+            string shardPath = Path.GetFullPath(Path.Combine(manifestDirectory, relativePath.Replace('/', Path.DirectorySeparatorChar)));
+            if (!File.Exists(shardPath))
+            {
+                continue;
+            }
+
+            using FileStream shardStream = File.Open(shardPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            ComponentAnnotation[]? shard = JsonSerializer.Deserialize<ComponentAnnotation[]>(shardStream, JsonOptions);
+            if (shard is null)
+            {
+                continue;
+            }
+
+            foreach (ComponentAnnotation component in shard)
+            {
+                yield return component;
+            }
+        }
     }
 
     private sealed class CompositeAnnotation

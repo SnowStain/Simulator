@@ -58,6 +58,11 @@ public sealed class FacilityRegion
 
     public bool Contains(double x, double y)
     {
+        if (HasVolumeDefinition())
+        {
+            return ContainsVolumeProjection(x, y);
+        }
+
         string normalizedShape = (Shape ?? "rect").Trim().ToLowerInvariant();
         return normalizedShape switch
         {
@@ -65,6 +70,30 @@ public sealed class FacilityRegion
             "line" => ContainsLine(x, y),
             _ => ContainsRect(x, y),
         };
+    }
+
+    public bool Contains(double x, double y, double heightM)
+    {
+        if (!HasVolumeDefinition())
+        {
+            return Contains(x, y);
+        }
+
+        if (!ContainsVolumeProjection(x, y))
+        {
+            return false;
+        }
+
+        double centerZ = ReadAdditionalDouble("center_z_m", ReadAdditionalDouble("z_m", ResolveDefaultVolumeHeightM() * 0.5));
+        double height = ResolveVolumeHeightM();
+        double bottom = ReadAdditionalDouble("bottom_m", centerZ - height * 0.5);
+        double top = ReadAdditionalDouble("top_m", centerZ + height * 0.5);
+        if (top < bottom)
+        {
+            (bottom, top) = (top, bottom);
+        }
+
+        return heightM >= bottom - 1e-6 && heightM <= top + 1e-6;
     }
 
     public override string ToString()
@@ -107,6 +136,11 @@ public sealed class FacilityRegion
             return ContainsRect(x, y);
         }
 
+        if (IsNearPolygonBoundary(x, y, Math.Max(1.0, Thickness * 0.08)))
+        {
+            return true;
+        }
+
         bool inside = false;
         Point2D previous = Points[^1];
         foreach (Point2D current in Points)
@@ -123,6 +157,106 @@ public sealed class FacilityRegion
         }
 
         return inside;
+    }
+
+    private bool IsNearPolygonBoundary(double x, double y, double tolerance)
+    {
+        double toleranceSquared = tolerance * tolerance;
+        Point2D previous = Points[^1];
+        foreach (Point2D current in Points)
+        {
+            double dx = current.X - previous.X;
+            double dy = current.Y - previous.Y;
+            double lengthSquared = dx * dx + dy * dy;
+            double t = lengthSquared <= 1e-9
+                ? 0.0
+                : Math.Clamp(((x - previous.X) * dx + (y - previous.Y) * dy) / lengthSquared, 0.0, 1.0);
+            double closestX = previous.X + dx * t;
+            double closestY = previous.Y + dy * t;
+            double distanceSquared = (x - closestX) * (x - closestX) + (y - closestY) * (y - closestY);
+            if (distanceSquared <= toleranceSquared)
+            {
+                return true;
+            }
+
+            previous = current;
+        }
+
+        return false;
+    }
+
+    private bool HasVolumeDefinition()
+        => AdditionalProperties is not null
+            && (AdditionalProperties.ContainsKey("volume_shape")
+                || AdditionalProperties.ContainsKey("center_x")
+                || AdditionalProperties.ContainsKey("center_y")
+                || AdditionalProperties.ContainsKey("size_x")
+                || AdditionalProperties.ContainsKey("size_y")
+                || AdditionalProperties.ContainsKey("radius"));
+
+    private bool ContainsVolumeProjection(double x, double y)
+    {
+        string volumeShape = ReadAdditionalString("volume_shape", Shape);
+        double centerX = ReadAdditionalDouble("center_x", (X1 + X2) * 0.5);
+        double centerY = ReadAdditionalDouble("center_y", (Y1 + Y2) * 0.5);
+        double yawDeg = ReadAdditionalDouble("yaw_deg", ReadAdditionalDouble("yaw", 0.0));
+        double dx = x - centerX;
+        double dy = y - centerY;
+        double yawRad = -yawDeg * Math.PI / 180.0;
+        double localX = dx * Math.Cos(yawRad) - dy * Math.Sin(yawRad);
+        double localY = dx * Math.Sin(yawRad) + dy * Math.Cos(yawRad);
+
+        if (volumeShape.Contains("cylinder", StringComparison.OrdinalIgnoreCase)
+            || volumeShape.Contains("circle", StringComparison.OrdinalIgnoreCase))
+        {
+            double radius = ReadAdditionalDouble(
+                "radius",
+                Math.Max(Math.Abs(X2 - X1), Math.Abs(Y2 - Y1)) * 0.5);
+            return localX * localX + localY * localY <= Math.Max(0.01, radius) * Math.Max(0.01, radius);
+        }
+
+        double sizeX = ReadAdditionalDouble("size_x", Math.Abs(X2 - X1));
+        double sizeY = ReadAdditionalDouble("size_y", Math.Abs(Y2 - Y1));
+        return Math.Abs(localX) <= Math.Max(0.01, sizeX) * 0.5
+            && Math.Abs(localY) <= Math.Max(0.01, sizeY) * 0.5;
+    }
+
+    private double ResolveDefaultVolumeHeightM()
+        => Math.Max(0.05, HeightM);
+
+    private double ResolveVolumeHeightM()
+        => Math.Max(0.02, ReadAdditionalDouble("size_z_m", ReadAdditionalDouble("height_m", ResolveDefaultVolumeHeightM())));
+
+    private string ReadAdditionalString(string key, string fallback)
+    {
+        if (AdditionalProperties is null
+            || !AdditionalProperties.TryGetValue(key, out JsonElement element))
+        {
+            return fallback;
+        }
+
+        return element.ValueKind == JsonValueKind.String
+            ? element.GetString() ?? fallback
+            : element.ToString();
+    }
+
+    private double ReadAdditionalDouble(string key, double fallback)
+    {
+        if (AdditionalProperties is null
+            || !AdditionalProperties.TryGetValue(key, out JsonElement element))
+        {
+            return fallback;
+        }
+
+        if (element.ValueKind == JsonValueKind.Number && element.TryGetDouble(out double numeric))
+        {
+            return numeric;
+        }
+
+        return element.ValueKind == JsonValueKind.String
+            && double.TryParse(element.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed)
+                ? parsed
+                : fallback;
     }
 }
 

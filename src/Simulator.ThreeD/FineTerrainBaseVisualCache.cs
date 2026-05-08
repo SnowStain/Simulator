@@ -9,8 +9,13 @@ internal static class FineTerrainBaseVisualCache
 {
     private const string BaseKeyword = "\u57fa\u5730";
     private const string TopArmorKeyword = "\u9876\u90e8\u4ea4\u4e92\u7ec4\u4ef6";
+    private const string MiddleArmorKeyword = "\u4e2d\u90e8\u88c5\u7532\u677f";
+    private const string OuterPanelKeyword = "\u5916\u677f";
     private const string ArmorPlateKeyword = "\u88c5\u7532\u677f";
     private const string LightStripKeyword = "\u706f\u6761";
+    private const string FrontKeyword = "\u524d";
+    private const string LeftKeyword = "\u5de6";
+    private const string RightKeyword = "\u53f3";
     private const string RedTeamKeyword = "\u7ea2\u65b9";
     private const string BlueTeamKeyword = "\u84dd\u65b9";
 
@@ -179,8 +184,7 @@ internal static class FineTerrainBaseVisualCache
         var items = new List<FineTerrainBaseVisualItem>(2);
         foreach (RuntimeReferenceComposite composite in runtimeScene.Composites)
         {
-            if (!composite.Name.Contains(BaseKeyword, StringComparison.Ordinal)
-                || !composite.Name.Contains(TopArmorKeyword, StringComparison.Ordinal))
+            if (!IsBaseVisualComposite(composite.Name))
             {
                 continue;
             }
@@ -217,7 +221,7 @@ internal static class FineTerrainBaseVisualCache
                 }
             }
 
-            if (units.Count == 0)
+            if (units.Count == 0 && !IsBaseOuterPanelCompositeName(composite.Name))
             {
                 continue;
             }
@@ -237,6 +241,20 @@ internal static class FineTerrainBaseVisualCache
 
         return items;
     }
+
+    private static bool IsBaseVisualComposite(string compositeName)
+        => compositeName.Contains(BaseKeyword, StringComparison.Ordinal)
+            && (compositeName.Contains(TopArmorKeyword, StringComparison.Ordinal)
+                || compositeName.Contains(MiddleArmorKeyword, StringComparison.Ordinal)
+                || compositeName.Contains(OuterPanelKeyword, StringComparison.Ordinal));
+
+    public static bool IsBaseTopArmorCompositeName(string compositeName)
+        => compositeName.Contains(BaseKeyword, StringComparison.Ordinal)
+            && compositeName.Contains(TopArmorKeyword, StringComparison.Ordinal);
+
+    public static bool IsBaseOuterPanelCompositeName(string compositeName)
+        => compositeName.Contains(BaseKeyword, StringComparison.Ordinal)
+            && compositeName.Contains(OuterPanelKeyword, StringComparison.Ordinal);
 
     private static bool TryResolveLightStripHalfSplit(
         IReadOnlyList<FineTerrainBaseVisualItem> items,
@@ -317,6 +335,9 @@ internal static class FineTerrainBaseVisualCache
                 int start = Math.Clamp(range.StartIndex, 0, indices.Length);
                 int end = Math.Clamp(range.StartIndex + Math.Max(0, range.IndexCount), start, indices.Length);
                 end -= (end - start) % 3;
+                Color? componentOverrideColor = TryResolveComponentColorOverride(runtimeScene, range.ComponentId, out Color overrideColor)
+                    ? overrideColor
+                    : null;
                 for (int triangleIndex = start; triangleIndex < end; triangleIndex += 3)
                 {
                     int i0 = checked((int)indices[triangleIndex]);
@@ -336,12 +357,28 @@ internal static class FineTerrainBaseVisualCache
                         v0.Position,
                         v1.Position,
                         v2.Position,
-                        ResolveTriangleColor(v0.Color, v1.Color, v2.Color)));
+                        componentOverrideColor ?? ResolveTriangleColor(v0.Color, v1.Color, v2.Color)));
                 }
             }
         }
 
         return result;
+    }
+
+    private static bool TryResolveComponentColorOverride(RuntimeReferenceScene runtimeScene, int componentId, out Color color)
+    {
+        color = default;
+        if (!runtimeScene.ComponentColorOverrides.TryGetValue(componentId, out Vector4 value))
+        {
+            return false;
+        }
+
+        color = Color.FromArgb(
+            Math.Clamp((int)MathF.Round((value.W <= 0f ? 1f : value.W) * 255f), 0, 255),
+            Math.Clamp((int)MathF.Round(value.X * 255f), 0, 255),
+            Math.Clamp((int)MathF.Round(value.Y * 255f), 0, 255),
+            Math.Clamp((int)MathF.Round(value.Z * 255f), 0, 255));
+        return color.A > 0;
     }
 
     private static List<FineTerrainColoredTriangle> SelectBaseBodyTriangles(
@@ -562,9 +599,35 @@ internal static class FineTerrainBaseVisualCache
     }
 
     private static string? ResolvePlateId(string unitName)
-        => unitName.Contains(ArmorPlateKeyword, StringComparison.Ordinal) || unitName.Contains(LightStripKeyword, StringComparison.Ordinal)
-            ? "base_top_slide"
-            : null;
+    {
+        if (!unitName.Contains(ArmorPlateKeyword, StringComparison.Ordinal)
+            && !unitName.Contains(LightStripKeyword, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        if (unitName.Contains(MiddleArmorKeyword, StringComparison.Ordinal))
+        {
+            if (unitName.Contains(FrontKeyword, StringComparison.Ordinal))
+            {
+                return "base_middle_front";
+            }
+
+            if (unitName.Contains(LeftKeyword, StringComparison.Ordinal))
+            {
+                return "base_middle_left";
+            }
+
+            if (unitName.Contains(RightKeyword, StringComparison.Ordinal))
+            {
+                return "base_middle_right";
+            }
+
+            return "base_middle";
+        }
+
+        return "base_top_slide";
+    }
 
     private static bool IsLightStrip(string unitName)
         => unitName.Contains(LightStripKeyword, StringComparison.Ordinal);
@@ -601,64 +664,7 @@ internal static class FineTerrainBaseVisualCache
         IReadOnlyList<FineTerrainColoredTriangle> triangles,
         string team,
         bool isLightStrip)
-    {
-        var normalized = new List<FineTerrainColoredTriangle>(triangles.Count);
-        foreach (FineTerrainColoredTriangle triangle in triangles)
-        {
-            normalized.Add(new FineTerrainColoredTriangle(
-                triangle.A,
-                triangle.B,
-                triangle.C,
-                ResolveNormalizedBaseTriangleColor(triangle.Color, team, isLightStrip)));
-        }
-
-        return normalized;
-    }
-
-    private static Color ResolveNormalizedBaseTriangleColor(Color source, string team, bool isLightStrip)
-    {
-        Color safeSource = source.A <= 0 ? Color.FromArgb(236, 224, 232, 240) : source;
-        if (isLightStrip
-            || ShouldApplyTeamAccentTint(safeSource)
-            || (string.Equals(team, "blue", StringComparison.OrdinalIgnoreCase) && ShouldForceBlueSideRecolor(safeSource)))
-        {
-            Color teamColor = string.Equals(team, "red", StringComparison.OrdinalIgnoreCase)
-                ? Color.FromArgb(208, 66, 44)
-                : string.Equals(team, "blue", StringComparison.OrdinalIgnoreCase)
-                    ? Color.FromArgb(34, 82, 170)
-                    : Color.FromArgb(112, 120, 128);
-            return Color.FromArgb(safeSource.A, teamColor);
-        }
-
-        float luminance = (safeSource.R * 0.2126f + safeSource.G * 0.7152f + safeSource.B * 0.0722f) / 255f;
-        int baseValue = Math.Clamp((int)MathF.Round(50f + luminance * 46f), 36, 104);
-        return Color.FromArgb(
-            safeSource.A,
-            baseValue,
-            Math.Clamp(baseValue + 4, 0, 255),
-            Math.Clamp(baseValue + 10, 0, 255));
-    }
-
-    private static bool ShouldApplyTeamAccentTint(Color source)
-    {
-        int dominant = Math.Max(source.R, Math.Max(source.G, source.B));
-        int minimum = Math.Min(source.R, Math.Min(source.G, source.B));
-        if (dominant < 112 || dominant - minimum < 54)
-        {
-            return false;
-        }
-
-        bool redAccent = source.R > source.G + 18 && source.R > source.B + 18;
-        bool blueAccent = source.B > source.G + 18 && source.B > source.R + 18;
-        return redAccent || blueAccent;
-    }
-
-    private static bool ShouldForceBlueSideRecolor(Color source)
-    {
-        return source.R >= 84
-            && source.R > source.G + 10
-            && source.R > source.B + 18;
-    }
+        => new(triangles);
 
     private static Color ResolveTriangleColor(uint color0, uint color1, uint color2)
     {

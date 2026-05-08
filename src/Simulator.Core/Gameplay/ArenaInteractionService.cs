@@ -4,7 +4,7 @@ namespace Simulator.Core.Gameplay;
 
 public sealed class ArenaInteractionService
 {
-    private const double EnergyHitFlashDurationSec = 0.96;
+    private const double EnergyHitFlashDurationSec = 0.80;
     private const double BuffBaseDamageTakenMult = 0.50;
     private const double BuffCentralHighlandDamageTakenMult = 0.75;
     private const double BuffTrapezoidHighlandDamageTakenMult = 0.50;
@@ -16,6 +16,7 @@ public sealed class ArenaInteractionService
     private const double TerrainRoadCoolingMult = 2.00;
     private const double TerrainSlopeDamageTakenMult = 0.90;
     private const double TerrainSlopeCoolingMult = 1.20;
+    public const double FortCaptureHoldSec = 3.0;
 
     private readonly RuleSet _rules;
 
@@ -70,22 +71,23 @@ public sealed class ArenaInteractionService
 
             bool touchedDeadZone = false;
             bool touchedHeroDeployment = false;
+            bool touchedFortCapture = false;
 
             foreach (FacilityRegion facility in facilities)
             {
-                if (!facility.Contains(entity.X, entity.Y))
+                string facilityType = NormalizeFacilityType(facility.Type);
+                if (!IsEntityTouchingFacility(world, entity, facility, facilityType))
                 {
                     continue;
                 }
 
-                string facilityType = NormalizeFacilityType(facility.Type);
                 switch (facilityType)
                 {
                     case "supply":
                         ApplySupply(world, entity, facility, deltaTimeSec, events);
                         break;
                     case "fort":
-                        ApplyFort(world, entity, facility);
+                        ApplyFort(world, entity, facility, deltaTimeSec, ref touchedFortCapture, events);
                         break;
                     case "dead_zone":
                         touchedDeadZone = true;
@@ -111,6 +113,7 @@ public sealed class ArenaInteractionService
                                 deltaTimeSec,
                                 centralHighlandControl,
                                 ref touchedHeroDeployment,
+                                ref touchedFortCapture,
                                 events);
                         }
 
@@ -128,6 +131,14 @@ public sealed class ArenaInteractionService
             if (!touchedHeroDeployment)
             {
                 entity.HeroDeploymentHoldTimerSec = 0.0;
+            }
+
+            if (!touchedFortCapture)
+            {
+                entity.FortCaptureProgressSec = 0.0;
+                entity.FortEnemyOccupationProgressSec = 0.0;
+                entity.FortActiveFacilityId = string.Empty;
+                entity.FortReserveAmmoCap = 0;
             }
 
             ApplyTimedBuffEffects(entity);
@@ -297,15 +308,89 @@ public sealed class ArenaInteractionService
             $"Bought ammo -{ammoCost} gold, +{unitGain}"));
     }
 
-    private void ApplyFort(SimulationWorldState world, SimulationEntity entity, FacilityRegion facility)
+    private void ApplyFort(
+        SimulationWorldState world,
+        SimulationEntity entity,
+        FacilityRegion facility,
+        double deltaTimeSec,
+        ref bool touchedFortCapture,
+        ICollection<FacilityInteractionEvent> events)
     {
         if (!CanUseFortBuff(world, entity, facility))
         {
             return;
         }
 
-        ApplyDamageTakenBuff(entity, _rules.Facility.FortDamageTakenMult);
-        ApplyCoolingBuff(entity, _rules.Facility.FortCoolingMult);
+        touchedFortCapture = true;
+        double previousProgress = entity.FortCaptureProgressSec;
+        entity.FortCaptureProgressSec = Math.Min(FortCaptureHoldSec, previousProgress + deltaTimeSec);
+        if (entity.FortCaptureProgressSec + 1e-6 < FortCaptureHoldSec)
+        {
+            return;
+        }
+
+        if (previousProgress + 1e-6 < FortCaptureHoldSec)
+        {
+            bool capturedFriendlyFort = IsFriendlyFacility(entity.Team, facility.Team);
+            entity.FortActiveFacilityId = facility.Id;
+            entity.FortEnemyOccupationProgressSec = 0.0;
+            if (capturedFriendlyFort)
+            {
+                int reserveCap = ResolveFortReserveAmmoCap(entity);
+                entity.FortReserveAmmoCap = reserveCap;
+                entity.FortReserveAmmo = Math.Max(entity.FortReserveAmmo, reserveCap);
+            }
+
+            events.Add(new FacilityInteractionEvent(
+                world.GameTimeSec,
+                entity.Team,
+                entity.Id,
+                facility.Id,
+                NormalizeFacilityType(facility.Type),
+                capturedFriendlyFort ? "Captured friendly fort" : "Captured enemy fort"));
+        }
+
+        bool friendlyFort = IsFriendlyFacility(entity.Team, facility.Team);
+        if (friendlyFort)
+        {
+            int reserveCap = ResolveFortReserveAmmoCap(entity);
+            entity.FortReserveAmmoCap = reserveCap;
+            entity.FortReserveAmmo = Math.Clamp(Math.Max(entity.FortReserveAmmo, reserveCap), 0, reserveCap);
+            ApplyDamageTakenBuff(entity, 0.50);
+            ApplyCoolingBuff(entity, Math.Max(_rules.Facility.FortCoolingMult, 5.0));
+            return;
+        }
+
+        entity.FortReserveAmmoCap = 0;
+        entity.FortReserveAmmo = 0;
+        SimulationTeamState targetTeam = world.GetOrCreateTeamState(facility.Team);
+        if (!targetTeam.BaseArmorForcedOpen)
+        {
+            entity.FortEnemyOccupationProgressSec += deltaTimeSec;
+            if (entity.FortEnemyOccupationProgressSec >= 20.0)
+            {
+                targetTeam.BaseArmorForcedOpen = true;
+                events.Add(new FacilityInteractionEvent(
+                    world.GameTimeSec,
+                    entity.Team,
+                    entity.Id,
+                    facility.Id,
+                    NormalizeFacilityType(facility.Type),
+                    "Enemy base armor opened by fort occupation"));
+            }
+            else
+            {
+                ApplyDamageTakenBuff(entity, 2.0);
+            }
+        }
+    }
+
+    private int ResolveFortReserveAmmoCap(SimulationEntity entity)
+    {
+        ResolvedRoleProfile profile = _rules.ResolveRuntimeProfile(entity);
+        double heatDissipation = Math.Max(0.0, profile.HeatDissipationRate);
+        int coolingBonus = Math.Clamp((int)Math.Floor(heatDissipation * 1.875), 0, 75);
+        return Math.Clamp(100 + 2 * (coolingBonus / 15), 0, 500);
     }
 
     private void ApplyBuffRegion(
@@ -316,6 +401,7 @@ public sealed class ArenaInteractionService
         double deltaTimeSec,
         IReadOnlyDictionary<string, string> centralHighlandControl,
         ref bool touchedHeroDeployment,
+        ref bool touchedFortCapture,
         ICollection<FacilityInteractionEvent> events)
     {
         switch (facilityType)
@@ -345,7 +431,7 @@ public sealed class ArenaInteractionService
                 return;
 
             case "buff_trapezoid_highland":
-                if (!IsFriendlyFacility(entity.Team, facility.Team) || !IsRobotEntity(entity))
+                if (!IsFriendlyFacility(entity.Team, facility.Team) || !IsTerrainBuffEligible(entity))
                 {
                     return;
                 }
@@ -379,13 +465,7 @@ public sealed class ArenaInteractionService
                 return;
 
             case "buff_fort":
-                if (!CanUseFortBuff(world, entity, facility))
-                {
-                    return;
-                }
-
-                ApplyDamageTakenBuff(entity, _rules.Facility.FortDamageTakenMult);
-                ApplyCoolingBuff(entity, _rules.Facility.FortCoolingMult);
+                ApplyFort(world, entity, facility, deltaTimeSec, ref touchedFortCapture, events);
                 return;
 
             case "buff_assembly":
@@ -395,7 +475,11 @@ public sealed class ArenaInteractionService
                     return;
                 }
 
-                ApplyDamageTakenBuff(entity, 0.0);
+                if (world.GameTimeSec <= 180.0)
+                {
+                    ApplyDamageTakenBuff(entity, 0.0);
+                }
+
                 return;
 
             case "buff_hero_deployment":
@@ -407,7 +491,7 @@ public sealed class ArenaInteractionService
                 }
 
                 if (!entity.HeroDeploymentRequested
-                    || !string.Equals(RuleSet.NormalizeHeroMode(entity.HeroPerformanceMode), "ranged_priority", StringComparison.OrdinalIgnoreCase))
+                    || !SimulationCombatMath.IsHeroDeploymentEligible(entity))
                 {
                     entity.HeroDeploymentHoldTimerSec = 0.0;
                     entity.HeroDeploymentActive = false;
@@ -522,6 +606,7 @@ public sealed class ArenaInteractionService
         SimulationTeamState teamState = world.GetOrCreateTeamState(entity.Team);
         double gainedGold = entity.CarriedMinerals * _rules.Facility.GoldPerMineral;
         teamState.Gold += gainedGold;
+        teamState.TotalGoldEarned += gainedGold;
         entity.CarriedMinerals = 0;
 
         events.Add(new FacilityInteractionEvent(
@@ -690,6 +775,7 @@ public sealed class ArenaInteractionService
         GrantRobotExperience(shooter, safeRingScore * 20.0);
         if (CountActivatedEnergyDisks(teamState) >= 5)
         {
+            teamState.EnergyStateStartTimeSec = world.GameTimeSec;
             if (teamState.EnergyLargeMechanismActive)
             {
                 teamState.EnergyLastLargeAttemptSlot = ResolveLargeEnergyAttemptSlot(world.GameTimeSec);
@@ -1166,6 +1252,96 @@ public sealed class ArenaInteractionService
         blue.EnergyRotorDirectionSign = -red.EnergyRotorDirectionSign;
     }
 
+    private static bool IsEntityTouchingFacility(
+        SimulationWorldState world,
+        SimulationEntity entity,
+        FacilityRegion facility,
+        string facilityType)
+    {
+        double touchHeightM = ResolveFacilityTouchHeight(entity);
+        if (IsEntityInsideBuffProjection(world, facility, entity, facilityType, touchHeightM))
+        {
+            return true;
+        }
+
+        if (!IsRobotEntity(entity))
+        {
+            return false;
+        }
+
+        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
+        double halfLengthWorld = Math.Max(0.12, entity.BodyLengthM * 0.62) / metersPerWorldUnit;
+        double halfWidthWorld = Math.Max(0.12, entity.BodyWidthM * Math.Max(0.55, entity.BodyRenderWidthScale) * 0.62) / metersPerWorldUnit;
+        if (entity.WheelOffsetsM.Count > 0)
+        {
+            double wheelRadiusWorld = Math.Max(0.03, entity.WheelRadiusM) / metersPerWorldUnit;
+            double renderWidthScale = Math.Max(0.55, entity.BodyRenderWidthScale);
+            foreach ((double wheelX, double wheelY) in entity.WheelOffsetsM)
+            {
+                halfLengthWorld = Math.Max(halfLengthWorld, (Math.Abs(wheelX) + entity.WheelRadiusM * 0.85) / metersPerWorldUnit);
+                halfWidthWorld = Math.Max(halfWidthWorld, (Math.Abs(wheelY) * renderWidthScale + Math.Max(0.02, wheelRadiusWorld * metersPerWorldUnit * 0.55)) / metersPerWorldUnit);
+            }
+        }
+
+        double yawRad = entity.AngleDeg * Math.PI / 180.0;
+        double forwardX = Math.Cos(yawRad);
+        double forwardY = Math.Sin(yawRad);
+        double rightX = -forwardY;
+        double rightY = forwardX;
+
+        foreach ((double localForward, double localRight) in EnumerateFacilityFootprintSamples(halfLengthWorld, halfWidthWorld))
+        {
+            double sampleX = entity.X + forwardX * localForward + rightX * localRight;
+            double sampleY = entity.Y + forwardY * localForward + rightY * localRight;
+            if (IsFacilitySampleInside(facility, sampleX, sampleY, touchHeightM))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsFacilitySampleInside(FacilityRegion facility, double x, double y, double heightM)
+        => facility.Contains(x, y, heightM);
+
+    private static bool IsEntityInsideBuffProjection(
+        SimulationWorldState world,
+        FacilityRegion facility,
+        SimulationEntity entity,
+        string facilityType,
+        double heightM)
+    {
+        return facility.Contains(entity.X, entity.Y, heightM);
+    }
+
+    private static double ResolveFacilityTouchHeight(SimulationEntity entity)
+        => Math.Max(
+            0.0,
+            entity.GroundHeightM
+            + entity.AirborneHeightM
+            + Math.Max(0.02, entity.BodyClearanceM + entity.BodyHeightM * 0.5));
+
+    private static IEnumerable<(double Forward, double Right)> EnumerateFacilityFootprintSamples(double halfLengthWorld, double halfWidthWorld)
+    {
+        yield return (halfLengthWorld, 0.0);
+        yield return (-halfLengthWorld, 0.0);
+        yield return (0.0, halfWidthWorld);
+        yield return (0.0, -halfWidthWorld);
+        yield return (halfLengthWorld * 0.55, 0.0);
+        yield return (-halfLengthWorld * 0.55, 0.0);
+        yield return (0.0, halfWidthWorld * 0.55);
+        yield return (0.0, -halfWidthWorld * 0.55);
+        yield return (halfLengthWorld, halfWidthWorld);
+        yield return (halfLengthWorld, -halfWidthWorld);
+        yield return (-halfLengthWorld, halfWidthWorld);
+        yield return (-halfLengthWorld, -halfWidthWorld);
+        yield return (halfLengthWorld * 0.55, halfWidthWorld);
+        yield return (halfLengthWorld * 0.55, -halfWidthWorld);
+        yield return (-halfLengthWorld * 0.55, halfWidthWorld);
+        yield return (-halfLengthWorld * 0.55, -halfWidthWorld);
+    }
+
     private static IReadOnlyDictionary<string, string> ResolveCentralHighlandControl(
         SimulationWorldState world,
         IReadOnlyList<FacilityRegion> facilities)
@@ -1182,7 +1358,7 @@ public sealed class ArenaInteractionService
             bool contested = false;
             foreach (SimulationEntity entity in world.Entities)
             {
-                if (!entity.IsAlive || !IsCentralHighlandRole(entity) || !facility.Contains(entity.X, entity.Y))
+                if (!entity.IsAlive || !IsCentralHighlandRole(entity) || !IsEntityTouchingFacility(world, entity, facility, facility.Type))
                 {
                     continue;
                 }
@@ -1418,30 +1594,60 @@ public sealed class ArenaInteractionService
 
     private static bool CanUseOutpostBuff(SimulationWorldState world, SimulationEntity entity, FacilityRegion facility)
     {
-        if (!IsFriendlyFacility(entity.Team, facility.Team)
-            || (!string.Equals(entity.RoleKey, "hero", StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(entity.RoleKey, "engineer", StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(entity.RoleKey, "infantry", StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase)))
+        bool friendly = IsFriendlyFacility(entity.Team, facility.Team);
+        bool allowedRole = string.Equals(entity.RoleKey, "hero", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(entity.RoleKey, "engineer", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(entity.RoleKey, "infantry", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase);
+        if (!allowedRole)
         {
             return false;
         }
 
         SimulationEntity? outpost = FindStructure(world, facility.Team, "outpost");
-        return outpost is not null && outpost.IsAlive;
+        if (friendly)
+        {
+            return outpost is not null && outpost.IsAlive;
+        }
+
+        return IsStructureDestroyed(outpost) && world.GameTimeSec >= 300.0;
     }
 
     private bool CanUseFortBuff(SimulationWorldState world, SimulationEntity entity, FacilityRegion facility)
     {
-        if (!IsFriendlyFacility(entity.Team, facility.Team)
-            || (!string.Equals(entity.RoleKey, "infantry", StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase)))
+        bool friendly = IsFriendlyFacility(entity.Team, facility.Team);
+        bool friendlyRole = string.Equals(entity.RoleKey, "hero", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(entity.RoleKey, "engineer", StringComparison.OrdinalIgnoreCase);
+        bool enemyRole = string.Equals(entity.RoleKey, "infantry", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(entity.RoleKey, "sentry", StringComparison.OrdinalIgnoreCase);
+        if (!IsRobotEntity(entity) || (friendly ? !friendlyRole : !enemyRole))
         {
             return false;
         }
 
         SimulationEntity? outpost = FindStructure(world, facility.Team, "outpost");
-        return outpost is null || !outpost.IsAlive;
+        return IsStructureDestroyed(outpost) && (friendly || world.GameTimeSec >= 180.0);
+    }
+
+    private static bool IsStructureDestroyed(SimulationEntity? entity)
+    {
+        if (entity is null)
+        {
+            return true;
+        }
+
+        if (!entity.IsAlive)
+        {
+            return true;
+        }
+
+        if (entity.Health <= 1e-6)
+        {
+            return true;
+        }
+
+        return entity.DestroyedTimeSec > 1e-6
+            && !string.Equals(entity.State, "respawning", StringComparison.OrdinalIgnoreCase);
     }
 
     private static SimulationEntity? FindStructure(SimulationWorldState world, string team, string entityType)

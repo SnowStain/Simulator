@@ -16,7 +16,9 @@ import re
 import shutil
 import subprocess
 import sys
+import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
@@ -36,6 +38,15 @@ def launcher_build_dir(root: Path, target_name: str, configuration: str) -> Path
     return root / "build_verify" / "launcher_builds" / configuration.lower() / target_name
 
 
+def launcher_instance_build_dir(root: Path, target_name: str, configuration: str, instance_id: str) -> Path:
+    return root / "build_verify" / "launcher_builds" / configuration.lower() / f"{target_name}_instances" / instance_id
+
+
+def launcher_instance_id() -> str:
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return f"{timestamp}_{os.getpid()}_{uuid.uuid4().hex[:8]}"
+
+
 def repo_root() -> Path:
     return Path(__file__).resolve().parent
 
@@ -48,7 +59,6 @@ def project_targets(root: Path) -> dict[str, TargetSpec]:
         # Running "solution" maps to the default runnable app (ThreeD).
         "solution": TargetSpec(path=root / "Simulator.sln", run_project=three_d),
         "threeD": TargetSpec(path=three_d, run_project=three_d),
-        "terrainEditor": TargetSpec(path=root / "py_client" / "terrain_editor.py", python_script=root / "py_client" / "terrain_editor.py"),
         "appearanceEditor": TargetSpec(path=root / "py_client" / "appearance_editor.py", python_script=root / "py_client" / "appearance_editor.py"),
         "largeTerrainViewer": TargetSpec(path=root / "run_viewer.py", python_script=root / "run_viewer.py"),
         "loadLargeTerrain": TargetSpec(path=large_terrain, run_project=large_terrain),
@@ -84,7 +94,16 @@ def run_detached(command: list[str], stdout_path: Path | None = None, stderr_pat
         return False
 
 
-def build_with_dotnet(run_project: Path, configuration: str, output_dir: Path | None = None) -> tuple[bool, str]:
+def launcher_instance_obj_dir(root: Path, target_name: str, configuration: str, instance_id: str) -> Path:
+    return root / "build_verify" / "launcher_obj" / configuration.lower() / f"{target_name}_instances" / instance_id
+
+
+def build_with_dotnet(
+    run_project: Path,
+    configuration: str,
+    output_dir: Path | None = None,
+    intermediate_dir: Path | None = None,
+) -> tuple[bool, str]:
     dotnet = locate_dotnet()
     if not dotnet:
         return False, "dotnet CLI not found in PATH."
@@ -100,6 +119,11 @@ def build_with_dotnet(run_project: Path, configuration: str, output_dir: Path | 
     if output_dir is not None:
         output_dir.mkdir(parents=True, exist_ok=True)
         command.append(f"-p:OutDir={str(output_dir.resolve())}{os.sep}")
+    if intermediate_dir is not None:
+        # Keep Roslyn servers isolated for parallel launcher instances, but leave
+        # MSBuild's obj/assets paths project-local. Overriding BaseIntermediateOutputPath
+        # for a project graph can desync restore/build assets across target frameworks.
+        command.append("-p:UseSharedCompilation=false")
     result = subprocess.run(
         command,
         cwd=str(repo_root()),
@@ -159,11 +183,12 @@ def run_with_dotnet(
     no_build: bool,
     app_args: list[str],
 ) -> bool:
+    instance_id = launcher_instance_id()
     if target_spec.python_script is not None:
         command = [locate_python(), str(target_spec.python_script), *app_args]
         log_dir = launcher_log_dir(repo_root())
-        stdout_path = log_dir / f"{target_name}.stdout.log"
-        stderr_path = log_dir / f"{target_name}.stderr.log"
+        stdout_path = log_dir / f"{target_name}.{instance_id}.stdout.log"
+        stderr_path = log_dir / f"{target_name}.{instance_id}.stderr.log"
         return run_detached(command, stdout_path=stdout_path, stderr_path=stderr_path)
 
     run_project = target_spec.run_project
@@ -174,9 +199,16 @@ def run_with_dotnet(
         )
         return False
 
-    output_dir = launcher_build_dir(repo_root(), target_name, configuration)
+    root = repo_root()
+    output_dir = launcher_build_dir(root, target_name, configuration) if no_build else launcher_instance_build_dir(root, target_name, configuration, instance_id)
+    intermediate_dir = None if no_build else launcher_instance_obj_dir(root, target_name, configuration, instance_id)
     if not no_build:
-        build_ok, build_output = build_with_dotnet(run_project, configuration, output_dir=output_dir)
+        build_ok, build_output = build_with_dotnet(
+            run_project,
+            configuration,
+            output_dir=output_dir,
+            intermediate_dir=intermediate_dir,
+        )
         if not build_ok:
             print("dotnet build failed.", file=sys.stderr)
             if build_output:
@@ -190,8 +222,8 @@ def run_with_dotnet(
 
     command = [str(executable), *app_args]
     log_dir = launcher_log_dir(repo_root())
-    stdout_path = log_dir / f"{target_name}.stdout.log"
-    stderr_path = log_dir / f"{target_name}.stderr.log"
+    stdout_path = log_dir / f"{target_name}.{instance_id}.stdout.log"
+    stderr_path = log_dir / f"{target_name}.{instance_id}.stderr.log"
     return run_detached(command, stdout_path=stdout_path, stderr_path=stderr_path)
 
 

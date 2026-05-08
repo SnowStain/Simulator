@@ -7,16 +7,19 @@ namespace Simulator.ThreeD;
 
 internal sealed partial class Simulator3dForm
 {
-    private const int BackgroundVideoMaxDecodeWidth = 1280;
-    private const int BackgroundVideoMaxDecodeHeight = 720;
+    private const int BackgroundVideoMaxDecodeWidth = 960;
+    private const int BackgroundVideoMaxDecodeHeight = 540;
     private readonly object _backgroundVideoSync = new();
     private CancellationTokenSource? _backgroundVideoCts;
     private Task? _backgroundVideoTask;
     private Bitmap? _backgroundVideoFrame;
+    private Bitmap? _backgroundVideoCompositedFrame;
     private string? _backgroundVideoPath;
     private bool _backgroundVideoInitialized;
     private double _backgroundVideoFrameIntervalSec = MainMenuTargetFrameIntervalSec;
     private long _backgroundVideoFrameVersion;
+    private long _backgroundVideoCompositedVersion = -1;
+    private System.Drawing.Size _backgroundVideoCompositedSize = System.Drawing.Size.Empty;
 
     private void InitializeBackgroundVideo()
     {
@@ -73,6 +76,10 @@ internal sealed partial class Simulator3dForm
         {
             _backgroundVideoFrame?.Dispose();
             _backgroundVideoFrame = null;
+            _backgroundVideoCompositedFrame?.Dispose();
+            _backgroundVideoCompositedFrame = null;
+            _backgroundVideoCompositedVersion = -1;
+            _backgroundVideoCompositedSize = System.Drawing.Size.Empty;
         }
     }
 
@@ -92,17 +99,35 @@ internal sealed partial class Simulator3dForm
                 return false;
             }
 
-            Rectangle sourceRect = ComputeAspectFillSourceRect(_backgroundVideoFrame.Size, ClientSize);
-            GraphicsState state = graphics.Save();
-            graphics.InterpolationMode = InterpolationMode.Bilinear;
-            graphics.PixelOffsetMode = PixelOffsetMode.Half;
-            graphics.CompositingQuality = CompositingQuality.HighSpeed;
-            graphics.DrawImage(_backgroundVideoFrame, ClientRectangle, sourceRect, GraphicsUnit.Pixel);
-            graphics.Restore(state);
-            using var veil = new SolidBrush(Color.FromArgb(128, 0, 0, 0));
-            graphics.FillRectangle(veil, ClientRectangle);
+            System.Drawing.Size targetSize = ClientSize;
+            if (_backgroundVideoCompositedFrame is null
+                || _backgroundVideoCompositedVersion != _backgroundVideoFrameVersion
+                || _backgroundVideoCompositedSize != targetSize)
+            {
+                _backgroundVideoCompositedFrame?.Dispose();
+                _backgroundVideoCompositedFrame = ComposeBackgroundVideoFrame(_backgroundVideoFrame, targetSize);
+                _backgroundVideoCompositedVersion = _backgroundVideoFrameVersion;
+                _backgroundVideoCompositedSize = targetSize;
+            }
+
+            graphics.DrawImageUnscaled(_backgroundVideoCompositedFrame, System.Drawing.Point.Empty);
             return true;
         }
+    }
+
+    private static Bitmap ComposeBackgroundVideoFrame(Bitmap source, System.Drawing.Size targetSize)
+    {
+        var composed = new Bitmap(Math.Max(1, targetSize.Width), Math.Max(1, targetSize.Height), PixelFormat.Format32bppPArgb);
+        using Graphics graphics = Graphics.FromImage(composed);
+        Rectangle targetRect = new(0, 0, composed.Width, composed.Height);
+        Rectangle sourceRect = ComputeAspectFillSourceRect(source.Size, targetSize);
+        graphics.InterpolationMode = InterpolationMode.Bilinear;
+        graphics.PixelOffsetMode = PixelOffsetMode.Half;
+        graphics.CompositingQuality = CompositingQuality.HighSpeed;
+        graphics.DrawImage(source, targetRect, sourceRect, GraphicsUnit.Pixel);
+        using var veil = new SolidBrush(Color.FromArgb(128, 0, 0, 0));
+        graphics.FillRectangle(veil, targetRect);
+        return composed;
     }
 
     private async Task RunBackgroundVideoLoop(string path, CancellationToken cancellationToken)
@@ -121,7 +146,7 @@ internal sealed partial class Simulator3dForm
                 fps = 30.0;
             }
 
-            fps = Math.Clamp(fps, 1.0, 144.0);
+            fps = Math.Clamp(fps, 1.0, 30.0);
             _backgroundVideoFrameIntervalSec = 1.0 / fps;
             int delayMs = Math.Clamp((int)Math.Round(1000.0 / fps), 7, 1000);
             using var frame = new Mat();

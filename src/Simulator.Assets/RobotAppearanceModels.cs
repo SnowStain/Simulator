@@ -164,6 +164,26 @@ public sealed class RobotAppearanceProfileDefinition
     [Category("Gimbal")]
     public double BarrelRadiusM { get; set; }
 
+    [JsonPropertyName("barrel_octagon_long_edge_m")]
+    [Category("Gimbal")]
+    public double BarrelOctagonLongEdgeM { get; set; }
+
+    [JsonPropertyName("barrel_octagon_short_edge_m")]
+    [Category("Gimbal")]
+    public double BarrelOctagonShortEdgeM { get; set; }
+
+    [JsonPropertyName("barrel_offset_x_m")]
+    [Category("Gimbal")]
+    public double BarrelOffsetXM { get; set; }
+
+    [JsonPropertyName("barrel_offset_y_m")]
+    [Category("Gimbal")]
+    public double BarrelOffsetYM { get; set; }
+
+    [JsonPropertyName("barrel_offset_z_m")]
+    [Category("Gimbal")]
+    public double BarrelOffsetZM { get; set; }
+
     [JsonPropertyName("gimbal_height_m")]
     [Category("Gimbal")]
     public double GimbalHeightM { get; set; }
@@ -175,6 +195,34 @@ public sealed class RobotAppearanceProfileDefinition
     [JsonPropertyName("gimbal_offset_y_m")]
     [Category("Gimbal")]
     public double GimbalOffsetYM { get; set; }
+
+    [JsonPropertyName("gimbal_relative_offset_x_m")]
+    [Category("Gimbal")]
+    public double GimbalRelativeOffsetXM { get; set; }
+
+    [JsonPropertyName("gimbal_relative_offset_y_m")]
+    [Category("Gimbal")]
+    public double GimbalRelativeOffsetYM { get; set; }
+
+    [JsonPropertyName("gimbal_relative_offset_z_m")]
+    [Category("Gimbal")]
+    public double GimbalRelativeOffsetZM { get; set; }
+
+    [JsonPropertyName("body_front_tilt_deg")]
+    [Category("Body")]
+    public double BodyFrontTiltDeg { get; set; }
+
+    [JsonPropertyName("body_rear_tilt_deg")]
+    [Category("Body")]
+    public double BodyRearTiltDeg { get; set; }
+
+    [JsonPropertyName("body_left_tilt_deg")]
+    [Category("Body")]
+    public double BodyLeftTiltDeg { get; set; }
+
+    [JsonPropertyName("body_right_tilt_deg")]
+    [Category("Body")]
+    public double BodyRightTiltDeg { get; set; }
 
     [JsonPropertyName("armor_plate_width_m")]
     [Category("Armor")]
@@ -191,6 +239,18 @@ public sealed class RobotAppearanceProfileDefinition
     [JsonPropertyName("armor_plate_gap_m")]
     [Category("Armor")]
     public double ArmorPlateGapM { get; set; }
+
+    [JsonPropertyName("armor_plate_thickness_m")]
+    [Category("Armor")]
+    public double ArmorPlateThicknessM { get; set; } = -1.0;
+
+    [JsonPropertyName("armor_plate_offsets_m")]
+    [Browsable(false)]
+    public List<List<double>> ArmorPlateOffsetsM { get; set; } = new();
+
+    [JsonPropertyName("armor_plate_rotations_ypr_deg")]
+    [Browsable(false)]
+    public List<List<double>> ArmorPlateRotationsYprDeg { get; set; } = new();
 
     [JsonPropertyName("armor_orbit_yaws_deg")]
     [Browsable(false)]
@@ -230,6 +290,14 @@ public sealed class RobotAppearanceProfileDefinition
     [Category("Armor")]
     public double ArmorLightHeightM { get; set; }
 
+    [JsonPropertyName("armor_light_offsets_m")]
+    [Browsable(false)]
+    public List<List<double>> ArmorLightOffsetsM { get; set; } = new();
+
+    [JsonPropertyName("armor_light_plate_distances_m")]
+    [Browsable(false)]
+    public List<double> ArmorLightPlateDistancesM { get; set; } = new();
+
     [JsonPropertyName("armor_light_orbit_yaws_deg")]
     [Browsable(false)]
     public List<double> ArmorLightOrbitYawsDeg { get; set; } = new();
@@ -267,6 +335,106 @@ public sealed class RobotAppearanceProfileDefinition
     [JsonPropertyName("barrel_light_height_m")]
     [Category("Armor")]
     public double BarrelLightHeightM { get; set; }
+
+    [JsonPropertyName("barrel_light_offset_x_m")]
+    [Category("Armor")]
+    public double BarrelLightOffsetXM { get; set; }
+
+    [JsonPropertyName("barrel_light_offset_y_m")]
+    [Category("Armor")]
+    public double BarrelLightOffsetYM { get; set; }
+
+    [JsonPropertyName("barrel_light_offset_z_m")]
+    [Category("Armor")]
+    public double BarrelLightOffsetZM { get; set; }
+
+    [JsonPropertyName("rear_health_light_length_m")]
+    [Category("Armor")]
+    public double RearHealthLightLengthM { get; set; }
+
+    [JsonPropertyName("rear_health_light_width_m")]
+    [Category("Armor")]
+    public double RearHealthLightWidthM { get; set; }
+
+    [JsonPropertyName("rear_health_light_height_m")]
+    [Category("Armor")]
+    public double RearHealthLightHeightM { get; set; }
+
+    [JsonPropertyName("rear_health_light_offset_x_m")]
+    [Category("Armor")]
+    public double RearHealthLightOffsetXM { get; set; }
+
+    [JsonPropertyName("rear_health_light_offset_y_m")]
+    [Category("Armor")]
+    public double RearHealthLightOffsetYM { get; set; }
+
+    [JsonPropertyName("rear_health_light_offset_z_m")]
+    [Category("Armor")]
+    public double RearHealthLightOffsetZM { get; set; }
+
+    [JsonPropertyName("barrel_friction_wheel_radius_m")]
+    [Category("Gimbal")]
+    public double BarrelFrictionWheelRadiusM { get; set; }
+
+    [JsonPropertyName("barrel_friction_wheel_width_m")]
+    [Category("Gimbal")]
+    public double BarrelFrictionWheelWidthM { get; set; }
+
+    [JsonPropertyName("barrel_friction_wheel_height_m")]
+    [Category("Gimbal")]
+    public double BarrelFrictionWheelHeightM { get; set; }
+
+    [JsonPropertyName("barrel_friction_wheel_offset_x_m")]
+    [Category("Gimbal")]
+    public double BarrelFrictionWheelOffsetXM { get; set; }
+
+    [JsonPropertyName("barrel_friction_wheel_offset_y_m")]
+    [Category("Gimbal")]
+    public double BarrelFrictionWheelOffsetYM { get; set; }
+
+    [JsonPropertyName("barrel_friction_wheel_offset_z_m")]
+    [Category("Gimbal")]
+    public double BarrelFrictionWheelOffsetZM { get; set; }
+
+    [JsonPropertyName("barrel_friction_wheel_yaw_deg")]
+    [Category("Gimbal")]
+    public double BarrelFrictionWheelYawDeg { get; set; }
+
+    [JsonPropertyName("barrel_friction_wheel_pitch_deg")]
+    [Category("Gimbal")]
+    public double BarrelFrictionWheelPitchDeg { get; set; }
+
+    [JsonPropertyName("barrel_friction_wheel_roll_deg")]
+    [Category("Gimbal")]
+    public double BarrelFrictionWheelRollDeg { get; set; }
+
+    [JsonPropertyName("barrel_friction_wheel_offsets_m")]
+    [Browsable(false)]
+    public List<List<double>> BarrelFrictionWheelOffsetsM { get; set; } = new();
+
+    [JsonPropertyName("first_person_camera_offset_x_m")]
+    [Category("Gimbal")]
+    public double FirstPersonCameraOffsetXM { get; set; }
+
+    [JsonPropertyName("first_person_camera_offset_y_m")]
+    [Category("Gimbal")]
+    public double FirstPersonCameraOffsetYM { get; set; }
+
+    [JsonPropertyName("first_person_camera_offset_z_m")]
+    [Category("Gimbal")]
+    public double FirstPersonCameraOffsetZM { get; set; }
+
+    [JsonPropertyName("first_person_camera_yaw_deg")]
+    [Category("Gimbal")]
+    public double FirstPersonCameraYawDeg { get; set; }
+
+    [JsonPropertyName("first_person_camera_pitch_deg")]
+    [Category("Gimbal")]
+    public double FirstPersonCameraPitchDeg { get; set; }
+
+    [JsonPropertyName("first_person_camera_roll_deg")]
+    [Category("Gimbal")]
+    public double FirstPersonCameraRollDeg { get; set; }
 
     [JsonPropertyName("body_color_rgb")]
     [Browsable(false)]
@@ -695,6 +863,11 @@ public sealed class RobotAppearanceProfileDefinition
         ArmorColorRgb = NormalizeRgbList(ArmorColorRgb, Color.FromArgb(224, 229, 234));
         WheelColorRgb = NormalizeRgbList(WheelColorRgb, Color.FromArgb(44, 44, 44));
         CustomWheelPositionsM ??= new List<List<double>>();
+        ArmorPlateOffsetsM ??= new List<List<double>>();
+        ArmorPlateRotationsYprDeg ??= new List<List<double>>();
+        ArmorLightOffsetsM ??= new List<List<double>>();
+        ArmorLightPlateDistancesM ??= new List<double>();
+        BarrelFrictionWheelOffsetsM ??= new List<List<double>>();
         ArmorOrbitYawsDeg ??= new List<double>();
         ArmorSelfYawsDeg ??= new List<double>();
         ArmorLightOrbitYawsDeg ??= new List<double>();
@@ -934,6 +1107,15 @@ public sealed class RobotAppearanceAnchorDefinition
     [JsonPropertyName("parent_part")]
     public string ParentPart { get; set; } = "body";
 
+    [JsonPropertyName("anchor_mode")]
+    public string AnchorMode { get; set; } = "fixed";
+
+    [JsonPropertyName("parent_link_id")]
+    public string ParentLinkId { get; set; } = string.Empty;
+
+    [JsonPropertyName("link_position_ratio")]
+    public double LinkPositionRatio { get; set; } = 0.5;
+
     [JsonPropertyName("component_scope")]
     public string ComponentScope { get; set; } = "single";
 
@@ -949,6 +1131,9 @@ public sealed class RobotAppearanceAnchorDefinition
     public void EnsureInitialized()
     {
         ParentPart = string.IsNullOrWhiteSpace(ParentPart) ? "body" : ParentPart.Trim();
+        AnchorMode = string.IsNullOrWhiteSpace(AnchorMode) ? "fixed" : AnchorMode.Trim();
+        ParentLinkId = string.IsNullOrWhiteSpace(ParentLinkId) ? string.Empty : ParentLinkId.Trim();
+        LinkPositionRatio = Math.Clamp(LinkPositionRatio, 0.0, 1.0);
         ComponentScope = string.IsNullOrWhiteSpace(ComponentScope) ? "single" : ComponentScope.Trim();
         ComponentIndex = Math.Max(0, ComponentIndex);
         OffsetM = RobotAppearanceCustomModelHelpers.NormalizeVector(OffsetM, 0.0, 0.0, 0.0, double.MinValue);
@@ -977,12 +1162,24 @@ public sealed class RobotAppearanceLinkDefinition
     [JsonPropertyName("radius_m")]
     public double RadiusM { get; set; } = 0.012;
 
+    [JsonPropertyName("width_m")]
+    public double WidthM { get; set; }
+
+    [JsonPropertyName("thickness_m")]
+    public double ThicknessM { get; set; }
+
+    [JsonPropertyName("length_m")]
+    public double LengthM { get; set; }
+
     [JsonPropertyName("color_rgb")]
     public List<int> ColorRgb { get; set; } = new() { 176, 182, 190 };
 
     public void EnsureInitialized()
     {
         RadiusM = Math.Max(0.001, RadiusM);
+        WidthM = Math.Max(0.001, WidthM <= 0 ? RadiusM * 2.0 : WidthM);
+        ThicknessM = Math.Max(0.001, ThicknessM <= 0 ? RadiusM * 2.0 : ThicknessM);
+        LengthM = Math.Max(0.0, LengthM);
         ColorRgb = RobotAppearanceCustomModelHelpers.NormalizeRgb(ColorRgb, 176, 182, 190);
         if (string.IsNullOrWhiteSpace(Id))
         {

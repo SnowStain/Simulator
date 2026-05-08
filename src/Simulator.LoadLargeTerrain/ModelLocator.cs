@@ -44,9 +44,7 @@ internal static class ModelLocator
 
     private static IEnumerable<string> EnumerateCommonModelRelativePaths(string defaultFileName)
     {
-        yield return Path.Combine("maps", "rmuc26map", defaultFileName);
         yield return Path.Combine("maps", "rmuc2026", defaultFileName);
-        yield return Path.Combine("maps", "rmuc2026TerrainCache", defaultFileName);
     }
 
     private static string? ResolveExplicitModelPath(IReadOnlyList<string> args)

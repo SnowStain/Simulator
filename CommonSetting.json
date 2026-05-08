@@ -12,13 +12,13 @@
     "sim3d_map_preset": "rmuc2026",
     "sim3d_renderer_backend": "gpu",
     "terrain_scene_backend": "wgl_opengl",
-    "sim3d_selected_team": "blue",
-    "sim3d_selected_entity_id": "blue_robot_1",
+    "sim3d_selected_team": "red",
+    "sim3d_selected_entity_id": null,
     "player_projectile_ricochet_enabled": true,
     "match_mode": "full",
     "single_unit_test_team": "red",
-    "single_unit_test_entity_key": "robot_7",
-    "sim3d_infantry_mode": "balance",
+    "single_unit_test_entity_key": "robot_1",
+    "sim3d_infantry_mode": "mecanum",
     "sim3d_hero_performance_mode": "ranged_priority",
     "sim3d_infantry_durability_mode": "hp_priority",
     "sim3d_infantry_weapon_mode": "burst_priority",
@@ -26,7 +26,7 @@
     "sim3d_sentry_stance": "attack",
     "sim3d_autoaim_accuracy_scale": 1,
     "sim3d_projectile_entity_rendering": true,
-    "sim3d_projectile_physics_backend": "native",
+    "sim3d_projectile_physics_backend": "bepu",
     "show_entities": true,
     "player_look_sensitivity_deg": 0.21,
     "player_pitch_sensitivity_deg": 0.005,
@@ -79,10 +79,60 @@
     "manual_control_dispatch_profile": "exclusive_combat",
     "require_pre_match_setup": true,
     "runtime_entrypoint": "simulator3d",
-    "sim3d_ai_enabled": false,
+    "sim3d_ai_enabled": true,
     "sim3d_autoaim_self_calibration_enabled": true,
     "sim3d_unit_test_energy_force_large": false,
-    "sim3d_duel_round_limit": 5
+    "sim3d_duel_round_limit": 4,
+    "sim3d_display_latency_ms": 153.84615384615387,
+    "sim3d_lighting": {
+      "enabled": true,
+      "key_direction": [
+        -0.42,
+        0.96,
+        -0.26
+      ],
+      "key_ambient": [
+        0.3,
+        0.36,
+        0.48
+      ],
+      "key_diffuse": [
+        0.86,
+        1.02,
+        1.2
+      ],
+      "key_specular": [
+        0.24,
+        0.34,
+        0.52
+      ],
+      "fill_direction": [
+        0.62,
+        0.34,
+        0.64
+      ],
+      "fill_ambient": [
+        0.018,
+        0.03,
+        0.052
+      ],
+      "fill_diffuse": [
+        0.12,
+        0.22,
+        0.38
+      ],
+      "fill_specular": [
+        0.05,
+        0.09,
+        0.18
+      ],
+      "material_specular": [
+        0.18,
+        0.26,
+        0.42
+      ],
+      "material_shininess": 28
+    }
   },
   "ai": {
     "decision_deployment": {
@@ -254,6 +304,11 @@
           "y": 489,
           "angle": 0
         },
+        "robot_6": {
+          "x": 239,
+          "y": 412,
+          "angle": 67.63440000001025
+        },
         "robot_7": {
           "x": 239,
           "y": 412,
@@ -281,6 +336,11 @@
           "y": 381,
           "angle": 180.0
         },
+        "robot_6": {
+          "x": 1342,
+          "y": 463,
+          "angle": 212.83363780452223
+        },
         "robot_7": {
           "x": 1342,
           "y": 463,
@@ -293,6 +353,7 @@
       "robot_2": 1,
       "robot_3": 1,
       "robot_4": 1,
+      "robot_6": 1,
       "robot_7": 1
     },
     "robot_types": {
@@ -300,6 +361,7 @@
       "robot_2": "工程",
       "robot_3": "步兵",
       "robot_4": "步兵",
+      "robot_6": "步兵",
       "robot_7": "哨兵"
     },
     "robot_subtypes": {

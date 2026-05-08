@@ -92,21 +92,23 @@ internal sealed class AutoAimSolverService
             filter = AutoAimObservationFilterState.Create(observationKey, target.Id, aimPlate.Id, observationPlate.Id, targetKind);
         }
 
+        AutoAimObservationTuning tuning = ResolveObservationTuning(shooter, target, targetKind);
         double dtSec = filter.Initialized
-            ? Math.Clamp(world.GameTimeSec - filter.LastUpdateTimeSec, 1.0 / 240.0, 0.12)
+            ? Math.Clamp(world.GameTimeSec - filter.LastUpdateTimeSec, 1.0 / 240.0, tuning.MaxDtSec)
             : 1.0 / 60.0;
-        bool rotatingTarget =
-            string.Equals(targetKind, "energy_disk", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(targetKind, "outpost_armor", StringComparison.OrdinalIgnoreCase)
-            || target.SmallGyroActive;
-        double measurementNoiseM = rotatingTarget ? 0.010 : 0.016;
-        double accelerationNoiseMps2 = string.Equals(targetKind, "energy_disk", StringComparison.OrdinalIgnoreCase)
-            ? 14.0
-            : string.Equals(targetKind, "outpost_armor", StringComparison.OrdinalIgnoreCase)
-                ? 10.0
-                : target.SmallGyroActive
-                    ? 22.0
-                    : 8.0;
+        SanitizeObservationMeasurement(
+            world,
+            target,
+            targetKind,
+            filter.HasLastMeasurement,
+            filter.LastMeasurementXWorld,
+            filter.LastMeasurementYWorld,
+            filter.LastMeasurementHeightM,
+            filter.LastMeasurementTimeSec,
+            metersPerWorldUnit,
+            ref observedXWorld,
+            ref observedYWorld,
+            ref observedHeightM);
 
         if (!filter.Initialized)
         {
@@ -115,7 +117,7 @@ internal sealed class AutoAimSolverService
         }
         else
         {
-            filter.Update(observedXWorld, observedYWorld, observedHeightM, dtSec, metersPerWorldUnit, measurementNoiseM, accelerationNoiseMps2);
+            filter.Update(observedXWorld, observedYWorld, observedHeightM, dtSec, metersPerWorldUnit, tuning.MeasurementNoiseM, tuning.AccelerationNoiseMps2);
         }
 
         StoreMeasurement(filter, world.GameTimeSec, observedXWorld, observedYWorld, observedHeightM);
@@ -133,6 +135,25 @@ internal sealed class AutoAimSolverService
                 : 0.0;
 
         _kalmanFilters[shooter.Id] = filter;
+        if (string.Equals(targetKind, "energy_disk", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(aimPlate.Id, observationPlate.Id, StringComparison.OrdinalIgnoreCase)
+            && TryProjectEnergyObservationToAimRing(
+                target,
+                aimPlate,
+                filter.FilteredXWorld,
+                filter.FilteredYWorld,
+                filter.FilteredHeightM,
+                filter.FilteredVelocityXMps,
+                filter.FilteredVelocityYMps,
+                filter.FilteredVelocityZMps,
+                0.0,
+                0.0,
+                0.0,
+                out AutoAimObservedState projectedState))
+        {
+            return projectedState with { AngularVelocityRadPerSec = angularVelocityRadPerSec };
+        }
+
         return new AutoAimObservedState(
             filter.FilteredXWorld,
             filter.FilteredYWorld,
@@ -167,22 +188,23 @@ internal sealed class AutoAimSolverService
             filter = AutoAimThirdOrderEkfPoseFilterState.Create(observationKey, target.Id, aimPlate.Id, observationPlate.Id, targetKind);
         }
 
+        AutoAimObservationTuning tuning = ResolveObservationTuning(shooter, target, targetKind);
         double dtSec = filter.Initialized
-            ? Math.Clamp(world.GameTimeSec - filter.LastUpdateTimeSec, 1.0 / 240.0, 0.12)
+            ? Math.Clamp(world.GameTimeSec - filter.LastUpdateTimeSec, 1.0 / 240.0, tuning.MaxDtSec)
             : 1.0 / 60.0;
-        bool rotatingTarget =
-            string.Equals(targetKind, "energy_disk", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(targetKind, "outpost_armor", StringComparison.OrdinalIgnoreCase)
-            || target.SmallGyroActive;
-        double measurementNoiseM = rotatingTarget ? 0.010 : 0.016;
-        double accelerationNoiseMps2 = string.Equals(targetKind, "energy_disk", StringComparison.OrdinalIgnoreCase)
-            ? 14.0
-            : string.Equals(targetKind, "outpost_armor", StringComparison.OrdinalIgnoreCase)
-                ? 10.0
-                : target.SmallGyroActive
-                    ? 22.0
-                    : 8.0;
-        double jerkNoiseMps3 = accelerationNoiseMps2 * (rotatingTarget ? 3.4 : 2.4);
+        SanitizeObservationMeasurement(
+            world,
+            target,
+            targetKind,
+            filter.HasLastMeasurement,
+            filter.LastMeasurementXWorld,
+            filter.LastMeasurementYWorld,
+            filter.LastMeasurementHeightM,
+            filter.LastMeasurementTimeSec,
+            metersPerWorldUnit,
+            ref observedXWorld,
+            ref observedYWorld,
+            ref observedHeightM);
 
         if (!filter.Initialized)
         {
@@ -199,8 +221,8 @@ internal sealed class AutoAimSolverService
                 shooter.Y,
                 dtSec,
                 metersPerWorldUnit,
-                measurementNoiseM,
-                jerkNoiseMps3);
+                tuning.MeasurementNoiseM,
+                tuning.JerkNoiseMps3);
         }
 
         StoreMeasurement(filter, world.GameTimeSec, observedXWorld, observedYWorld, observedHeightM);
@@ -218,6 +240,25 @@ internal sealed class AutoAimSolverService
                 : 0.0;
 
         _ekf3Filters[shooter.Id] = filter;
+        if (string.Equals(targetKind, "energy_disk", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(aimPlate.Id, observationPlate.Id, StringComparison.OrdinalIgnoreCase)
+            && TryProjectEnergyObservationToAimRing(
+                target,
+                aimPlate,
+                filter.FilteredXWorld,
+                filter.FilteredYWorld,
+                filter.FilteredHeightM,
+                filter.FilteredVelocityXMps,
+                filter.FilteredVelocityYMps,
+                filter.FilteredVelocityZMps,
+                filter.FilteredAccelerationXMps2,
+                filter.FilteredAccelerationYMps2,
+                filter.FilteredAccelerationZMps2,
+                out AutoAimObservedState projectedState))
+        {
+            return projectedState with { AngularVelocityRadPerSec = angularVelocityRadPerSec };
+        }
+
         return new AutoAimObservedState(
             filter.FilteredXWorld,
             filter.FilteredYWorld,
@@ -229,6 +270,47 @@ internal sealed class AutoAimSolverService
             filter.FilteredAccelerationYMps2,
             filter.FilteredAccelerationZMps2,
             angularVelocityRadPerSec);
+    }
+
+    private static bool TryProjectEnergyObservationToAimRing(
+        SimulationEntity target,
+        ArmorPlateTarget aimPlate,
+        double observedXWorld,
+        double observedYWorld,
+        double observedHeightM,
+        double observedVelocityXMps,
+        double observedVelocityYMps,
+        double observedVelocityZMps,
+        double observedAccelerationXMps2,
+        double observedAccelerationYMps2,
+        double observedAccelerationZMps2,
+        out AutoAimObservedState projectedState)
+    {
+        projectedState = default;
+        double observedRelX = observedXWorld - target.X;
+        double observedRelY = observedYWorld - target.Y;
+        double observedRadius = Math.Sqrt(observedRelX * observedRelX + observedRelY * observedRelY);
+        double aimRelX = aimPlate.X - target.X;
+        double aimRelY = aimPlate.Y - target.Y;
+        double aimRadius = Math.Sqrt(aimRelX * aimRelX + aimRelY * aimRelY);
+        if (observedRadius <= 1e-6 || aimRadius <= 1e-6)
+        {
+            return false;
+        }
+
+        double radiusScale = aimRadius / observedRadius;
+        projectedState = new AutoAimObservedState(
+            target.X + observedRelX * radiusScale,
+            target.Y + observedRelY * radiusScale,
+            aimPlate.HeightM > 1e-6 ? aimPlate.HeightM : observedHeightM,
+            observedVelocityXMps * radiusScale,
+            observedVelocityYMps * radiusScale,
+            observedVelocityZMps,
+            observedAccelerationXMps2 * radiusScale,
+            observedAccelerationYMps2 * radiusScale,
+            observedAccelerationZMps2,
+            0.0);
+        return true;
     }
 
     private static void ResolveInitialVelocity(
@@ -301,6 +383,52 @@ internal sealed class AutoAimSolverService
         filter.LastUpdateTimeSec = gameTimeSec;
     }
 
+    private static void SanitizeObservationMeasurement(
+        SimulationWorldState world,
+        SimulationEntity target,
+        string targetKind,
+        bool hasLastMeasurement,
+        double lastXWorld,
+        double lastYWorld,
+        double lastHeightM,
+        double lastMeasurementTimeSec,
+        double metersPerWorldUnit,
+        ref double observedXWorld,
+        ref double observedYWorld,
+        ref double observedHeightM)
+    {
+        bool fastRotatingVehicle = target.SmallGyroActive
+            && string.Equals(targetKind, "vehicle_armor", StringComparison.OrdinalIgnoreCase);
+        if (!fastRotatingVehicle || !hasLastMeasurement)
+        {
+            return;
+        }
+
+        double dtSec = Math.Clamp(world.GameTimeSec - lastMeasurementTimeSec, 1.0 / 240.0, 0.10);
+        double dxM = (observedXWorld - lastXWorld) * metersPerWorldUnit;
+        double dyM = (observedYWorld - lastYWorld) * metersPerWorldUnit;
+        double planarStepM = Math.Sqrt(dxM * dxM + dyM * dyM);
+        double radiusM = Math.Sqrt(
+            Math.Pow((lastXWorld - target.X) * metersPerWorldUnit, 2)
+            + Math.Pow((lastYWorld - target.Y) * metersPerWorldUnit, 2));
+        double targetLinearMps = Math.Sqrt(
+            target.VelocityXWorldPerSec * target.VelocityXWorldPerSec
+            + target.VelocityYWorldPerSec * target.VelocityYWorldPerSec)
+            * metersPerWorldUnit;
+        double omegaRadPerSec = Math.Abs(target.AngularVelocityDegPerSec) * Math.PI / 180.0;
+        double maxPlanarStepM = (targetLinearMps + omegaRadPerSec * Math.Clamp(radiusM, 0.05, 0.65) + 1.25) * dtSec;
+        maxPlanarStepM = Math.Clamp(maxPlanarStepM, 0.012, 0.42);
+        if (planarStepM > maxPlanarStepM && planarStepM > 1e-6)
+        {
+            double ratio = maxPlanarStepM / planarStepM;
+            observedXWorld = lastXWorld + (observedXWorld - lastXWorld) * ratio;
+            observedYWorld = lastYWorld + (observedYWorld - lastYWorld) * ratio;
+        }
+
+        double maxHeightStepM = Math.Clamp(1.2 * dtSec, 0.008, 0.08);
+        observedHeightM = Math.Clamp(observedHeightM, lastHeightM - maxHeightStepM, lastHeightM + maxHeightStepM);
+    }
+
     private static bool TryResolveObservedPlateAngularVelocity(
         SimulationWorldState world,
         SimulationEntity target,
@@ -332,6 +460,20 @@ internal sealed class AutoAimSolverService
             return false;
         }
 
+        if (target.SmallGyroActive
+            && string.Equals(SimulationCombatMath.ResolveAutoAimTargetKind(target, aimPlate), "vehicle_armor", StringComparison.OrdinalIgnoreCase))
+        {
+            double modelOmegaRadPerSec = target.AngularVelocityDegPerSec * Math.PI / 180.0;
+            if (Math.Abs(modelOmegaRadPerSec) > 0.05 && double.IsFinite(modelOmegaRadPerSec))
+            {
+                angularVelocityRadPerSec = Math.Clamp(modelOmegaRadPerSec, -12.0, 12.0);
+                return true;
+            }
+
+            angularVelocityRadPerSec = Math.Clamp(angularVelocityRadPerSec, -8.0, 8.0);
+            return Math.Abs(angularVelocityRadPerSec) >= 0.05;
+        }
+
         if (string.Equals(target.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase)
             || string.Equals(target.EntityType, "outpost", StringComparison.OrdinalIgnoreCase)
             || string.Equals(aimPlate.Id, "outpost_top", StringComparison.OrdinalIgnoreCase))
@@ -347,4 +489,47 @@ internal sealed class AutoAimSolverService
 
         return true;
     }
+
+    private static AutoAimObservationTuning ResolveObservationTuning(
+        SimulationEntity shooter,
+        SimulationEntity target,
+        string targetKind)
+    {
+        bool rotatingTarget =
+            string.Equals(targetKind, "energy_disk", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(targetKind, "outpost_armor", StringComparison.OrdinalIgnoreCase)
+            || target.SmallGyroActive;
+        bool largeRound = string.Equals(shooter.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase);
+
+        double measurementNoiseM = rotatingTarget ? 0.010 : 0.016;
+        double accelerationNoiseMps2 = string.Equals(targetKind, "energy_disk", StringComparison.OrdinalIgnoreCase)
+            ? 14.0
+            : string.Equals(targetKind, "outpost_armor", StringComparison.OrdinalIgnoreCase)
+                ? 10.0
+                : target.SmallGyroActive
+                    ? 22.0
+                    : 8.0;
+        double jerkNoiseMps3 = accelerationNoiseMps2 * (rotatingTarget ? 3.4 : 2.4);
+        double maxDtSec = 0.12;
+
+        if (largeRound)
+        {
+            measurementNoiseM *= rotatingTarget ? 0.94 : 0.84;
+            accelerationNoiseMps2 *= rotatingTarget ? 0.90 : 0.78;
+            jerkNoiseMps3 *= rotatingTarget ? 0.92 : 0.76;
+            maxDtSec = rotatingTarget ? 0.10 : 0.09;
+        }
+
+        return new AutoAimObservationTuning(
+            Math.Max(0.004, measurementNoiseM),
+            Math.Max(2.5, accelerationNoiseMps2),
+            Math.Max(8.0, jerkNoiseMps3),
+            Math.Clamp(maxDtSec, 1.0 / 120.0, 0.12));
+    }
+
+    private readonly record struct AutoAimObservationTuning(
+        double MeasurementNoiseM,
+        double AccelerationNoiseMps2,
+        double JerkNoiseMps3,
+        double MaxDtSec);
 }

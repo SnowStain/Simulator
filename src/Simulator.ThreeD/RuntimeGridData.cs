@@ -292,6 +292,18 @@ internal sealed class RuntimeGridData
             && CollisionSurface.TrySampleHeightInBand(worldX, worldY, minHeightM, maxHeightM, out sample, maxCellRadius);
     }
 
+    public bool TrySampleClosestCollisionSurface(
+        double worldX,
+        double worldY,
+        double referenceHeightM,
+        out TerrainSurfaceSample sample,
+        int maxCellRadius = 1)
+    {
+        sample = default;
+        return CollisionSurface is not null
+            && CollisionSurface.TrySampleClosestHeight(worldX, worldY, referenceHeightM, out sample, maxCellRadius);
+    }
+
     public bool IsMovementBlockedAt(double worldX, double worldY, double referenceHeightM, double allowedRiseM)
     {
         if (CollisionSurface is not null)
@@ -308,6 +320,12 @@ internal sealed class RuntimeGridData
     {
         return CollisionSurface is not null
             && CollisionSurface.HasWallContact(worldX, worldY, minHeightM, maxHeightM, maxCellRadius);
+    }
+
+    public bool HasCollisionSurfaceWallCellContact(double worldX, double worldY, double minHeightM, double maxHeightM, int maxCellRadius = 0)
+    {
+        return CollisionSurface is not null
+            && CollisionSurface.HasWallCellContact(worldX, worldY, minHeightM, maxHeightM, maxCellRadius);
     }
 
     public bool TryRaycastCollisionSurface(

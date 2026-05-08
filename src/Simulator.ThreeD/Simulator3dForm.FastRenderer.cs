@@ -82,8 +82,7 @@ internal sealed partial class Simulator3dForm
 
             Pen pen = region.Type switch
             {
-                "base" => new Pen(Color.FromArgb(180, ResolveTeamColor(region.Team)), 1.6f),
-                "outpost" => new Pen(Color.FromArgb(180, ResolveTeamColor(region.Team)), 1.6f),
+                "base" or "outpost" => new Pen(Color.FromArgb(180, 132, 140, 148), 1.6f),
                 "supply" or "buff_supply" => new Pen(Color.FromArgb(180, 88, 204, 142), 1.4f),
                 "wall" => new Pen(Color.FromArgb(188, 216, 214, 210), 1.5f),
                 _ => neutralPen,
@@ -140,7 +139,8 @@ internal sealed partial class Simulator3dForm
                 continue;
             }
 
-            Color teamColor = ResolveTeamColor(entity.Team);
+            RobotAppearanceProfile profile = _host.ResolveAppearanceProfile(entity);
+            Color markerColor = profile.BodyColor.A == 0 ? Color.FromArgb(132, 140, 148) : profile.BodyColor;
             float radius = entity.EntityType switch
             {
                 "base" => 14f,
@@ -149,8 +149,8 @@ internal sealed partial class Simulator3dForm
                 _ => 7f,
             };
 
-            using var fill = new SolidBrush(Color.FromArgb(220, teamColor));
-            using var edge = new Pen(Color.FromArgb(236, BlendColor(teamColor, Color.Black, 0.28f)), 1.2f);
+            using var fill = new SolidBrush(Color.FromArgb(220, markerColor));
+            using var edge = new Pen(Color.FromArgb(236, BlendColor(markerColor, Color.Black, 0.28f)), 1.2f);
             if (string.Equals(entity.EntityType, "base", StringComparison.OrdinalIgnoreCase))
             {
                 graphics.FillRectangle(fill, center.X - radius, center.Y - radius, radius * 2f, radius * 2f);

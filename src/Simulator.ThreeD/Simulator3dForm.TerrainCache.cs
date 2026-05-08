@@ -69,15 +69,6 @@ internal sealed partial class Simulator3dForm
             return true;
         }
 
-        foreach (string fallback in EnumerateTerrainCacheFallbackPaths(mapDirectory, sourcePath))
-        {
-            if (EnsureTerrainCacheLz4Available(fallback))
-            {
-                sourcePath = fallback;
-                return true;
-            }
-        }
-
         return false;
     }
 
@@ -101,15 +92,6 @@ internal sealed partial class Simulator3dForm
         }
 
         return TryBuildTerrainCacheFromGlb(glbPath, cachePath);
-    }
-
-    private IEnumerable<string> EnumerateTerrainCacheFallbackPaths(string mapDirectory, string requestedPath)
-    {
-        string requestedName = Path.GetFileName(requestedPath);
-        string mapsRoot = Directory.GetParent(mapDirectory)?.FullName ?? mapDirectory;
-        yield return Path.GetFullPath(Path.Combine(mapsRoot, "rmuc26map", requestedName));
-        yield return Path.GetFullPath(Path.Combine(mapsRoot, "rmuc26map", "RMUC2026_MAP.terraincache.lz4"));
-        yield return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "RMUC2026_MAP.terraincache.lz4"));
     }
 
     private bool TryBuildTerrainCacheFromGlb(string glbPath, string expectedCachePath)
@@ -178,45 +160,7 @@ internal sealed partial class Simulator3dForm
             a = fallback.A;
         }
 
-        Color baseColor = Color.FromArgb(a, r, g, b);
-        Color heightColor = averageHeight <= 0.03f
-            ? baseColor
-            : BlendColor(baseColor, Color.White, Math.Clamp(averageHeight * 0.045f, 0f, 0.10f));
-        return ApplyTerrainCacheBakedLighting(heightColor, v0, v1, v2, averageHeight);
-    }
-
-    private static Color ApplyTerrainCacheBakedLighting(
-        Color baseColor,
-        TerrainCacheVertex v0,
-        TerrainCacheVertex v1,
-        TerrainCacheVertex v2,
-        float averageHeight)
-    {
-        Vector3 normal = new(
-            v0.NormalX + v1.NormalX + v2.NormalX,
-            v0.NormalY + v1.NormalY + v2.NormalY,
-            v0.NormalZ + v1.NormalZ + v2.NormalZ);
-        if (normal.LengthSquared() <= 1e-8f)
-        {
-            return baseColor;
-        }
-
-        normal = Vector3.Normalize(normal);
-        Vector3 keyLight = Vector3.Normalize(new Vector3(-0.34f, 0.88f, -0.31f));
-        Vector3 fillLight = Vector3.Normalize(new Vector3(0.58f, 0.48f, 0.46f));
-        float key = MathF.Max(0f, Vector3.Dot(normal, keyLight));
-        float fill = MathF.Max(0f, Vector3.Dot(normal, fillLight));
-        float sky = Math.Clamp(normal.Y * 0.5f + 0.5f, 0f, 1f);
-        float slopeShadow = 1.0f - Math.Clamp((1.0f - MathF.Max(0f, normal.Y)) * 0.22f, 0f, 0.22f);
-        float heightLift = Math.Clamp(averageHeight * 0.035f, 0f, 0.08f);
-        float brightness = (0.60f + key * 0.34f + fill * 0.11f + sky * 0.09f + heightLift) * slopeShadow;
-        brightness = Math.Clamp(brightness, 0.48f, 1.18f);
-
-        float coolKey = Math.Clamp(0.020f + key * 0.034f + (1f - key) * (1f - sky) * 0.046f, 0f, 0.082f);
-        int r = Math.Clamp((int)MathF.Round(baseColor.R * brightness + 178f * coolKey), 0, 255);
-        int g = Math.Clamp((int)MathF.Round(baseColor.G * brightness + 214f * coolKey), 0, 255);
-        int b = Math.Clamp((int)MathF.Round(baseColor.B * brightness + 255f * coolKey), 0, 255);
-        return ApplyAmbientSceneLight(Color.FromArgb(baseColor.A, r, g, b), 0.018f);
+        return Color.FromArgb(a, r, g, b);
     }
 
     private void RebuildTerrainTileCacheMerged(
@@ -280,7 +224,7 @@ internal sealed partial class Simulator3dForm
                 Color fill = baseFill;
                 Color edge = height <= 0.03f
                     ? Color.FromArgb(0, fill)
-                    : BlendColor(fill, Color.Black, 0.20f);
+                    : fill;
                 seeds[row, column] = new TerrainTileSeed(
                     xStarts[column],
                     xEnds[column],
@@ -631,7 +575,7 @@ internal sealed partial class Simulator3dForm
         }
 
         fillColor = ResolveTerrainWallColor(seed.FillColor, topHeight, bottomHeight);
-        edgeColor = BlendColor(fillColor, Color.Black, 0.30f);
+        edgeColor = fillColor;
         return true;
     }
 
@@ -723,20 +667,17 @@ internal sealed partial class Simulator3dForm
         }
 
         Color baseFill = TrySampleTerrainBaseColorSmoothed(runtimeCellX, runtimeCellY, out Color sampled)
-            ? BlendColor(sampled, Color.White, heightM <= 0.03f ? 0f : Math.Clamp(heightM * 0.08f, 0f, 0.16f))
+            ? sampled
             : ResolveTerrainColor(terrainCode, heightM);
         return baseFill;
     }
 
     private Color ResolveTerrainWallColor(Color topSurfaceColor, float topHeight, float bottomHeight)
     {
-        float verticalRange = Math.Clamp((topHeight - bottomHeight) / 0.60f, 0f, 1f);
         Color fallback = UsesSolidTerrainWalls()
             ? ResolveTerrainWallSolidColor()
             : Color.FromArgb(58, 62, 68);
-        Color sampled = topSurfaceColor.A == 0 ? fallback : topSurfaceColor;
-        Color shaded = BlendColor(sampled, Color.Black, 0.34f + 0.18f * verticalRange);
-        return BlendColor(shaded, fallback, 0.12f);
+        return topSurfaceColor.A == 0 ? fallback : topSurfaceColor;
     }
 
     private bool UsesOrthographicPngTopSurface()
@@ -1067,7 +1008,7 @@ internal sealed partial class Simulator3dForm
                 maxX,
                 maxY,
                 topColor,
-                BlendColor(topColor, Color.Black, 0.24f),
+                topColor,
                 target);
         }
 
@@ -1093,7 +1034,7 @@ internal sealed partial class Simulator3dForm
                 maxX,
                 maxY,
                 sideColor,
-                BlendColor(sideColor, Color.Black, 0.32f),
+                sideColor,
                 target);
         }
     }
@@ -1145,8 +1086,7 @@ internal sealed partial class Simulator3dForm
             sumR / samples.Count,
             sumG / samples.Count,
             sumB / samples.Count);
-        float averageHeight = facet.HeightsM.Count == 0 ? 0f : facet.HeightsM.Average();
-        return BlendColor(averaged, Color.White, averageHeight <= 0.03f ? 0f : Math.Clamp(averageHeight * 0.08f, 0f, 0.14f));
+        return averaged;
     }
 
     private void TryAddTerrainFacetColorSample(float worldX, float worldY, List<Color> samples)
@@ -1168,28 +1108,7 @@ internal sealed partial class Simulator3dForm
     private Color ResolveTerrainFacetSideColor(TerrainFacetRuntime facet)
     {
         Color sampled = ResolveTerrainFacetTopColor(facet);
-        if (_cachedRuntimeGrid is not null
-            && facet.PointsWorld.Count > 0)
-        {
-            float centerX = 0f;
-            float centerY = 0f;
-            for (int index = 0; index < facet.PointsWorld.Count; index++)
-            {
-                centerX += facet.PointsWorld[index].X;
-                centerY += facet.PointsWorld[index].Y;
-            }
-
-            centerX /= facet.PointsWorld.Count;
-            centerY /= facet.PointsWorld.Count;
-            int cellX = Math.Clamp((int)MathF.Floor(centerX / Math.Max(1e-6f, _cachedRuntimeGrid.CellWidthWorld)), 0, _cachedRuntimeGrid.WidthCells - 1);
-            int cellY = Math.Clamp((int)MathF.Floor(centerY / Math.Max(1e-6f, _cachedRuntimeGrid.CellHeightWorld)), 0, _cachedRuntimeGrid.HeightCells - 1);
-            if (TrySampleTerrainBaseColorSmoothed(cellX, cellY, out Color terrainSample))
-            {
-                sampled = BlendColor(sampled, terrainSample, 0.72f);
-            }
-        }
-
         Color fallback = facet.SideColor.A == 0 ? Color.FromArgb(58, 62, 68) : facet.SideColor;
-        return BlendColor(BlendColor(sampled, Color.Black, 0.38f), fallback, 0.10f);
+        return sampled.A == 0 ? fallback : sampled;
     }
 }

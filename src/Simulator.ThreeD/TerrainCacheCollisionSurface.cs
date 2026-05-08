@@ -384,6 +384,29 @@ internal sealed class TerrainCacheCollisionSurface
         return TrySampleBestHeightInBand(worldX, worldY, safeMaxRadius, walkableOnly: false, minHeight, maxHeight, out sample);
     }
 
+    public bool TrySampleClosestHeight(
+        double worldX,
+        double worldY,
+        double referenceHeightM,
+        out TerrainSurfaceSample sample,
+        int maxCellRadius = 1)
+    {
+        sample = default;
+        if (!Contains(worldX, worldY))
+        {
+            return false;
+        }
+
+        int safeMaxRadius = Math.Clamp(maxCellRadius, 0, 2);
+        float referenceHeight = (float)referenceHeightM;
+        if (TrySampleClosestHeightToReference(worldX, worldY, safeMaxRadius, walkableOnly: true, referenceHeight, out sample))
+        {
+            return true;
+        }
+
+        return TrySampleClosestHeightToReference(worldX, worldY, safeMaxRadius, walkableOnly: false, referenceHeight, out sample);
+    }
+
     private bool TrySampleBestHeight(double worldX, double worldY, int maxCellRadius, bool walkableOnly, out TerrainSurfaceSample sample)
     {
         sample = default;
@@ -510,6 +533,76 @@ internal sealed class TerrainCacheCollisionSurface
         return true;
     }
 
+    private bool TrySampleClosestHeightToReference(
+        double worldX,
+        double worldY,
+        int maxCellRadius,
+        bool walkableOnly,
+        float referenceHeightM,
+        out TerrainSurfaceSample sample)
+    {
+        sample = default;
+        float x = (float)worldX;
+        float y = (float)worldY;
+        int centerColumn = WorldToColumn(x);
+        int centerRow = WorldToRow(y);
+        float bestHeight = 0f;
+        Vector3 bestNormal = Vector3.UnitY;
+        float bestScore = float.PositiveInfinity;
+        bool found = false;
+        for (int radius = 0; radius <= maxCellRadius && !found; radius++)
+        {
+            int minColumn = Math.Max(0, centerColumn - radius);
+            int maxColumn = Math.Min(_columns - 1, centerColumn + radius);
+            int minRow = Math.Max(0, centerRow - radius);
+            int maxRow = Math.Min(_rows - 1, centerRow + radius);
+            for (int row = minRow; row <= maxRow; row++)
+            {
+                for (int column = minColumn; column <= maxColumn; column++)
+                {
+                    List<int>? list = walkableOnly
+                        ? _walkableCells[row * _columns + column]
+                        : _cells[row * _columns + column];
+                    if (list is null)
+                    {
+                        continue;
+                    }
+
+                    foreach (int triangleId in list)
+                    {
+                        TerrainTriangle triangle = _triangles[triangleId];
+                        if ((!walkableOnly && triangle.Normal.Y < MinSupportSampleNormalY)
+                            || !triangle.TrySampleHeight(x, y, out float height))
+                        {
+                            continue;
+                        }
+
+                        float score = MathF.Abs(height - referenceHeightM);
+                        if (score < bestScore - 1e-5f
+                            || (MathF.Abs(score - bestScore) <= 1e-5f && triangle.Normal.Y > bestNormal.Y)
+                            || (MathF.Abs(score - bestScore) <= 1e-5f
+                                && MathF.Abs(triangle.Normal.Y - bestNormal.Y) <= 1e-5f
+                                && height > bestHeight))
+                        {
+                            bestScore = score;
+                            bestHeight = height;
+                            bestNormal = triangle.Normal;
+                            found = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!found)
+        {
+            return false;
+        }
+
+        sample = new TerrainSurfaceSample(bestHeight, bestNormal);
+        return true;
+    }
+
     public bool IsMovementBlocked(double worldX, double worldY, double referenceHeightM, double allowedRiseM)
     {
         if (!Contains(worldX, worldY))
@@ -557,6 +650,49 @@ internal sealed class TerrainCacheCollisionSurface
             return false;
         }
 
+        int centerColumn = WorldToColumn((float)worldX);
+        int centerRow = WorldToRow((float)worldY);
+        float minHeight = (float)Math.Min(minHeightM, maxHeightM);
+        float maxHeight = (float)Math.Max(minHeightM, maxHeightM);
+        for (int radius = 0; radius <= safeRadius; radius++)
+        {
+            int minColumn = Math.Max(0, centerColumn - radius);
+            int maxColumn = Math.Min(_columns - 1, centerColumn + radius);
+            int minRow = Math.Max(0, centerRow - radius);
+            int maxRow = Math.Min(_rows - 1, centerRow + radius);
+            for (int row = minRow; row <= maxRow; row++)
+            {
+                for (int column = minColumn; column <= maxColumn; column++)
+                {
+                    int cellIndex = row * _columns + column;
+                    float cellMin = _wallCellMinHeightM[cellIndex];
+                    if (!float.IsFinite(cellMin))
+                    {
+                        continue;
+                    }
+
+                    float cellMax = _wallCellMaxHeightM[cellIndex];
+                    if (cellMax < minHeight - 0.05f || cellMin > maxHeight + 0.08f)
+                    {
+                        continue;
+                    }
+
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    public bool HasWallCellContact(double worldX, double worldY, double minHeightM, double maxHeightM, int maxCellRadius = 0)
+    {
+        if (!Contains(worldX, worldY))
+        {
+            return true;
+        }
+
+        int safeRadius = Math.Clamp(maxCellRadius, 0, 2);
         int centerColumn = WorldToColumn((float)worldX);
         int centerRow = WorldToRow((float)worldY);
         float minHeight = (float)Math.Min(minHeightM, maxHeightM);

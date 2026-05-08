@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -9,8 +10,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PROJECT = ROOT / "src" / "Simulator.LoadLargeTerrain" / "LoadLargeTerrain.csproj"
-DEFAULT_MODEL = ROOT / "maps" / "rmuc26map" / "RMUC2026_MAP.glb"
-DEFAULT_ANNOTATIONS = ROOT / "maps" / "rmuc26map" / "RMUC2026_MAP.component_roles.json"
+DEFAULT_MODEL = ROOT / "maps" / "rmuc2026" / "RMUC2026_MAP.glb"
+DEFAULT_ANNOTATIONS = ROOT / "maps" / "rmuc2026" / "RMUC2026_MAP.component_roles.json"
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -42,6 +43,39 @@ def parse_args() -> argparse.Namespace:
         help="使用 Release 配置运行。",
     )
     return parser.parse_args()
+
+
+def terminate_process_tree(process: subprocess.Popen[int]) -> None:
+    if process.poll() is not None:
+        return
+
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        return
+
+    process.terminate()
+    try:
+        process.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        process.kill()
+
+
+def shutdown_dotnet_build_servers() -> None:
+    if shutil.which("dotnet") is None:
+        return
+
+    subprocess.run(
+        ["dotnet", "build-server", "shutdown"],
+        cwd=ROOT,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
 
 
 def main() -> int:
@@ -84,11 +118,24 @@ def main() -> int:
     print("正在启动内嵌 LoadLargeTerrain：")
     print(" ".join(f'"{part}"' if " " in part else part for part in command), flush=True)
 
+    env = os.environ.copy()
+    env["MSBUILDDISABLENODEREUSE"] = "1"
+    env["DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER"] = "1"
+
+    creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+    process: subprocess.Popen[int] | None = None
     try:
-        return subprocess.call(command, cwd=ROOT)
+        process = subprocess.Popen(command, cwd=ROOT, env=env, creationflags=creationflags)
+        return process.wait()
     except KeyboardInterrupt:
+        if process is not None:
+            terminate_process_tree(process)
         print("\n已中断。")
         return 130
+    finally:
+        if process is not None:
+            terminate_process_tree(process)
+        shutdown_dotnet_build_servers()
 
 
 if __name__ == "__main__":
