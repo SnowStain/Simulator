@@ -11726,3 +11726,15 @@
 05:39:36.329 gpu_stream visible_vertices=26390973 resident_vertices=26390973 draw_calls=108 pending_upload_chunks=0 total_triangles=8798925
 05:39:38.329 gpu_stream visible_vertices=26390973 resident_vertices=26390973 draw_calls=108 pending_upload_chunks=0 total_triangles=8798925
 05:39:40.332 gpu_stream visible_vertices=26390973 resident_vertices=26390973 draw_calls=108 pending_upload_chunks=0 total_triangles=8798925
+08:03:42.166 source=RMUC2026_MAP.terraincache.lz4 original_triangle_gpu_stream=enabled
+08:03:42.174 source=RMUC2026_MAP.terraincache.lz4 gpu_chunk_build=background_started
+08:12:07.657 source=RMUC2026_MAP.terraincache.lz4 original_triangle_gpu_stream=enabled
+08:12:07.663 source=RMUC2026_MAP.terraincache.lz4 gpu_chunk_build=background_started
+08:12:15.680 source=RMUC2026_MAP.terraincache.lz4 original_triangles=8798925/10511992 chunks=112/112 chunk_size_m=2 vertices=26396775
+08:12:15.684 gpu_stream visible_vertices=26396775 resident_vertices=10500 draw_calls=8 pending_upload_chunks=104 total_triangles=8798925
+08:12:17.747 gpu_stream visible_vertices=26396775 resident_vertices=23301984 draw_calls=96 pending_upload_chunks=16 total_triangles=8798925
+08:12:19.776 gpu_stream visible_vertices=20123214 resident_vertices=26396775 draw_calls=110 pending_upload_chunks=0 total_triangles=8798925
+08:12:21.806 gpu_stream visible_vertices=17903550 resident_vertices=26396775 draw_calls=98 pending_upload_chunks=0 total_triangles=8798925
+08:12:23.820 gpu_stream visible_vertices=14813397 resident_vertices=26396775 draw_calls=83 pending_upload_chunks=0 total_triangles=8798925
+08:12:25.974 gpu_stream visible_vertices=14812239 resident_vertices=26396775 draw_calls=82 pending_upload_chunks=0 total_triangles=8798925
+08:12:28.047 gpu_stream visible_vertices=14798415 resident_vertices=26396775 draw_calls=78 pending_upload_chunks=0 total_triangles=8798925
