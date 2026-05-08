@@ -1738,6 +1738,7 @@ internal sealed partial class Simulator3dForm : Form
             PublishLanInput(localStepState);
             if (IsLanRemoteAuthoritativeClient)
             {
+                _host.ApplyAimOnlyControlState(localStepState);
                 AdvanceLanClientSimulationSequence();
                 _simulationAccumulatorSec -= fixedDt;
                 simulatedSteps++;
@@ -2855,10 +2856,16 @@ internal sealed partial class Simulator3dForm : Form
 
     private bool IsLocalRefereePanelAvailable()
         => !IsLanMultiplayerActive
-            && (_appState == SimulatorAppState.InMatch || IsMatchStartupActive);
+            && (_appState == SimulatorAppState.InMatch || IsMatchStartupActive || _localRoomMatchActive);
 
     private void ToggleLocalRefereePanel()
     {
+        if (_appState != SimulatorAppState.InMatch)
+        {
+            _lanStatusLine = "本地裁判 O 面板仅在局内或准备阶段可用";
+            return;
+        }
+
         _pSettingsPanelOpen = !_pSettingsPanelOpen || !_localRefereePanelOpen;
         _localRefereePanelOpen = _pSettingsPanelOpen;
         _matchSelfCheckPanelOpen = false;
@@ -16539,6 +16546,8 @@ internal sealed partial class Simulator3dForm : Form
             AutoAimPressed = controlled.IsAlive && (heroDeployActive || _autoAimPressed),
             AutoAimGuidanceOnly = !heroDeployActive && _autoAimAssistMode == AutoAimAssistMode.GuidanceOnly,
             HeroLobAutoFireReady = heroLobAutoFireReady,
+            AutoAimTargetMode = controlled.AutoAimTargetMode,
+            HeroAutoAimMode = controlled.HeroAutoAimMode,
             JumpRequested = jumpRequested,
             StepClimbModeActive = stepClimbModeActive,
             SmallGyroActive = smallGyroActive,

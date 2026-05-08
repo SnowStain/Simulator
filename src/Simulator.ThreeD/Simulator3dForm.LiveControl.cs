@@ -884,7 +884,7 @@ internal sealed partial class Simulator3dForm
         RobotAppearanceProfile profile = _host.ResolveAppearanceProfile(shooter);
         float yaw = ResolveEntityYaw(shooter);
         float turretYaw = ResolveAppearanceTurretYaw(shooter);
-        float gimbalPitch = -(float)(shooter.GimbalPitchDeg * Math.PI / 180.0);
+        float gimbalPitch = (float)(shooter.GimbalPitchDeg * Math.PI / 180.0);
         RuntimeChassisMotion motion = ResolveRuntimeChassisMotion(shooter);
         ResolveChassisAxes(yaw, shooter.ChassisPitchDeg, shooter.ChassisRollDeg, out Vector3 chassisForward, out Vector3 chassisRight, out Vector3 chassisUp);
         ResolveWorldTurretAxes(

@@ -893,7 +893,7 @@ internal sealed partial class Simulator3dForm
         string trafficText = traffic is null
             ? "traffic=-"
             : $"traffic_tx_rx={traffic.SentMegabitsPerSecond:0.000}/{traffic.ReceivedMegabitsPerSecond:0.000}Mbps bytes={traffic.TotalSentBytes}/{traffic.TotalReceivedBytes}";
-        return $"{direction}_player_input seq={frame.Sequence} tick={frame.SimulationTick} client_t={frame.ClientTimeSec:0.000} player={frame.PlayerId} seat={frame.SeatId} entity={frame.EntityId} enabled={(input.Enabled ? 1 : 0)} move=({input.MoveForward:0.000},{input.MoveRight:0.000}) look=({input.TurretYawDeltaDeg:0.000},{input.GimbalPitchDeltaDeg:0.000}) fire={(input.FirePressed ? 1 : 0)} auto={(input.AutoAimPressed ? 1 : 0)} jump={(input.JumpRequested ? 1 : 0)} climb={(input.StepClimbModeActive ? 1 : 0)} gyro={(input.SmallGyroActive ? 1 : 0)} buy={(input.BuyAmmoRequested ? 1 : 0)} queue_l_r={_lanLocalInputFrames.Count}/{_lanRemoteInputFrames.Count} sim_seq={_lanSimulationSequence} {trafficText}";
+        return $"{direction}_player_input seq={frame.Sequence} tick={frame.SimulationTick} client_t={frame.ClientTimeSec:0.000} player={frame.PlayerId} seat={frame.SeatId} entity={frame.EntityId} enabled={(input.Enabled ? 1 : 0)} move=({input.MoveForward:0.000},{input.MoveRight:0.000}) look=({input.TurretYawDeltaDeg:0.000},{input.GimbalPitchDeltaDeg:0.000}) fire={(input.FirePressed ? 1 : 0)} auto={(input.AutoAimPressed ? 1 : 0)} target={input.AutoAimTargetMode} hero_mode={input.HeroAutoAimMode} jump={(input.JumpRequested ? 1 : 0)} climb={(input.StepClimbModeActive ? 1 : 0)} gyro={(input.SmallGyroActive ? 1 : 0)} buy={(input.BuyAmmoRequested ? 1 : 0)} queue_l_r={_lanLocalInputFrames.Count}/{_lanRemoteInputFrames.Count} sim_seq={_lanSimulationSequence} {trafficText}";
     }
 
     private void CloseLanSession(string? statusMessage = null)
@@ -2791,6 +2791,8 @@ internal sealed partial class Simulator3dForm
             AutoAimPressed = input.Input.AutoAimPressed,
             AutoAimGuidanceOnly = input.Input.AutoAimGuidanceOnly,
             HeroLobAutoFireReady = input.Input.HeroLobAutoFireReady,
+            AutoAimTargetMode = input.Input.AutoAimTargetMode,
+            HeroAutoAimMode = input.Input.HeroAutoAimMode,
             JumpRequested = input.Input.JumpRequested,
             StepClimbModeActive = input.Input.StepClimbModeActive,
             SmallGyroActive = input.Input.SmallGyroActive,
@@ -3690,7 +3692,9 @@ internal sealed partial class Simulator3dForm
             state.EnergyActivationPressed,
             state.HeroDeployHoldPressed,
             state.SuperCapActive,
-            state.SentryStanceToggleRequested);
+            state.SentryStanceToggleRequested,
+            state.AutoAimTargetMode ?? string.Empty,
+            state.HeroAutoAimMode ?? string.Empty);
 
     private static PlayerControlState FromLanInputFrame(LanInputFrame input)
         => new()
@@ -3705,6 +3709,8 @@ internal sealed partial class Simulator3dForm
             AutoAimPressed = input.AutoAimPressed,
             AutoAimGuidanceOnly = input.AutoAimGuidanceOnly,
             HeroLobAutoFireReady = input.HeroLobAutoFireReady,
+            AutoAimTargetMode = input.AutoAimTargetMode,
+            HeroAutoAimMode = input.HeroAutoAimMode,
             JumpRequested = input.JumpRequested,
             StepClimbModeActive = input.StepClimbModeActive,
             SmallGyroActive = input.SmallGyroActive,

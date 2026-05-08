@@ -673,7 +673,7 @@ public sealed class ArenaInteractionService
             string.IsNullOrWhiteSpace(facilityId) ? "energy_mechanism" : facilityId,
             "energy_mechanism",
             large
-                ? "\u5927\u80fd\u91cf\u673a\u5173\u5f00\u59cb\u6fc0\u6d3b\uff1a\u8bf7\u6309\u968f\u673a\u987a\u5e8f\u547d\u4e2d\u5df1\u65b9 5 \u4e2a\u5f85\u6fc0\u6d3b\u5706\u76d8\u3002"
+                ? "\u5927\u80fd\u91cf\u673a\u5173\u5f00\u59cb\u6fc0\u6d3b\uff1a\u6bcf\u7ec4\u968f\u673a\u70b9\u4eae 2 \u4e2a\u5f85\u6fc0\u6d3b\u5706\u76d8\uff0c\u547d\u4e2d\u4efb\u610f\u4e00\u4e2a\u540e\u8fdb\u5165 1 \u79d2\u8865\u51fb\u7a97\u53e3\uff0c\u5b8c\u6210 5 \u7ec4\u540e\u6fc0\u6d3b\u3002"
                 : "\u5c0f\u80fd\u91cf\u673a\u5173\u5f00\u59cb\u6fc0\u6d3b\uff1a\u8bf7\u6309\u968f\u673a\u987a\u5e8f\u547d\u4e2d\u5df1\u65b9 5 \u4e2a\u5f85\u6fc0\u6d3b\u5706\u76d8\u3002"));
     }
 
@@ -728,7 +728,7 @@ public sealed class ArenaInteractionService
         {
             return null;
         }
-        if (teamState.EnergyNextModuleDelaySec > 1e-6)
+        if (teamState.EnergyNextModuleDelaySec > 1e-6 && !teamState.EnergyLargeMechanismActive)
         {
             return null;
         }
@@ -755,7 +755,11 @@ public sealed class ArenaInteractionService
             && armIndex < teamState.EnergyHitRingsByArm.Length
             && teamState.EnergyHitRingsByArm[armIndex] > 0)
         {
-            teamState.EnergyCurrentLitMask = ResolveEnergyLitMask(teamState);
+            if (!teamState.EnergyLargeMechanismActive)
+            {
+                teamState.EnergyCurrentLitMask = ResolveEnergyLitMask(teamState);
+            }
+
             return new FacilityInteractionEvent(
                 world.GameTimeSec,
                 shooter.Team,
@@ -769,11 +773,29 @@ public sealed class ArenaInteractionService
         teamState.EnergyLastHitArmIndex = armIndex;
         teamState.EnergyLastHitFlashEndSec = world.GameTimeSec + EnergyHitFlashDurationSec;
         teamState.EnergyHitRingsByArm[armIndex] = Math.Max(teamState.EnergyHitRingsByArm[armIndex], safeRingScore);
-        teamState.EnergyActivatedGroupCount = CountActivatedEnergyDisks(teamState);
         teamState.EnergyHitRingCount++;
         teamState.EnergyHitRingSum += safeRingScore;
         GrantRobotExperience(shooter, safeRingScore * 20.0);
-        if (CountActivatedEnergyDisks(teamState) >= 5)
+        if (teamState.EnergyLargeMechanismActive)
+        {
+            bool firstHitInLargeGroup = teamState.EnergyNextModuleDelaySec <= 1e-6;
+            teamState.EnergyCurrentLitMask &= ~(1 << armIndex);
+            if (firstHitInLargeGroup)
+            {
+                teamState.EnergyActivatedGroupCount = Math.Min(5, teamState.EnergyActivatedGroupCount + 1);
+                teamState.EnergyLitModuleTimerSec = 0.0;
+                teamState.EnergyNextModuleDelaySec = 1.0;
+            }
+        }
+        else
+        {
+            teamState.EnergyActivatedGroupCount = CountActivatedEnergyDisks(teamState);
+        }
+
+        bool completed = teamState.EnergyLargeMechanismActive
+            ? teamState.EnergyActivatedGroupCount >= 5
+            : CountActivatedEnergyDisks(teamState) >= 5;
+        if (completed)
         {
             teamState.EnergyStateStartTimeSec = world.GameTimeSec;
             if (teamState.EnergyLargeMechanismActive)
@@ -799,17 +821,23 @@ public sealed class ArenaInteractionService
                     ? $"\u5927\u80fd\u91cf\u673a\u5173\u6fc0\u6d3b\u6210\u529f\uff1a\u5e73\u5747\u73af\u6570 {teamState.EnergyHitRingSum / Math.Max(1.0, teamState.EnergyHitRingCount):0.0}\uff0c\u589e\u76ca\u6301\u7eed {teamState.EnergyBuffTimerSec:0} \u79d2\u3002"
                     : $"\u5c0f\u80fd\u91cf\u673a\u5173\u6fc0\u6d3b\u6210\u529f\uff1a\u5168\u961f\u83b7\u5f97 25% \u9632\u5fa1\u589e\u76ca\uff0c\u6301\u7eed {teamState.EnergyBuffTimerSec:0} \u79d2\u3002");
         }
-        teamState.EnergyActiveGroupIndex = ResolveCurrentEnergyActiveGroupIndex(teamState);
-        teamState.EnergyCurrentLitMask = 0;
-        teamState.EnergyLitModuleTimerSec = 0.0;
-        teamState.EnergyNextModuleDelaySec = 1.0;
+        if (!teamState.EnergyLargeMechanismActive)
+        {
+            teamState.EnergyActiveGroupIndex = ResolveCurrentEnergyActiveGroupIndex(teamState);
+            teamState.EnergyCurrentLitMask = 0;
+            teamState.EnergyLitModuleTimerSec = 0.0;
+            teamState.EnergyNextModuleDelaySec = 1.0;
+        }
+
         return new FacilityInteractionEvent(
             world.GameTimeSec,
             shooter.Team,
             shooter.Id,
             hitPlate.Id,
             "energy_mechanism",
-            $"\u547d\u4e2d\u80fd\u91cf\u673a\u5173\uff1a\u5df2\u5b8c\u6210 {teamState.EnergyActivatedGroupCount}/5\uff0c\u672c\u6b21\u73af\u6570 {safeRingScore}\u3002");
+            teamState.EnergyLargeMechanismActive
+                ? $"\u547d\u4e2d\u5927\u80fd\u91cf\u673a\u5173\uff1a\u5df2\u5b8c\u6210 {teamState.EnergyActivatedGroupCount}/5\uff0c\u672c\u6b21\u73af\u6570 {safeRingScore}\uff0c\u5269\u4f59\u8865\u51fb\u7a97 {teamState.EnergyNextModuleDelaySec:0.0}s\u3002"
+                : $"\u547d\u4e2d\u80fd\u91cf\u673a\u5173\uff1a\u5df2\u5b8c\u6210 {teamState.EnergyActivatedGroupCount}/5\uff0c\u672c\u6b21\u73af\u6570 {safeRingScore}\u3002");
     }
 
     private static void AwardTeamEnergyActivationExperience(
@@ -967,6 +995,11 @@ public sealed class ArenaInteractionService
             teamState.EnergyNextModuleDelaySec = Math.Max(0.0, teamState.EnergyNextModuleDelaySec - deltaTimeSec);
             if (teamState.EnergyNextModuleDelaySec <= 1e-6)
             {
+                if (teamState.EnergyLargeMechanismActive)
+                {
+                    ResetEnergyLargeRoundVisualRings(teamState);
+                }
+
                 teamState.EnergyCurrentLitMask = ResolveEnergyLitMask(teamState);
                 teamState.EnergyLitModuleTimerSec = 0.0;
             }
@@ -1072,7 +1105,19 @@ public sealed class ArenaInteractionService
     private static int ResolveEnergyLitMask(SimulationTeamState teamState)
     {
         int active = ResolveCurrentEnergyActiveGroupIndex(teamState);
-        return active >= 0 ? 1 << active : 0;
+        if (active < 0)
+        {
+            return 0;
+        }
+
+        int mask = 1 << active;
+        if (teamState.EnergyLargeMechanismActive)
+        {
+            int second = ResolveLargeEnergySecondArmIndex(teamState, active);
+            mask |= 1 << second;
+        }
+
+        return mask;
     }
     private static int ResolveCurrentEnergyActiveGroupIndex(SimulationTeamState teamState)
     {
@@ -1083,6 +1128,20 @@ public sealed class ArenaInteractionService
         int orderIndex = Math.Clamp(teamState.EnergyActivatedGroupCount, 0, 4);
         int active = teamState.EnergyActivationOrder[orderIndex];
         return Math.Clamp(active, 0, 4);
+    }
+    private static int ResolveLargeEnergySecondArmIndex(SimulationTeamState teamState, int firstArm)
+    {
+        int orderIndex = Math.Clamp(teamState.EnergyActivatedGroupCount, 0, 4);
+        for (int offset = 2; offset <= 5; offset++)
+        {
+            int candidate = Math.Clamp(teamState.EnergyActivationOrder[(orderIndex + offset) % 5], 0, 4);
+            if (candidate != firstArm)
+            {
+                return candidate;
+            }
+        }
+
+        return (firstArm + 1) % 5;
     }
     private static void PopulateEnergyActivationOrder(SimulationTeamState teamState, double gameTimeSec, int salt)
     {
@@ -1137,6 +1196,14 @@ public sealed class ArenaInteractionService
         teamState.EnergyActiveGroupIndex = ResolveCurrentEnergyActiveGroupIndex(teamState);
         ResetEnergyVisualState(teamState);
         teamState.EnergyCurrentLitMask = ResolveEnergyLitMask(teamState);
+    }
+
+    private static void ResetEnergyLargeRoundVisualRings(SimulationTeamState teamState)
+    {
+        teamState.EnergyLastRingScore = 0;
+        teamState.EnergyLastHitArmIndex = -1;
+        teamState.EnergyLastHitFlashEndSec = 0.0;
+        Array.Clear(teamState.EnergyHitRingsByArm, 0, teamState.EnergyHitRingsByArm.Length);
     }
     private static void StopEnergyAttempt(SimulationWorldState world, SimulationTeamState teamState)
     {

@@ -79,7 +79,9 @@ internal sealed record LanInputFrame(
     bool EnergyActivationPressed,
     bool HeroDeployHoldPressed,
     bool SuperCapActive,
-    bool SentryStanceToggleRequested);
+    bool SentryStanceToggleRequested,
+    string AutoAimTargetMode = "",
+    string HeroAutoAimMode = "");
 
 internal sealed record LanPlayerInputFrame(
     long Sequence,

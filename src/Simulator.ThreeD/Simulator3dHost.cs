@@ -3550,6 +3550,7 @@ internal sealed class Simulator3dHost
         entityToControl.JumpRequested = state.JumpRequested;
         entityToControl.AutoAimRequested = state.AutoAimPressed;
         entityToControl.AutoAimGuidanceOnly = state.AutoAimGuidanceOnly;
+        ApplyAutoAimModeFromControlState(entityToControl, state);
         entityToControl.SmallGyroActive = state.SmallGyroActive;
         entityToControl.BuyAmmoRequested = state.BuyAmmoRequested;
         entityToControl.EnergyActivationRequested = state.EnergyActivationPressed;
@@ -3647,7 +3648,45 @@ internal sealed class Simulator3dHost
                 continue;
             }
 
+            ApplyAutoAimModeFromControlState(entityToControl, state);
             ApplyMouseBoundPlayerGimbal(entityToControl, state.TurretYawDeltaDeg, state.GimbalPitchDeltaDeg);
+        }
+    }
+
+    private static void ApplyAutoAimModeFromControlState(SimulationEntity entity, PlayerControlState state)
+    {
+        bool changed = false;
+        if (string.Equals(entity.RoleKey, "hero", StringComparison.OrdinalIgnoreCase))
+        {
+            string heroMode = SimulationCombatMath.NormalizeHeroAutoAimMode(state.HeroAutoAimMode);
+            if (!string.Equals(entity.HeroAutoAimMode, heroMode, StringComparison.OrdinalIgnoreCase))
+            {
+                entity.HeroAutoAimMode = heroMode;
+                changed = true;
+            }
+
+            if (!string.Equals(entity.AutoAimTargetMode, "armor", StringComparison.OrdinalIgnoreCase))
+            {
+                entity.AutoAimTargetMode = "armor";
+                changed = true;
+            }
+        }
+        else if (string.Equals(state.AutoAimTargetMode, "energy", StringComparison.OrdinalIgnoreCase)
+                 || string.Equals(state.AutoAimTargetMode, "armor", StringComparison.OrdinalIgnoreCase))
+        {
+            string targetMode = string.Equals(state.AutoAimTargetMode, "energy", StringComparison.OrdinalIgnoreCase)
+                ? "energy"
+                : "armor";
+            if (!string.Equals(entity.AutoAimTargetMode, targetMode, StringComparison.OrdinalIgnoreCase))
+            {
+                entity.AutoAimTargetMode = targetMode;
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            ResetAutoAimLockState(entity);
         }
     }
 

@@ -88,18 +88,24 @@ internal static class EnergyMechanismAnnotationLoader
 
         using FileStream stream = File.OpenRead(annotationPath);
         ComponentAnnotationFile? file = JsonSerializer.Deserialize<ComponentAnnotationFile>(stream, JsonOptions);
-        if (file?.Components is null || file.Composites is null)
+        if (file?.Composites is null)
         {
             return null;
         }
 
-        Dictionary<int, ComponentAnnotation> componentsById = file.Components
+        ComponentAnnotation[] components = LoadComponents(annotationPath, file).ToArray();
+        if (components.Length == 0)
+        {
+            return null;
+        }
+
+        Dictionary<int, ComponentAnnotation> componentsById = components
             .Where(component => component.Bounds is not null)
             .ToDictionary(component => component.Id, component => component);
         bool hasRuntimeSceneScale = FineTerrainRuntimeSceneScaleResolver.TryResolve(mapPreset, out FineTerrainRuntimeSceneScale runtimeSceneScale);
         Vector3 modelCenter = hasRuntimeSceneScale
             ? runtimeSceneScale.ModelCenter
-            : ResolveModelCenter(file.Components);
+            : ResolveModelCenter(components);
         double xMetersPerModelUnit = hasRuntimeSceneScale
             ? runtimeSceneScale.XMetersPerModelUnit
             : Math.Max(1e-6, file.WorldScale?.XMetersPerModelUnit ?? 1.0f);
@@ -554,6 +560,57 @@ internal static class EnergyMechanismAnnotationLoader
         public CompositeAnnotation[]? Composites { get; init; }
 
         public ComponentAnnotation[]? Components { get; init; }
+
+        public string[]? ComponentFiles { get; init; }
+    }
+
+    private static IEnumerable<ComponentAnnotation> LoadComponents(string manifestPath, ComponentAnnotationFile file)
+    {
+        if (file.Components is not null)
+        {
+            foreach (ComponentAnnotation component in file.Components)
+            {
+                yield return component;
+            }
+        }
+
+        if (file.ComponentFiles is null || file.ComponentFiles.Length == 0)
+        {
+            yield break;
+        }
+
+        string manifestDirectory = Path.GetDirectoryName(Path.GetFullPath(manifestPath)) ?? Directory.GetCurrentDirectory();
+        foreach (string relativePath in file.ComponentFiles)
+        {
+            if (string.IsNullOrWhiteSpace(relativePath))
+            {
+                continue;
+            }
+
+            string shardPath = Path.GetFullPath(Path.Combine(
+                manifestDirectory,
+                relativePath.Replace('/', Path.DirectorySeparatorChar)));
+            if (!File.Exists(shardPath))
+            {
+                continue;
+            }
+
+            using FileStream shardStream = File.Open(
+                shardPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+            ComponentAnnotation[]? shard = JsonSerializer.Deserialize<ComponentAnnotation[]>(shardStream, JsonOptions);
+            if (shard is null)
+            {
+                continue;
+            }
+
+            foreach (ComponentAnnotation component in shard)
+            {
+                yield return component;
+            }
+        }
     }
 
     private sealed class WorldScaleAnnotation

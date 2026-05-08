@@ -89,7 +89,7 @@ internal sealed partial class Simulator3dForm
         CanonicalizeEntityTeamForVisuals(entity);
         float yaw = ResolveAppearanceYaw(entity);
         float turretYaw = ResolveAppearanceTurretYaw(entity);
-        float gimbalPitch = -(float)(entity.GimbalPitchDeg * Math.PI / 180.0);
+        float gimbalPitch = (float)(entity.GimbalPitchDeg * Math.PI / 180.0);
         Color bodyColor = ResolveAppearanceMaterialColor(profile.BodyColor, entity.IsAlive, 0.00f);
         Color turretColor = ResolveAppearanceMaterialColor(profile.TurretColor, entity.IsAlive, 0.05f);
         Color wheelColor = ResolveAppearanceMaterialColor(profile.WheelColor, entity.IsAlive, -0.04f);
@@ -1376,7 +1376,7 @@ internal sealed partial class Simulator3dForm
         CanonicalizeEntityTeamForVisuals(entity);
         float yaw = ResolveAppearanceYaw(entity);
         float turretYaw = ResolveAppearanceTurretYaw(entity);
-        float gimbalPitch = -(float)(entity.GimbalPitchDeg * Math.PI / 180.0);
+        float gimbalPitch = (float)(entity.GimbalPitchDeg * Math.PI / 180.0);
         Color bodyColor = ResolveAppearanceMaterialColor(profile.BodyColor, entity.IsAlive, 0.00f);
         Color turretColor = ResolveAppearanceMaterialColor(profile.TurretColor, entity.IsAlive, 0.05f);
         Color armorColor = ResolveAppearanceMaterialColor(profile.ArmorColor, entity.IsAlive, 0.02f);

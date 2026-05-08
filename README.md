@@ -1,92 +1,68 @@
-# Simulator
+# ARTINX A-Soul Simulator
 
-这是一个以 RoboMaster 对局为目标的本地仿真工程，当前同时维护两套彼此隔离的地图体系：
+面向 RoboMaster / RMUC 2026 规则的本地与局域网对战模拟器。当前主线是 `rmuc2026` 精细地形地图，使用 `glb + component_roles.json + terraincache.lz4` 作为地图资源，规则、渲染、自瞄、碰撞和局域网同步都围绕同一套世界坐标推进。
 
-- `blankCanvas`：老的粗略地图/规则实验场
-- `rmuc2026`：新的精细地形地图，基于 `glb + json + lz4 cache` 组织
+## 快速启动
 
-当前重点能力包括：
+```powershell
+dotnet run --project src\Simulator.ThreeD\Simulator.ThreeD.csproj -- --start-match
+```
 
-- 3D 对局与观察者模式
-- 新地形地图加载、组合体加载、互动组件运行时控制
-- 视觉自瞄、装甲板/圆盘位姿解算、统一控制链路
-- 地形碰撞、机器人运动、弹丸碰撞与交互反馈
-- C# / OpenTK 编辑器与 `Simulator.LoadLargeTerrain` 地图侧工具链
+常用验证命令：
 
-## 入口
+```powershell
+dotnet build src\Simulator.ThreeD\Simulator.ThreeD.csproj -c Debug --no-restore
+robocopy "src\Simulator.ThreeD\bin\Debug\net10.0-windows" "build_verify\launcher_builds\debug\threeD" /E /R:1 /W:1 /NFL /NDL /NJH /NJS /NP
+```
 
-- 启动 3D 对局：
-  - `dotnet run --project src/Simulator.ThreeD/Simulator.ThreeD.csproj -- --start-match`
-- 启动 C# 工程：
-  - `.venv\Scripts\python.exe open_csharp_project.py`
-- 启动 Python 地图查看辅助脚本：
-  - `.venv\Scripts\python.exe run_viewer.py`
+如果主程序或编辑器占用输出文件，可先用：
 
-## 目录
+```powershell
+dotnet build src\Simulator.ThreeD\Simulator.ThreeD.csproj -c Debug --no-restore /p:BuildProjectReferences=false
+```
 
-- `src/Simulator.Core/`
-  - 规则层、世界状态、弹道与自瞄数学、碰撞与实体模型
-- `src/Simulator.ThreeD/`
-  - 对局渲染、HUD、局内编辑、GPU/CPU 渲染桥接
-- `src/Simulator.LoadLargeTerrain/`
-  - 新地图读取、组合体/互动组件处理、编辑器底层能力
-- `src/Simulator.Editors/`
-  - 编辑器共享控件与公共逻辑
-- `maps/`
-  - 地图配置、注释、缓存、GLB 资源
-- `docs/`
-  - 架构与关键算法文档
+## 目录职责
 
-## 推荐阅读
+- `src/Simulator.Core/`：规则状态、血量/增益/能量机关、弹丸、命中判定、世界实体模型。
+- `src/Simulator.ThreeD/`：OpenGK/OpenTK 对局窗口、HUD、P/O 面板、本地房间、局域网同步、GPU/CPU 渲染桥接。
+- `src/Simulator.LoadLargeTerrain/`：GLB 精细地图加载、组件标注、碰撞体积、地图编辑器底层能力。
+- `src/Simulator.Assets/`：地图、规则和资源配置读取。
+- `src/Simulator.Editors/`：编辑器共享控件与工具逻辑。
+- `maps/rmuc2026/`：RMUC 2026 地图、设施、增益、碰撞标注和分片组件标注。
+- `规则/`：按比赛规则整理的图片参考，代码实现应优先对齐这里的确定规则。
+- `docs/`：长期技术文档和项目记录。
 
-- [文档总览](docs/README.md)
-- [给 C# 初学者的完整项目教学](docs/tutorials/csharp-beginner-project-guide.md)
-- [地图处理与缓存链路](docs/algorithms/map-processing.md)
-- [碰撞、运动与地形贴合](docs/algorithms/terrain-motion.md)
-- [视觉自瞄、吊射与统一控制链路](docs/algorithms/autoaim.md)
-- [能量机关渲染与交互](docs/algorithms/energy-mechanism.md)
-- [组合体控制与互动组件运行时](docs/algorithms/interactive-composites.md)
-- [弹丸与模型碰撞](docs/algorithms/projectile-collision.md)
-- [新旧地图体系隔离](docs/map-system-isolation.md)
-- [项目日志](docs/project-log.md)
-- [文档维护工作流](docs/documentation-workflow.md)
+## 当前框架约定
 
-其中如果要继续修改：
+- 房间座位是机器人生成的唯一来源：未加入座位的机器人不能只隐藏，必须不进入对局实体集合。
+- 本地模式使用局内 `O` 面板，功能对齐联机裁判 `P` 面板；联机裁判仍使用 `P`。
+- 局内准备、自检、倒计时期间应允许打开配置/裁判面板。
+- 地图编辑器中的 collision/buff/设施体积必须通过统一标注链路进入运行时碰撞、触发和调试显示。
+- 自瞄、命中判定、GPU/CPU 可视化必须共用同一组装甲板/能量机关世界坐标，不能出现显示和锁定错位。
+- 局域网主机是权威模拟端；客户端发送输入和模式配置，接收权威快照并做本地视角预测。
 
-- 自瞄 / F8 / 自动扳机 / 提前量 / 英雄吊射
-  - 先读 `docs/algorithms/autoaim.md`
-  - 该文档已经补齐目标建模、Kalman 观测滤波、角速度估计、弹道求解、提前量联立迭代、命中修正和自动扳机判定的数学推导与工程解释
+## RMUC 规则重点
 
-## 当前实现约束
+- 能量机关：
+  - 小能量机关每次点亮 1 个灯盘。
+  - 大能量机关每轮点亮 2 个灯盘，命中任意一个后进入 1 秒补击窗口，随后进入下一轮。
+  - 大能量机关按 5 轮显示 `1/5` 到 `5/5` 进度，待激活盘应显示规则图 5-21 的多环红色灯盘效果。
+- 基地、前哨站、堡垒、增益区、补给区等规则以 `规则/` 下图片和 `maps/rmuc2026/facilities/*.json` 为准。
+- 性能体系和车辆构型配置在准备阶段完成，局内配置改动需要按比例调整当前血量。
 
-- 新地图与老地图设施链路必须隔离：
-  - 新地图设施只从新地图的组合体/互动组件/注释读取
-  - 老地图规则设施不能混入 `rmuc2026`
-- 结构目标、自瞄、渲染必须共用同一套世界位姿：
-  - 不能出现“肉眼看到一个位置、自瞄锁另一个位置”
-- 组合体运行时位姿要以 world-space 规范化结果为准：
-  - 地图编辑器、单位测试器、正式对局必须一致
+## 地图与标注
 
-## 文档维护要求
+`maps/rmuc2026/RMUC2026_MAP.component_roles.json` 是组件标注入口。组件数量较大时会拆分到：
 
-- 每次功能更新后，至少同步更新：
-  - `docs/project-log.md`
-  - 对应主题的技术文档
-  - 如果入口、用法、键位变化，还要更新 `README.md`
-- 详细约束见：
-  - `docs/documentation-workflow.md`
+```text
+maps/rmuc2026/RMUC2026_MAP.component_roles.parts/components_*.json
+```
 
-## 构建
+运行时加载器必须支持 `ComponentFiles` 分片，否则能量机关、前哨站、基地装甲板等标注会退回旧坐标或粗略坐标，导致自瞄和显示错位。
 
-- 常规构建：
-  - `dotnet build src/Simulator.ThreeD/Simulator.ThreeD.csproj`
-- 当主程序占用默认输出目录时，使用隔离输出目录：
-  - `dotnet build src/Simulator.ThreeD/Simulator.ThreeD.csproj -c Debug -p:OutDir=e:\Artinx\260111new\Simulator\build_verify\local\ -p:UseSharedCompilation=false`
+## 开发提示
 
-## 本次更新关注点
-
-- 自瞄新增独立三阶 EKF 位姿观测链路，旧的常速度 Kalman 链路保留
-- `F3` 的碰撞体积和局部地形碰撞调试在 GPU 模式下改为 GPU 端绘制
-- 能量机关待激活提示改为圆盘第 4 / 第 7 环常亮，不再使用十字灯条
-- 前哨站血量归零后改为阻尼停转，并把阵营色组件压成黑色
-- 前哨站的旋转角解算统一到规则层，渲染、自瞄、运行时目标同步复用
+- 优先改现有链路，不新增平行系统。
+- 优先使用 `rg` 搜索归属模块。
+- 修改规则后至少构建 `Simulator.ThreeD.csproj`。
+- 不提交 `bin/`、`obj/`、launcher 输出和个人配置，除非明确需要发布构建产物。

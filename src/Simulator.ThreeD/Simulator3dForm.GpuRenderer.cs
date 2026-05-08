@@ -4956,8 +4956,20 @@ internal sealed partial class Simulator3dForm
 
                 if (activeArm && persistentRingScore <= 0)
                 {
-                    DrawRingScore(4, activeColor, emphasized: false);
-                    DrawRingScore(7, activeColor, emphasized: true);
+                    foreach (int ring in new[] { 1, 3, 5, 7, 9 })
+                    {
+                        DrawRingScore(ring, activeColor, emphasized: ring >= 7);
+                    }
+
+                    DrawGpuAnnulusDoubleSided(
+                        center,
+                        normal,
+                        Vector3.UnitY,
+                        0f,
+                        diskRadius * 0.16f,
+                        activeColor,
+                        24,
+                        0.0155f);
                     continue;
                 }
 

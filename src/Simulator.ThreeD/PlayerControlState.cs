@@ -22,6 +22,10 @@ internal sealed record PlayerControlState
 
     public bool HeroLobAutoFireReady { get; init; }
 
+    public string? AutoAimTargetMode { get; init; }
+
+    public string? HeroAutoAimMode { get; init; }
+
     public bool JumpRequested { get; init; }
 
     public bool StepClimbModeActive { get; init; }
