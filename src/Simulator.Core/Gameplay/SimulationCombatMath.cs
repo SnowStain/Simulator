@@ -3605,11 +3605,11 @@ public static bool TryAcquireEnergyMechanismTarget(
         float diskRadiusM = (float)Math.Max(0.035, Math.Max(ResolveArmorPlateHitWidthM(plate), ResolveArmorPlateHitHeightM(plate)) * 0.5);
         bool smallProjectile = projectileRadiusM <= 0.005;
         float radialToleranceM = (float)(smallProjectile
-            ? Math.Max(0.034, projectileRadiusM + 0.022)
-            : Math.Max(0.026, projectileRadiusM + 0.016));
+            ? Math.Max(0.048, projectileRadiusM + 0.032)
+            : Math.Max(0.036, projectileRadiusM + 0.022));
         float planeToleranceM = (float)(smallProjectile
-            ? Math.Max(0.026, projectileRadiusM + 0.018)
-            : Math.Max(0.020, projectileRadiusM + 0.014));
+            ? Math.Max(0.040, projectileRadiusM + 0.028)
+            : Math.Max(0.030, projectileRadiusM + 0.020));
 
         float denom = Vector3.Dot(segment, normal);
         if (Math.Abs(denom) > 1e-7f)
@@ -3632,7 +3632,7 @@ public static bool TryAcquireEnergyMechanismTarget(
         }
 
         (double distanceSq, Vector3 closest) = PointToSegmentDistanceSquared(center, segmentStart, segmentEnd);
-        double fallbackRadiusM = diskRadiusM + Math.Max(radialToleranceM, 0.028f);
+        double fallbackRadiusM = diskRadiusM + Math.Max(radialToleranceM, smallProjectile ? 0.042f : 0.032f);
         if (distanceSq > fallbackRadiusM * fallbackRadiusM)
         {
             return false;
@@ -3641,7 +3641,7 @@ public static bool TryAcquireEnergyMechanismTarget(
         Vector3 fallbackLocal = closest - center;
         double fallbackPlaneOffsetM = Math.Abs(Vector3.Dot(fallbackLocal, normal));
         double fallbackRadialSq = Math.Pow(Vector3.Dot(fallbackLocal, side), 2) + Math.Pow(Vector3.Dot(fallbackLocal, up), 2);
-        if (fallbackPlaneOffsetM > planeToleranceM + (smallProjectile ? 0.034 : 0.024)
+        if (fallbackPlaneOffsetM > planeToleranceM + (smallProjectile ? 0.050 : 0.034)
             || fallbackRadialSq > fallbackRadiusM * fallbackRadiusM)
         {
             return false;
@@ -4927,6 +4927,9 @@ public static bool TryAcquireEnergyMechanismTarget(
             Math.Pow(plate.X - shooter.X, 2)
             + Math.Pow(plate.Y - shooter.Y, 2)) * metersPerWorldUnit;
         double distanceRatio = Math.Clamp(distanceM / (largeProjectile ? 18.0 : 12.0), 0.0, 1.0);
+        double angularSpeedRatio = energyTarget
+            ? Math.Clamp(Math.Abs(ResolveAutoAimAngularVelocityRadPerSec(world, target, plate)) / 8.0, 0.0, 1.0)
+            : 0.0;
 
         double biasSec;
         if (largeProjectile)
@@ -4952,7 +4955,7 @@ public static bool TryAcquireEnergyMechanismTarget(
             }
             else if (energyTarget)
             {
-                biasSec = -0.012 - 0.006 * distanceRatio;
+                biasSec = 0.026 + 0.018 * distanceRatio + 0.010 * angularSpeedRatio;
             }
             else if (rotatingPlate)
             {
@@ -4967,10 +4970,9 @@ public static bool TryAcquireEnergyMechanismTarget(
         {
             if (energyTarget)
             {
-                // Energy disks already use analytic future-pose reconstruction.
-                // Keep 17mm prediction slightly earlier so rapid follow-up shots
-                // do not drift to the outgoing side of the rotating disk.
-                biasSec = -0.010 - 0.004 * distanceRatio;
+                // Energy disks rotate fast enough that the camera/shot pipeline delay is visible.
+                // Bias slightly forward so EKF plate observations aim at the disk when the shell arrives.
+                biasSec = 0.034 + 0.024 * distanceRatio + 0.014 * angularSpeedRatio;
             }
             else if (rotatingPlate)
             {
@@ -5017,6 +5019,15 @@ public static bool TryAcquireEnergyMechanismTarget(
         bool rotatingPlate = IsRotatingArmorPlate(world, target, plate);
         bool structureTarget = IsStructure(target);
         bool energyTarget = string.Equals(target.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase);
+        double angularSpeedRatio = energyTarget
+            ? Math.Clamp(Math.Abs(ResolveAutoAimAngularVelocityRadPerSec(world, target, plate)) / 8.0, 0.0, 1.0)
+            : 0.0;
+        if (energyTarget)
+        {
+            baseTranslation = largeProjectile ? 1.42 : 1.12;
+            baseAngular = largeProjectile ? 1.34 : 1.18;
+        }
+
         double distanceRatio = Math.Clamp(distanceM / (largeProjectile ? 16.0 : 11.0), 0.0, 1.0);
         double empiricalTranslationDamping = 1.0 - (largeProjectile ? 0.16 : 0.08) * distanceRatio;
         double empiricalAngularDamping = 1.0 - (largeProjectile ? 0.24 : 0.12) * distanceRatio;
@@ -5028,8 +5039,8 @@ public static bool TryAcquireEnergyMechanismTarget(
 
         if (energyTarget)
         {
-            empiricalTranslationDamping *= largeProjectile ? 0.92 : 0.955;
-            empiricalAngularDamping *= largeProjectile ? 0.84 : 0.90;
+            empiricalTranslationDamping *= largeProjectile ? 1.02 : 1.04;
+            empiricalAngularDamping *= largeProjectile ? 1.03 : 1.08;
         }
         else if (structureTarget)
         {
@@ -5045,6 +5056,12 @@ public static bool TryAcquireEnergyMechanismTarget(
 
         double translationLeadScale = baseTranslation * empiricalTranslationDamping;
         double angularLeadScale = baseAngular * empiricalAngularDamping;
+        if (energyTarget)
+        {
+            translationLeadScale *= 1.0 + 0.06 * angularSpeedRatio;
+            angularLeadScale *= 1.0 + 0.16 * angularSpeedRatio;
+        }
+
         if (target.AutoAimInstabilityTimerSec <= 1e-6)
         {
             return (translationLeadScale, angularLeadScale);

@@ -2860,7 +2860,7 @@ internal sealed partial class Simulator3dForm : Form
 
     private void ToggleLocalRefereePanel()
     {
-        if (_appState != SimulatorAppState.InMatch)
+        if (_appState != SimulatorAppState.InMatch && !IsMatchStartupActive && !_localRoomMatchActive)
         {
             _lanStatusLine = "本地裁判 O 面板仅在局内或准备阶段可用";
             return;
@@ -6909,7 +6909,14 @@ internal sealed partial class Simulator3dForm : Form
 
     private static bool IsEntityInsideDebugFacilityRegion(FacilityRegion facility, SimulationEntity entity)
     {
-        return facility.Contains(entity.X, entity.Y, ResolveFacilityTouchHeight(entity));
+        if (facility.Contains(entity.X, entity.Y, ResolveFacilityTouchHeight(entity)))
+        {
+            return true;
+        }
+
+        string type = facility.Type ?? string.Empty;
+        return type.Contains("buff", StringComparison.OrdinalIgnoreCase)
+            && facility.Contains(entity.X, entity.Y);
     }
 
     private static double ResolveFacilityTouchHeight(SimulationEntity entity)
@@ -12370,6 +12377,22 @@ internal sealed partial class Simulator3dForm : Form
 
         if (firstPersonView)
         {
+            double metersPerWorldUnit = Math.Max(_host.World.MetersPerWorldUnit, 1e-6);
+            double chassisSpeedMps = Math.Sqrt(
+                entity.VelocityXWorldPerSec * entity.VelocityXWorldPerSec
+                + entity.VelocityYWorldPerSec * entity.VelocityYWorldPerSec) * metersPerWorldUnit;
+            float viewMotion = (float)Math.Clamp(chassisSpeedMps / 5.0, 0.0, 1.0);
+            float inputMotion = (float)Math.Clamp(
+                Math.Sqrt(entity.MoveInputForward * entity.MoveInputForward + entity.MoveInputRight * entity.MoveInputRight),
+                0.0,
+                1.0);
+            float barrelPhase = (float)(_host.World.GameTimeSec * 19.0 + ResolveCameraVibrationPhase(entity.Id) * 0.41f);
+            float barrelShake = MathF.Max(viewMotion, inputMotion * 0.55f);
+            verticalShake += (
+                MathF.Sin(barrelPhase) * 0.0018f
+                + MathF.Sin(barrelPhase * 1.71f + 0.62f) * 0.0007f) * barrelShake;
+            lateralShake += MathF.Sin(barrelPhase * 0.74f + 1.40f) * 0.00085f * barrelShake;
+            forwardShake += MathF.Sin(barrelPhase * 0.53f + 2.25f) * 0.00065f * barrelShake;
             lateralShake *= 0.38f;
             forwardShake = Math.Clamp(forwardShake, -0.0040f, 0.0100f);
         }
@@ -16191,6 +16214,42 @@ internal sealed partial class Simulator3dForm : Form
         return TryProject(aimPoint, out projectedAim, out _);
     }
 
+    private bool IsEnergyAutoAimAlignedForAutoFire(SimulationEntity entity)
+    {
+        if (!_autoAimPressed
+            || !entity.AutoAimLocked
+            || !string.Equals(entity.AutoAimTargetMode, "energy", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(entity.AutoAimTargetKind, "energy_disk", StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(entity.AutoAimTargetId)
+            || string.IsNullOrWhiteSpace(entity.AutoAimPlateId)
+            || entity.FireCooldownSec > 1e-6
+            || entity.HeatLockTimerSec > 1e-6
+            || entity.RespawnAmmoLockTimerSec > 1e-6)
+        {
+            return false;
+        }
+
+        double minimumAccuracy = string.Equals(entity.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase) ? 0.50 : 0.58;
+        if (entity.AutoAimAccuracy < minimumAccuracy)
+        {
+            return false;
+        }
+
+        if (!TryGetAutoAimProjectedPoint(entity, out PointF projectedAim))
+        {
+            return entity.AutoAimAccuracy >= minimumAccuracy + 0.12;
+        }
+
+        PointF center = new(ClientSize.Width * 0.5f, ClientSize.Height * 0.5f);
+        float dx = projectedAim.X - center.X;
+        float dy = projectedAim.Y - center.Y;
+        float thresholdPx = Math.Clamp(
+            46f + (float)entity.AutoAimLeadDistanceM * 2.8f,
+            42f,
+            _firstPersonView ? 92f : 108f);
+        return dx * dx + dy * dy <= thresholdPx * thresholdPx;
+    }
+
     private bool IsHeroLobReticleAlignedForAutoFire(SimulationEntity entity)
     {
         if (!IsHeroLobModeActive(entity)
@@ -16470,6 +16529,7 @@ internal sealed partial class Simulator3dForm : Form
         bool heroLobAutoControlActive = heroLobMode
             && (heroDeployActive || (_autoAimPressed && _autoAimAssistMode == AutoAimAssistMode.HardLock));
         bool heroLobAutoFireReady = heroLobAutoControlActive && IsHeroLobReticleAlignedForAutoFire(controlled);
+        bool energyAutoFireReady = IsEnergyAutoAimAlignedForAutoFire(controlled);
         bool energyAutoAimSingleShot =
             string.Equals(controlled.AutoAimTargetMode, "energy", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(controlled.RoleKey, "hero", StringComparison.OrdinalIgnoreCase);
@@ -16477,8 +16537,8 @@ internal sealed partial class Simulator3dForm : Form
             && nowSec <= _pendingSingleFireRequestExpiresAtSec;
         bool largeManualProjectile = string.Equals(controlled.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase);
         bool manualFirePressed = energyAutoAimSingleShot
-            ? pendingSingleFireRequestActive
-            : (_firePressed || pendingSingleFireRequestActive);
+            ? (pendingSingleFireRequestActive || energyAutoFireReady)
+            : (_firePressed || pendingSingleFireRequestActive || energyAutoFireReady);
         bool heroLobManualFireAllowed = heroLobMode && (!heroDeployActive && (!_autoAimPressed || heroLobGuidanceActive || manualFirePressed));
         bool firePressed = heroLobMode
             ? (heroLobAutoFireReady || (heroLobManualFireAllowed && manualFirePressed))

@@ -5261,8 +5261,8 @@ internal sealed class TerrainMotionService
         }
         else
         {
-            double yawDeadbandDeg = energyDiskTarget ? 0.10 : (smallGyroVehicleTarget ? 0.22 : 0.05);
-            double pitchDeadbandDeg = energyDiskTarget ? 0.08 : (smallGyroVehicleTarget ? 0.10 : 0.04);
+            double yawDeadbandDeg = energyDiskTarget ? 0.055 : (smallGyroVehicleTarget ? 0.22 : 0.05);
+            double pitchDeadbandDeg = energyDiskTarget ? 0.045 : (smallGyroVehicleTarget ? 0.10 : 0.04);
             if (playerHardLock)
             {
                 yawDeadbandDeg *= energyDiskTarget ? 1.20 : (heroLobAxisAimTarget ? 1.45 : 1.62);
@@ -5370,10 +5370,10 @@ internal sealed class TerrainMotionService
 
             if (playerHardLock)
             {
-                outputPitchTau *= energyDiskTarget ? 1.10 : (heroLobPitchHoldTarget ? 1.20 : 1.28);
-                outputYawTau *= energyDiskTarget ? 1.10 : (heroLobAxisAimTarget ? 1.20 : 1.28);
-                outputPitchRateDegPerSec *= energyDiskTarget ? 0.94 : (heroLobPitchHoldTarget ? 0.86 : 0.80);
-                outputYawRateDegPerSec *= energyDiskTarget ? 0.94 : 0.80;
+                outputPitchTau *= energyDiskTarget ? 1.04 : (heroLobPitchHoldTarget ? 1.20 : 1.28);
+                outputYawTau *= energyDiskTarget ? 1.04 : (heroLobAxisAimTarget ? 1.20 : 1.28);
+                outputPitchRateDegPerSec *= energyDiskTarget ? 0.98 : (heroLobPitchHoldTarget ? 0.86 : 0.80);
+                outputYawRateDegPerSec *= energyDiskTarget ? 0.98 : 0.80;
             }
 
             outputPitchTau /= AutoAimGimbalSpeedScale;
@@ -8111,11 +8111,25 @@ internal sealed class TerrainMotionService
                     continue;
                 }
 
+                if (balanceInfantry
+                    && TryFindBalanceInfantryBodyWallCellContact(
+                        runtimeGrid,
+                        wallFootprint,
+                        referenceHeight,
+                        allowedRise,
+                        out _,
+                        out _))
+                {
+                    if (!ShouldIgnoreFlatCollisionSurfaceSeam(runtimeGrid, entity, wallFootprint, referenceHeight, allowedRise))
+                    {
+                        return false;
+                    }
+
+                    continue;
+                }
+
                 if (balanceInfantry)
                 {
-                    // Balance infantry supports itself on the wheel/leg contact parts. Body/gimbal
-                    // probes over triangle terrain can see the ground seam as a wall and freeze on
-                    // flat starts, so leave true wall rejection to the static-contact pass.
                     continue;
                 }
 
@@ -11014,10 +11028,13 @@ internal sealed class TerrainMotionService
                     out Vector2 bodyWallMtv,
                     out float bodyWallPenetration))
             {
-                bestPenetration = bodyWallPenetration;
-                separationVector = bodyWallMtv;
-                reason = "balance_body_wall_cell_contact";
-                found = true;
+                if (!ShouldIgnoreFlatCollisionSurfaceSeam(runtimeGrid, entity, footprint, currentHeight, maxStep + jumpClearance))
+                {
+                    bestPenetration = bodyWallPenetration;
+                    separationVector = bodyWallMtv;
+                    reason = "balance_body_wall_cell_contact";
+                    found = true;
+                }
             }
 
             bool balanceBodyOrGimbal = IsBalanceInfantry(entity) && (bodyFootprint || gimbalFootprint);
@@ -11435,6 +11452,11 @@ internal sealed class TerrainMotionService
                 continue;
             }
 
+            if (!VerticalIntervalsOverlap(footprint.MinHeightM, footprint.MaxHeightM, shape.MinHeightM, shape.MaxHeightM))
+            {
+                continue;
+            }
+
             if (!IntersectsFootprint(footprint, shape.Footprint))
             {
                 continue;
@@ -11655,6 +11677,7 @@ internal sealed class TerrainMotionService
             }
 
             NormalizeEditedCollisionVerticalRange(shape, ref minHeightM, ref maxHeightM);
+            EnsureEditedCollisionRequestedHeight(shape, ref minHeightM, ref maxHeightM);
             Vector2 center = ComputePolygonCenter(polygon);
             float boundingRadius = 0f;
             foreach (Vector2 point in polygon)
@@ -11858,7 +11881,7 @@ internal sealed class TerrainMotionService
         };
     }
 
-    private static IReadOnlyList<Vector3> BuildEditedCollisionShapeModelVertices(FineTerrainCollisionShapeAnnotation shape)
+    private IReadOnlyList<Vector3> BuildEditedCollisionShapeModelVertices(FineTerrainCollisionShapeAnnotation shape)
     {
         string shapeType = shape.ShapeType.Trim();
         if (shapeType.Equals("polyhedron", StringComparison.OrdinalIgnoreCase)
@@ -11867,7 +11890,7 @@ internal sealed class TerrainMotionService
             return shape.VerticesModel.Select(vertex => vertex.ToVector3()).ToArray();
         }
 
-        Vector3 center = shape.PositionModel.ToVector3();
+        Vector3 center = ResolveEditedCollisionShapeModelCenter(shape);
         Vector3 rotationYpr = shape.YprDegrees.ToVector3();
         Matrix4x4 rotation = Matrix4x4.CreateFromYawPitchRoll(
             rotationYpr.X * MathF.PI / 180f,
@@ -11948,6 +11971,26 @@ internal sealed class TerrainMotionService
         return boxVertices;
     }
 
+    private Vector3 ResolveEditedCollisionShapeModelCenter(FineTerrainCollisionShapeAnnotation shape)
+    {
+        Vector3 center = shape.PositionModel.ToVector3();
+        if (!_editedCollisionWorldScale.HasValue)
+        {
+            return center;
+        }
+
+        FineTerrainWorldScale scale = _editedCollisionWorldScale.Value;
+        float requestedHeightModel = (float)Math.Max(0.001, ResolveEditedCollisionRequestedHeightModel(shape));
+        float minimumCenterY = scale.ModelMinY + requestedHeightModel * 0.38f;
+        if (center.Y < minimumCenterY && center.Y >= -0.25f && center.Y <= 20f)
+        {
+            float centerHeightM = Math.Max(0f, center.Y);
+            center.Y = scale.ModelMinY + centerHeightM / MathF.Max(scale.YMetersPerModelUnit, 1e-6f);
+        }
+
+        return center;
+    }
+
     private void NormalizeEditedCollisionVerticalRange(
         FineTerrainCollisionShapeAnnotation shape,
         ref double minHeightM,
@@ -11996,6 +12039,31 @@ internal sealed class TerrainMotionService
         }
 
         return Math.Max(Math.Max(0.0f, size.Y), Math.Max(0.0f, size.Z));
+    }
+
+    private void EnsureEditedCollisionRequestedHeight(
+        FineTerrainCollisionShapeAnnotation shape,
+        ref double minHeightM,
+        ref double maxHeightM)
+    {
+        if (!_editedCollisionWorldScale.HasValue)
+        {
+            return;
+        }
+
+        double requestedHeightModel = ResolveEditedCollisionRequestedHeightModel(shape);
+        if (requestedHeightModel <= 1e-6)
+        {
+            return;
+        }
+
+        double requestedHeightM = Math.Clamp(
+            requestedHeightModel * _editedCollisionWorldScale.Value.YMetersPerModelUnit,
+            0.02,
+            20.0);
+        double centerHeightM = (minHeightM + maxHeightM) * 0.5;
+        minHeightM = centerHeightM - requestedHeightM * 0.5;
+        maxHeightM = centerHeightM + requestedHeightM * 0.5;
     }
 
     private static IReadOnlyList<Vector3> BuildEditedCollisionShapePrismVertices(

@@ -501,30 +501,31 @@ internal sealed class AutoAimSolverService
             || target.SmallGyroActive;
         bool largeRound = string.Equals(shooter.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase);
 
-        double measurementNoiseM = rotatingTarget ? 0.010 : 0.016;
+        bool energyDisk = string.Equals(targetKind, "energy_disk", StringComparison.OrdinalIgnoreCase);
+        double measurementNoiseM = energyDisk ? 0.008 : (rotatingTarget ? 0.010 : 0.016);
         double accelerationNoiseMps2 = string.Equals(targetKind, "energy_disk", StringComparison.OrdinalIgnoreCase)
-            ? 14.0
+            ? 22.0
             : string.Equals(targetKind, "outpost_armor", StringComparison.OrdinalIgnoreCase)
                 ? 10.0
                 : target.SmallGyroActive
                     ? 22.0
                     : 8.0;
-        double jerkNoiseMps3 = accelerationNoiseMps2 * (rotatingTarget ? 3.4 : 2.4);
-        double maxDtSec = 0.12;
+        double jerkNoiseMps3 = accelerationNoiseMps2 * (energyDisk ? 4.6 : (rotatingTarget ? 3.4 : 2.4));
+        double maxDtSec = energyDisk ? 0.16 : 0.12;
 
         if (largeRound)
         {
-            measurementNoiseM *= rotatingTarget ? 0.94 : 0.84;
-            accelerationNoiseMps2 *= rotatingTarget ? 0.90 : 0.78;
-            jerkNoiseMps3 *= rotatingTarget ? 0.92 : 0.76;
-            maxDtSec = rotatingTarget ? 0.10 : 0.09;
+            measurementNoiseM *= energyDisk ? 0.92 : (rotatingTarget ? 0.94 : 0.84);
+            accelerationNoiseMps2 *= energyDisk ? 1.04 : (rotatingTarget ? 0.90 : 0.78);
+            jerkNoiseMps3 *= energyDisk ? 1.06 : (rotatingTarget ? 0.92 : 0.76);
+            maxDtSec = energyDisk ? 0.15 : (rotatingTarget ? 0.10 : 0.09);
         }
 
         return new AutoAimObservationTuning(
             Math.Max(0.004, measurementNoiseM),
             Math.Max(2.5, accelerationNoiseMps2),
             Math.Max(8.0, jerkNoiseMps3),
-            Math.Clamp(maxDtSec, 1.0 / 120.0, 0.12));
+            Math.Clamp(maxDtSec, 1.0 / 120.0, energyDisk ? 0.18 : 0.12));
     }
 
     private readonly record struct AutoAimObservationTuning(

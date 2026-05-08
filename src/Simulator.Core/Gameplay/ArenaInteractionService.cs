@@ -674,7 +674,7 @@ public sealed class ArenaInteractionService
             "energy_mechanism",
             large
                 ? "\u5927\u80fd\u91cf\u673a\u5173\u5f00\u59cb\u6fc0\u6d3b\uff1a\u6bcf\u7ec4\u968f\u673a\u70b9\u4eae 2 \u4e2a\u5f85\u6fc0\u6d3b\u5706\u76d8\uff0c\u547d\u4e2d\u4efb\u610f\u4e00\u4e2a\u540e\u8fdb\u5165 1 \u79d2\u8865\u51fb\u7a97\u53e3\uff0c\u5b8c\u6210 5 \u7ec4\u540e\u6fc0\u6d3b\u3002"
-                : "\u5c0f\u80fd\u91cf\u673a\u5173\u5f00\u59cb\u6fc0\u6d3b\uff1a\u8bf7\u6309\u968f\u673a\u987a\u5e8f\u547d\u4e2d\u5df1\u65b9 5 \u4e2a\u5f85\u6fc0\u6d3b\u5706\u76d8\u3002"));
+                : "\u5c0f\u80fd\u91cf\u673a\u5173\u5f00\u59cb\u6fc0\u6d3b\uff1a\u968f\u673a\u70b9\u4eae 1 \u4e2a\u5f85\u6fc0\u6d3b\u5706\u76d8\uff0c2.5 \u79d2\u5185\u547d\u4e2d\u540e\u7acb\u5373\u4ece\u5269\u4f59\u672a\u5b8c\u6210\u5706\u76d8\u4e2d\u968f\u673a\u70b9\u4eae\u4e0b\u4e00\u4e2a\uff0c\u5b8c\u6210 5 \u4e2a\u540e\u6fc0\u6d3b\u3002"));
     }
 
     public bool EnsureEnergyMechanismTestAttemptActive(
@@ -710,6 +710,54 @@ public sealed class ArenaInteractionService
         }
 
         return true;
+    }
+
+    public bool EnsureEnergyMechanismProjectileAttemptActive(
+        SimulationWorldState world,
+        SimulationEntity shooter,
+        double gameTimeSec,
+        ArmorPlateTarget firstHitPlate)
+    {
+        if (!CanActivateEnergy(shooter))
+        {
+            return false;
+        }
+
+        SimulationTeamState teamState = world.GetOrCreateTeamState(shooter.Team);
+        if (teamState.EnergyTestAlwaysAvailable)
+        {
+            return EnsureEnergyMechanismTestAttemptActive(world, shooter.Team, gameTimeSec, firstHitPlate);
+        }
+
+        bool alreadyActivating = string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
+            && teamState.EnergyCurrentLitMask != 0;
+        if (!alreadyActivating)
+        {
+            AwardEnergyOpportunityTokens(teamState, gameTimeSec);
+            if (!TryConsumeEnergyOpportunityToken(teamState, gameTimeSec, out bool large))
+            {
+                return false;
+            }
+
+            StartEnergyAttempt(teamState, large, ResolveLargeEnergyAttemptSlot(gameTimeSec), gameTimeSec);
+        }
+
+        if (SimulationCombatMath.TryParseEnergyArmIndex(firstHitPlate.Id, out string plateTeam, out int armIndex)
+            && string.Equals(plateTeam, shooter.Team, StringComparison.OrdinalIgnoreCase)
+            && teamState.EnergyActivatedGroupCount == 0
+            && teamState.EnergyHitRingCount == 0)
+        {
+            teamState.EnergyActivationOrder[0] = Math.Clamp(armIndex, 0, 4);
+            teamState.EnergyActiveGroupIndex = Math.Clamp(armIndex, 0, 4);
+            teamState.EnergyCurrentLitMask = teamState.EnergyLargeMechanismActive
+                ? ResolveEnergyLitMask(teamState)
+                : 1 << teamState.EnergyActiveGroupIndex;
+            teamState.EnergyNextModuleDelaySec = 0.0;
+            teamState.EnergyLitModuleTimerSec = 0.0;
+        }
+
+        return string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
+            && teamState.EnergyCurrentLitMask != 0;
     }
 
     public FacilityInteractionEvent? ApplyEnergyMechanismHit(
@@ -824,9 +872,9 @@ public sealed class ArenaInteractionService
         if (!teamState.EnergyLargeMechanismActive)
         {
             teamState.EnergyActiveGroupIndex = ResolveCurrentEnergyActiveGroupIndex(teamState);
-            teamState.EnergyCurrentLitMask = 0;
+            teamState.EnergyCurrentLitMask = ResolveEnergyLitMask(teamState);
             teamState.EnergyLitModuleTimerSec = 0.0;
-            teamState.EnergyNextModuleDelaySec = 1.0;
+            teamState.EnergyNextModuleDelaySec = 0.0;
         }
 
         return new FacilityInteractionEvent(
@@ -837,7 +885,7 @@ public sealed class ArenaInteractionService
             "energy_mechanism",
             teamState.EnergyLargeMechanismActive
                 ? $"\u547d\u4e2d\u5927\u80fd\u91cf\u673a\u5173\uff1a\u5df2\u5b8c\u6210 {teamState.EnergyActivatedGroupCount}/5\uff0c\u672c\u6b21\u73af\u6570 {safeRingScore}\uff0c\u5269\u4f59\u8865\u51fb\u7a97 {teamState.EnergyNextModuleDelaySec:0.0}s\u3002"
-                : $"\u547d\u4e2d\u80fd\u91cf\u673a\u5173\uff1a\u5df2\u5b8c\u6210 {teamState.EnergyActivatedGroupCount}/5\uff0c\u672c\u6b21\u73af\u6570 {safeRingScore}\u3002");
+                : $"\u547d\u4e2d\u5c0f\u80fd\u91cf\u673a\u5173\uff1a\u5df2\u5b8c\u6210 {CountActivatedEnergyDisks(teamState)}/5\uff0c\u672c\u6b21\u73af\u6570 {safeRingScore}\uff0c\u4e0b\u4e00\u5f85\u6fc0\u6d3b\u5706\u76d8\u5df2\u70b9\u4eae\u3002");
     }
 
     private static void AwardTeamEnergyActivationExperience(
@@ -1360,7 +1408,8 @@ public sealed class ArenaInteractionService
         {
             double sampleX = entity.X + forwardX * localForward + rightX * localRight;
             double sampleY = entity.Y + forwardY * localForward + rightY * localRight;
-            if (IsFacilitySampleInside(facility, sampleX, sampleY, touchHeightM))
+            if (IsFacilitySampleInside(facility, sampleX, sampleY, touchHeightM)
+                || (facilityType.StartsWith("buff_", StringComparison.OrdinalIgnoreCase) && facility.Contains(sampleX, sampleY)))
             {
                 return true;
             }
@@ -1379,7 +1428,13 @@ public sealed class ArenaInteractionService
         string facilityType,
         double heightM)
     {
-        return facility.Contains(entity.X, entity.Y, heightM);
+        if (facility.Contains(entity.X, entity.Y, heightM))
+        {
+            return true;
+        }
+
+        return facilityType.StartsWith("buff_", StringComparison.OrdinalIgnoreCase)
+            && facility.Contains(entity.X, entity.Y);
     }
 
     private static double ResolveFacilityTouchHeight(SimulationEntity entity)

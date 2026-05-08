@@ -4,6 +4,7 @@ using System.Drawing.Text;
 using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using System.Threading;
 using LoadLargeTerrain;
 using Simulator.Assets;
@@ -4293,28 +4294,178 @@ internal sealed partial class Simulator3dForm
             return;
         }
 
-        float height = Math.Max(0.012f, (float)region.HeightM);
-        if (string.Equals(region.Shape, "polygon", StringComparison.OrdinalIgnoreCase) && region.Points.Count >= 3)
+        ResolveFacilityVisualVerticalRange(region, out float bottomM, out float topM);
+        IReadOnlyList<Point2D> footprint = BuildGpuFacilityVolumeFootprint(region);
+        if (footprint.Count < 3)
         {
-            Vector3 anchor = ToScenePoint(region.Points[0].X, region.Points[0].Y, height);
-            for (int index = 1; index < region.Points.Count - 1; index++)
+            return;
+        }
+
+        var bottom = new Vector3[footprint.Count];
+        var top = new Vector3[footprint.Count];
+        for (int index = 0; index < footprint.Count; index++)
+        {
+            bottom[index] = ToScenePoint(footprint[index].X, footprint[index].Y, bottomM);
+            top[index] = ToScenePoint(footprint[index].X, footprint[index].Y, topM);
+        }
+
+        DrawGpuGeneralPrism(bottom, top, color);
+        Color edge = Color.FromArgb(Math.Min(255, color.A + 96), BlendColor(color, Color.White, 0.35f));
+        for (int index = 0; index < footprint.Count; index++)
+        {
+            int next = (index + 1) % footprint.Count;
+            DrawGpuLine(bottom[index], bottom[next], edge);
+            DrawGpuLine(top[index], top[next], edge);
+            DrawGpuLine(bottom[index], top[index], edge);
+        }
+    }
+
+    private static void ResolveFacilityVisualVerticalRange(FacilityRegion region, out float bottomM, out float topM)
+    {
+        double height = Math.Max(
+            0.02,
+            ReadFacilityAdditionalDouble(region, "size_z_m", ReadFacilityAdditionalDouble(region, "height_m", Math.Max(0.05, region.HeightM))));
+        double centerZ = ReadFacilityAdditionalDouble(region, "center_z_m", ReadFacilityAdditionalDouble(region, "z_m", height * 0.5));
+        double bottom = ReadFacilityAdditionalDouble(region, "bottom_m", centerZ - height * 0.5);
+        double top = ReadFacilityAdditionalDouble(region, "top_m", centerZ + height * 0.5);
+        if (top < bottom)
+        {
+            (bottom, top) = (top, bottom);
+        }
+
+        bottomM = (float)Math.Clamp(bottom, -4.0, 20.0);
+        topM = (float)Math.Clamp(top, bottom + 0.02, 20.0);
+    }
+
+    private static IReadOnlyList<Point2D> BuildGpuFacilityVolumeFootprint(FacilityRegion region)
+    {
+        string volumeShape = ReadFacilityAdditionalString(region, "volume_shape", region.Shape);
+        bool hasVolumeFootprint =
+            region.AdditionalProperties is not null
+            && (region.AdditionalProperties.ContainsKey("center_x")
+                || region.AdditionalProperties.ContainsKey("center_y")
+                || region.AdditionalProperties.ContainsKey("size_x")
+                || region.AdditionalProperties.ContainsKey("size_y")
+                || region.AdditionalProperties.ContainsKey("radius"));
+
+        if (hasVolumeFootprint)
+        {
+            double centerX = ReadFacilityAdditionalDouble(region, "center_x", (region.X1 + region.X2) * 0.5);
+            double centerY = ReadFacilityAdditionalDouble(region, "center_y", (region.Y1 + region.Y2) * 0.5);
+            double yawDeg = ReadFacilityAdditionalDouble(region, "yaw_deg", ReadFacilityAdditionalDouble(region, "yaw", 0.0));
+            double yawRad = yawDeg * Math.PI / 180.0;
+            double cos = Math.Cos(yawRad);
+            double sin = Math.Sin(yawRad);
+
+            if (volumeShape.Contains("cylinder", StringComparison.OrdinalIgnoreCase)
+                || volumeShape.Contains("circle", StringComparison.OrdinalIgnoreCase))
             {
-                AppendOrDrawGpuTriangle(anchor, ToScenePoint(region.Points[index].X, region.Points[index].Y, height), ToScenePoint(region.Points[index + 1].X, region.Points[index + 1].Y, height), color);
+                double radius = Math.Max(
+                    0.01,
+                    ReadFacilityAdditionalDouble(region, "radius", Math.Max(Math.Abs(region.X2 - region.X1), Math.Abs(region.Y2 - region.Y1)) * 0.5));
+                var points = new Point2D[28];
+                for (int index = 0; index < points.Length; index++)
+                {
+                    double angle = Math.Tau * index / points.Length;
+                    points[index] = new Point2D(centerX + Math.Cos(angle) * radius, centerY + Math.Sin(angle) * radius);
+                }
+
+                return points;
             }
 
-            return;
+            double halfX = Math.Max(0.01, ReadFacilityAdditionalDouble(region, "size_x", Math.Abs(region.X2 - region.X1))) * 0.5;
+            double halfY = Math.Max(0.01, ReadFacilityAdditionalDouble(region, "size_y", Math.Abs(region.Y2 - region.Y1))) * 0.5;
+            Point2D[] local =
+            {
+                new(-halfX, -halfY),
+                new(halfX, -halfY),
+                new(halfX, halfY),
+                new(-halfX, halfY),
+            };
+            return local
+                .Select(point => new Point2D(
+                    centerX + point.X * cos - point.Y * sin,
+                    centerY + point.X * sin + point.Y * cos))
+                .ToArray();
+        }
+
+        if (string.Equals(region.Shape, "polygon", StringComparison.OrdinalIgnoreCase) && region.Points.Count >= 3)
+        {
+            return region.Points;
+        }
+
+        if (string.Equals(region.Shape, "line", StringComparison.OrdinalIgnoreCase))
+        {
+            Vector2 start = new((float)region.X1, (float)region.Y1);
+            Vector2 end = new((float)region.X2, (float)region.Y2);
+            Vector2 direction = end - start;
+            if (direction.LengthSquared() <= 1e-4f)
+            {
+                double radius = Math.Max(region.Thickness * 0.5, 4.0);
+                return new[]
+                {
+                    new Point2D(region.X1 - radius, region.Y1 - radius),
+                    new Point2D(region.X1 + radius, region.Y1 - radius),
+                    new Point2D(region.X1 + radius, region.Y1 + radius),
+                    new Point2D(region.X1 - radius, region.Y1 + radius),
+                };
+            }
+
+            direction = Vector2.Normalize(direction);
+            Vector2 normal = new(-direction.Y, direction.X);
+            float half = (float)Math.Max(region.Thickness * 0.5, 2.0);
+            return new[]
+            {
+                new Point2D(start.X + normal.X * half, start.Y + normal.Y * half),
+                new Point2D(start.X - normal.X * half, start.Y - normal.Y * half),
+                new Point2D(end.X - normal.X * half, end.Y - normal.Y * half),
+                new Point2D(end.X + normal.X * half, end.Y + normal.Y * half),
+            };
         }
 
         double minX = Math.Min(region.X1, region.X2);
         double maxX = Math.Max(region.X1, region.X2);
         double minY = Math.Min(region.Y1, region.Y2);
         double maxY = Math.Max(region.Y1, region.Y2);
-        AppendOrDrawGpuQuad(
-            ToScenePoint(minX, minY, height),
-            ToScenePoint(maxX, minY, height),
-            ToScenePoint(maxX, maxY, height),
-            ToScenePoint(minX, maxY, height),
-            color);
+        return new[]
+        {
+            new Point2D(minX, minY),
+            new Point2D(maxX, minY),
+            new Point2D(maxX, maxY),
+            new Point2D(minX, maxY),
+        };
+    }
+
+    private static string ReadFacilityAdditionalString(FacilityRegion region, string key, string fallback)
+    {
+        if (region.AdditionalProperties is null
+            || !region.AdditionalProperties.TryGetValue(key, out JsonElement element))
+        {
+            return fallback;
+        }
+
+        return element.ValueKind == JsonValueKind.String
+            ? element.GetString() ?? fallback
+            : element.ToString();
+    }
+
+    private static double ReadFacilityAdditionalDouble(FacilityRegion region, string key, double fallback)
+    {
+        if (region.AdditionalProperties is null
+            || !region.AdditionalProperties.TryGetValue(key, out JsonElement element))
+        {
+            return fallback;
+        }
+
+        if (element.ValueKind == JsonValueKind.Number && element.TryGetDouble(out double numeric))
+        {
+            return numeric;
+        }
+
+        return element.ValueKind == JsonValueKind.String
+            && double.TryParse(element.GetString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double parsed)
+                ? parsed
+                : fallback;
     }
 
     private void DrawGpuFieldCompositeInteractionTests()
@@ -4956,20 +5107,7 @@ internal sealed partial class Simulator3dForm
 
                 if (activeArm && persistentRingScore <= 0)
                 {
-                    foreach (int ring in new[] { 1, 3, 5, 7, 9 })
-                    {
-                        DrawRingScore(ring, activeColor, emphasized: ring >= 7);
-                    }
-
-                    DrawGpuAnnulusDoubleSided(
-                        center,
-                        normal,
-                        Vector3.UnitY,
-                        0f,
-                        diskRadius * 0.16f,
-                        activeColor,
-                        24,
-                        0.0155f);
+                    DrawGpuEnergyPendingDiskPattern(center, normal, Vector3.UnitY, diskRadius, activeColor);
                     continue;
                 }
 
@@ -4983,6 +5121,66 @@ internal sealed partial class Simulator3dForm
                     : ringSteadyColor;
                 DrawRingScore(persistentRingScore, ringColor, hitFlashing || completionFlashBlack);
             }
+        }
+    }
+
+    private void DrawGpuEnergyPendingDiskPattern(
+        Vector3 center,
+        Vector3 normalAxis,
+        Vector3 upAxis,
+        float diskRadius,
+        Color activeColor)
+    {
+        Vector3 normal = normalAxis.LengthSquared() <= 1e-8f ? Vector3.UnitX : Vector3.Normalize(normalAxis);
+        Vector3 up = upAxis.LengthSquared() <= 1e-8f ? Vector3.UnitY : Vector3.Normalize(upAxis);
+        Vector3 side = Vector3.Cross(up, normal);
+        if (side.LengthSquared() <= 1e-8f)
+        {
+            side = Vector3.UnitX;
+        }
+        else
+        {
+            side = Vector3.Normalize(side);
+        }
+
+        Color hot = ResolveEnergyMechanismPendingDiskColor(activeColor);
+        Color core = Color.FromArgb(255, BlendColor(hot, Color.White, 0.20f));
+        Color glow = Color.FromArgb(170, BlendColor(hot, Color.White, 0.38f));
+        DrawGpuAnnulusDoubleSided(center, normal, up, diskRadius * 0.90f, diskRadius * 1.08f, glow, 40, 0.018f);
+        DrawGpuAnnulusDoubleSided(center, normal, up, diskRadius * 0.82f, diskRadius * 0.96f, hot, 40, 0.022f);
+        foreach (int ring in new[] { 3, 5, 7 })
+        {
+            float outer = diskRadius * (11 - ring) / 10f;
+            float inner = Math.Max(0.0f, outer - diskRadius * 0.12f);
+            DrawGpuAnnulusDoubleSided(center, normal, up, inner, outer, hot, 40, 0.023f);
+        }
+
+        DrawGpuAnnulusDoubleSided(center, normal, up, 0f, diskRadius * 0.24f, core, 40, 0.025f);
+        float spokeLength = diskRadius * 0.92f;
+        float spokeHalfWidth = diskRadius * 0.070f;
+        Vector3 faceCenter = center + normal * 0.026f;
+        for (int index = 0; index < 5; index++)
+        {
+            float angle = index * MathF.Tau / 5f;
+            Vector3 radial = Vector3.Normalize(up * MathF.Cos(angle) + side * MathF.Sin(angle));
+            Vector3 tangent = Vector3.Normalize(Vector3.Cross(normal, radial));
+            Vector3 inner = faceCenter + radial * (diskRadius * 0.18f);
+            Vector3 outer = faceCenter + radial * spokeLength;
+            AppendOrDrawGpuQuad(
+                inner - tangent * spokeHalfWidth,
+                inner + tangent * spokeHalfWidth,
+                outer + tangent * spokeHalfWidth,
+                outer - tangent * spokeHalfWidth,
+                hot);
+
+            Vector3 tabInner = faceCenter + radial * (diskRadius * 1.00f);
+            Vector3 tabOuter = faceCenter + radial * (diskRadius * 1.18f);
+            AppendOrDrawGpuQuad(
+                tabInner - tangent * (spokeHalfWidth * 1.15f),
+                tabInner + tangent * (spokeHalfWidth * 1.15f),
+                tabOuter + tangent * (spokeHalfWidth * 1.15f),
+                tabOuter - tangent * (spokeHalfWidth * 1.15f),
+                glow);
         }
     }
 

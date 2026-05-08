@@ -1635,11 +1635,11 @@ public sealed class RuleSimulationService
             return true;
         }
 
-        _interactionService.EnsureEnergyMechanismTestAttemptActive(world, shooter.Team, world.GameTimeSec, hitPlate);
+        _interactionService.EnsureEnergyMechanismProjectileAttemptActive(world, shooter, world.GameTimeSec, hitPlate);
 
         if (!world.Teams.TryGetValue(shooter.Team, out SimulationTeamState? shooterTeamState)
             || !string.Equals(shooterTeamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
-            || shooterTeamState.EnergyNextModuleDelaySec > 1e-6
+            || (shooterTeamState.EnergyNextModuleDelaySec > 1e-6 && !shooterTeamState.EnergyLargeMechanismActive)
             || shooterTeamState.EnergyCurrentLitMask == 0)
         {
             projectileAlive = false;
@@ -1792,12 +1792,16 @@ public sealed class RuleSimulationService
                     + Math.Pow(Vector3.Dot(local, up), 2));
                 double radiusM = Math.Max(0.035, Math.Max(plate.WidthM, plate.HeightSpanM) * 0.5);
                 double radialExcessM = Math.Max(0.0, radialM - radiusM);
-                if (planeOffsetM > 0.18 || radialExcessM > 0.18)
+                double projectileRadiusM = string.Equals(shooter.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase) ? 0.030 : 0.014;
+                double diskMotionAllowanceM = 0.070;
+                double acceptedPlaneOffsetM = 0.20 + projectileRadiusM;
+                double acceptedRadialExcessM = 0.21 + projectileRadiusM + diskMotionAllowanceM;
+                if (planeOffsetM > acceptedPlaneOffsetM || radialExcessM > acceptedRadialExcessM)
                 {
                     continue;
                 }
 
-                double score = planeOffsetM * 3.0 + radialExcessM * 5.0 + radialM * 0.05;
+                double score = planeOffsetM * 2.7 + radialExcessM * 4.2 + radialM * 0.05;
                 if (score >= bestScore)
                 {
                     continue;
@@ -2136,6 +2140,11 @@ public sealed class RuleSimulationService
             return false;
         }
 
+        if (IsPrecisionStructureRicochetSuppressed(obstacleHit))
+        {
+            return false;
+        }
+
         Vector3 velocityMps = new(
             (float)(projectile.VelocityXWorldPerSec * metersPerWorldUnit),
             (float)projectile.VelocityZMps,
@@ -2237,6 +2246,15 @@ public sealed class RuleSimulationService
         projectile.RicochetCount++;
         projectile.RemainingLifeSec = Math.Max(0.08, projectile.RemainingLifeSec - 0.01);
         return true;
+    }
+
+    private static bool IsPrecisionStructureRicochetSuppressed(ProjectileObstacleHit obstacleHit)
+    {
+        return obstacleHit.Kind.Contains("energy_mechanism", StringComparison.OrdinalIgnoreCase)
+            || obstacleHit.Kind.Contains("base", StringComparison.OrdinalIgnoreCase)
+            || obstacleHit.Kind.Contains("outpost", StringComparison.OrdinalIgnoreCase)
+            || obstacleHit.Kind.Contains("facility", StringComparison.OrdinalIgnoreCase)
+            || obstacleHit.Kind.Contains("structure", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsRobotBodyProjectileHit(ProjectileObstacleHit obstacleHit)

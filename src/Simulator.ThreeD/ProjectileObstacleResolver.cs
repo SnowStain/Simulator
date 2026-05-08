@@ -436,8 +436,8 @@ internal static class ProjectileObstacleResolver
                     (float)(plate.Y * metersPerWorldUnit));
                 Vector3 normal = SimulationCombatMath.ResolveArmorPlateNormal(plate);
                 Vector3 upAxis = Math.Abs(Vector3.Dot(normal, Vector3.UnitY)) >= 0.94f ? Vector3.UnitX : Vector3.UnitY;
-                float diskRadius = (float)Math.Max(0.06, Math.Max(plate.WidthM, plate.HeightSpanM) * 0.5);
-                float diskThickness = (float)Math.Max(0.008, diskRadius * 0.08);
+                float diskRadius = (float)Math.Max(0.075, Math.Max(plate.WidthM, plate.HeightSpanM) * 0.5 + Math.Max(0.016, projectileRadiusM * 1.35));
+                float diskThickness = (float)Math.Max(0.018, diskRadius * 0.14);
                 TryStoreBest(
                     TryIntersectCylinderDisc(
                         start,

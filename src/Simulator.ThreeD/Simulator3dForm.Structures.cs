@@ -313,6 +313,23 @@ internal sealed partial class Simulator3dForm
             string? fineLockedPlateId = ResolveLockedPlateIdFor(entity);
             if (TryDrawFineTerrainBase(graphics, entity, fineLockedPlateId, renderPass))
             {
+                if (renderPass != StructureRenderPass.StaticBody
+                    && ResolveBaseArmorOpenProgress(entity) > 1e-4f)
+                {
+                    DrawBaseExpandedArmor(
+                        graphics,
+                        center,
+                        yaw,
+                        entity,
+                        profile,
+                        baseLength,
+                        baseWidth,
+                        baseHeight,
+                        armorColor,
+                        edgeColor,
+                        fineLockedPlateId);
+                }
+
                 return baseHeight + 0.20f;
             }
         }
@@ -754,12 +771,6 @@ internal sealed partial class Simulator3dForm
             && teamState.BaseArmorForcedOpen;
         float target = entity.Health <= BaseArmorOpenThresholdHealth || forcedOpen ? 1f : 0f;
         double now = _frameClock.Elapsed.TotalSeconds;
-        if (target >= 1f)
-        {
-            _baseArmorOpenAnimations[entity.Id] = (1f, now);
-            return 1f;
-        }
-
         if (!_baseArmorOpenAnimations.TryGetValue(entity.Id, out (float Progress, double TimeSec) state)
             || !double.IsFinite(state.TimeSec))
         {
@@ -1288,21 +1299,7 @@ internal sealed partial class Simulator3dForm
 
                 if (activeArm && persistentRingScore <= 0)
                 {
-                    foreach (int ring in new[] { 1, 3, 5, 7, 9 })
-                    {
-                        DrawRingScore(ring, activeColor, emphasized: ring >= 7);
-                    }
-
-                    DrawCpuAnnulusDoubleSided(
-                        graphics,
-                        diskCenter,
-                        normal,
-                        upAxis,
-                        0f,
-                        diskRadius * 0.16f,
-                        activeColor,
-                        24,
-                        0.0155f);
+                    DrawCpuEnergyPendingDiskPattern(graphics, diskCenter, normal, upAxis, diskRadius, activeColor);
                     continue;
                 }
 
@@ -1316,6 +1313,69 @@ internal sealed partial class Simulator3dForm
                     : ringSteadyColor;
                 DrawRingScore(persistentRingScore, ringColor, hitFlashing || completionFlashBlack);
             }
+        }
+    }
+
+    private void DrawCpuEnergyPendingDiskPattern(
+        Graphics graphics,
+        Vector3 center,
+        Vector3 normalAxis,
+        Vector3 upAxis,
+        float diskRadius,
+        Color activeColor)
+    {
+        Vector3 normal = normalAxis.LengthSquared() <= 1e-8f ? Vector3.UnitX : Vector3.Normalize(normalAxis);
+        Vector3 up = upAxis.LengthSquared() <= 1e-8f ? Vector3.UnitY : Vector3.Normalize(upAxis);
+        Vector3 side = Vector3.Cross(up, normal);
+        if (side.LengthSquared() <= 1e-8f)
+        {
+            side = Vector3.UnitX;
+        }
+        else
+        {
+            side = Vector3.Normalize(side);
+        }
+
+        Color hot = ResolveEnergyMechanismPendingDiskColor(activeColor);
+        Color core = Color.FromArgb(255, BlendColor(hot, Color.White, 0.20f));
+        Color glow = Color.FromArgb(170, BlendColor(hot, Color.White, 0.38f));
+        DrawCpuAnnulusDoubleSided(graphics, center, normal, up, diskRadius * 0.90f, diskRadius * 1.08f, glow, 40, 0.018f);
+        DrawCpuAnnulusDoubleSided(graphics, center, normal, up, diskRadius * 0.82f, diskRadius * 0.96f, hot, 40, 0.022f);
+        foreach (int ring in new[] { 3, 5, 7 })
+        {
+            float outer = diskRadius * (11 - ring) / 10f;
+            float inner = Math.Max(0.0f, outer - diskRadius * 0.12f);
+            DrawCpuAnnulusDoubleSided(graphics, center, normal, up, inner, outer, hot, 40, 0.023f);
+        }
+
+        DrawCpuAnnulusDoubleSided(graphics, center, normal, up, 0f, diskRadius * 0.24f, core, 40, 0.025f);
+        float spokeLength = diskRadius * 0.92f;
+        float spokeHalfWidth = diskRadius * 0.070f;
+        Vector3 faceCenter = center + normal * 0.026f;
+        for (int index = 0; index < 5; index++)
+        {
+            float angle = index * MathF.Tau / 5f;
+            Vector3 radial = Vector3.Normalize(up * MathF.Cos(angle) + side * MathF.Sin(angle));
+            Vector3 tangent = Vector3.Normalize(Vector3.Cross(normal, radial));
+            Vector3 inner = faceCenter + radial * (diskRadius * 0.18f);
+            Vector3 outer = faceCenter + radial * spokeLength;
+            DrawCpuMarkerQuad(
+                graphics,
+                inner - tangent * spokeHalfWidth,
+                inner + tangent * spokeHalfWidth,
+                outer + tangent * spokeHalfWidth,
+                outer - tangent * spokeHalfWidth,
+                hot);
+
+            Vector3 tabInner = faceCenter + radial * (diskRadius * 1.00f);
+            Vector3 tabOuter = faceCenter + radial * (diskRadius * 1.18f);
+            DrawCpuMarkerQuad(
+                graphics,
+                tabInner - tangent * (spokeHalfWidth * 1.15f),
+                tabInner + tangent * (spokeHalfWidth * 1.15f),
+                tabOuter + tangent * (spokeHalfWidth * 1.15f),
+                tabOuter - tangent * (spokeHalfWidth * 1.15f),
+                glow);
         }
     }
 
