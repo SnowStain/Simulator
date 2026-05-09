@@ -9,6 +9,7 @@ internal static class FineTerrainBaseVisualCache
 {
     private const string BaseKeyword = "\u57fa\u5730";
     private const string TopArmorKeyword = "\u9876\u90e8\u4ea4\u4e92\u7ec4\u4ef6";
+    private const string TopInteractiveKeyword = "\u9876\u90e8\u4e92\u52a8\u7ec4\u4ef6";
     private const string MiddleArmorKeyword = "\u4e2d\u90e8\u88c5\u7532\u677f";
     private const string OuterPanelKeyword = "\u5916\u677f";
     private const string ArmorPlateKeyword = "\u88c5\u7532\u677f";
@@ -104,7 +105,8 @@ internal static class FineTerrainBaseVisualCache
         string itemDisplayTeam = hasLightStripHalfSplit
             ? ResolveLightStripDisplayTeam(item.PositionModel.X, lightStripHalfSplitModelX, blueSideLowerModelX)
             : item.Team;
-            if (IsBaseOuterPanelCompositeName(item.Name))
+            if (IsBaseOuterPanelCompositeName(item.Name)
+                || IsBaseTopArmorCompositeName(item.Name))
             {
                 foreach (int componentId in item.ComponentIds)
                 {
@@ -232,7 +234,7 @@ internal static class FineTerrainBaseVisualCache
             return false;
         }
 
-        if (compositeName.Contains(TopArmorKeyword, StringComparison.Ordinal)
+        if (IsTopInteractiveComponentName(compositeName)
             || compositeName.Contains(MiddleArmorKeyword, StringComparison.Ordinal)
             || compositeName.Contains(OuterPanelKeyword, StringComparison.Ordinal))
         {
@@ -246,18 +248,23 @@ internal static class FineTerrainBaseVisualCache
     {
         string name = compositeName ?? string.Empty;
         return name.Contains(BaseKeyword, StringComparison.Ordinal)
-            && (name.Contains(TopArmorKeyword, StringComparison.Ordinal)
+            && (IsTopInteractiveComponentName(name)
                 || name.Contains(MiddleArmorKeyword, StringComparison.Ordinal)
                 || name.Contains(OuterPanelKeyword, StringComparison.Ordinal));
     }
 
     public static bool IsBaseTopArmorCompositeName(string compositeName)
         => compositeName.Contains(BaseKeyword, StringComparison.Ordinal)
-            && compositeName.Contains(TopArmorKeyword, StringComparison.Ordinal);
+            && IsTopInteractiveComponentName(compositeName);
 
     public static bool IsBaseOuterPanelCompositeName(string compositeName)
         => compositeName.Contains(BaseKeyword, StringComparison.Ordinal)
             && compositeName.Contains(OuterPanelKeyword, StringComparison.Ordinal);
+
+    private static bool IsTopInteractiveComponentName(string name)
+        => !string.IsNullOrWhiteSpace(name)
+            && (name.Contains(TopArmorKeyword, StringComparison.Ordinal)
+                || name.Contains(TopInteractiveKeyword, StringComparison.Ordinal));
 
     private static bool TryResolveLightStripHalfSplit(
         IReadOnlyList<FineTerrainBaseVisualItem> items,
@@ -605,6 +612,7 @@ internal static class FineTerrainBaseVisualCache
     {
         if (!unitName.Contains(ArmorPlateKeyword, StringComparison.Ordinal)
             && !unitName.Contains(LightStripKeyword, StringComparison.Ordinal)
+            && !IsTopInteractiveComponentName(unitName)
             && !unitName.Contains(OuterPanelKeyword, StringComparison.Ordinal))
         {
             return null;

@@ -5248,9 +5248,10 @@ public static bool TryAcquireEnergyMechanismTarget(
             && teamState.EnergyLargeMechanismActive;
         double angularSpeedRatio = Math.Clamp(Math.Abs(omegaRadPerSec) / 8.0, 0.0, 1.0);
         double leadScale = largeActive
-            ? 1.08 + 0.12 * angularSpeedRatio
+            ? 1.22 + 0.22 * angularSpeedRatio
             : 0.98 + 0.10 * angularSpeedRatio;
-        double predictionLeadSec = Math.Clamp(leadTimeSec * leadScale, 0.0, largeActive ? 0.72 : 0.55);
+        double leadBiasSec = largeActive ? 0.032 + 0.026 * angularSpeedRatio : 0.0;
+        double predictionLeadSec = Math.Clamp(leadTimeSec * leadScale + leadBiasSec, 0.0, largeActive ? 0.82 : 0.55);
         if (TryResolveEnergyMechanismPredictionFrame(
                 world,
                 target,
@@ -5698,6 +5699,7 @@ public static bool TryAcquireEnergyMechanismTarget(
         }
 
         ResolveArmorPlatePlaneBasis(referencePlate, out Vector3 normal, out _, out _);
+        normal = ResolveBaseMiddleArmorVisualNormal(normal);
         Vector3 forward = new(normal.X, 0f, normal.Z);
         if (forward.LengthSquared() <= 1e-8f)
         {
@@ -5741,7 +5743,8 @@ public static bool TryAcquireEnergyMechanismTarget(
             return;
         }
 
-        ResolveArmorPlatePlaneBasis(referencePlate, out Vector3 frontNormal, out Vector3 sideAxis, out Vector3 upAxis);
+        ResolveArmorPlatePlaneBasis(referencePlate, out Vector3 frontNormal, out Vector3 sideAxis, out _);
+        frontNormal = ResolveBaseMiddleArmorVisualNormal(frontNormal);
         Vector3 center = new(
             (float)(referencePlate.X * metersPerWorldUnit),
             (float)referencePlate.HeightM,
@@ -5757,8 +5760,8 @@ public static bool TryAcquireEnergyMechanismTarget(
         const float SideOpenAngleDeg = 27.5f;
         float sideOpenSin = MathF.Sin(SideOpenAngleDeg * MathF.PI / 180f);
         float sideOpenCos = MathF.Cos(SideOpenAngleDeg * MathF.PI / 180f);
-        Vector3 leftNormal = Vector3.Normalize(frontNormal * sideOpenCos - sideAxis * sideOpenSin);
-        Vector3 rightNormal = Vector3.Normalize(frontNormal * sideOpenCos + sideAxis * sideOpenSin);
+        Vector3 leftNormal = ResolveBaseMiddleArmorVisualNormal(Vector3.Normalize(frontNormal * sideOpenCos - sideAxis * sideOpenSin));
+        Vector3 rightNormal = ResolveBaseMiddleArmorVisualNormal(Vector3.Normalize(frontNormal * sideOpenCos + sideAxis * sideOpenSin));
         double leftYawDeg = NormalizeDeg(Math.Atan2(leftNormal.Z, leftNormal.X) * 180.0 / Math.PI);
         double rightYawDeg = NormalizeDeg(Math.Atan2(rightNormal.Z, rightNormal.X) * 180.0 / Math.PI);
         double worldToMeters = Math.Max(metersPerWorldUnit, 1e-6);
@@ -5793,6 +5796,28 @@ public static bool TryAcquireEnergyMechanismTarget(
                 NormalYM: rightNormal.Y,
                 NormalZM: rightNormal.Z));
         }
+    }
+
+    private static Vector3 ResolveBaseMiddleArmorVisualNormal(Vector3 normal)
+    {
+        if (normal.LengthSquared() <= 1e-8f)
+        {
+            return Vector3.UnitX;
+        }
+
+        Vector3 horizontal = new(normal.X, 0f, normal.Z);
+        if (horizontal.LengthSquared() <= 1e-8f)
+        {
+            horizontal = normal;
+        }
+        else
+        {
+            horizontal = Vector3.Normalize(horizontal);
+        }
+
+        const float TiltDeg = 18.0f;
+        float tiltRad = TiltDeg * MathF.PI / 180f;
+        return Vector3.Normalize(horizontal * MathF.Cos(tiltRad) - Vector3.UnitY * MathF.Sin(tiltRad));
     }
 
     private static (double DistanceSquared, Vector3 Point) PointToSegmentDistanceSquared(

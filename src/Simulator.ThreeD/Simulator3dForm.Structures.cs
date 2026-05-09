@@ -31,7 +31,7 @@ internal sealed partial class Simulator3dForm
     private const float BaseTopArmorSlideSpeedRadPerSec = MathF.PI * 0.7f;
     private const float BaseTopArmorTiltDeg = 27.5f;
     private const float BaseOuterArmorOpenAngleDeg = 27.5f;
-    private const float BaseOuterArmorOpenSpeedPerSec = 1.65f;
+    private const float BaseOuterArmorOpenSpeedPerSec = 0.50f;
     private const float StructureArmorPlateSideM = 0.13f;
     private const float StructureArmorPlateThicknessM = 0.025f;
 

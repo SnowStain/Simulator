@@ -7153,7 +7153,7 @@ internal sealed class TerrainMotionService
             out double forwardDropHeight);
         bool launchOffDrop = ShouldStartLedgeLaunch(entity, speedMps, heightDelta, frontWheelDrop);
         bool inLedgeAirborneWindow = IsInLedgeLaunchAirborneWindow(entity);
-        bool strictWheelSupportRise = string.Equals(entity.WheelStyle, "mecanum", StringComparison.OrdinalIgnoreCase)
+        bool strictWheelSupportRise = IsMecanumWheelStyle(entity.WheelStyle)
             || string.Equals(entity.WheelStyle, "omni", StringComparison.OrdinalIgnoreCase)
             || IsPureWheelTraversal(entity.WheelStyle);
         if (!launchOffDrop
@@ -8907,7 +8907,10 @@ internal sealed class TerrainMotionService
                 }
                 else
                 {
-                    entity.GroundHeightM += (planeHeightM - entity.GroundHeightM) * 0.82;
+                    double heightBlend = planeHeightM < entity.GroundHeightM
+                        ? IsMecanumWheelStyle(entity.WheelStyle) ? 0.30 : 0.42
+                        : 0.82;
+                    entity.GroundHeightM += (planeHeightM - entity.GroundHeightM) * heightBlend;
                 }
 
                 double targetPitchFromWheels = Math.Atan2(forwardSlope, 1.0) * 180.0 / Math.PI;
@@ -14119,7 +14122,7 @@ internal sealed class TerrainMotionService
             return Math.Min(configuredStepHeightM, 0.035);
         }
 
-        if (string.Equals(wheelStyle, "mecanum", StringComparison.OrdinalIgnoreCase))
+        if (IsMecanumWheelStyle(wheelStyle))
         {
             return Math.Min(configuredStepHeightM, 0.25);
         }
@@ -14135,9 +14138,9 @@ internal sealed class TerrainMotionService
 
     private static double ResolveStrictWheelVerticalRiseLimitM(SimulationEntity entity, double effectiveStepHeightM)
     {
-        if (string.Equals(entity.WheelStyle, "mecanum", StringComparison.OrdinalIgnoreCase))
+        if (IsMecanumWheelStyle(entity.WheelStyle))
         {
-            return 0.25 + 0.006;
+            return 0.25;
         }
 
         if (string.Equals(entity.WheelStyle, "omni", StringComparison.OrdinalIgnoreCase))
@@ -14155,8 +14158,15 @@ internal sealed class TerrainMotionService
 
     private static bool IsPureWheelTraversal(string? wheelStyle)
         => string.Equals(wheelStyle, "omni", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(wheelStyle, "mecanum", StringComparison.OrdinalIgnoreCase)
+            || IsMecanumWheelStyle(wheelStyle)
             || string.Equals(wheelStyle, "standard", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsMecanumWheelStyle(string? wheelStyle)
+        => !string.IsNullOrWhiteSpace(wheelStyle)
+            && (string.Equals(wheelStyle, "mecanum", StringComparison.OrdinalIgnoreCase)
+                || wheelStyle.Contains("mecanum", StringComparison.OrdinalIgnoreCase)
+                || wheelStyle.Contains("麦轮", StringComparison.OrdinalIgnoreCase)
+                || wheelStyle.Contains("麦克纳姆", StringComparison.OrdinalIgnoreCase));
 
     private static double ResolveStepLipForgivenessM(SimulationEntity entity)
     {
@@ -14170,7 +14180,7 @@ internal sealed class TerrainMotionService
             return 0.006;
         }
 
-        if (string.Equals(entity.WheelStyle, "mecanum", StringComparison.OrdinalIgnoreCase))
+        if (IsMecanumWheelStyle(entity.WheelStyle))
         {
             return IsStandardMecanumPowerRole(entity) ? 0.026 : 0.012;
         }
@@ -14190,9 +14200,9 @@ internal sealed class TerrainMotionService
             return 0.120;
         }
 
-        if (string.Equals(entity.WheelStyle, "mecanum", StringComparison.OrdinalIgnoreCase))
+        if (IsMecanumWheelStyle(entity.WheelStyle))
         {
-            return IsStandardMecanumPowerRole(entity) ? 0.120 : 0.090;
+            return IsStandardMecanumPowerRole(entity) ? 0.090 : 0.070;
         }
 
         return UsesLeggedSupportProfile(entity) ? 0.110 : 0.055;
@@ -14205,9 +14215,9 @@ internal sealed class TerrainMotionService
             return 0.34;
         }
 
-        if (string.Equals(entity.WheelStyle, "mecanum", StringComparison.OrdinalIgnoreCase))
+        if (IsMecanumWheelStyle(entity.WheelStyle))
         {
-            return IsStandardMecanumPowerRole(entity) ? 0.42 : 0.32;
+            return 0.25;
         }
 
         return UsesLeggedSupportProfile(entity) ? 0.55 : 0.24;

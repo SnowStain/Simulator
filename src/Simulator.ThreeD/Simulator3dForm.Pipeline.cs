@@ -169,6 +169,12 @@ internal sealed partial class Simulator3dForm
             uiInterval = Math.Min(uiInterval, 1.0 / 18.0);
         }
 
+        if (mode.IsInMatch && (_pSettingsPanelOpen || _localRefereePanelOpen))
+        {
+            sceneInterval = Math.Max(sceneInterval, 1.0 / 3.0);
+            uiInterval = Math.Max(uiInterval, 1.0 / 4.0);
+        }
+
         if (mode.RenderMode == SimulatorRenderModeKind.LanRoom)
         {
             uiInterval = Math.Max(uiInterval, 1.0 / 12.0);

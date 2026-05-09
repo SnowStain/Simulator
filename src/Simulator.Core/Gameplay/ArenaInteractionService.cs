@@ -21,6 +21,7 @@ public sealed class ArenaInteractionService
     public const double EnemyFortBaseArmorOpenHoldSec = 20.0;
 
     private readonly RuleSet _rules;
+    private readonly Dictionary<string, FacilityBounds> _facilityBoundsCache = new(StringComparer.OrdinalIgnoreCase);
 
     public ArenaInteractionService(RuleSet rules)
     {
@@ -1422,12 +1423,19 @@ public sealed class ArenaInteractionService
         blue.EnergyRotorDirectionSign = -red.EnergyRotorDirectionSign;
     }
 
-    private static bool IsEntityTouchingFacility(
+    private bool IsEntityTouchingFacility(
         SimulationWorldState world,
         SimulationEntity entity,
         FacilityRegion facility,
         string facilityType)
     {
+        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
+        double roughReachWorld = ResolveEntityFacilityReachWorld(entity, metersPerWorldUnit);
+        if (!CanReachFacilityBounds(facility, entity.X, entity.Y, roughReachWorld + Math.Max(1.0, facility.Thickness)))
+        {
+            return false;
+        }
+
         double touchHeightM = ResolveFacilityTouchHeight(entity);
         if (IsEntityInsideBuffProjection(world, facility, entity, facilityType, touchHeightM))
         {
@@ -1439,7 +1447,6 @@ public sealed class ArenaInteractionService
             return false;
         }
 
-        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
         double halfLengthWorld = Math.Max(0.12, entity.BodyLengthM * 0.62) / metersPerWorldUnit;
         double halfWidthWorld = Math.Max(0.12, entity.BodyWidthM * Math.Max(0.55, entity.BodyRenderWidthScale) * 0.62) / metersPerWorldUnit;
         if (entity.WheelOffsetsM.Count > 0)
@@ -1472,6 +1479,125 @@ public sealed class ArenaInteractionService
 
         return false;
     }
+
+    private static double ResolveEntityFacilityReachWorld(SimulationEntity entity, double metersPerWorldUnit)
+    {
+        if (!IsRobotEntity(entity))
+        {
+            return 0.12 / metersPerWorldUnit;
+        }
+
+        double reachM = Math.Max(0.12, Math.Max(entity.BodyLengthM, entity.BodyWidthM) * 0.75);
+        if (entity.WheelOffsetsM.Count > 0)
+        {
+            foreach ((double wheelX, double wheelY) in entity.WheelOffsetsM)
+            {
+                reachM = Math.Max(reachM, Math.Sqrt(wheelX * wheelX + wheelY * wheelY) + Math.Max(0.03, entity.WheelRadiusM));
+            }
+        }
+
+        return reachM / Math.Max(1e-6, metersPerWorldUnit);
+    }
+
+    private bool CanReachFacilityBounds(FacilityRegion facility, double x, double y, double paddingWorld)
+    {
+        FacilityBounds bounds = ResolveFacilityBounds(facility);
+        return x >= bounds.MinX - paddingWorld
+            && x <= bounds.MaxX + paddingWorld
+            && y >= bounds.MinY - paddingWorld
+            && y <= bounds.MaxY + paddingWorld;
+    }
+
+    private FacilityBounds ResolveFacilityBounds(FacilityRegion facility)
+    {
+        string cacheKey = $"{facility.Id}|{facility.Type}|{facility.Shape}|{facility.X1:0.###},{facility.Y1:0.###},{facility.X2:0.###},{facility.Y2:0.###}|{facility.Points.Count}|{facility.AdditionalProperties?.Count ?? 0}";
+        if (_facilityBoundsCache.TryGetValue(cacheKey, out FacilityBounds cached))
+        {
+            return cached;
+        }
+
+        FacilityBounds bounds = BuildFacilityBounds(facility);
+        _facilityBoundsCache[cacheKey] = bounds;
+        return bounds;
+    }
+
+    private static FacilityBounds BuildFacilityBounds(FacilityRegion facility)
+    {
+        if (facility.Points.Count > 0)
+        {
+            double minX = double.PositiveInfinity;
+            double minY = double.PositiveInfinity;
+            double maxX = double.NegativeInfinity;
+            double maxY = double.NegativeInfinity;
+            foreach (Point2D point in facility.Points)
+            {
+                minX = Math.Min(minX, point.X);
+                minY = Math.Min(minY, point.Y);
+                maxX = Math.Max(maxX, point.X);
+                maxY = Math.Max(maxY, point.Y);
+            }
+
+            if (double.IsFinite(minX) && double.IsFinite(minY) && double.IsFinite(maxX) && double.IsFinite(maxY))
+            {
+                return new FacilityBounds(minX, minY, maxX, maxY);
+            }
+        }
+
+        if (facility.AdditionalProperties is not null
+            && (TryReadAdditionalDouble(facility, "center_x", out _)
+                || TryReadAdditionalDouble(facility, "center_y", out _)))
+        {
+            bool hasCenterX = TryReadAdditionalDouble(facility, "center_x", out double centerX);
+            bool hasCenterY = TryReadAdditionalDouble(facility, "center_y", out double centerY);
+            centerX = hasCenterX ? centerX : (facility.X1 + facility.X2) * 0.5;
+            centerY = hasCenterY ? centerY : (facility.Y1 + facility.Y2) * 0.5;
+
+            double halfX;
+            double halfY;
+            if (TryReadAdditionalDouble(facility, "radius", out double radius))
+            {
+                halfX = Math.Max(0.01, radius);
+                halfY = halfX;
+            }
+            else
+            {
+                halfX = Math.Max(0.01, TryReadAdditionalDouble(facility, "size_x", out double sizeX) ? sizeX * 0.5 : Math.Abs(facility.X2 - facility.X1) * 0.5);
+                halfY = Math.Max(0.01, TryReadAdditionalDouble(facility, "size_y", out double sizeY) ? sizeY * 0.5 : Math.Abs(facility.Y2 - facility.Y1) * 0.5);
+            }
+
+            return new FacilityBounds(centerX - halfX, centerY - halfY, centerX + halfX, centerY + halfY);
+        }
+
+        return new FacilityBounds(
+            Math.Min(facility.X1, facility.X2),
+            Math.Min(facility.Y1, facility.Y2),
+            Math.Max(facility.X1, facility.X2),
+            Math.Max(facility.Y1, facility.Y2));
+    }
+
+    private static bool TryReadAdditionalDouble(FacilityRegion facility, string key, out double value)
+    {
+        value = 0.0;
+        if (facility.AdditionalProperties is null
+            || !facility.AdditionalProperties.TryGetValue(key, out System.Text.Json.JsonElement element))
+        {
+            return false;
+        }
+
+        if (element.ValueKind == System.Text.Json.JsonValueKind.Number && element.TryGetDouble(out value))
+        {
+            return true;
+        }
+
+        return element.ValueKind == System.Text.Json.JsonValueKind.String
+            && double.TryParse(
+                element.GetString(),
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out value);
+    }
+
+    private readonly record struct FacilityBounds(double MinX, double MinY, double MaxX, double MaxY);
 
     private static bool IsFacilitySampleInside(FacilityRegion facility, double x, double y, double heightM)
         => facility.Contains(x, y, heightM);
@@ -1519,7 +1645,7 @@ public sealed class ArenaInteractionService
         yield return (-halfLengthWorld * 0.55, -halfWidthWorld);
     }
 
-    private static IReadOnlyDictionary<string, string> ResolveCentralHighlandControl(
+    private IReadOnlyDictionary<string, string> ResolveCentralHighlandControl(
         SimulationWorldState world,
         IReadOnlyList<FacilityRegion> facilities)
     {

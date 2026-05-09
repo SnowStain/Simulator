@@ -105,6 +105,63 @@ internal sealed class FineTerrainAnnotationDocument
         };
     }
 
+    public static FineTerrainAnnotationDocument? TryLoadCollisionOnly(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            return null;
+        }
+
+        FineTerrainCollisionOnlyPayload? payload;
+        try
+        {
+            using FileStream stream = File.Open(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+            payload = JsonSerializer.Deserialize<FineTerrainCollisionOnlyPayload>(stream, JsonOptions);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
+        {
+            SimulatorRuntimeLog.Append(
+                "terrain_annotation_load.log",
+                $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} collision_load_failed path={path} {exception.GetType().Name}:{exception.Message}");
+            return null;
+        }
+
+        if (payload?.WorldScale is null)
+        {
+            return null;
+        }
+
+        Vector3 modelCenter = payload.WorldScale.ModelCenter?.ToVector3() ?? Vector3.Zero;
+        FineTerrainWorldScale worldScale = new(
+            payload.WorldScale.MapLengthXMeters,
+            payload.WorldScale.MapLengthZMeters,
+            payload.WorldScale.XMetersPerModelUnit,
+            payload.WorldScale.YMetersPerModelUnit,
+            payload.WorldScale.ZMetersPerModelUnit,
+            modelCenter,
+            payload.WorldScale.ModelMinY ?? modelCenter.Y);
+
+        return new FineTerrainAnnotationDocument
+        {
+            SourcePath = Path.GetFullPath(path),
+            SourceModel = payload.SourceModel ?? string.Empty,
+            ExportedUtc = payload.ExportedUtc,
+            TotalComponents = payload.TotalComponents,
+            WorldScale = worldScale,
+            ActorComponentIds = new List<int>(),
+            Composites = new List<FineTerrainCompositeAnnotation>(),
+            Components = new List<FineTerrainComponentAnnotation>(),
+            CollisionShapes = ((payload.CollisionShapes ?? payload.CollisionShapesSnakeCase) ?? Array.Empty<FineTerrainCollisionShapePayload>())
+                .Where(shape => shape.Id > 0)
+                .Select(CloneCollisionShape)
+                .ToList(),
+        };
+    }
+
     public void Save()
     {
         Directory.CreateDirectory(Path.GetDirectoryName(SourcePath) ?? AppContext.BaseDirectory);
@@ -361,6 +418,7 @@ internal sealed class FineTerrainAnnotationDocument
             HeightModel = height,
             YprDegrees = source.YprDegrees ?? source.YprDegreesPascal ?? new FineTerrainVector3(),
             TerrainLabel = (source.TerrainLabel ?? source.TerrainLabelPascal)?.Trim() ?? string.Empty,
+            ColorHex = (source.ColorHex ?? source.ColorHexPascal)?.Trim() ?? string.Empty,
             VerticesModel = (source.VerticesModel ?? source.VerticesModelPascal ?? Array.Empty<FineTerrainVector3>())
                 .Select(vertex => FineTerrainVector3.From(vertex.ToVector3()))
                 .ToList(),
@@ -380,6 +438,7 @@ internal sealed class FineTerrainAnnotationDocument
             HeightModel = source.HeightModel,
             YprDegrees = source.YprDegrees,
             TerrainLabel = source.TerrainLabel,
+            ColorHex = source.ColorHex,
             VerticesModel = source.VerticesModel
                 .Select(vertex => FineTerrainVector3.From(vertex.ToVector3()))
                 .ToArray(),
@@ -549,6 +608,10 @@ internal sealed class FineTerrainCollisionShapeAnnotation
 
     [DisplayName("地形标签")]
     public string TerrainLabel { get; set; } = string.Empty;
+
+    [DisplayName("显示颜色")]
+    [Description("十六进制颜色，例如 #7A8794。为空时使用默认青色。")]
+    public string ColorHex { get; set; } = string.Empty;
 
     [Browsable(false)]
     public List<FineTerrainVector3> VerticesModel { get; set; } = new();
@@ -756,6 +819,22 @@ internal sealed class FineTerrainAnnotationPayload
     public FineTerrainCollisionShapePayload[]? CollisionShapesSnakeCase { get; init; }
 }
 
+internal sealed class FineTerrainCollisionOnlyPayload
+{
+    public string? SourceModel { get; init; }
+
+    public DateTimeOffset ExportedUtc { get; init; }
+
+    public int TotalComponents { get; init; }
+
+    public FineTerrainWorldScalePayload? WorldScale { get; init; }
+
+    public FineTerrainCollisionShapePayload[]? CollisionShapes { get; init; }
+
+    [JsonPropertyName("collision_shapes")]
+    public FineTerrainCollisionShapePayload[]? CollisionShapesSnakeCase { get; init; }
+}
+
 internal sealed class FineTerrainWorldScalePayload
 {
     public float MapLengthXMeters { get; init; }
@@ -845,6 +924,12 @@ internal sealed class FineTerrainCollisionShapePayload
 
     [JsonPropertyName("TerrainLabel")]
     public string? TerrainLabelPascal { get; init; }
+
+    [JsonPropertyName("color_hex")]
+    public string? ColorHex { get; init; }
+
+    [JsonPropertyName("ColorHex")]
+    public string? ColorHexPascal { get; init; }
 
     [JsonPropertyName("vertices_model")]
     public FineTerrainVector3[]? VerticesModel { get; init; }

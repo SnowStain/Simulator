@@ -1076,17 +1076,14 @@ internal sealed partial class Simulator3dForm
         SimulatorRenderPassPlan passPlan = ResolveRenderPassPlan();
         double sceneUploadIntervalSec = passPlan.SceneOverlayUploadIntervalSec;
         double uiUploadIntervalSec = passPlan.UiOverlayUploadIntervalSec;
-        bool overlayInteractive = passPlan.OverlayInteractive;
-        bool mustUploadScene = overlayInteractive
-            || _gpuOverlaySceneTexture == 0
+        bool mustUploadScene = _gpuOverlaySceneTexture == 0
             || _gpuOverlaySceneBitmap is null
             || _gpuOverlaySceneTextureSize != _gpuOverlaySceneBitmap.Size
             || _lastGpuOverlayPausedState != _paused
             || _lastGpuOverlaySceneUploadTicks <= 0
             || _gpuOverlaySceneDirty
             || (nowTicks - _lastGpuOverlaySceneUploadTicks) / (double)Stopwatch.Frequency >= sceneUploadIntervalSec;
-        bool mustUploadUi = overlayInteractive
-            || _gpuOverlayUiTexture == 0
+        bool mustUploadUi = _gpuOverlayUiTexture == 0
             || _gpuOverlayUiBitmap is null
             || _gpuOverlayUiTextureSize != _gpuOverlayUiBitmap.Size
             || _lastGpuOverlayPausedState != _paused
@@ -1095,7 +1092,6 @@ internal sealed partial class Simulator3dForm
             || (nowTicks - _lastGpuOverlayUiUploadTicks) / (double)Stopwatch.Frequency >= uiUploadIntervalSec;
         if (mustUploadScene
             && mustUploadUi
-            && !overlayInteractive
             && _gpuOverlaySceneTexture != 0
             && _gpuOverlayUiTexture != 0
             && !_gpuOverlaySceneDirty

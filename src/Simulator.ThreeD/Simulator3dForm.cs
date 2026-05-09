@@ -103,7 +103,7 @@ internal sealed partial class Simulator3dForm : Form
     private const double DisplayLatencyJitterMinMs = 30.0;
     private const double DisplayLatencyJitterMaxMs = 60.0;
     private const float FirstPersonVerticalFovRad = MathF.PI * 0.5f; // 90搴﹁鍦鸿銆?    private const float FirstPersonBarrelScreenDropM = 0.030f;
-    private const float FirstPersonBarrelShakeScale = 0.03f;
+    private const float FirstPersonBarrelShakeScale = 0.006f;
     private const float FirstPersonSightConvergenceM = 24.0f;
     private const float ObserverYawSensitivityRadPerPixel = 0.00165f;
     private const float ObserverPitchSensitivityRadPerPixel = 0.00125f;
@@ -4635,8 +4635,8 @@ internal sealed partial class Simulator3dForm : Form
         using var dim = new SolidBrush(Color.FromArgb(154, 8, 10, 12));
         graphics.FillRectangle(dim, ClientRectangle);
 
-        int panelWidth = Math.Min(Math.Max(980, (int)(ClientSize.Width * 0.70)), ClientSize.Width - 32);
-        int panelHeight = Math.Min(Math.Max(560, (int)(ClientSize.Height * 0.62)), ClientSize.Height - 32);
+        int panelWidth = Math.Min(Math.Max(920, (int)(ClientSize.Width * 0.82)), ClientSize.Width - 24);
+        int panelHeight = Math.Min(Math.Max(610, (int)(ClientSize.Height * 0.76)), ClientSize.Height - 24);
         Rectangle panel = new(
             (ClientSize.Width - panelWidth) / 2,
             (ClientSize.Height - panelHeight) / 2,
@@ -4722,6 +4722,17 @@ internal sealed partial class Simulator3dForm : Form
     private void DrawLanRefereeEnergyPage(Graphics graphics, Rectangle rect)
     {
         int gap = 14;
+        bool singleColumn = rect.Width < 860 || rect.Height < 520;
+        if (singleColumn)
+        {
+            int cardHeight = Math.Max(118, (rect.Height - gap * 3) / 4);
+            DrawLanRefereeEnergyCard(graphics, new Rectangle(rect.X, rect.Y, rect.Width, cardHeight), "red", large: false);
+            DrawLanRefereeEnergyCard(graphics, new Rectangle(rect.X, rect.Y + (cardHeight + gap), rect.Width, cardHeight), "red", large: true);
+            DrawLanRefereeEnergyCard(graphics, new Rectangle(rect.X, rect.Y + (cardHeight + gap) * 2, rect.Width, cardHeight), "blue", large: false);
+            DrawLanRefereeEnergyCard(graphics, new Rectangle(rect.X, rect.Y + (cardHeight + gap) * 3, rect.Width, cardHeight), "blue", large: true);
+            return;
+        }
+
         int columnWidth = (rect.Width - gap) / 2;
         int rowHeight = (rect.Height - gap) / 2;
         DrawLanRefereeEnergyCard(graphics, new Rectangle(rect.X, rect.Y, columnWidth, rowHeight), "red", large: false);
@@ -4740,8 +4751,9 @@ internal sealed partial class Simulator3dForm : Form
         DrawPPanelFrame(graphics, rect, title);
 
         int x = rect.X + 18;
-        int y = rect.Y + 62;
+        int y = rect.Y + 44;
         int innerWidth = rect.Width - 36;
+        bool compact = rect.Height < 220;
         Color teamColor = ResolveTeamColor(team);
         string stateText = string.Equals(state.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
             && state.EnergyLargeMechanismActive == large
@@ -4751,24 +4763,36 @@ internal sealed partial class Simulator3dForm : Form
                         ? "已完全激活"
                         : "未进入待激活";
         TextRenderer.DrawText(graphics, stateText, _tinyHudFont, new Rectangle(x, y, innerWidth, 22), Color.FromArgb(220, teamColor), TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
-        y += 28;
+        y += compact ? 24 : 28;
 
         int topButtonW = (innerWidth - 12) / 3;
-        DrawPButton(graphics, new Rectangle(x, y, topButtonW, 28), "开启待激活", $"ref_energy_activate:{team}:{mode}", active: string.Equals(state.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase) && state.EnergyLargeMechanismActive == large, enabled: true);
-        DrawPButton(graphics, new Rectangle(x + topButtonW + 6, y, topButtonW, 28), "清空", $"ref_energy_clear:{team}:{mode}", active: false, enabled: true);
-        DrawPButton(graphics, new Rectangle(x + (topButtonW + 6) * 2, y, topButtonW, 28), "全激活", $"ref_energy_complete:{team}:{mode}", active: false, enabled: true);
-        y += 42;
+        int topButtonH = compact ? 24 : 28;
+        DrawPButton(graphics, new Rectangle(x, y, topButtonW, topButtonH), "开启待激活", $"ref_energy_activate:{team}:{mode}", active: string.Equals(state.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase) && state.EnergyLargeMechanismActive == large, enabled: true);
+        DrawPButton(graphics, new Rectangle(x + topButtonW + 6, y, topButtonW, topButtonH), "清空", $"ref_energy_clear:{team}:{mode}", active: false, enabled: true);
+        DrawPButton(graphics, new Rectangle(x + (topButtonW + 6) * 2, y, topButtonW, topButtonH), "全激活", $"ref_energy_complete:{team}:{mode}", active: false, enabled: true);
+        y += compact ? 31 : 42;
 
-        TextRenderer.DrawText(graphics, "待激活灯臂", _smallHudFont, new Rectangle(x, y, innerWidth, 22), Color.FromArgb(232, 236, 238), TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
-        y += 26;
-        DrawLanRefereeEnergyArmButtons(graphics, x, ref y, innerWidth, team, mode, litMask, "ref_energy_lit", allowZero: true);
+        if (y + 72 <= rect.Bottom)
+        {
+            TextRenderer.DrawText(graphics, "待激活灯臂", _smallHudFont, new Rectangle(x, y, innerWidth, 22), Color.FromArgb(232, 236, 238), TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            y += compact ? 22 : 26;
+            DrawLanRefereeEnergyArmButtons(graphics, x, ref y, innerWidth, team, mode, litMask, "ref_energy_lit", allowZero: true, compact);
+        }
 
-        y += 8;
-        TextRenderer.DrawText(graphics, "已命中/常亮灯盘", _smallHudFont, new Rectangle(x, y, innerWidth, 22), Color.FromArgb(232, 236, 238), TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
-        y += 26;
-        DrawLanRefereeEnergyArmButtons(graphics, x, ref y, innerWidth, team, mode, hitMask, "ref_energy_hit", allowZero: true);
+        y += compact ? 3 : 8;
+        if (y + 72 <= rect.Bottom)
+        {
+            TextRenderer.DrawText(graphics, "已命中/常亮灯盘", _smallHudFont, new Rectangle(x, y, innerWidth, 22), Color.FromArgb(232, 236, 238), TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            y += compact ? 22 : 26;
+            DrawLanRefereeEnergyArmButtons(graphics, x, ref y, innerWidth, team, mode, hitMask, "ref_energy_hit", allowZero: true, compact);
+        }
 
-        y += 8;
+        y += compact ? 3 : 8;
+        if (y + 26 > rect.Bottom)
+        {
+            return;
+        }
+
         int countButtonW = Math.Max(40, (innerWidth - 5 * 6) / 6);
         for (int count = 0; count <= 5; count++)
         {
@@ -4782,23 +4806,24 @@ internal sealed partial class Simulator3dForm : Form
         }
     }
 
-    private void DrawLanRefereeEnergyArmButtons(Graphics graphics, int x, ref int y, int width, string team, string mode, int mask, string actionPrefix, bool allowZero)
+    private void DrawLanRefereeEnergyArmButtons(Graphics graphics, int x, ref int y, int width, string team, string mode, int mask, string actionPrefix, bool allowZero, bool compact = false)
     {
         int gap = 6;
         int buttonWidth = Math.Max(42, (width - gap * 4) / 5);
+        int buttonHeight = compact ? 24 : 28;
         for (int arm = 0; arm < 5; arm++)
         {
             bool active = (mask & (1 << arm)) != 0;
             DrawPButton(
                 graphics,
-                new Rectangle(x + arm * (buttonWidth + gap), y, buttonWidth, 28),
+                new Rectangle(x + arm * (buttonWidth + gap), y, buttonWidth, buttonHeight),
                 $"A{arm}",
                 $"{actionPrefix}:{team}:{mode}:{arm}",
                 active,
                 enabled: allowZero || active || CountMaskBits(mask) < 5);
         }
 
-        y += 34;
+        y += buttonHeight + 6;
     }
 
     private static int ResolveEnergyHitMaskForUi(SimulationTeamState state, bool large)
@@ -12696,8 +12721,7 @@ internal sealed partial class Simulator3dForm : Form
                 RuntimeChassisMotion motion = ResolveRuntimeChassisMotion(selected);
                 float focusHeight = (float)Math.Max(0.0, selected.GroundHeightM + selected.AirborneHeightM + motion.BodyLiftM + 0.55);
                 Vector3 desiredTarget = ToScenePoint(selected.X, selected.Y, focusHeight) + ResolveRuntimeChassisSceneOffset(selected, motion);
-                float followResponse = UseGpuRenderer ? 0.14f : 0.11f;
-                _cameraTargetM = Vector3.Lerp(_cameraTargetM, desiredTarget, followResponse);
+                _cameraTargetM = desiredTarget;
 
                 float baseChaseDistance = Math.Clamp(8.5f + (float)Math.Max(selected.GroundHeightM, 0.0) * 0.22f, 6.0f, 14.0f);
                 float chaseDistance = Math.Clamp(baseChaseDistance * _thirdPersonFollowDistanceScale, 3.2f, 38.0f);

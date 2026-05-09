@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Drawing.Drawing2D;
+using System.Globalization;
 using Simulator.Core.Gameplay;
 using Simulator.Core.Map;
 
@@ -24,6 +25,8 @@ internal sealed partial class Simulator3dForm
     private string? _fineTerrainBaseSceneLoadingKey;
     private FineTerrainAnnotationDocument? _fineTerrainCollisionAnnotation;
     private string? _fineTerrainCollisionAnnotationKey;
+    private Task<FineTerrainAnnotationDocument?>? _fineTerrainCollisionAnnotationLoadTask;
+    private string? _fineTerrainCollisionAnnotationLoadingKey;
     private SimulationWorldState? _fineTerrainRuntimeTargetSyncWorld;
     private double _fineTerrainRuntimeTargetSyncGameTimeSec = double.NaN;
     private FineTerrainEnergyMechanismVisualScene? _fineTerrainRuntimeTargetSyncEnergyScene;
@@ -549,9 +552,10 @@ internal sealed partial class Simulator3dForm
             SimulationEntity? entity = ResolveFineTerrainBaseEntity(item.Team);
             Matrix4x4 compositeTransform = ResolveFineTerrainBaseCompositeTransform(scene.WorldScale, item, entity, includeSlide: true);
             Vector3 sceneAlignmentOffset = Vector3.Zero;
+            bool outerPanelComposite = FineTerrainBaseVisualCache.IsBaseOuterPanelCompositeName(item.Name);
             if (!IsFineTerrainItemPotentiallyVisible(
                     ModelToScenePoint(Vector3.Transform(item.PivotModel, compositeTransform), scene.WorldScale) + sceneAlignmentOffset,
-                    1.15f,
+                    outerPanelComposite ? 1.55f : 1.15f,
                     1.0f))
             {
                 continue;
@@ -559,7 +563,24 @@ internal sealed partial class Simulator3dForm
 
             if (item.Triangles.Count > 0)
             {
-                if (!TryDrawGpuFineTerrainBaseBody(scene.WorldScale, item, compositeTransform, sceneAlignmentOffset))
+                if (outerPanelComposite && entity is not null)
+                {
+                    Matrix4x4 outerPanelTransform = ResolveFineTerrainBaseOuterPanelOpenTransform(
+                        scene.WorldScale,
+                        item,
+                        entity,
+                        compositeTransform);
+                    if (!TryDrawGpuFineTerrainBaseBody(scene.WorldScale, item, outerPanelTransform, sceneAlignmentOffset))
+                    {
+                        DrawFineTerrainColoredTriangles(
+                            null,
+                            scene.WorldScale,
+                            item.Triangles,
+                            outerPanelTransform,
+                            sceneAlignmentOffset);
+                    }
+                }
+                else if (!TryDrawGpuFineTerrainBaseBody(scene.WorldScale, item, compositeTransform, sceneAlignmentOffset))
                 {
                     DrawFineTerrainColoredTriangles(
                         null,
@@ -632,14 +653,32 @@ internal sealed partial class Simulator3dForm
             SimulationEntity? entity = ResolveFineTerrainBaseEntity(item.Team);
             Matrix4x4 compositeTransform = ResolveFineTerrainBaseCompositeTransform(scene.WorldScale, item, entity, includeSlide: true);
             Vector3 sceneAlignmentOffset = Vector3.Zero;
+            bool outerPanelComposite = FineTerrainBaseVisualCache.IsBaseOuterPanelCompositeName(item.Name);
             if (item.Triangles.Count > 0)
             {
-                DrawFineTerrainColoredTriangles(
-                    graphics,
-                    scene.WorldScale,
-                    item.Triangles,
-                    compositeTransform,
-                    sceneAlignmentOffset);
+                if (outerPanelComposite && entity is not null)
+                {
+                    Matrix4x4 outerPanelTransform = ResolveFineTerrainBaseOuterPanelOpenTransform(
+                        scene.WorldScale,
+                        item,
+                        entity,
+                        compositeTransform);
+                    DrawFineTerrainColoredTriangles(
+                        graphics,
+                        scene.WorldScale,
+                        item.Triangles,
+                        outerPanelTransform,
+                        sceneAlignmentOffset);
+                }
+                else
+                {
+                    DrawFineTerrainColoredTriangles(
+                        graphics,
+                        scene.WorldScale,
+                        item.Triangles,
+                        compositeTransform,
+                        sceneAlignmentOffset);
+                }
                 drawn = true;
             }
 
@@ -1305,6 +1344,11 @@ internal sealed partial class Simulator3dForm
             center = exactCenter;
         }
 
+        Vector3 pivotScene = ModelToScenePoint(Vector3.Transform(item.PivotModel, compositeTransform), worldScale)
+            + sceneAlignmentOffset
+            + extraSceneOffset;
+        center = MoveFineTerrainEnergyPendingCenterTowardPivot(center, pivotScene, normal, 0.01f);
+
         Color teamColor = ResolveEnergyMechanismPureTeamLightColor(item.Team);
         bool readyToHit = teamState.EnergyNextModuleDelaySec <= 1e-6;
         Color pendingColor = readyToHit
@@ -1324,6 +1368,24 @@ internal sealed partial class Simulator3dForm
 
         DrawCpuEnergyPendingDiskPattern(graphics, center, normal, upAxis, diskRadius, pendingColor);
         return true;
+    }
+
+    private static Vector3 MoveFineTerrainEnergyPendingCenterTowardPivot(
+        Vector3 center,
+        Vector3 pivot,
+        Vector3 normal,
+        float distanceM)
+    {
+        Vector3 inward = pivot - center;
+        inward -= normal * Vector3.Dot(inward, normal);
+        float lengthSquared = inward.LengthSquared();
+        if (lengthSquared <= 1e-8f)
+        {
+            return center;
+        }
+
+        float length = MathF.Sqrt(lengthSquared);
+        return center + inward / length * MathF.Min(MathF.Max(0f, distanceM), length);
     }
 
     private bool TryResolveFineTerrainEnergyUnitModelCenterPose(
@@ -1427,7 +1489,7 @@ internal sealed partial class Simulator3dForm
         chevronDepth = Math.Clamp(spacing * 1.02f, 0.032f, 0.096f);
         float chevronHalfWidth = Math.Clamp(halfWidth * 0.82f, 0.012f, 0.042f);
         float stroke = Math.Clamp(Math.Min(chevronDepth, chevronHalfWidth) * 0.22f, 0.0035f, 0.0085f);
-        Vector3 faceOffset = normal * 0.030f;
+        Vector3 faceOffset = normal * 0.002f;
         Color color = Color.FromArgb(readyToHit ? 238 : 196, teamColor);
         for (int index = 0; index < chevronCount; index++)
         {
@@ -1604,6 +1666,17 @@ internal sealed partial class Simulator3dForm
         }
 
         halfWidth = Math.Clamp(maxAbsLateral * 0.86f, 0.012f, 0.055f);
+        float maxNormalOffset = 0f;
+        foreach (Vector3 vertex in vertices)
+        {
+            maxNormalOffset = MathF.Max(maxNormalOffset, Vector3.Dot(vertex - center, normal));
+        }
+
+        if (maxNormalOffset > 1e-5f)
+        {
+            center += normal * maxNormalOffset;
+        }
+
         return true;
     }
 
@@ -2656,7 +2729,8 @@ internal sealed partial class Simulator3dForm
             Matrix4x4 compositeTransform = ResolveFineTerrainBaseCompositeTransform(scene.WorldScale, item, entity, includeSlide: true);
             Vector3 sceneAlignmentOffset = Vector3.Zero;
             bool outerPanelComposite = FineTerrainBaseVisualCache.IsBaseOuterPanelCompositeName(item.Name);
-            bool drawBody = outerPanelComposite
+            bool topArmorComposite = FineTerrainBaseVisualCache.IsBaseTopArmorCompositeName(item.Name);
+            bool drawBody = outerPanelComposite || topArmorComposite
                 ? renderPass != StructureRenderPass.StaticBody
                 : renderPass != StructureRenderPass.DynamicArmor;
             bool drawUnits = renderPass != StructureRenderPass.StaticBody;
@@ -3297,12 +3371,13 @@ internal sealed partial class Simulator3dForm
                 return compositeTransform;
             }
 
-            Vector3 localOffsetModel = ResolveFineTerrainBaseOuterPanelOpenOffsetModel(
+            Matrix4x4 openTransform = ResolveFineTerrainBaseOuterPanelOpenModelTransform(
                 worldScale,
                 item,
                 unit,
-                unit.LocalCentroidModel);
-            return Matrix4x4.CreateTranslation(localOffsetModel * openProgress) * compositeTransform;
+                unit.LocalCentroidModel,
+                openProgress);
+            return openTransform * compositeTransform;
         }
 
         return compositeTransform;
@@ -3327,8 +3402,13 @@ internal sealed partial class Simulator3dForm
             return baseTransform;
         }
 
-        Vector3 localOffsetModel = ResolveFineTerrainBaseOuterPanelOpenOffsetModel(worldScale);
-        return Matrix4x4.CreateTranslation(localOffsetModel * openProgress) * baseTransform;
+        Matrix4x4 openTransform = ResolveFineTerrainBaseOuterPanelOpenModelTransform(
+            worldScale,
+            item,
+            unit: null,
+            pivotModel: item.PivotModel,
+            openProgress);
+        return openTransform * baseTransform;
     }
 
     private void DrawFineTerrainBaseOuterPanelTriangles(
@@ -3352,54 +3432,19 @@ internal sealed partial class Simulator3dForm
             return;
         }
 
-        if (_gpuGeometryPass && UseGpuRenderer)
-        {
-            foreach (FineTerrainColoredTriangle triangle in triangles)
-            {
-                Vector3 centroid = (triangle.A + triangle.B + triangle.C) / 3f;
-                Vector3 offset = ResolveFineTerrainBaseOuterPanelOpenOffsetModel(worldScale, item, unit: null, localCenterModel: centroid) * openProgress;
-                Vector3 a = ModelToScenePoint(Vector3.Transform(triangle.A + offset, transform), worldScale) + sceneAlignmentOffset;
-                Vector3 b = ModelToScenePoint(Vector3.Transform(triangle.B + offset, transform), worldScale) + sceneAlignmentOffset;
-                Vector3 c = ModelToScenePoint(Vector3.Transform(triangle.C + offset, transform), worldScale) + sceneAlignmentOffset;
-                AppendOrDrawGpuTriangle(a, b, c, ResolveFineTerrainTriangleColor(triangle.Color));
-            }
-
-            return;
-        }
-
-        if (graphics is null)
-        {
-            return;
-        }
-
-        var faces = new List<ProjectedFace>(Math.Min(triangles.Count, 2048));
-        foreach (FineTerrainColoredTriangle triangle in triangles)
-        {
-            Vector3 centroid = (triangle.A + triangle.B + triangle.C) / 3f;
-            Vector3 offset = ResolveFineTerrainBaseOuterPanelOpenOffsetModel(worldScale, item, unit: null, localCenterModel: centroid) * openProgress;
-            Vector3 a = ModelToScenePoint(Vector3.Transform(triangle.A + offset, transform), worldScale) + sceneAlignmentOffset;
-            Vector3 b = ModelToScenePoint(Vector3.Transform(triangle.B + offset, transform), worldScale) + sceneAlignmentOffset;
-            Vector3 c = ModelToScenePoint(Vector3.Transform(triangle.C + offset, transform), worldScale) + sceneAlignmentOffset;
-            Color fill = ResolveFineTerrainTriangleColor(triangle.Color);
-            Color edge = Color.FromArgb(Math.Min(255, fill.A + 14), BlendColor(fill, Color.Black, 0.24f));
-            if (TryBuildProjectedFace(new[] { a, b, c }, fill, edge, out ProjectedFace face))
-            {
-                faces.Add(face);
-            }
-        }
-
-        if (faces.Count == 0)
-        {
-            return;
-        }
-
-        if (_collectProjectedFacesOnly)
-        {
-            _projectedEntityFaceBuffer.AddRange(faces);
-            return;
-        }
-
-        DrawProjectedFaceBatch(graphics, faces, 0.92f);
+        Matrix4x4 openTransform = ResolveFineTerrainBaseOuterPanelOpenModelTransform(
+            worldScale,
+            item,
+            unit: null,
+            pivotModel: item.PivotModel,
+            openProgress);
+        Matrix4x4 translatedTransform = openTransform * transform;
+        DrawFineTerrainColoredTriangles(
+            graphics,
+            worldScale,
+            triangles,
+            translatedTransform,
+            sceneAlignmentOffset);
     }
 
     private static bool IsFineTerrainBaseMiddlePanel(string plateId)
@@ -3545,11 +3590,43 @@ internal sealed partial class Simulator3dForm
     {
         float y = MathF.Abs(worldScale.YMetersPerModelUnit) <= 1e-6f
             ? 0f
-            : -0.10f / worldScale.YMetersPerModelUnit;
+            : -0.07f / worldScale.YMetersPerModelUnit;
         float z = MathF.Abs(worldScale.ZMetersPerModelUnit) <= 1e-6f
             ? 0f
-            : -0.10f / worldScale.ZMetersPerModelUnit;
+            : -0.35f / worldScale.ZMetersPerModelUnit;
         return new Vector3(0f, y, z);
+    }
+
+    private static Matrix4x4 ResolveFineTerrainBaseOuterPanelOpenModelTransform(
+        FineTerrainWorldScale worldScale,
+        FineTerrainBaseVisualItem item,
+        FineTerrainBaseUnitVisualItem? unit,
+        Vector3 pivotModel,
+        float openProgress)
+    {
+        float progress = Math.Clamp(openProgress, 0f, 1f);
+        if (progress <= 1e-4f)
+        {
+            return Matrix4x4.Identity;
+        }
+
+        Vector3 xAxisModel = ResolveFineTerrainBaseOuterPanelCoordinateAxisModel(item, FineTerrainEditorAxis.X);
+        if (xAxisModel.LengthSquared() <= 1e-8f)
+        {
+            xAxisModel = Vector3.UnitX;
+        }
+
+        Vector3 offsetModel = ResolveFineTerrainBaseOuterPanelOpenOffsetModel(
+            worldScale,
+            item,
+            unit,
+            pivotModel) * progress;
+        float angleRad = 7f * MathF.PI / 180f * progress;
+        return
+            Matrix4x4.CreateTranslation(-pivotModel)
+            * Matrix4x4.CreateFromAxisAngle(Vector3.Normalize(xAxisModel), angleRad)
+            * Matrix4x4.CreateTranslation(pivotModel)
+            * Matrix4x4.CreateTranslation(offsetModel);
     }
 
     private static Vector3 ResolveFineTerrainBaseOuterPanelOpenOffsetModel(
@@ -3558,23 +3635,32 @@ internal sealed partial class Simulator3dForm
         FineTerrainBaseUnitVisualItem? unit,
         Vector3 localCenterModel)
     {
-        Vector3 radialOriginModel = ResolveFineTerrainBaseOuterPanelRadialOriginModel(item);
-        Vector3 radialModel = new(localCenterModel.X - radialOriginModel.X, 0f, localCenterModel.Z - radialOriginModel.Z);
-        if (radialModel.LengthSquared() <= 1e-8f)
-        {
-            radialModel = ResolveFineTerrainBaseOuterPanelLocalNormal(item, unit);
-            radialModel.Y = 0f;
-        }
+        Vector3 panelOutModel = -ResolveFineTerrainBaseOuterPanelCoordinateAxisModel(item, FineTerrainEditorAxis.Z);
+        Vector3 panelDownModel = -ResolveFineTerrainBaseOuterPanelCoordinateAxisModel(item, FineTerrainEditorAxis.Y);
+        float outUnits = ResolveFineTerrainModelDistanceForMeters(worldScale, panelOutModel, 0.35f);
+        float downUnits = ResolveFineTerrainModelDistanceForMeters(worldScale, panelDownModel, 0.07f);
+        return panelOutModel * outUnits + panelDownModel * downUnits;
+    }
 
-        if (radialModel.LengthSquared() <= 1e-8f)
+    private static Vector3 ResolveFineTerrainBaseOuterPanelCoordinateAxisModel(
+        FineTerrainBaseVisualItem item,
+        FineTerrainEditorAxis axis)
+    {
+        Matrix4x4 rotation = Matrix4x4.CreateFromYawPitchRoll(
+            item.CoordinateYprDegrees.X * MathF.PI / 180f,
+            item.CoordinateYprDegrees.Y * MathF.PI / 180f,
+            item.CoordinateYprDegrees.Z * MathF.PI / 180f);
+        Vector3 xAxis = SafeNormalize(Vector3.TransformNormal(Vector3.UnitX, rotation), Vector3.UnitX);
+        Vector3 yCandidate = SafeNormalize(Vector3.TransformNormal(Vector3.UnitY, rotation), Vector3.UnitY);
+        Vector3 zAxis = SafeNormalize(Vector3.Cross(xAxis, yCandidate), Vector3.UnitZ);
+        Vector3 yAxis = SafeNormalize(Vector3.Cross(zAxis, xAxis), Vector3.UnitY);
+        return axis switch
         {
-            radialModel = -Vector3.UnitZ;
-        }
-
-        radialModel = Vector3.Normalize(radialModel);
-        float radialUnits = ResolveFineTerrainModelDistanceForMeters(worldScale, radialModel, 0.10f);
-        float downUnits = ResolveFineTerrainModelDistanceForMeters(worldScale, -Vector3.UnitY, 0.10f);
-        return radialModel * radialUnits - Vector3.UnitY * downUnits;
+            FineTerrainEditorAxis.X => xAxis,
+            FineTerrainEditorAxis.Y => yAxis,
+            FineTerrainEditorAxis.Z => zAxis,
+            _ => Vector3.Zero,
+        };
     }
 
     private static Vector3 ResolveFineTerrainBaseOuterPanelOpenOffsetModel(
@@ -3726,6 +3812,7 @@ internal sealed partial class Simulator3dForm
         StartFineTerrainEnergySceneLoad(cacheKey);
         StartFineTerrainOutpostSceneLoad(cacheKey);
         StartFineTerrainBaseSceneLoad(cacheKey);
+        StartFineTerrainCollisionAnnotationLoad();
     }
 
     private double ResolveFineTerrainVisualSceneLoadProgress()
@@ -3740,14 +3827,17 @@ internal sealed partial class Simulator3dForm
         StartFineTerrainEnergySceneLoad(cacheKey);
         StartFineTerrainOutpostSceneLoad(cacheKey);
         StartFineTerrainBaseSceneLoad(cacheKey);
+        StartFineTerrainCollisionAnnotationLoad();
         CompleteFineTerrainEnergySceneLoad(cacheKey);
         CompleteFineTerrainOutpostSceneLoad(cacheKey);
         CompleteFineTerrainBaseSceneLoad(cacheKey);
+        CompleteFineTerrainCollisionAnnotationLoad();
 
         double energy = _fineTerrainEnergySceneLoadTask is null ? 1.0 : 0.35;
         double outpost = _fineTerrainOutpostSceneLoadTask is null ? 1.0 : 0.35;
         double baseTop = _fineTerrainBaseSceneLoadTask is null ? 1.0 : 0.35;
-        return (energy + outpost + baseTop) / 3.0;
+        double collision = _fineTerrainCollisionAnnotationLoadTask is null ? 1.0 : 0.35;
+        return (energy + outpost + baseTop + collision) / 4.0;
     }
 
     private bool AreFineTerrainVisualScenesReady()
@@ -3762,12 +3852,15 @@ internal sealed partial class Simulator3dForm
         StartFineTerrainEnergySceneLoad(cacheKey);
         StartFineTerrainOutpostSceneLoad(cacheKey);
         StartFineTerrainBaseSceneLoad(cacheKey);
+        StartFineTerrainCollisionAnnotationLoad();
         CompleteFineTerrainEnergySceneLoad(cacheKey);
         CompleteFineTerrainOutpostSceneLoad(cacheKey);
         CompleteFineTerrainBaseSceneLoad(cacheKey);
+        CompleteFineTerrainCollisionAnnotationLoad();
         return _fineTerrainEnergySceneLoadTask is null
             && _fineTerrainOutpostSceneLoadTask is null
-            && _fineTerrainBaseSceneLoadTask is null;
+            && _fineTerrainBaseSceneLoadTask is null
+            && _fineTerrainCollisionAnnotationLoadTask is null;
     }
 
     private FineTerrainEnergyMechanismVisualScene? ResolveFineTerrainEnergyScene()
@@ -4002,26 +4095,92 @@ internal sealed partial class Simulator3dForm
         }
     }
 
-    private FineTerrainAnnotationDocument? ResolveFineTerrainCollisionAnnotation()
+    private string? BuildFineTerrainCollisionAnnotationCacheKey()
     {
         string annotationPath = _host.MapPreset.AnnotationPath;
         if (string.IsNullOrWhiteSpace(annotationPath) || !File.Exists(annotationPath))
         {
-            _fineTerrainCollisionAnnotation = null;
-            _fineTerrainCollisionAnnotationKey = null;
             return null;
         }
 
-        string cacheKey = $"{Path.GetFullPath(annotationPath)}|{File.GetLastWriteTimeUtc(annotationPath).Ticks}";
-        if (_fineTerrainCollisionAnnotation is not null
-            && string.Equals(_fineTerrainCollisionAnnotationKey, cacheKey, StringComparison.OrdinalIgnoreCase))
+        return $"{Path.GetFullPath(annotationPath)}|{File.GetLastWriteTimeUtc(annotationPath).Ticks}";
+    }
+
+    private void StartFineTerrainCollisionAnnotationLoad()
+    {
+        string? cacheKey = BuildFineTerrainCollisionAnnotationCacheKey();
+        if (cacheKey is null)
+        {
+            _fineTerrainCollisionAnnotation = null;
+            _fineTerrainCollisionAnnotationKey = null;
+            _fineTerrainCollisionAnnotationLoadTask = null;
+            _fineTerrainCollisionAnnotationLoadingKey = null;
+            return;
+        }
+
+        if (string.Equals(_fineTerrainCollisionAnnotationKey, cacheKey, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (_fineTerrainCollisionAnnotationLoadTask is not null
+            && string.Equals(_fineTerrainCollisionAnnotationLoadingKey, cacheKey, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        string annotationPath = _host.MapPreset.AnnotationPath;
+        _fineTerrainCollisionAnnotationLoadTask = Task.Run(() => FineTerrainAnnotationDocument.TryLoadCollisionOnly(annotationPath));
+        _fineTerrainCollisionAnnotationLoadingKey = cacheKey;
+    }
+
+    private void CompleteFineTerrainCollisionAnnotationLoad()
+    {
+        if (_fineTerrainCollisionAnnotationLoadTask is null
+            || _fineTerrainCollisionAnnotationLoadingKey is null
+            || !_fineTerrainCollisionAnnotationLoadTask.IsCompleted)
+        {
+            return;
+        }
+
+        string cacheKey = _fineTerrainCollisionAnnotationLoadingKey;
+        try
+        {
+            _fineTerrainCollisionAnnotation = _fineTerrainCollisionAnnotationLoadTask.Result;
+            _fineTerrainCollisionAnnotationKey = cacheKey;
+        }
+        catch
+        {
+            _fineTerrainCollisionAnnotation = null;
+            _fineTerrainCollisionAnnotationKey = cacheKey;
+        }
+        finally
+        {
+            _fineTerrainCollisionAnnotationLoadTask = null;
+            _fineTerrainCollisionAnnotationLoadingKey = null;
+        }
+    }
+
+    private FineTerrainAnnotationDocument? ResolveFineTerrainCollisionAnnotation()
+    {
+        string? cacheKey = BuildFineTerrainCollisionAnnotationCacheKey();
+        if (cacheKey is null)
+        {
+            _fineTerrainCollisionAnnotation = null;
+            _fineTerrainCollisionAnnotationKey = null;
+            _fineTerrainCollisionAnnotationLoadTask = null;
+            _fineTerrainCollisionAnnotationLoadingKey = null;
+            return null;
+        }
+
+        CompleteFineTerrainCollisionAnnotationLoad();
+        if (string.Equals(_fineTerrainCollisionAnnotationKey, cacheKey, StringComparison.OrdinalIgnoreCase))
         {
             return _fineTerrainCollisionAnnotation;
         }
 
-        _fineTerrainCollisionAnnotation = FineTerrainAnnotationDocument.TryLoad(annotationPath);
-        _fineTerrainCollisionAnnotationKey = cacheKey;
-        return _fineTerrainCollisionAnnotation;
+        StartFineTerrainCollisionAnnotationLoad();
+        return null;
     }
 
     private bool TryDrawFineTerrainCollisionShapes(Graphics graphics)
@@ -4063,8 +4222,10 @@ internal sealed partial class Simulator3dForm
         FineTerrainWorldScale worldScale,
         FineTerrainCollisionShapeAnnotation shape)
     {
-        Color fillColor = Color.FromArgb(104, 0, 210, 255);
-        Color edgeColor = Color.FromArgb(245, 0, 232, 255);
+        Color baseColor = ResolveFineTerrainCollisionShapeDisplayColor(shape, Color.FromArgb(255, 0, 210, 255));
+        bool staticMesh = IsFineTerrainStaticMeshShape(shape);
+        Color fillColor = Color.FromArgb(staticMesh ? 255 : 104, baseColor);
+        Color edgeColor = Color.FromArgb(245, BlendColor(baseColor, Color.White, staticMesh ? 0.08f : 0.16f));
         IReadOnlyList<Vector3> bottom = BuildCollisionShapeBottomFootprint(shape, worldScale, out float height);
         if (bottom.Count < 3 || height <= 1e-4f)
         {
@@ -4079,8 +4240,10 @@ internal sealed partial class Simulator3dForm
 
     private bool TryDrawGpuFineTerrainCollisionShape(FineTerrainWorldScale worldScale, FineTerrainCollisionShapeAnnotation shape)
     {
-        Color fillColor = Color.FromArgb(96, 0, 210, 255);
-        Color edgeColor = Color.FromArgb(245, 0, 232, 255);
+        Color baseColor = ResolveFineTerrainCollisionShapeDisplayColor(shape, Color.FromArgb(255, 0, 210, 255));
+        bool staticMesh = IsFineTerrainStaticMeshShape(shape);
+        Color fillColor = Color.FromArgb(staticMesh ? 255 : 96, baseColor);
+        Color edgeColor = Color.FromArgb(245, BlendColor(baseColor, Color.White, staticMesh ? 0.08f : 0.16f));
         IReadOnlyList<Vector3> bottom = BuildCollisionShapeBottomFootprint(shape, worldScale, out float height);
         if (bottom.Count < 3 || height <= 1e-4f)
         {
@@ -4099,6 +4262,40 @@ internal sealed partial class Simulator3dForm
         }
 
         return true;
+    }
+
+    private static bool IsFineTerrainStaticMeshShape(FineTerrainCollisionShapeAnnotation shape)
+        => string.Equals(shape.TerrainLabel, "static_mesh", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(shape.TerrainLabel, "static", StringComparison.OrdinalIgnoreCase);
+
+    private static Color ResolveFineTerrainCollisionShapeDisplayColor(
+        FineTerrainCollisionShapeAnnotation shape,
+        Color fallback)
+    {
+        string raw = shape.ColorHex.Trim();
+        if (raw.Length == 0)
+        {
+            return fallback;
+        }
+
+        if (raw[0] == '#')
+        {
+            raw = raw[1..];
+        }
+
+        if (raw.Length == 6
+            && int.TryParse(raw, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int rgb))
+        {
+            return Color.FromArgb(255, (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+        }
+
+        if (raw.Length == 8
+            && uint.TryParse(raw, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out uint argb))
+        {
+            return Color.FromArgb(unchecked((int)argb));
+        }
+
+        return fallback;
     }
 
     private IReadOnlyList<Vector3> BuildCollisionShapeBottomFootprint(

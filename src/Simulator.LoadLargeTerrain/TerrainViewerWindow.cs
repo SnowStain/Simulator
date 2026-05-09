@@ -37,6 +37,13 @@ internal sealed class TerrainViewerWindow : GameWindow
         Polygon,
     }
 
+    private enum EditorToolPanel
+    {
+        None,
+        Composite,
+        MapFacilities,
+    }
+
     private readonly TerrainSceneData _scene;
     private readonly string _modelName;
     private readonly List<GpuChunk> _gpuChunks = new();
@@ -102,6 +109,7 @@ internal sealed class TerrainViewerWindow : GameWindow
     private System.Numerics.Vector2 _topDownCenter;
     private float _topDownHalfHeight;
     private FacilityDrawMode _facilityDrawMode = FacilityDrawMode.Select;
+    private EditorToolPanel _activeEditorToolPanel = EditorToolPanel.None;
     private string _facilityDraftType = "supply";
     private string _facilityDraftTeam = "neutral";
     private string _facilityDraftBaseId = "facility";
@@ -579,6 +587,7 @@ internal sealed class TerrainViewerWindow : GameWindow
         _lastVisibleChunkCount = visibleCount;
         UpdateTitle(args.Time);
 
+        BuildEditorTopToolbarUi();
         BuildMapEditorUi();
         BuildEditorUi();
         DrawCenterPointer();
@@ -2556,9 +2565,93 @@ internal sealed class TerrainViewerWindow : GameWindow
         return false;
     }
 
+    private void BuildEditorTopToolbarUi()
+    {
+        if (_imgui is null)
+        {
+            return;
+        }
+
+        ImGui.SetNextWindowPos(new System.Numerics.Vector2(8.0f, 28.0f), ImGuiCond.Always);
+        ImGui.SetNextWindowSize(new System.Numerics.Vector2(MathF.Min(ClientSize.X - 16.0f, 760.0f), 44.0f), ImGuiCond.Always);
+        ImGui.Begin(
+            "地图编辑工具栏",
+            ImGuiWindowFlags.NoMove
+            | ImGuiWindowFlags.NoResize
+            | ImGuiWindowFlags.NoCollapse
+            | ImGuiWindowFlags.NoSavedSettings
+            | ImGuiWindowFlags.NoTitleBar);
+
+        ImGui.TextUnformatted("编辑");
+        ImGui.SameLine();
+        DrawEditorToolToggle("组合体", EditorToolPanel.Composite);
+        ImGui.SameLine();
+        DrawEditorToolToggle("地图增益", EditorToolPanel.MapFacilities, _mapEditingSession is not null);
+        ImGui.SameLine();
+        if (ImGui.Button("保存"))
+        {
+            if (_mapEditingSession is not null)
+            {
+                SaveMapDocument();
+            }
+
+            SaveCurrentAnnotations();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("读取 JSON"))
+        {
+            OpenLoadPopup();
+            _activeEditorToolPanel = EditorToolPanel.Composite;
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("关闭面板"))
+        {
+            _activeEditorToolPanel = EditorToolPanel.None;
+        }
+
+        ImGui.End();
+    }
+
+    private void DrawEditorToolToggle(string label, EditorToolPanel panel, bool enabled = true)
+    {
+        if (!enabled)
+        {
+            ImGui.BeginDisabled();
+        }
+
+        bool selected = _activeEditorToolPanel == panel;
+        if (selected)
+        {
+            ImGui.PushStyleColor(ImGuiCol.Button, new System.Numerics.Vector4(0.22f, 0.42f, 0.68f, 1.0f));
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new System.Numerics.Vector4(0.28f, 0.50f, 0.78f, 1.0f));
+        }
+
+        if (ImGui.Button(label))
+        {
+            _activeEditorToolPanel = selected ? EditorToolPanel.None : panel;
+        }
+
+        if (selected)
+        {
+            ImGui.PopStyleColor(2);
+        }
+
+        if (!enabled)
+        {
+            ImGui.EndDisabled();
+        }
+    }
+
     private void BuildMapEditorUi()
     {
         if (_imgui is null || _mapEditingSession is null)
+        {
+            return;
+        }
+
+        if (_activeEditorToolPanel != EditorToolPanel.MapFacilities)
         {
             return;
         }

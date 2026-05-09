@@ -23,6 +23,8 @@ internal sealed class TerrainEditorForm : Form
     private readonly PropertyGrid _facilityGrid = new();
     private readonly PropertyGrid _facetGrid = new();
     private readonly PropertyGrid _fineTerrainGrid = new();
+    private readonly ListBox _compositeList = new();
+    private readonly PropertyGrid _compositeGrid = new();
     private readonly ListBox _collisionShapeList = new();
     private readonly PropertyGrid _collisionShapeGrid = new();
     private readonly Label _statusLabel = new();
@@ -33,6 +35,7 @@ internal sealed class TerrainEditorForm : Form
 
     private MapPresetEditorSettings? _document;
     private FineTerrainAnnotationDocument? _activeFineTerrainAnnotation;
+    private FineTerrainCompositeAnnotation? _copiedComposite;
     private FineTerrainCollisionShapeAnnotation? _copiedCollisionShape;
 
     public TerrainEditorForm()
@@ -175,18 +178,25 @@ internal sealed class TerrainEditorForm : Form
         _facilityGrid.ToolbarVisible = false;
         _facetGrid.ToolbarVisible = false;
         _fineTerrainGrid.ToolbarVisible = false;
+        _compositeGrid.ToolbarVisible = false;
         _collisionShapeGrid.ToolbarVisible = false;
         _mapGrid.HelpVisible = true;
         _surfaceGrid.HelpVisible = true;
         _facilityGrid.HelpVisible = true;
         _facetGrid.HelpVisible = true;
         _fineTerrainGrid.HelpVisible = true;
+        _compositeGrid.HelpVisible = true;
         _collisionShapeGrid.HelpVisible = true;
         _mapGrid.PropertyValueChanged += (_, _) => OnDocumentModified();
         _surfaceGrid.PropertyValueChanged += (_, _) => OnDocumentModified();
         _facilityGrid.PropertyValueChanged += (_, _) => OnDocumentModified();
         _facetGrid.PropertyValueChanged += (_, _) => OnDocumentModified();
         _collisionShapeGrid.PropertyValueChanged += (_, _) => SaveActiveFineTerrainAnnotation();
+        _compositeGrid.PropertyValueChanged += (_, _) =>
+        {
+            SaveActiveFineTerrainAnnotation();
+            RebindCompositeList();
+        };
 
         _tabControl.TabPages.Add(new TabPage("地图参数") { Controls = { _mapGrid } });
         _tabControl.TabPages.Add(new TabPage("地形数据") { Controls = { _surfaceGrid } });
@@ -207,6 +217,9 @@ internal sealed class TerrainEditorForm : Form
         _collisionShapeList.Dock = DockStyle.Fill;
         _collisionShapeList.DisplayMember = nameof(FineTerrainCollisionShapeAnnotation.Name);
         _collisionShapeList.SelectedIndexChanged += (_, _) => BindSelectedCollisionShape();
+        _compositeList.Dock = DockStyle.Fill;
+        _compositeList.DisplayMember = nameof(FineTerrainCompositeAnnotation.Name);
+        _compositeList.SelectedIndexChanged += (_, _) => BindSelectedComposite();
 
         return _tabControl;
     }
@@ -233,8 +246,17 @@ internal sealed class TerrainEditorForm : Form
         toolbar.Controls.Add(CreateButton("打开精细编辑器", (_, _) => LaunchFineTerrainEditor(), 116));
         toolbar.Controls.Add(CreateButton("打开地图目录", (_, _) => OpenFineTerrainFolder(), 116));
 
+        toolbar.Controls.Add(CreateButton("复制组合体", (_, _) => CopySelectedComposite(), 92));
+        toolbar.Controls.Add(CreateButton("粘贴组合体", (_, _) => PasteComposite(), 92));
+        toolbar.Controls.Add(CreateButton("静态圆柱", (_, _) => AddStaticMeshShape("cylinder"), 88));
+        toolbar.Controls.Add(CreateButton("静态六棱柱", (_, _) => AddStaticMeshShape("hex_prism"), 96));
+
+        var contentTabs = new TabControl { Dock = DockStyle.Fill };
+        contentTabs.TabPages.Add(new TabPage("关联信息") { Controls = { _fineTerrainGrid } });
+        contentTabs.TabPages.Add(new TabPage("组合体") { Controls = { BuildListAndGrid(_compositeList, _compositeGrid, "地图组合体") } });
+
         layout.Controls.Add(toolbar, 0, 0);
-        layout.Controls.Add(_fineTerrainGrid, 0, 1);
+        layout.Controls.Add(contentTabs, 0, 1);
         return layout;
     }
 
@@ -495,7 +517,29 @@ internal sealed class TerrainEditorForm : Form
     private void ReloadFineTerrainAnnotation()
     {
         _activeFineTerrainAnnotation = TryLoadActiveFineTerrainAnnotation();
+        RebindCompositeList();
         RebindCollisionShapeList();
+    }
+
+    private void RebindCompositeList()
+    {
+        int? selectedId = _compositeList.SelectedItem is FineTerrainCompositeAnnotation selected
+            ? selected.Id
+            : null;
+        _compositeList.DataSource = null;
+        _compositeGrid.SelectedObject = null;
+        if (_activeFineTerrainAnnotation is null)
+        {
+            return;
+        }
+
+        _compositeList.DataSource = _activeFineTerrainAnnotation.Composites;
+        _compositeList.DisplayMember = nameof(FineTerrainCompositeAnnotation.Name);
+        if (selectedId is not null)
+        {
+            _compositeList.SelectedItem = _activeFineTerrainAnnotation.Composites.FirstOrDefault(
+                composite => composite.Id == selectedId.Value);
+        }
     }
 
     private void RebindCollisionShapeList()
@@ -547,6 +591,16 @@ internal sealed class TerrainEditorForm : Form
         _collisionShapeGrid.SelectedObject = shape;
     }
 
+    private void BindSelectedComposite()
+    {
+        if (_compositeList.SelectedItem is not FineTerrainCompositeAnnotation composite)
+        {
+            return;
+        }
+
+        _compositeGrid.SelectedObject = new FineTerrainCompositePropertyView(composite);
+    }
+
     private void AddFacility(string shape)
     {
         if (_document is null)
@@ -576,7 +630,10 @@ internal sealed class TerrainEditorForm : Form
         _statusLabel.Text = $"已新增 {facility.Id}。";
     }
 
-    private void AddCollisionShape(string shapeType)
+    private void AddStaticMeshShape(string shapeType)
+        => AddCollisionShape(shapeType, staticMesh: true);
+
+    private void AddCollisionShape(string shapeType, bool staticMesh = false)
     {
         if (_activeFineTerrainAnnotation is null)
         {
@@ -603,29 +660,35 @@ internal sealed class TerrainEditorForm : Form
             "cylinder" => new FineTerrainCollisionShapeAnnotation
             {
                 Id = nextId,
-                Name = $"cylinder_{nextId}",
+                Name = staticMesh ? $"static_cylinder_{nextId}" : $"cylinder_{nextId}",
                 ShapeType = "cylinder",
                 PositionModel = FineTerrainVector3.From(center),
                 RadiusModel = ResolveDefaultRadiusModel(worldScale, 0.55f),
                 HeightModel = ResolveDefaultHeightModel(worldScale, 1.00f),
+                TerrainLabel = staticMesh ? "static_mesh" : string.Empty,
+                ColorHex = staticMesh ? "#7A8794" : string.Empty,
             },
             "hex_prism" => new FineTerrainCollisionShapeAnnotation
             {
                 Id = nextId,
-                Name = $"hex_prism_{nextId}",
+                Name = staticMesh ? $"static_hex_prism_{nextId}" : $"hex_prism_{nextId}",
                 ShapeType = "hex_prism",
                 PositionModel = FineTerrainVector3.From(center),
                 RadiusModel = ResolveDefaultRadiusModel(worldScale, 0.60f),
                 HeightModel = ResolveDefaultHeightModel(worldScale, 1.00f),
+                TerrainLabel = staticMesh ? "static_mesh" : string.Empty,
+                ColorHex = staticMesh ? "#7A8794" : string.Empty,
             },
             _ => new FineTerrainCollisionShapeAnnotation
             {
                 Id = nextId,
-                Name = $"box_{nextId}",
+                Name = staticMesh ? $"static_box_{nextId}" : $"box_{nextId}",
                 ShapeType = "box",
                 PositionModel = FineTerrainVector3.From(center),
                 SizeModel = FineTerrainVector3.From(defaultBoxSize),
                 HeightModel = Math.Max(0.001f, defaultBoxSize.Y),
+                TerrainLabel = staticMesh ? "static_mesh" : string.Empty,
+                ColorHex = staticMesh ? "#7A8794" : string.Empty,
             },
         };
 
@@ -704,6 +767,59 @@ internal sealed class TerrainEditorForm : Form
         RebindCollisionShapeList();
         _collisionShapeGrid.SelectedObject = null;
         _statusLabel.Text = $"已删除碰撞组件 {shape.Name}。";
+    }
+
+    private void CopySelectedComposite()
+    {
+        if (_compositeList.SelectedItem is not FineTerrainCompositeAnnotation composite)
+        {
+            _statusLabel.Text = "请先在精细地图/组合体页选中一个组合体。";
+            return;
+        }
+
+        FineTerrainWorldScale scale = _activeFineTerrainAnnotation?.WorldScale ?? default;
+        _copiedComposite = CloneCompositeAnnotation(composite, composite.Id, Vector3.Zero, rename: false, scale);
+        _statusLabel.Text = $"已复制组合体 {composite.Name}。";
+    }
+
+    private void PasteComposite()
+    {
+        if (_copiedComposite is null)
+        {
+            _statusLabel.Text = "当前没有已复制的组合体。";
+            return;
+        }
+
+        if (_activeFineTerrainAnnotation is null)
+        {
+            ReloadFineTerrainAnnotation();
+        }
+
+        if (_activeFineTerrainAnnotation is null)
+        {
+            _statusLabel.Text = "当前地图没有可写入的精细地图注解。";
+            return;
+        }
+
+        int nextId = _activeFineTerrainAnnotation.Composites.Count == 0
+            ? 1
+            : _activeFineTerrainAnnotation.Composites.Max(composite => composite.Id) + 1;
+        FineTerrainWorldScale scale = _activeFineTerrainAnnotation.WorldScale;
+        Vector3 offset = new(
+            0.50f / MathF.Max(1e-6f, scale.XMetersPerModelUnit),
+            0f,
+            0.50f / MathF.Max(1e-6f, scale.ZMetersPerModelUnit));
+        FineTerrainCompositeAnnotation pasted = CloneCompositeAnnotation(
+            _copiedComposite,
+            nextId,
+            offset,
+            rename: true,
+            scale);
+        _activeFineTerrainAnnotation.Composites.Add(pasted);
+        SaveActiveFineTerrainAnnotation();
+        RebindCompositeList();
+        _compositeList.SelectedItem = pasted;
+        _statusLabel.Text = $"已粘贴组合体 {pasted.Name}。";
     }
 
     private void AddFacet()
@@ -1020,6 +1136,38 @@ internal sealed class TerrainEditorForm : Form
         _activeFineTerrainAnnotation?.Save();
     }
 
+    private static FineTerrainCompositeAnnotation CloneCompositeAnnotation(
+        FineTerrainCompositeAnnotation source,
+        int newId,
+        Vector3 offset,
+        bool rename,
+        FineTerrainWorldScale scale)
+    {
+        Vector3 positionModel = source.PositionModel.ToVector3() + offset;
+        Vector3 pivotModel = source.PivotModel.ToVector3() + offset;
+        return new FineTerrainCompositeAnnotation
+        {
+            Id = newId,
+            Name = rename ? $"{source.Name}_copy" : source.Name,
+            Role = source.Role,
+            CoordinateSystemMode = source.CoordinateSystemMode,
+            ComponentIds = source.ComponentIds.ToArray(),
+            InteractionUnits = source.InteractionUnits
+                .Select(unit => new FineTerrainInteractionUnitAnnotation
+                {
+                    Id = unit.Id,
+                    Name = unit.Name,
+                    ComponentIds = unit.ComponentIds.ToArray(),
+                })
+                .ToArray(),
+            PositionMeters = FineTerrainVector3.From(ModelToMetersForEditor(positionModel, scale)),
+            PositionModel = FineTerrainVector3.From(positionModel),
+            PivotModel = FineTerrainVector3.From(pivotModel),
+            YprDegrees = FineTerrainVector3.From(source.YprDegrees.ToVector3()),
+            CoordinateYprDegrees = FineTerrainVector3.From(source.CoordinateYprDegrees.ToVector3()),
+        };
+    }
+
     private static FineTerrainCollisionShapeAnnotation CloneCollisionShape(
         FineTerrainCollisionShapeAnnotation source,
         int newId,
@@ -1037,10 +1185,20 @@ internal sealed class TerrainEditorForm : Form
             HeightModel = source.HeightModel,
             YprDegrees = FineTerrainVector3.From(source.YprDegrees.ToVector3()),
             TerrainLabel = source.TerrainLabel,
+            ColorHex = source.ColorHex,
             VerticesModel = source.VerticesModel
                 .Select(vertex => FineTerrainVector3.From(vertex.ToVector3() + offset))
                 .ToList(),
         };
+    }
+
+    private static Vector3 ModelToMetersForEditor(Vector3 modelPosition, FineTerrainWorldScale worldScale)
+    {
+        Vector3 center = worldScale.ModelCenter;
+        return new Vector3(
+            (modelPosition.X - center.X) * worldScale.XMetersPerModelUnit,
+            (modelPosition.Y - center.Y) * worldScale.YMetersPerModelUnit,
+            (modelPosition.Z - center.Z) * worldScale.ZMetersPerModelUnit);
     }
 
     private static Vector3 ResolveDefaultShapeSizeModel(FineTerrainWorldScale worldScale, float xMeters, float yMeters, float zMeters)
