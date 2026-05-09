@@ -101,9 +101,20 @@ internal static class FineTerrainBaseVisualCache
             // Keep this overlay cache limited to the movable/interactive units; otherwise
             // the 400k+ base triangles are uploaded and drawn a second time every frame.
             var bodyTriangles = new List<FineTerrainColoredTriangle>(0);
-            string itemDisplayTeam = hasLightStripHalfSplit
-                ? ResolveLightStripDisplayTeam(item.PositionModel.X, lightStripHalfSplitModelX, blueSideLowerModelX)
-                : item.Team;
+        string itemDisplayTeam = hasLightStripHalfSplit
+            ? ResolveLightStripDisplayTeam(item.PositionModel.X, lightStripHalfSplitModelX, blueSideLowerModelX)
+            : item.Team;
+            if (IsBaseOuterPanelCompositeName(item.Name))
+            {
+                foreach (int componentId in item.ComponentIds)
+                {
+                    if (trianglesByComponent.TryGetValue(componentId, out List<FineTerrainColoredTriangle>? componentTriangles))
+                    {
+                        bodyTriangles.AddRange(componentTriangles);
+                    }
+                }
+            }
+
             item.Triangles = NormalizeBaseTriangles(bodyTriangles, itemDisplayTeam, isLightStrip: false);
             foreach (FineTerrainBaseUnitVisualItem unit in item.Units)
             {
