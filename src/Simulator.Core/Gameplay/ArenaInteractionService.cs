@@ -709,9 +709,11 @@ public sealed class ArenaInteractionService
             && teamState.EnergyActivatedGroupCount == 0
             && teamState.EnergyHitRingCount == 0)
         {
-            teamState.EnergyActivationOrder[0] = Math.Clamp(armIndex, 0, 4);
+            PromoteEnergyActivationOrderArm(teamState, armIndex);
             teamState.EnergyActiveGroupIndex = Math.Clamp(armIndex, 0, 4);
-            teamState.EnergyCurrentLitMask = 1 << teamState.EnergyActiveGroupIndex;
+            teamState.EnergyCurrentLitMask = teamState.EnergyLargeMechanismActive
+                ? ResolveEnergyLitMask(teamState)
+                : 1 << teamState.EnergyActiveGroupIndex;
         }
 
         return true;
@@ -752,7 +754,7 @@ public sealed class ArenaInteractionService
             && teamState.EnergyActivatedGroupCount == 0
             && teamState.EnergyHitRingCount == 0)
         {
-            teamState.EnergyActivationOrder[0] = Math.Clamp(armIndex, 0, 4);
+            PromoteEnergyActivationOrderArm(teamState, armIndex);
             teamState.EnergyActiveGroupIndex = Math.Clamp(armIndex, 0, 4);
             teamState.EnergyCurrentLitMask = teamState.EnergyLargeMechanismActive
                 ? ResolveEnergyLitMask(teamState)
@@ -1153,34 +1155,97 @@ public sealed class ArenaInteractionService
         if (teamState.EnergyLargeMechanismActive)
         {
             int second = ResolveLargeEnergySecondArmIndex(teamState, active);
-            mask |= 1 << second;
+            if (second >= 0)
+            {
+                mask |= 1 << second;
+            }
         }
 
-        return mask;
+        return mask & ResolveUnhitEnergyArmMask(teamState);
     }
     private static int ResolveCurrentEnergyActiveGroupIndex(SimulationTeamState teamState)
     {
-        if (teamState.EnergyActivatedGroupCount >= 5)
+        if (CountActivatedEnergyDisks(teamState) >= 5)
         {
             return -1;
         }
+
         int orderIndex = Math.Clamp(teamState.EnergyActivatedGroupCount, 0, 4);
-        int active = teamState.EnergyActivationOrder[orderIndex];
-        return Math.Clamp(active, 0, 4);
+        for (int offset = 0; offset < 5; offset++)
+        {
+            int active = Math.Clamp(teamState.EnergyActivationOrder[(orderIndex + offset) % 5], 0, 4);
+            if (!IsEnergyArmAlreadyHit(teamState, active))
+            {
+                return active;
+            }
+        }
+
+        return -1;
     }
     private static int ResolveLargeEnergySecondArmIndex(SimulationTeamState teamState, int firstArm)
     {
         int orderIndex = Math.Clamp(teamState.EnergyActivatedGroupCount, 0, 4);
-        for (int offset = 2; offset <= 5; offset++)
+        for (int offset = 1; offset <= 5; offset++)
         {
             int candidate = Math.Clamp(teamState.EnergyActivationOrder[(orderIndex + offset) % 5], 0, 4);
-            if (candidate != firstArm)
+            if (candidate != firstArm && !IsEnergyArmAlreadyHit(teamState, candidate))
             {
                 return candidate;
             }
         }
 
-        return (firstArm + 1) % 5;
+        return -1;
+    }
+    private static int ResolveUnhitEnergyArmMask(SimulationTeamState teamState)
+    {
+        int mask = 0;
+        for (int index = 0; index < 5; index++)
+        {
+            if (!IsEnergyArmAlreadyHit(teamState, index))
+            {
+                mask |= 1 << index;
+            }
+        }
+
+        return mask;
+    }
+    private static bool IsEnergyArmAlreadyHit(SimulationTeamState teamState, int armIndex)
+    {
+        return armIndex >= 0
+            && armIndex < teamState.EnergyHitRingsByArm.Length
+            && teamState.EnergyHitRingsByArm[armIndex] > 0;
+    }
+    private static void PromoteEnergyActivationOrderArm(SimulationTeamState teamState, int armIndex)
+    {
+        int safeArm = Math.Clamp(armIndex, 0, 4);
+        Span<int> order = stackalloc int[5];
+        order[0] = safeArm;
+        int write = 1;
+        for (int index = 0; index < Math.Min(5, teamState.EnergyActivationOrder.Length); index++)
+        {
+            int candidate = Math.Clamp(teamState.EnergyActivationOrder[index], 0, 4);
+            if (candidate == safeArm || order[..write].Contains(candidate))
+            {
+                continue;
+            }
+
+            order[write++] = candidate;
+        }
+
+        for (int candidate = 0; candidate < 5 && write < 5; candidate++)
+        {
+            if (candidate == safeArm || order[..write].Contains(candidate))
+            {
+                continue;
+            }
+
+            order[write++] = candidate;
+        }
+
+        for (int index = 0; index < Math.Min(5, teamState.EnergyActivationOrder.Length); index++)
+        {
+            teamState.EnergyActivationOrder[index] = order[index];
+        }
     }
     private static void PopulateEnergyActivationOrder(SimulationTeamState teamState, double gameTimeSec, int salt)
     {
