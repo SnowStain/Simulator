@@ -313,23 +313,6 @@ internal sealed partial class Simulator3dForm
             string? fineLockedPlateId = ResolveLockedPlateIdFor(entity);
             if (TryDrawFineTerrainBase(graphics, entity, fineLockedPlateId, renderPass))
             {
-                if (renderPass != StructureRenderPass.StaticBody
-                    && ResolveBaseArmorOpenProgress(entity) > 1e-4f)
-                {
-                    DrawBaseExpandedArmor(
-                        graphics,
-                        center,
-                        yaw,
-                        entity,
-                        profile,
-                        baseLength,
-                        baseWidth,
-                        baseHeight,
-                        armorColor,
-                        edgeColor,
-                        fineLockedPlateId);
-                }
-
                 return baseHeight + 0.20f;
             }
         }
@@ -774,24 +757,23 @@ internal sealed partial class Simulator3dForm
         if (!_baseArmorOpenAnimations.TryGetValue(entity.Id, out (float Progress, double TimeSec) state)
             || !double.IsFinite(state.TimeSec))
         {
-            state = (target, now);
+            state = (0f, now);
         }
 
         double dt = Math.Clamp(now - state.TimeSec, 0.0, 0.10);
         float maxStep = (float)(BaseOuterArmorOpenSpeedPerSec * dt);
-        float progress = state.Progress;
-        if (progress < target)
+        float linearProgress = state.Progress;
+        if (linearProgress < target)
         {
-            progress = Math.Min(target, progress + maxStep);
+            linearProgress = Math.Min(target, linearProgress + maxStep);
         }
-        else if (progress > target)
+        else if (linearProgress > target)
         {
-            progress = Math.Max(target, progress - maxStep);
+            linearProgress = Math.Max(target, linearProgress - maxStep);
         }
 
-        progress = SmoothStep(progress);
-        _baseArmorOpenAnimations[entity.Id] = (progress, now);
-        return progress;
+        _baseArmorOpenAnimations[entity.Id] = (linearProgress, now);
+        return SmoothStep(linearProgress);
     }
 
     private static float SmoothStep(float value)
@@ -1271,7 +1253,7 @@ internal sealed partial class Simulator3dForm
 
                 Vector3 diskCenter = ToScenePoint(plate.X, plate.Y, (float)plate.HeightM);
                 ResolveEnergyDiskAxes(plate, out Vector3 normal, out Vector3 upAxis);
-                float diskRadius = Math.Max(0.06f, (float)Math.Max(plate.WidthM, plate.HeightSpanM) * 0.5f);
+                float diskRadius = ResolveEnergyPendingPatternRadius((float)Math.Max(plate.WidthM, plate.HeightSpanM) * 0.5f);
                 int persistentRingScore = armIndex >= 0 && armIndex < teamState.EnergyHitRingsByArm.Length
                     ? Math.Clamp(teamState.EnergyHitRingsByArm[armIndex], 0, 10)
                     : 0;
@@ -1326,6 +1308,16 @@ internal sealed partial class Simulator3dForm
     {
         Vector3 normal = normalAxis.LengthSquared() <= 1e-8f ? Vector3.UnitX : Vector3.Normalize(normalAxis);
         Vector3 up = upAxis.LengthSquared() <= 1e-8f ? Vector3.UnitY : Vector3.Normalize(upAxis);
+        up -= normal * Vector3.Dot(up, normal);
+        if (up.LengthSquared() <= 1e-8f)
+        {
+            up = MathF.Abs(Vector3.Dot(normal, Vector3.UnitY)) > 0.96f
+                ? Vector3.UnitX
+                : Vector3.UnitY;
+            up -= normal * Vector3.Dot(up, normal);
+        }
+
+        up = up.LengthSquared() <= 1e-8f ? Vector3.UnitZ : Vector3.Normalize(up);
         Vector3 side = Vector3.Cross(up, normal);
         if (side.LengthSquared() <= 1e-8f)
         {
@@ -1337,46 +1329,54 @@ internal sealed partial class Simulator3dForm
         }
 
         Color hot = ResolveEnergyMechanismPendingDiskColor(activeColor);
-        Color core = Color.FromArgb(255, BlendColor(hot, Color.White, 0.20f));
-        Color glow = Color.FromArgb(170, BlendColor(hot, Color.White, 0.38f));
-        DrawCpuAnnulusDoubleSided(graphics, center, normal, up, diskRadius * 0.90f, diskRadius * 1.08f, glow, 40, 0.018f);
-        DrawCpuAnnulusDoubleSided(graphics, center, normal, up, diskRadius * 0.82f, diskRadius * 0.96f, hot, 40, 0.022f);
-        foreach (int ring in new[] { 3, 5, 7 })
+        float scale = ResolveEnergyPendingPatternRadius(diskRadius) / 0.300f;
+        float ringWidth = 0.040f * scale;
+        foreach (float outerRadius in new[] { 0.070f * scale, 0.150f * scale, 0.270f * scale })
         {
-            float outer = diskRadius * (11 - ring) / 10f;
-            float inner = Math.Max(0.0f, outer - diskRadius * 0.12f);
-            DrawCpuAnnulusDoubleSided(graphics, center, normal, up, inner, outer, hot, 40, 0.023f);
+            DrawEnergyMechanismAnnulus(
+                graphics,
+                center + normal * 0.018f,
+                normal,
+                up,
+                MathF.Max(0.0f, outerRadius - ringWidth),
+                outerRadius,
+                hot,
+                64);
         }
 
-        DrawCpuAnnulusDoubleSided(graphics, center, normal, up, 0f, diskRadius * 0.24f, core, 40, 0.025f);
-        float spokeLength = diskRadius * 0.92f;
-        float spokeHalfWidth = diskRadius * 0.070f;
-        Vector3 faceCenter = center + normal * 0.026f;
-        for (int index = 0; index < 5; index++)
+        float spokeOuterRadius = 0.300f * scale;
+        float spokeInnerRadius = MathF.Max(0.0f, spokeOuterRadius - 0.200f * scale);
+        float spokeOuterHalfWidth = 0.0350f * scale;
+        float spokeInnerHalfWidth = 0.0100f * scale;
+        Vector3 faceCenter = center + normal * 0.020f;
+        for (int index = 0; index < 4; index++)
         {
-            float angle = index * MathF.Tau / 5f;
+            float angle = index * MathF.Tau / 4f;
             Vector3 radial = Vector3.Normalize(up * MathF.Cos(angle) + side * MathF.Sin(angle));
             Vector3 tangent = Vector3.Normalize(Vector3.Cross(normal, radial));
-            Vector3 inner = faceCenter + radial * (diskRadius * 0.18f);
-            Vector3 outer = faceCenter + radial * spokeLength;
+            Vector3 inner = faceCenter + radial * spokeInnerRadius;
+            Vector3 outer = faceCenter + radial * spokeOuterRadius;
             DrawCpuMarkerQuad(
                 graphics,
-                inner - tangent * spokeHalfWidth,
-                inner + tangent * spokeHalfWidth,
-                outer + tangent * spokeHalfWidth,
-                outer - tangent * spokeHalfWidth,
+                inner - tangent * spokeInnerHalfWidth,
+                inner + tangent * spokeInnerHalfWidth,
+                outer + tangent * spokeOuterHalfWidth,
+                outer - tangent * spokeOuterHalfWidth,
                 hot);
-
-            Vector3 tabInner = faceCenter + radial * (diskRadius * 1.00f);
-            Vector3 tabOuter = faceCenter + radial * (diskRadius * 1.18f);
-            DrawCpuMarkerQuad(
-                graphics,
-                tabInner - tangent * (spokeHalfWidth * 1.15f),
-                tabInner + tangent * (spokeHalfWidth * 1.15f),
-                tabOuter + tangent * (spokeHalfWidth * 1.15f),
-                tabOuter - tangent * (spokeHalfWidth * 1.15f),
-                glow);
         }
+    }
+
+    private static float ResolveEnergyPendingPatternRadius(float oneRingOuterRadius)
+    {
+        if (!float.IsFinite(oneRingOuterRadius) || oneRingOuterRadius <= 1e-4f)
+        {
+            return 0.300f;
+        }
+
+        // The rule art defines the pending mark against the 1-ring outer circle.
+        // Treat that authored 1-ring radius as 300 mm and scale the whole mark
+        // from the measured model ring so GLB/map scale mistakes do not inflate it.
+        return Math.Clamp(oneRingOuterRadius, 0.045f, 0.300f);
     }
 
     private static IReadOnlyList<ArmorPlateTarget> SelectEnergyMechanismOverlayDisks(IEnumerable<ArmorPlateTarget> targets)

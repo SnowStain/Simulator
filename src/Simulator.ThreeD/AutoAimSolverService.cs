@@ -1,3 +1,4 @@
+using System.Numerics;
 using Simulator.Core.Gameplay;
 
 namespace Simulator.ThreeD;
@@ -128,8 +129,10 @@ internal sealed class AutoAimSolverService
             aimPlate,
             filter.FilteredXWorld,
             filter.FilteredYWorld,
+            filter.FilteredHeightM,
             filter.FilteredVelocityXMps,
             filter.FilteredVelocityYMps,
+            filter.FilteredVelocityZMps,
             out double resolvedOmega)
                 ? resolvedOmega
                 : 0.0;
@@ -138,6 +141,7 @@ internal sealed class AutoAimSolverService
         if (string.Equals(targetKind, "energy_disk", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(aimPlate.Id, observationPlate.Id, StringComparison.OrdinalIgnoreCase)
             && TryProjectEnergyObservationToAimRing(
+                world,
                 target,
                 aimPlate,
                 filter.FilteredXWorld,
@@ -233,8 +237,10 @@ internal sealed class AutoAimSolverService
             aimPlate,
             filter.FilteredXWorld,
             filter.FilteredYWorld,
+            filter.FilteredHeightM,
             filter.FilteredVelocityXMps,
             filter.FilteredVelocityYMps,
+            filter.FilteredVelocityZMps,
             out double resolvedOmega)
                 ? resolvedOmega
                 : 0.0;
@@ -243,6 +249,7 @@ internal sealed class AutoAimSolverService
         if (string.Equals(targetKind, "energy_disk", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(aimPlate.Id, observationPlate.Id, StringComparison.OrdinalIgnoreCase)
             && TryProjectEnergyObservationToAimRing(
+                world,
                 target,
                 aimPlate,
                 filter.FilteredXWorld,
@@ -273,6 +280,7 @@ internal sealed class AutoAimSolverService
     }
 
     private static bool TryProjectEnergyObservationToAimRing(
+        SimulationWorldState world,
         SimulationEntity target,
         ArmorPlateTarget aimPlate,
         double observedXWorld,
@@ -287,28 +295,59 @@ internal sealed class AutoAimSolverService
         out AutoAimObservedState projectedState)
     {
         projectedState = default;
-        double observedRelX = observedXWorld - target.X;
-        double observedRelY = observedYWorld - target.Y;
-        double observedRadius = Math.Sqrt(observedRelX * observedRelX + observedRelY * observedRelY);
-        double aimRelX = aimPlate.X - target.X;
-        double aimRelY = aimPlate.Y - target.Y;
-        double aimRadius = Math.Sqrt(aimRelX * aimRelX + aimRelY * aimRelY);
+        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
+        if (!TryResolveEnergyMechanismPivotM(world, target, aimPlate, out Vector3 pivotM, out Vector3 rotorAxisM))
+        {
+            return false;
+        }
+
+        rotorAxisM = rotorAxisM.LengthSquared() <= 1e-8f ? Vector3.UnitZ : Vector3.Normalize(rotorAxisM);
+        Vector3 observedM = new(
+            (float)(observedXWorld * metersPerWorldUnit),
+            (float)observedHeightM,
+            (float)(observedYWorld * metersPerWorldUnit));
+        Vector3 aimM = new(
+            (float)(aimPlate.X * metersPerWorldUnit),
+            (float)aimPlate.HeightM,
+            (float)(aimPlate.Y * metersPerWorldUnit));
+        Vector3 observedRel = observedM - pivotM;
+        Vector3 aimRel = aimM - pivotM;
+        float aimAxisOffset = Vector3.Dot(aimRel, rotorAxisM);
+        Vector3 observedPlanarRel = observedRel - rotorAxisM * Vector3.Dot(observedRel, rotorAxisM);
+        Vector3 aimPlanarRel = aimRel - rotorAxisM * aimAxisOffset;
+        double observedRadius = observedPlanarRel.Length();
+        double aimRadius = aimPlanarRel.Length();
         if (observedRadius <= 1e-6 || aimRadius <= 1e-6)
         {
             return false;
         }
 
         double radiusScale = aimRadius / observedRadius;
+        Vector3 observedVelocityMps = new(
+            (float)observedVelocityXMps,
+            (float)observedVelocityZMps,
+            (float)observedVelocityYMps);
+        Vector3 observedAccelerationMps2 = new(
+            (float)observedAccelerationXMps2,
+            (float)observedAccelerationZMps2,
+            (float)observedAccelerationYMps2);
+        Vector3 planarVelocityMps = observedVelocityMps - rotorAxisM * Vector3.Dot(observedVelocityMps, rotorAxisM);
+        Vector3 planarAccelerationMps2 = observedAccelerationMps2 - rotorAxisM * Vector3.Dot(observedAccelerationMps2, rotorAxisM);
+        Vector3 projectedM = pivotM
+            + observedPlanarRel * (float)radiusScale
+            + rotorAxisM * aimAxisOffset;
+        Vector3 projectedVelocityMps = planarVelocityMps * (float)radiusScale;
+        Vector3 projectedAccelerationMps2 = planarAccelerationMps2 * (float)radiusScale;
         projectedState = new AutoAimObservedState(
-            target.X + observedRelX * radiusScale,
-            target.Y + observedRelY * radiusScale,
-            aimPlate.HeightM > 1e-6 ? aimPlate.HeightM : observedHeightM,
-            observedVelocityXMps * radiusScale,
-            observedVelocityYMps * radiusScale,
-            observedVelocityZMps,
-            observedAccelerationXMps2 * radiusScale,
-            observedAccelerationYMps2 * radiusScale,
-            observedAccelerationZMps2,
+            projectedM.X / metersPerWorldUnit,
+            projectedM.Z / metersPerWorldUnit,
+            projectedM.Y,
+            projectedVelocityMps.X,
+            projectedVelocityMps.Z,
+            projectedVelocityMps.Y,
+            projectedAccelerationMps2.X,
+            projectedAccelerationMps2.Z,
+            projectedAccelerationMps2.Y,
             0.0);
         return true;
     }
@@ -399,25 +438,48 @@ internal sealed class AutoAimSolverService
     {
         bool fastRotatingVehicle = target.SmallGyroActive
             && string.Equals(targetKind, "vehicle_armor", StringComparison.OrdinalIgnoreCase);
-        if (!fastRotatingVehicle || !hasLastMeasurement)
+        bool energyDisk = string.Equals(targetKind, "energy_disk", StringComparison.OrdinalIgnoreCase);
+        if ((!fastRotatingVehicle && !energyDisk) || !hasLastMeasurement)
         {
             return;
         }
 
         double dtSec = Math.Clamp(world.GameTimeSec - lastMeasurementTimeSec, 1.0 / 240.0, 0.10);
+        if (energyDisk)
+        {
+            double energyDxM = (observedXWorld - lastXWorld) * metersPerWorldUnit;
+            double energyDyM = (observedYWorld - lastYWorld) * metersPerWorldUnit;
+            double energyDzM = observedHeightM - lastHeightM;
+            double stepM = Math.Sqrt(energyDxM * energyDxM + energyDyM * energyDyM + energyDzM * energyDzM);
+            double maxStepM = Math.Clamp(3.20 * dtSec, 0.020, 0.18);
+            if (stepM > maxStepM && stepM > 1e-6)
+            {
+                double ratio = maxStepM / stepM;
+                observedXWorld = lastXWorld + (observedXWorld - lastXWorld) * ratio;
+                observedYWorld = lastYWorld + (observedYWorld - lastYWorld) * ratio;
+                observedHeightM = lastHeightM + (observedHeightM - lastHeightM) * ratio;
+            }
+
+            return;
+        }
+
         double dxM = (observedXWorld - lastXWorld) * metersPerWorldUnit;
         double dyM = (observedYWorld - lastYWorld) * metersPerWorldUnit;
         double planarStepM = Math.Sqrt(dxM * dxM + dyM * dyM);
         double radiusM = Math.Sqrt(
             Math.Pow((lastXWorld - target.X) * metersPerWorldUnit, 2)
             + Math.Pow((lastYWorld - target.Y) * metersPerWorldUnit, 2));
-        double targetLinearMps = Math.Sqrt(
-            target.VelocityXWorldPerSec * target.VelocityXWorldPerSec
-            + target.VelocityYWorldPerSec * target.VelocityYWorldPerSec)
-            * metersPerWorldUnit;
-        double omegaRadPerSec = Math.Abs(target.AngularVelocityDegPerSec) * Math.PI / 180.0;
-        double maxPlanarStepM = (targetLinearMps + omegaRadPerSec * Math.Clamp(radiusM, 0.05, 0.65) + 1.25) * dtSec;
-        maxPlanarStepM = Math.Clamp(maxPlanarStepM, 0.012, 0.42);
+        double targetLinearMps = energyDisk
+            ? 0.0
+            : Math.Sqrt(
+                target.VelocityXWorldPerSec * target.VelocityXWorldPerSec
+                + target.VelocityYWorldPerSec * target.VelocityYWorldPerSec)
+                * metersPerWorldUnit;
+        double omegaRadPerSec = energyDisk
+            ? Math.Clamp(Math.Abs(target.AngularVelocityDegPerSec) * Math.PI / 180.0, 0.0, 9.0)
+            : Math.Abs(target.AngularVelocityDegPerSec) * Math.PI / 180.0;
+        double maxPlanarStepM = (targetLinearMps + omegaRadPerSec * Math.Clamp(radiusM, 0.05, energyDisk ? 0.95 : 0.65) + (energyDisk ? 0.42 : 1.25)) * dtSec;
+        maxPlanarStepM = Math.Clamp(maxPlanarStepM, energyDisk ? 0.006 : 0.012, energyDisk ? 0.20 : 0.42);
         if (planarStepM > maxPlanarStepM && planarStepM > 1e-6)
         {
             double ratio = maxPlanarStepM / planarStepM;
@@ -425,7 +487,9 @@ internal sealed class AutoAimSolverService
             observedYWorld = lastYWorld + (observedYWorld - lastYWorld) * ratio;
         }
 
-        double maxHeightStepM = Math.Clamp(1.2 * dtSec, 0.008, 0.08);
+        double maxHeightStepM = energyDisk
+            ? Math.Clamp(0.35 * dtSec, 0.004, 0.026)
+            : Math.Clamp(1.2 * dtSec, 0.008, 0.08);
         observedHeightM = Math.Clamp(observedHeightM, lastHeightM - maxHeightStepM, lastHeightM + maxHeightStepM);
     }
 
@@ -435,14 +499,47 @@ internal sealed class AutoAimSolverService
         ArmorPlateTarget aimPlate,
         double filteredXWorld,
         double filteredYWorld,
+        double filteredHeightM,
         double filteredVelocityXMps,
         double filteredVelocityYMps,
+        double filteredVelocityZMps,
         out double angularVelocityRadPerSec)
     {
         angularVelocityRadPerSec = 0.0;
+        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
+        if (string.Equals(SimulationCombatMath.ResolveAutoAimTargetKind(target, aimPlate), "energy_disk", StringComparison.OrdinalIgnoreCase)
+            && TryResolveEnergyMechanismPivotM(world, target, aimPlate, out Vector3 pivotM, out Vector3 rotorAxisM))
+        {
+            Vector3 radialM = new Vector3(
+                (float)(filteredXWorld * metersPerWorldUnit),
+                (float)filteredHeightM,
+                (float)(filteredYWorld * metersPerWorldUnit)) - pivotM;
+            Vector3 velocityMps = new Vector3(
+                (float)filteredVelocityXMps,
+                (float)filteredVelocityZMps,
+                (float)filteredVelocityYMps);
+            radialM -= rotorAxisM * Vector3.Dot(radialM, rotorAxisM);
+            velocityMps -= rotorAxisM * Vector3.Dot(velocityMps, rotorAxisM);
+            double radialLengthSq3 = radialM.LengthSquared();
+            if (radialLengthSq3 <= 1e-5)
+            {
+                return false;
+            }
+
+            Vector3 angularNumerator = Vector3.Cross(radialM, velocityMps);
+            angularVelocityRadPerSec = Vector3.Dot(angularNumerator, rotorAxisM) / radialLengthSq3;
+            if (!double.IsFinite(angularVelocityRadPerSec))
+            {
+                angularVelocityRadPerSec = 0.0;
+                return false;
+            }
+
+            angularVelocityRadPerSec = Math.Clamp(angularVelocityRadPerSec, -12.0, 12.0);
+            return Math.Abs(angularVelocityRadPerSec) >= 0.01;
+        }
+
         double pivotX = target.X;
         double pivotY = target.Y;
-        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
         double radialXM = (filteredXWorld - pivotX) * metersPerWorldUnit;
         double radialYM = (filteredYWorld - pivotY) * metersPerWorldUnit;
         double radialLengthSq = radialXM * radialXM + radialYM * radialYM;
@@ -490,6 +587,77 @@ internal sealed class AutoAimSolverService
         return true;
     }
 
+    private static bool TryResolveEnergyMechanismPivotM(
+        SimulationWorldState world,
+        SimulationEntity target,
+        ArmorPlateTarget aimPlate,
+        out Vector3 pivotM,
+        out Vector3 rotorAxisM)
+    {
+        pivotM = default;
+        rotorAxisM = default;
+        if (!SimulationCombatMath.TryParseEnergyArmIndex(aimPlate.Id, out string team, out _))
+        {
+            return false;
+        }
+
+        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
+        world.Teams.TryGetValue(team, out SimulationTeamState? teamState);
+        IReadOnlyList<ArmorPlateTarget> targets = SimulationCombatMath.GetEnergyMechanismTargets(
+            target,
+            metersPerWorldUnit,
+            world.GameTimeSec,
+            team,
+            teamState);
+
+        if (targets.Count == 0)
+        {
+            return false;
+        }
+
+        Vector3 sum = Vector3.Zero;
+        Vector3 normalSum = Vector3.Zero;
+        int count = 0;
+        foreach (ArmorPlateTarget targetPlate in targets)
+        {
+            if (!SimulationCombatMath.TryParseEnergyArmIndex(targetPlate.Id, out string targetTeam, out _)
+                || !string.Equals(targetTeam, team, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            sum += new Vector3(
+                (float)(targetPlate.X * metersPerWorldUnit),
+                (float)targetPlate.HeightM,
+                (float)(targetPlate.Y * metersPerWorldUnit));
+            Vector3 normal = new((float)targetPlate.NormalXM, (float)targetPlate.NormalYM, (float)targetPlate.NormalZM);
+            if (normal.LengthSquared() > 1e-8f)
+            {
+                normalSum += Vector3.Normalize(normal);
+            }
+
+            count++;
+        }
+
+        if (count <= 0)
+        {
+            return false;
+        }
+
+        pivotM = sum / count;
+        if (normalSum.LengthSquared() > 1e-8f)
+        {
+            rotorAxisM = Vector3.Normalize(normalSum);
+        }
+        else
+        {
+            Vector3 aimNormal = new((float)aimPlate.NormalXM, (float)aimPlate.NormalYM, (float)aimPlate.NormalZM);
+            rotorAxisM = aimNormal.LengthSquared() > 1e-8f ? Vector3.Normalize(aimNormal) : Vector3.UnitZ;
+        }
+
+        return true;
+    }
+
     private static AutoAimObservationTuning ResolveObservationTuning(
         SimulationEntity shooter,
         SimulationEntity target,
@@ -502,23 +670,23 @@ internal sealed class AutoAimSolverService
         bool largeRound = string.Equals(shooter.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase);
 
         bool energyDisk = string.Equals(targetKind, "energy_disk", StringComparison.OrdinalIgnoreCase);
-        double measurementNoiseM = energyDisk ? 0.008 : (rotatingTarget ? 0.010 : 0.016);
+        double measurementNoiseM = energyDisk ? 0.018 : (rotatingTarget ? 0.010 : 0.016);
         double accelerationNoiseMps2 = string.Equals(targetKind, "energy_disk", StringComparison.OrdinalIgnoreCase)
-            ? 22.0
+            ? 14.0
             : string.Equals(targetKind, "outpost_armor", StringComparison.OrdinalIgnoreCase)
                 ? 10.0
                 : target.SmallGyroActive
                     ? 22.0
                     : 8.0;
-        double jerkNoiseMps3 = accelerationNoiseMps2 * (energyDisk ? 4.6 : (rotatingTarget ? 3.4 : 2.4));
-        double maxDtSec = energyDisk ? 0.16 : 0.12;
+        double jerkNoiseMps3 = accelerationNoiseMps2 * (energyDisk ? 2.9 : (rotatingTarget ? 3.4 : 2.4));
+        double maxDtSec = energyDisk ? 0.12 : 0.12;
 
         if (largeRound)
         {
-            measurementNoiseM *= energyDisk ? 0.92 : (rotatingTarget ? 0.94 : 0.84);
-            accelerationNoiseMps2 *= energyDisk ? 1.04 : (rotatingTarget ? 0.90 : 0.78);
-            jerkNoiseMps3 *= energyDisk ? 1.06 : (rotatingTarget ? 0.92 : 0.76);
-            maxDtSec = energyDisk ? 0.15 : (rotatingTarget ? 0.10 : 0.09);
+            measurementNoiseM *= energyDisk ? 1.08 : (rotatingTarget ? 0.94 : 0.84);
+            accelerationNoiseMps2 *= energyDisk ? 0.88 : (rotatingTarget ? 0.90 : 0.78);
+            jerkNoiseMps3 *= energyDisk ? 0.86 : (rotatingTarget ? 0.92 : 0.76);
+            maxDtSec = energyDisk ? 0.11 : (rotatingTarget ? 0.10 : 0.09);
         }
 
         return new AutoAimObservationTuning(

@@ -103,6 +103,7 @@ internal sealed partial class Simulator3dForm : Form
     private const double DisplayLatencyJitterMinMs = 30.0;
     private const double DisplayLatencyJitterMaxMs = 60.0;
     private const float FirstPersonVerticalFovRad = MathF.PI * 0.5f; // 90搴﹁鍦鸿銆?    private const float FirstPersonBarrelScreenDropM = 0.030f;
+    private const float FirstPersonBarrelShakeScale = 0.03f;
     private const float FirstPersonSightConvergenceM = 24.0f;
     private const float ObserverYawSensitivityRadPerPixel = 0.00165f;
     private const float ObserverPitchSensitivityRadPerPixel = 0.00125f;
@@ -168,6 +169,12 @@ internal sealed partial class Simulator3dForm : Form
         FreeThirdPerson,
         SelectedFirstPerson,
         TopDown,
+    }
+
+    private enum RefereePanelPage
+    {
+        Main,
+        Energy,
     }
 
     private readonly record struct UiButton(Rectangle Rect, string Action);
@@ -352,6 +359,10 @@ internal sealed partial class Simulator3dForm : Form
     private readonly Font _menuFootnoteFont = new("Microsoft YaHei UI", 9.2f, FontStyle.Regular, GraphicsUnit.Point);
     private readonly List<UiButton> _uiButtons = new();
     private readonly HashSet<Keys> _heldKeys = new();
+    private readonly HashSet<string> _energyAutoFireFiredShotKeys = new(StringComparer.OrdinalIgnoreCase);
+    private string? _energyAutoFireGroupKey;
+    private string _energyAutoFireGraceKey = string.Empty;
+    private double _energyAutoFireGraceUntilSec;
 
     private SimulatorAppState _appState;
     private bool _paused;
@@ -379,8 +390,10 @@ internal sealed partial class Simulator3dForm : Form
     private bool _lanRefereeHighlightRobots;
     private bool _lanPreparationConfirmed;
     private LanRefereeViewMode _lanRefereeViewMode = LanRefereeViewMode.FreeThirdPerson;
+    private RefereePanelPage _refereePanelPage = RefereePanelPage.Main;
     private readonly Dictionary<string, int> _lanRefereeYellowCards = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, (float Progress, double TimeSec)> _baseArmorOpenAnimations = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, (double SpeedMps, double TimeSec)> _firstPersonCameraInertiaSamples = new(StringComparer.OrdinalIgnoreCase);
     private bool _pSettingsPanelOpen;
     private bool _pKeyBindingEditorOpen;
     private int _pKeyBindingPage;
@@ -1235,6 +1248,12 @@ internal sealed partial class Simulator3dForm : Form
                 _observerYawRad = WrapAngleRadians(_observerYawRad + delta.X * ObserverYawSensitivityRadPerPixel);
                 _observerPitchRad = Math.Clamp(_observerPitchRad - delta.Y * ObserverPitchSensitivityRadPerPixel, -1.12f, 1.12f);
             }
+            else if (!_firstPersonView)
+            {
+                _cameraYawRad = WrapAngleRadians(_cameraYawRad + delta.X * ObserverYawSensitivityRadPerPixel);
+                _cameraPitchRad = Math.Clamp(_cameraPitchRad - delta.Y * ObserverPitchSensitivityRadPerPixel, -0.12f, 1.32f);
+                _followSelection = false;
+            }
             else
             {
                 EnqueueDelayedLookInput(delta.X * ResolveMouseLookYawScaleDegPerPixel(), -delta.Y * ResolveMouseLookPitchScaleDegPerPixel());
@@ -1360,8 +1379,9 @@ internal sealed partial class Simulator3dForm : Form
 
     private void DrawInMatchOverlaySceneLayer(Graphics graphics)
     {
+        bool panelOpen = _pSettingsPanelOpen;
         bool firstPersonHud = IsFirstPersonHudVisible();
-        if (firstPersonHud)
+        if (firstPersonHud && !panelOpen)
         {
             long weaponPhaseStart = Stopwatch.GetTimestamp();
             DrawWeaponLockOverlay(graphics);
@@ -1370,8 +1390,12 @@ internal sealed partial class Simulator3dForm : Form
 
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
         long viewPhaseStart = Stopwatch.GetTimestamp();
-        DrawHeroLobSecondaryViewport(graphics);
-        if (firstPersonHud)
+        if (!panelOpen)
+        {
+            DrawHeroLobSecondaryViewport(graphics);
+        }
+
+        if (firstPersonHud && !panelOpen)
         {
             DrawCrosshair(graphics);
             DrawDeploymentPrompt(graphics);
@@ -1382,7 +1406,7 @@ internal sealed partial class Simulator3dForm : Form
         TrackGpuOverlayPhase("view", viewPhaseStart);
 
         long combatPhaseStart = Stopwatch.GetTimestamp();
-        if (UseGpuRenderer && !UseFastFlatRenderer && _hasPresentedGpuFrame)
+        if (!panelOpen && UseGpuRenderer && !UseFastFlatRenderer && _hasPresentedGpuFrame)
         {
             if (!_previewOnly)
             {
@@ -1394,7 +1418,7 @@ internal sealed partial class Simulator3dForm : Form
                 DrawEntityOverlayBars(graphics);
             }
         }
-        else if (_lanRefereeHighlightRobots)
+        else if (!panelOpen && _lanRefereeHighlightRobots)
         {
             DrawEntityOverlayBars(graphics);
         }
@@ -1404,48 +1428,52 @@ internal sealed partial class Simulator3dForm : Form
 
     private void DrawInMatchOverlayUiLayer(Graphics graphics)
     {
+        bool panelOpen = _pSettingsPanelOpen;
         bool firstPersonHud = IsFirstPersonHudVisible();
 
         long hudPhaseStart = Stopwatch.GetTimestamp();
         DrawHud(graphics);
         DrawFpsBadge(graphics);
-        if (firstPersonHud)
+        if (firstPersonHud && !panelOpen)
         {
             DrawCentralQuarterGauges(graphics);
             DrawCenterBuffToasts(graphics);
         }
         TrackGpuOverlayPhase("hud", hudPhaseStart);
 
-        long statusPhaseStart = Stopwatch.GetTimestamp();
-        DrawPlayerStatusPanelV2(graphics);
-        DrawUnitTestScenarioOverlay(graphics);
-        DrawLanMultiplayerDemoOverlay(graphics);
-        DrawRespawnInvincibilityBadge(graphics);
-        DrawHeroLobSubviewOverlay(graphics);
-        DrawKeyGuideOverlay(graphics);
-        DrawObserverOverlay(graphics);
-        if (_miniMapVisible)
+        if (!panelOpen)
         {
-            DrawOrientationWidget(graphics);
-        }
-        TrackGpuOverlayPhase("status", statusPhaseStart);
+            long statusPhaseStart = Stopwatch.GetTimestamp();
+            DrawPlayerStatusPanelV2(graphics);
+            DrawUnitTestScenarioOverlay(graphics);
+            DrawLanMultiplayerDemoOverlay(graphics);
+            DrawRespawnInvincibilityBadge(graphics);
+            DrawHeroLobSubviewOverlay(graphics);
+            DrawKeyGuideOverlay(graphics);
+            DrawObserverOverlay(graphics);
+            if (_miniMapVisible)
+            {
+                DrawOrientationWidget(graphics);
+            }
+            TrackGpuOverlayPhase("status", statusPhaseStart);
 
-        long debugPhaseStart = Stopwatch.GetTimestamp();
-        DrawF3DebugPoseOverlay(graphics);
-        DrawVisionPoseSolveOverlay(graphics);
-        DrawFineTerrainInMatchEditorOverlay(graphics);
-        DrawTacticalOverlay(graphics);
-        TrackGpuOverlayPhase("debug", debugPhaseStart);
+            long debugPhaseStart = Stopwatch.GetTimestamp();
+            DrawF3DebugPoseOverlay(graphics);
+            DrawVisionPoseSolveOverlay(graphics);
+            DrawFineTerrainInMatchEditorOverlay(graphics);
+            DrawTacticalOverlay(graphics);
+            TrackGpuOverlayPhase("debug", debugPhaseStart);
 
-        long eventPhaseStart = Stopwatch.GetTimestamp();
-        DrawMatchEventFeed(graphics);
-        DrawDuelRoundRestartHint(graphics);
-        if (_showDebugSidebars)
-        {
-            DrawDecisionDeploymentPanel(graphics);
+            long eventPhaseStart = Stopwatch.GetTimestamp();
+            DrawMatchEventFeed(graphics);
+            DrawDuelRoundRestartHint(graphics);
+            if (_showDebugSidebars)
+            {
+                DrawDecisionDeploymentPanel(graphics);
+            }
+            DrawFirstPersonDamageVignette(graphics);
+            TrackGpuOverlayPhase("events", eventPhaseStart);
         }
-        DrawFirstPersonDamageVignette(graphics);
-        TrackGpuOverlayPhase("events", eventPhaseStart);
 
         if (IsMatchStartupActive)
         {
@@ -2077,7 +2105,9 @@ internal sealed partial class Simulator3dForm : Form
             return;
         }
 
-        if (_appState == SimulatorAppState.InMatch && IsInMatchActionKey(eventArgs, InMatchKeyAction.Jump))
+        if (_appState == SimulatorAppState.InMatch
+            && !IsStartupMovementActionKey(eventArgs)
+            && IsInMatchActionKey(eventArgs, InMatchKeyAction.Jump))
         {
             _pendingJumpRequest = true;
         }
@@ -2543,11 +2573,17 @@ internal sealed partial class Simulator3dForm : Form
                 return;
             }
 
+            if (IsStartupMovementActionKey(eventArgs))
+            {
+                _lanStatusLine = "准备/倒计时阶段仅锁定移动键，其他按键可用。";
+                return;
+            }
+
             if (!IsLanMultiplayerActive
-                && _matchStartupPhase == MatchStartupPhase.Preparation
+                && _matchStartupPhase is MatchStartupPhase.Preparation or MatchStartupPhase.SelfCheck or MatchStartupPhase.Countdown
                 && (eventArgs.KeyCode == Keys.Enter || eventArgs.KeyCode == Keys.Return))
             {
-                SkipNonLanPreparationPhase();
+                SkipNonLanStartupPhase();
                 return;
             }
 
@@ -2575,9 +2611,8 @@ internal sealed partial class Simulator3dForm : Form
                 }
 
                 UpdateMouseCaptureState();
+                return;
             }
-
-            return;
         }
 
         if (IsLocalRefereePanelAvailable() && eventArgs.KeyCode == Keys.O)
@@ -2858,6 +2893,17 @@ internal sealed partial class Simulator3dForm : Form
         => !IsLanMultiplayerActive
             && (_appState == SimulatorAppState.InMatch || IsMatchStartupActive || _localRoomMatchActive);
 
+    private bool IsStartupMovementActionKey(KeyEventArgs eventArgs)
+        => IsMatchStartupControlLockActive
+            && (IsInMatchActionKey(eventArgs, InMatchKeyAction.MoveForward)
+                || IsInMatchActionKey(eventArgs, InMatchKeyAction.MoveBackward)
+                || IsInMatchActionKey(eventArgs, InMatchKeyAction.MoveLeft)
+                || IsInMatchActionKey(eventArgs, InMatchKeyAction.MoveRight)
+                || IsInMatchActionKey(eventArgs, InMatchKeyAction.Jump)
+                || IsInMatchActionKey(eventArgs, InMatchKeyAction.SmallGyro)
+                || IsInMatchActionKey(eventArgs, InMatchKeyAction.StepOrSentry)
+                || IsInMatchActionKey(eventArgs, InMatchKeyAction.SuperCap));
+
     private void ToggleLocalRefereePanel()
     {
         if (_appState != SimulatorAppState.InMatch && !IsMatchStartupActive && !_localRoomMatchActive)
@@ -2877,7 +2923,6 @@ internal sealed partial class Simulator3dForm : Form
         }
 
         UpdateMouseCaptureState();
-        InvalidateGpuOverlayLayer();
         Invalidate();
     }
 
@@ -4617,10 +4662,24 @@ internal sealed partial class Simulator3dForm : Form
         TextRenderer.DrawText(graphics, _localRefereePanelOpen ? "O 关闭 / V 切视角 / U 高亮 / 自由相机 WASD + F/C" : "P 关闭 / V 切视角 / U 高亮 / 自由相机 WASD + F/C", _tinyHudFont, new Rectangle(panel.X + 290, panel.Y + 24, Math.Max(80, helpRight - (panel.X + 290)), 24), Color.FromArgb(190, 206, 218, 226), TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
         DrawPButton(graphics, new Rectangle(closeX, panel.Y + 20, 84, 30), "关闭", "p_close", active: false, enabled: true);
 
+        int tabY = panel.Y + 54;
+        int tabX = panel.X + 24;
+        DrawPButton(graphics, new Rectangle(tabX, tabY, 88, 28), "总览", "ref_page:main", active: _refereePanelPage == RefereePanelPage.Main, enabled: true);
+        DrawPButton(graphics, new Rectangle(tabX + 98, tabY, 120, 28), "能量机关", "ref_page:energy", active: _refereePanelPage == RefereePanelPage.Energy, enabled: true);
+
+        if (_refereePanelPage == RefereePanelPage.Energy)
+        {
+            Rectangle energyContent = new(panel.X + 24, panel.Y + 94, panel.Width - 48, panel.Height - 118);
+            DrawLanRefereeEnergyPage(graphics, energyContent);
+            return;
+        }
+
         int gap = 14;
-        int contentTop = panel.Y + 72;
-        int logHeight = Math.Clamp(panel.Height / 4, 150, 220);
-        int upperHeight = Math.Max(220, panel.Height - 72 - 26 - logHeight - gap);
+        int contentTop = panel.Y + 94;
+        int logHeight = _localRefereePanelOpen
+            ? Math.Clamp(panel.Height / 3, 190, 260)
+            : Math.Clamp(panel.Height / 4, 150, 220);
+        int upperHeight = Math.Max(220, panel.Bottom - contentTop - 26 - logHeight - gap);
         int colWidth = (panel.Width - 48 - gap * 2) / 3;
         Rectangle left = new(panel.X + 24, contentTop, colWidth, upperHeight);
         Rectangle mid = new(left.Right + gap, contentTop, colWidth, left.Height);
@@ -4630,12 +4689,250 @@ internal sealed partial class Simulator3dForm : Form
         DrawPPanelFrame(graphics, left, "设施血量");
         DrawPPanelFrame(graphics, mid, "机器人执法");
         DrawPPanelFrame(graphics, right, "经济与视角");
-        DrawPPanelFrame(graphics, logs, "联机收发日志");
+        DrawPPanelFrame(graphics, logs, _localRefereePanelOpen ? "本地事件日志" : "联机收发日志");
 
         DrawLanRefereeFacilityColumn(graphics, left);
         DrawLanRefereeRobotColumn(graphics, mid);
         DrawLanRefereeEconomyViewColumn(graphics, right);
-        DrawLanRefereeTrafficLogs(graphics, logs);
+        if (_localRefereePanelOpen)
+        {
+            DrawLocalRefereeEventLogs(graphics, logs);
+        }
+        else
+        {
+            DrawLanRefereeTrafficLogs(graphics, logs);
+        }
+    }
+
+    private void DrawLocalRefereeEventLogs(Graphics graphics, Rectangle rect)
+    {
+        int innerX = rect.X + 16;
+        int summaryY = rect.Y + 40;
+        DrawLocalRefereeSummaryLine(graphics, new Rectangle(innerX, summaryY, rect.Width - 32, 20));
+        int innerY = DrawLocalRefereeQuickActions(graphics, new Rectangle(innerX, rect.Y + 66, rect.Width - 32, 58)) + 10;
+        int innerWidth = rect.Width - 32;
+        int gap = 12;
+        int columnWidth = (innerWidth - gap) / 2;
+        Rectangle eventRect = new(innerX, innerY, columnWidth, rect.Bottom - innerY - 14);
+        Rectangle statusRect = new(eventRect.Right + gap, innerY, columnWidth, eventRect.Height);
+        DrawLanRefereeTrafficLogColumn(graphics, eventRect, "最近事件", BuildLocalRefereeEventLogLines(), Color.FromArgb(126, 226, 150));
+        DrawLanRefereeTrafficLogColumn(graphics, statusRect, "本地状态", BuildLocalRefereeStatusLogLines(), Color.FromArgb(255, 216, 112));
+    }
+
+    private void DrawLanRefereeEnergyPage(Graphics graphics, Rectangle rect)
+    {
+        int gap = 14;
+        int columnWidth = (rect.Width - gap) / 2;
+        int rowHeight = (rect.Height - gap) / 2;
+        DrawLanRefereeEnergyCard(graphics, new Rectangle(rect.X, rect.Y, columnWidth, rowHeight), "red", large: false);
+        DrawLanRefereeEnergyCard(graphics, new Rectangle(rect.X + columnWidth + gap, rect.Y, columnWidth, rowHeight), "red", large: true);
+        DrawLanRefereeEnergyCard(graphics, new Rectangle(rect.X, rect.Y + rowHeight + gap, columnWidth, rowHeight), "blue", large: false);
+        DrawLanRefereeEnergyCard(graphics, new Rectangle(rect.X + columnWidth + gap, rect.Y + rowHeight + gap, columnWidth, rowHeight), "blue", large: true);
+    }
+
+    private void DrawLanRefereeEnergyCard(Graphics graphics, Rectangle rect, string team, bool large)
+    {
+        SimulationTeamState state = _host.World.GetOrCreateTeamState(team);
+        int litMask = ResolveEnergyLitMaskForUi(state, large);
+        int hitMask = ResolveEnergyHitMaskForUi(state, large);
+        string mode = large ? "large" : "small";
+        string title = $"{ResolveTeamName(team)} {(large ? "大能量机关" : "小能量机关")}";
+        DrawPPanelFrame(graphics, rect, title);
+
+        int x = rect.X + 18;
+        int y = rect.Y + 62;
+        int innerWidth = rect.Width - 36;
+        Color teamColor = ResolveTeamColor(team);
+        string stateText = string.Equals(state.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
+            && state.EnergyLargeMechanismActive == large
+                ? $"待激活 A{FormatEnergyArmMask(litMask)} / 已命中 {CountMaskBits(hitMask)}"
+                : string.Equals(state.EnergyMechanismState, "activated", StringComparison.OrdinalIgnoreCase)
+                    && state.EnergyLargeMechanismActive == large
+                        ? "已完全激活"
+                        : "未进入待激活";
+        TextRenderer.DrawText(graphics, stateText, _tinyHudFont, new Rectangle(x, y, innerWidth, 22), Color.FromArgb(220, teamColor), TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+        y += 28;
+
+        int topButtonW = (innerWidth - 12) / 3;
+        DrawPButton(graphics, new Rectangle(x, y, topButtonW, 28), "开启待激活", $"ref_energy_activate:{team}:{mode}", active: string.Equals(state.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase) && state.EnergyLargeMechanismActive == large, enabled: true);
+        DrawPButton(graphics, new Rectangle(x + topButtonW + 6, y, topButtonW, 28), "清空", $"ref_energy_clear:{team}:{mode}", active: false, enabled: true);
+        DrawPButton(graphics, new Rectangle(x + (topButtonW + 6) * 2, y, topButtonW, 28), "全激活", $"ref_energy_complete:{team}:{mode}", active: false, enabled: true);
+        y += 42;
+
+        TextRenderer.DrawText(graphics, "待激活灯臂", _smallHudFont, new Rectangle(x, y, innerWidth, 22), Color.FromArgb(232, 236, 238), TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        y += 26;
+        DrawLanRefereeEnergyArmButtons(graphics, x, ref y, innerWidth, team, mode, litMask, "ref_energy_lit", allowZero: true);
+
+        y += 8;
+        TextRenderer.DrawText(graphics, "已命中/常亮灯盘", _smallHudFont, new Rectangle(x, y, innerWidth, 22), Color.FromArgb(232, 236, 238), TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        y += 26;
+        DrawLanRefereeEnergyArmButtons(graphics, x, ref y, innerWidth, team, mode, hitMask, "ref_energy_hit", allowZero: true);
+
+        y += 8;
+        int countButtonW = Math.Max(40, (innerWidth - 5 * 6) / 6);
+        for (int count = 0; count <= 5; count++)
+        {
+            DrawPButton(
+                graphics,
+                new Rectangle(x + count * (countButtonW + 6), y, countButtonW, 26),
+                count.ToString(CultureInfo.InvariantCulture),
+                $"ref_energy_count:{team}:{mode}:{count}",
+                active: CountMaskBits(hitMask) == count,
+                enabled: true);
+        }
+    }
+
+    private void DrawLanRefereeEnergyArmButtons(Graphics graphics, int x, ref int y, int width, string team, string mode, int mask, string actionPrefix, bool allowZero)
+    {
+        int gap = 6;
+        int buttonWidth = Math.Max(42, (width - gap * 4) / 5);
+        for (int arm = 0; arm < 5; arm++)
+        {
+            bool active = (mask & (1 << arm)) != 0;
+            DrawPButton(
+                graphics,
+                new Rectangle(x + arm * (buttonWidth + gap), y, buttonWidth, 28),
+                $"A{arm}",
+                $"{actionPrefix}:{team}:{mode}:{arm}",
+                active,
+                enabled: allowZero || active || CountMaskBits(mask) < 5);
+        }
+
+        y += 34;
+    }
+
+    private static int ResolveEnergyHitMaskForUi(SimulationTeamState state, bool large)
+    {
+        if (state.EnergyLargeMechanismActive != large)
+        {
+            return 0;
+        }
+
+        int mask = 0;
+        for (int index = 0; index < Math.Min(5, state.EnergyHitRingsByArm.Length); index++)
+        {
+            if (state.EnergyHitRingsByArm[index] > 0)
+            {
+                mask |= 1 << index;
+            }
+        }
+
+        return mask;
+    }
+
+    private static int ResolveEnergyLitMaskForUi(SimulationTeamState state, bool large)
+        => state.EnergyLargeMechanismActive == large
+            && string.Equals(state.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
+                ? state.EnergyCurrentLitMask & 0x1F
+                : 0;
+
+    private static int CountMaskBits(int mask)
+    {
+        int count = 0;
+        int value = mask & 0x1F;
+        while (value != 0)
+        {
+            count += value & 1;
+            value >>= 1;
+        }
+
+        return count;
+    }
+
+    private static string FormatEnergyArmMask(int mask)
+    {
+        List<string> arms = new(5);
+        for (int index = 0; index < 5; index++)
+        {
+            if ((mask & (1 << index)) != 0)
+            {
+                arms.Add(index.ToString(CultureInfo.InvariantCulture));
+            }
+        }
+
+        return arms.Count == 0 ? "-" : string.Join(",", arms);
+    }
+
+    private int DrawLocalRefereeQuickActions(Graphics graphics, Rectangle rect)
+    {
+        int gap = 6;
+        int buttonHeight = 24;
+        int buttonWidth = Math.Max(64, (rect.Width - gap * 3) / 4);
+        int x = rect.X;
+        int y = rect.Y;
+        DrawPButton(graphics, new Rectangle(x, y, buttonWidth, buttonHeight), "能量机关页", "ref_page:energy", active: false, enabled: true);
+        DrawPButton(graphics, new Rectangle(x + (buttonWidth + gap), y, buttonWidth, buttonHeight), "红基地开板", "ref_base_armor_open:red", active: true, enabled: true);
+        DrawPButton(graphics, new Rectangle(x + (buttonWidth + gap) * 2, y, buttonWidth, buttonHeight), "蓝基地开板", "ref_base_armor_open:blue", active: true, enabled: true);
+        DrawPButton(graphics, new Rectangle(x + (buttonWidth + gap) * 3, y, buttonWidth, buttonHeight), "高亮切换", "ref_highlight", active: _lanRefereeHighlightRobots, enabled: true);
+        y += buttonHeight + gap;
+        DrawPButton(graphics, new Rectangle(x, y, buttonWidth, buttonHeight), "红小能量", "ref_energy_activate:red:small", active: false, enabled: true);
+        DrawPButton(graphics, new Rectangle(x + (buttonWidth + gap), y, buttonWidth, buttonHeight), "蓝小能量", "ref_energy_activate:blue:small", active: false, enabled: true);
+        DrawPButton(graphics, new Rectangle(x + (buttonWidth + gap) * 2, y, buttonWidth, buttonHeight), "红前哨停转", "ref_outpost_stop:red", active: false, enabled: true);
+        DrawPButton(graphics, new Rectangle(x + (buttonWidth + gap) * 3, y, buttonWidth, buttonHeight), "蓝前哨停转", "ref_outpost_stop:blue", active: false, enabled: true);
+        return y + buttonHeight;
+    }
+
+    private void DrawLocalRefereeSummaryLine(Graphics graphics, Rectangle rect)
+    {
+        int robotCount = _host.World.Entities.Count(entity => string.Equals(entity.EntityType, "robot", StringComparison.OrdinalIgnoreCase));
+        int projectileCount = _host.World.Projectiles.Count;
+        string phase = IsMatchStartupActive
+            ? ResolveDisplayedMatchStateLabel("对局中", "未开始")
+            : _host.World.GameTimeSec > 0.02
+                ? "对局中"
+                : "未开始";
+        string selected = _host.SelectedEntity is null ? "未选中" : ResolveRefereeEntityLabel(_host.SelectedEntity.Id);
+        TextRenderer.DrawText(
+            graphics,
+            $"{phase}    机器人 {robotCount}    弹丸 {projectileCount}    当前目标 {selected}",
+            _tinyHudFont,
+            rect,
+            Color.FromArgb(208, 220, 232, 242),
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+    }
+
+    private IReadOnlyList<string> BuildLocalRefereeEventLogLines()
+    {
+        List<string> lines = new();
+        foreach (MatchEventFeedItem item in _matchEventFeed.TakeLast(18))
+        {
+            if (!string.IsNullOrWhiteSpace(item.Text))
+            {
+                lines.Add(item.Text);
+            }
+        }
+
+        if (lines.Count == 0)
+        {
+            lines.Add("暂无本地事件");
+        }
+
+        return lines;
+    }
+
+    private IReadOnlyList<string> BuildLocalRefereeStatusLogLines()
+    {
+        List<string> lines = new();
+        if (!string.IsNullOrWhiteSpace(_localRoomStatusText))
+        {
+            lines.Add(_localRoomStatusText);
+        }
+
+        if (!string.IsNullOrWhiteSpace(_lanStatusLine))
+        {
+            lines.Add(_lanStatusLine);
+        }
+
+        SimulationEntity? selected = _host.SelectedEntity;
+        if (selected is not null)
+        {
+            lines.Add($"目标 {ResolveRefereeEntityLabel(selected.Id)} HP {Math.Ceiling(selected.Health):0}/{Math.Ceiling(selected.MaxHealth):0}");
+            lines.Add($"弹药 17mm {selected.Ammo17Mm} / 42mm {selected.Ammo42Mm}");
+            lines.Add($"位置 {selected.X:0.0}, {selected.Y:0.0}, {selected.GroundHeightM:0.00}m");
+        }
+
+        lines.Add($"本地时间 {_host.World.GameTimeSec:0.0}s  倍速 {_simulationTimeScale:0.##}x");
+        return lines;
     }
 
     private void DrawLanRefereeTrafficLogs(Graphics graphics, Rectangle rect)
@@ -4781,6 +5078,11 @@ internal sealed partial class Simulator3dForm : Form
         string[] parts = action.Split(':');
         switch (parts[0])
         {
+            case "ref_page" when parts.Length >= 2:
+                _refereePanelPage = string.Equals(parts[1], "energy", StringComparison.OrdinalIgnoreCase)
+                    ? RefereePanelPage.Energy
+                    : RefereePanelPage.Main;
+                return true;
             case "ref_logout":
                 HandlePSettingsLogout();
                 return true;
@@ -4807,6 +5109,30 @@ internal sealed partial class Simulator3dForm : Form
                 return true;
             case "ref_gold" when parts.Length >= 3 && double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out double goldDelta):
                 ApplyRefereeGoldDelta(parts[1], goldDelta);
+                return true;
+            case "ref_energy_activate" when parts.Length >= 3:
+                ApplyRefereeEnergyActivation(parts[1], parts[2]);
+                return true;
+            case "ref_energy_clear" when parts.Length >= 3:
+                ApplyRefereeEnergyManualState(parts[1], parts[2], litMask: 0, hitMask: 0, complete: false);
+                return true;
+            case "ref_energy_complete" when parts.Length >= 3:
+                ApplyRefereeEnergyManualState(parts[1], parts[2], litMask: 0, hitMask: 0x1F, complete: true);
+                return true;
+            case "ref_energy_lit" when parts.Length >= 4 && int.TryParse(parts[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out int litArm):
+                ToggleRefereeEnergyArm(parts[1], parts[2], litArm, toggleHit: false);
+                return true;
+            case "ref_energy_hit" when parts.Length >= 4 && int.TryParse(parts[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out int hitArm):
+                ToggleRefereeEnergyArm(parts[1], parts[2], hitArm, toggleHit: true);
+                return true;
+            case "ref_energy_count" when parts.Length >= 4 && int.TryParse(parts[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out int activatedCount):
+                ApplyRefereeEnergyActivatedCount(parts[1], parts[2], activatedCount);
+                return true;
+            case "ref_base_armor_open" when parts.Length >= 2:
+                ApplyRefereeBaseArmorOpen(parts[1]);
+                return true;
+            case "ref_outpost_stop" when parts.Length >= 2:
+                ApplyRefereeOutpostStop(parts[1]);
                 return true;
             case "ref_view" when parts.Length >= 2:
                 SetLanRefereeViewMode(parts[1] switch
@@ -4888,6 +5214,90 @@ internal sealed partial class Simulator3dForm : Form
         state.Gold = Math.Max(0.0, state.Gold + delta);
         state.TotalGoldEarned = Math.Max(state.TotalGoldEarned, state.Gold);
         AppendMatchEvent($"裁判调整 {ResolveTeamName(normalizedTeam)} 金币 {delta:+#;-#;0}", ResolveTeamColor(normalizedTeam), 4.0f);
+    }
+
+    private void ApplyRefereeEnergyActivation(string team, string mode)
+    {
+        string normalizedTeam = Simulator3dOptions.NormalizeTeam(team);
+        bool large = string.Equals(mode, "large", StringComparison.OrdinalIgnoreCase);
+        _host.StartTeamEnergyMechanismAttempt(normalizedTeam, large);
+        AppendMatchEvent(
+            $"裁判开启 {ResolveTeamName(normalizedTeam)}{(large ? "大" : "小")}能量机关待激活",
+            ResolveTeamColor(normalizedTeam),
+            5.0f);
+    }
+
+    private void ToggleRefereeEnergyArm(string team, string mode, int armIndex, bool toggleHit)
+    {
+        if (armIndex < 0 || armIndex >= 5)
+        {
+            return;
+        }
+
+        string normalizedTeam = Simulator3dOptions.NormalizeTeam(team);
+        bool large = string.Equals(mode, "large", StringComparison.OrdinalIgnoreCase);
+        SimulationTeamState state = _host.World.GetOrCreateTeamState(normalizedTeam);
+        int litMask = ResolveEnergyLitMaskForUi(state, large);
+        int hitMask = ResolveEnergyHitMaskForUi(state, large);
+        int bit = 1 << armIndex;
+        if (toggleHit)
+        {
+            hitMask ^= bit;
+            litMask &= ~hitMask;
+        }
+        else
+        {
+            litMask ^= bit;
+            litMask &= ~hitMask;
+        }
+
+        ApplyRefereeEnergyManualState(normalizedTeam, mode, litMask, hitMask, complete: false);
+    }
+
+    private void ApplyRefereeEnergyActivatedCount(string team, string mode, int count)
+    {
+        string normalizedTeam = Simulator3dOptions.NormalizeTeam(team);
+        bool large = string.Equals(mode, "large", StringComparison.OrdinalIgnoreCase);
+        SimulationTeamState state = _host.World.GetOrCreateTeamState(normalizedTeam);
+        int safeCount = Math.Clamp(count, 0, 5);
+        int hitMask = 0;
+        for (int index = 0; index < safeCount; index++)
+        {
+            hitMask |= 1 << index;
+        }
+
+        int litMask = ResolveEnergyLitMaskForUi(state, large) & ~hitMask;
+        ApplyRefereeEnergyManualState(normalizedTeam, mode, litMask, hitMask, complete: safeCount >= 5);
+    }
+
+    private void ApplyRefereeEnergyManualState(string team, string mode, int litMask, int hitMask, bool complete)
+    {
+        string normalizedTeam = Simulator3dOptions.NormalizeTeam(team);
+        bool large = string.Equals(mode, "large", StringComparison.OrdinalIgnoreCase);
+        _host.ConfigureTeamEnergyMechanismManualState(normalizedTeam, large, litMask, hitMask, complete);
+        AppendMatchEvent(
+            $"{ResolveTeamName(normalizedTeam)}{(large ? "大" : "小")}能量机关 手动设置 待激活A{FormatEnergyArmMask(litMask)} / 已命中{CountMaskBits(hitMask)}",
+            ResolveTeamColor(normalizedTeam),
+            4.0f);
+    }
+
+    private void ApplyRefereeBaseArmorOpen(string team)
+    {
+        string normalizedTeam = Simulator3dOptions.NormalizeTeam(team);
+        _host.ForceTeamBaseArmorOpen(normalizedTeam);
+        AppendMatchEvent($"裁判展开 {ResolveTeamName(normalizedTeam)}基地外板", ResolveTeamColor(normalizedTeam), 5.0f);
+    }
+
+    private void ApplyRefereeOutpostStop(string team)
+    {
+        string normalizedTeam = Simulator3dOptions.NormalizeTeam(team);
+        bool stopped = _host.SetTeamOutpostRotationStopped(normalizedTeam, stopped: true);
+        AppendMatchEvent(
+            stopped
+                ? $"裁判停止 {ResolveTeamName(normalizedTeam)}前哨站旋转"
+                : $"未找到 {ResolveTeamName(normalizedTeam)}前哨站",
+            stopped ? ResolveTeamColor(normalizedTeam) : Color.FromArgb(246, 116, 92),
+            5.0f);
     }
 
     private void ApplyRefereeYellowCard()
@@ -6357,6 +6767,7 @@ internal sealed partial class Simulator3dForm : Form
 
         float hpRatio = SafeGaugeRatio(entity.Health, entity.MaxHealth);
         float heatRatio = SafeGaugeRatio(entity.Heat, entity.MaxHeat);
+        float ammoRatio = ResolveFirstPersonAmmoGaugeRatio(entity);
         (float powerRatio, _) = ResolvePowerGauge(entity);
         (float superCapRatio, _) = ResolveSuperCapGauge(entity);
         float bufferRatio = SafeGaugeRatio(entity.BufferEnergyJ, entity.MaxBufferEnergyJ);
@@ -6364,7 +6775,8 @@ internal sealed partial class Simulator3dForm : Form
         Color hpColor = Color.FromArgb(128, 72, 214, 126);
         Color powerColor = Color.FromArgb(136, 255, 214, 48);
         Color superCapColor = Color.FromArgb(138, 255, 96, 196);
-        Color heatColor = Color.FromArgb(128, 228, 130, 58);
+        Color ammoColor = Color.FromArgb(146, 116, 218, 255);
+        Color heatColor = Color.FromArgb(172, 238, 132, 42);
         Color bufferColor = Color.FromArgb(96, 168, 174, 184);
 
         bool gpuHudPrimitivePath = UseGpuRenderer && !UseFastFlatRenderer && _hasPresentedGpuFrame;
@@ -6373,9 +6785,13 @@ internal sealed partial class Simulator3dForm : Form
             DrawQuarterGaugeArc(graphics, ring, 180f, hpRatio, hpColor, arcWidth);
             DrawQuarterGaugeArc(graphics, ring, 270f, powerRatio, powerColor, arcWidth);
             DrawQuarterGaugeArc(graphics, ring, 0f, superCapRatio, superCapColor, arcWidth);
-            RectangleF bufferRing = RectangleF.Inflate(ring, arcWidth * 0.78f, arcWidth * 0.78f);
-            DrawPartialGaugeArc(graphics, bufferRing, 18f, 45f, bufferRatio, bufferColor, outerArcWidth);
-            DrawQuarterGaugeArc(graphics, ring, 90f, heatRatio, heatColor, arcWidth);
+            DrawQuarterGaugeArc(graphics, ring, 90f, ammoRatio, ammoColor, arcWidth);
+
+            RectangleF heatRing = RectangleF.Inflate(ring, -arcWidth * 1.35f, -arcWidth * 1.35f);
+            DrawPartialGaugeArc(graphics, heatRing, -90f, 360f, heatRatio, heatColor, Math.Max(3.0f, arcWidth * 0.46f));
+
+            RectangleF bufferRing = RectangleF.Inflate(ring, arcWidth * 0.88f, arcWidth * 0.88f);
+            DrawPartialGaugeArc(graphics, bufferRing, -68f, 52f, bufferRatio, bufferColor, outerArcWidth);
         }
 
         SimulationEntity? selected = _host.SelectedEntity;
@@ -6448,6 +6864,14 @@ internal sealed partial class Simulator3dForm : Form
 
     private static void DrawQuarterGaugeArc(Graphics graphics, RectangleF rect, float startAngle, float ratio, Color color, float width)
         => DrawPartialGaugeArc(graphics, rect, startAngle, 90f, ratio, color, width);
+
+    private static float ResolveFirstPersonAmmoGaugeRatio(SimulationEntity entity)
+    {
+        bool largeProjectile = string.Equals(entity.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase);
+        int ammo = largeProjectile ? entity.Ammo42Mm : entity.Ammo17Mm;
+        double ammoPerPiOverEight = largeProjectile ? 10.0 : 100.0;
+        return (float)Math.Clamp(ammo / Math.Max(1.0, ammoPerPiOverEight * 4.0), 0.0, 1.0);
+    }
 
     private static float SafeGaugeRatio(double value, double maximum)
     {
@@ -10566,6 +10990,7 @@ internal sealed partial class Simulator3dForm : Form
         {
             InvalidateHudPortraitCache();
             InvalidateGpuOverlayLayer();
+            Invalidate();
             return;
         }
 
@@ -10656,6 +11081,7 @@ internal sealed partial class Simulator3dForm : Form
 
         InvalidateHudPortraitCache();
         InvalidateGpuOverlayLayer();
+        Invalidate();
     }
 
     private void ClosePSettingsPanel()
@@ -10665,6 +11091,7 @@ internal sealed partial class Simulator3dForm : Form
         _matchSelfCheckPanelOpen = false;
         _pKeyBindingEditorOpen = false;
         _pendingPKeyBindingAction = null;
+        _refereePanelPage = RefereePanelPage.Main;
         ClearPPanelInteractionState();
     }
 
@@ -11163,6 +11590,51 @@ internal sealed partial class Simulator3dForm : Form
         LogMatchStartupState(_matchStartupPhase == MatchStartupPhase.Countdown
             ? "countdown_started_skip_single_preparation"
             : "self_check_started_skip_single_preparation");
+    }
+
+    private void SkipNonLanStartupPhase()
+    {
+        if (IsLanMultiplayerActive)
+        {
+            return;
+        }
+
+        if (_matchStartupPhase == MatchStartupPhase.Preparation)
+        {
+            SkipNonLanPreparationPhase();
+            return;
+        }
+
+        long nowTicks = _frameClock.ElapsedTicks;
+        if (_matchStartupPhase == MatchStartupPhase.SelfCheck)
+        {
+            _matchStartupPhase = MatchStartupPhase.Countdown;
+            _matchStartupPhaseStartTicks = nowTicks;
+            _matchSelfCheckPanelOpen = false;
+            _host.World.GameTimeSec = 0.0;
+            _simulationAccumulatorSec = 0.0;
+            _lastFrameClockTicks = nowTicks;
+            _paused = true;
+            InvalidateGpuOverlayLayer();
+            UpdateMouseCaptureState();
+            LogMatchStartupState("countdown_started_enter_skip_self_check");
+            return;
+        }
+
+        if (_matchStartupPhase == MatchStartupPhase.Countdown)
+        {
+            _matchStartupPhase = MatchStartupPhase.Live;
+            _matchStartupPhaseStartTicks = nowTicks;
+            _host.World.GameTimeSec = 0.0;
+            _simulationAccumulatorSec = 0.0;
+            _lastFrameClockTicks = nowTicks;
+            _matchSelfCheckPanelOpen = false;
+            _paused = false;
+            ResetLiveInput();
+            InvalidateGpuOverlayLayer();
+            UpdateMouseCaptureState();
+            LogMatchStartupState("match_live_enter_skip_countdown");
+        }
     }
 
     private void BeginMatchStartupSequence(bool resetWorld)
@@ -12299,6 +12771,30 @@ internal sealed partial class Simulator3dForm : Form
         float smallGyroIntensity = entity.SmallGyroActive
             ? Math.Clamp(0.34f + Math.Abs((float)entity.AngularVelocityDegPerSec) / 680.0f, 0.34f, 1.0f)
             : 0f;
+        double firstPersonSpeedMps = 0.0;
+        float firstPersonInertiaIntensity = 0f;
+        float firstPersonInertiaDirection = 0f;
+        if (firstPersonView)
+        {
+            double metersPerWorldUnit = Math.Max(_host.World.MetersPerWorldUnit, 1e-6);
+            firstPersonSpeedMps = Math.Sqrt(
+                entity.VelocityXWorldPerSec * entity.VelocityXWorldPerSec
+                + entity.VelocityYWorldPerSec * entity.VelocityYWorldPerSec) * metersPerWorldUnit;
+            double nowSec = _host.World.GameTimeSec;
+            if (_firstPersonCameraInertiaSamples.TryGetValue(entity.Id, out (double SpeedMps, double TimeSec) previous))
+            {
+                double dt = Math.Clamp(nowSec - previous.TimeSec, 0.006, 0.20);
+                double accelerationMps2 = (firstPersonSpeedMps - previous.SpeedMps) / dt;
+                if (Math.Abs(accelerationMps2) > 0.70)
+                {
+                    firstPersonInertiaIntensity = (float)Math.Clamp((Math.Abs(accelerationMps2) - 0.70) / 5.8, 0.0, 1.0);
+                    firstPersonInertiaDirection = accelerationMps2 > 0.0 ? -1f : 1f;
+                }
+            }
+
+            _firstPersonCameraInertiaSamples[entity.Id] = (firstPersonSpeedMps, nowSec);
+        }
+
         float impactIntensity = 0f;
         if (entity.ChassisImpactShakeTimerSec > 1e-5
             && entity.ChassisImpactShakeDurationSec > 1e-5
@@ -12310,7 +12806,7 @@ internal sealed partial class Simulator3dForm : Form
 
         float motionIntensity = MathF.Max(mecanumMoveIntensity, smallGyroIntensity * 0.72f);
         float intensity = Math.Clamp(
-            MathF.Max(MathF.Max(MathF.Max(landingIntensity, impactIntensity), crouchIntensity * 0.55f), motionIntensity)
+            MathF.Max(MathF.Max(MathF.Max(MathF.Max(landingIntensity, impactIntensity), crouchIntensity * 0.55f), motionIntensity), firstPersonInertiaIntensity)
             * strengthScale,
             0f,
             1f);
@@ -12351,7 +12847,7 @@ internal sealed partial class Simulator3dForm : Form
         if (mecanumMoveIntensity > 1e-4f)
         {
             float movePhase = (float)(_host.World.GameTimeSec * 64.0 + ResolveCameraVibrationPhase(entity.Id) * 1.17f);
-            float moveScale = firstPersonView ? 1.0f : 0.42f;
+            float moveScale = firstPersonView ? 2.0f : 0.42f;
             verticalShake += (
                 MathF.Sin(movePhase) * 0.00115f
                 + MathF.Sin(movePhase * 1.63f + 0.45f) * 0.00042f) * mecanumMoveIntensity * moveScale;
@@ -12361,7 +12857,7 @@ internal sealed partial class Simulator3dForm : Form
         if (smallGyroIntensity > 1e-4f)
         {
             float gyroPhase = (float)(_host.World.GameTimeSec * 42.0 + ResolveCameraVibrationPhase(entity.Id) * 0.73f);
-            float gyroScale = firstPersonView ? 1.0f : 0.36f;
+            float gyroScale = firstPersonView ? 2.0f : 0.36f;
             verticalShake += MathF.Sin(gyroPhase * 1.22f + 0.30f) * 0.0012f * smallGyroIntensity * gyroScale;
             lateralShake += MathF.Sin(gyroPhase + 1.10f) * 0.0015f * smallGyroIntensity * gyroScale;
             forwardShake += MathF.Sin(gyroPhase * 0.58f + 2.25f) * 0.0008f * smallGyroIntensity * gyroScale;
@@ -12377,11 +12873,7 @@ internal sealed partial class Simulator3dForm : Form
 
         if (firstPersonView)
         {
-            double metersPerWorldUnit = Math.Max(_host.World.MetersPerWorldUnit, 1e-6);
-            double chassisSpeedMps = Math.Sqrt(
-                entity.VelocityXWorldPerSec * entity.VelocityXWorldPerSec
-                + entity.VelocityYWorldPerSec * entity.VelocityYWorldPerSec) * metersPerWorldUnit;
-            float viewMotion = (float)Math.Clamp(chassisSpeedMps / 5.0, 0.0, 1.0);
+            float viewMotion = (float)Math.Clamp(firstPersonSpeedMps / 5.0, 0.0, 1.0);
             float inputMotion = (float)Math.Clamp(
                 Math.Sqrt(entity.MoveInputForward * entity.MoveInputForward + entity.MoveInputRight * entity.MoveInputRight),
                 0.0,
@@ -12389,12 +12881,19 @@ internal sealed partial class Simulator3dForm : Form
             float barrelPhase = (float)(_host.World.GameTimeSec * 19.0 + ResolveCameraVibrationPhase(entity.Id) * 0.41f);
             float barrelShake = MathF.Max(viewMotion, inputMotion * 0.55f);
             verticalShake += (
-                MathF.Sin(barrelPhase) * 0.0018f
-                + MathF.Sin(barrelPhase * 1.71f + 0.62f) * 0.0007f) * barrelShake;
-            lateralShake += MathF.Sin(barrelPhase * 0.74f + 1.40f) * 0.00085f * barrelShake;
-            forwardShake += MathF.Sin(barrelPhase * 0.53f + 2.25f) * 0.00065f * barrelShake;
+                MathF.Sin(barrelPhase) * 0.00041f
+                + MathF.Sin(barrelPhase * 1.71f + 0.62f) * 0.00015f) * barrelShake;
+            lateralShake += MathF.Sin(barrelPhase * 0.74f + 1.40f) * 0.00019f * barrelShake;
+            forwardShake += MathF.Sin(barrelPhase * 0.53f + 2.25f) * 0.00015f * barrelShake;
+            if (firstPersonInertiaIntensity > 1e-4f)
+            {
+                forwardShake += firstPersonInertiaDirection * 0.0124f * firstPersonInertiaIntensity;
+                verticalShake += 0.0022f * firstPersonInertiaIntensity;
+                lateralShake += MathF.Sin(barrelPhase * 0.38f + 0.80f) * 0.00090f * firstPersonInertiaIntensity;
+            }
+
             lateralShake *= 0.38f;
-            forwardShake = Math.Clamp(forwardShake, -0.0040f, 0.0100f);
+            forwardShake = Math.Clamp(forwardShake, -0.0080f, 0.0120f);
         }
 
         Vector3 offset = (up * verticalShake + right * lateralShake + forward * forwardShake) * strengthScale;
@@ -12408,12 +12907,13 @@ internal sealed partial class Simulator3dForm : Form
             cameraTarget += safetyOffset;
         }
 
+        float firstPersonChassisRollScale = firstPersonView ? 2.0f : 1.0f;
         float rollRad =
             MathF.Sin(phase * 0.62f + 0.35f) * 0.010f * landingIntensity
             + MathF.Sin(phase * 0.31f + 1.10f) * 0.0025f * crouchIntensity
             + MathF.Sin(phase * 0.86f + 2.35f) * 0.021f * impactIntensity
-            + MathF.Sin(phase * 0.52f + 0.80f) * 0.0010f * mecanumMoveIntensity
-            + MathF.Sin(phase * 0.44f + 1.95f) * 0.0022f * smallGyroIntensity;
+            + MathF.Sin(phase * 0.52f + 0.80f) * 0.0010f * mecanumMoveIntensity * firstPersonChassisRollScale
+            + MathF.Sin(phase * 0.44f + 1.95f) * 0.0022f * smallGyroIntensity * firstPersonChassisRollScale;
         if (MathF.Abs(rollRad) > 1e-5f)
         {
             Quaternion roll = Quaternion.CreateFromAxisAngle(forward, rollRad * strengthScale);
@@ -16216,8 +16716,13 @@ internal sealed partial class Simulator3dForm : Form
 
     private bool IsEnergyAutoAimAlignedForAutoFire(SimulationEntity entity)
     {
-        if (!_autoAimPressed
-            || !entity.AutoAimLocked
+        if (!_autoAimPressed)
+        {
+            ClearEnergyAutoFireLatch();
+            return false;
+        }
+
+        if (!entity.AutoAimLocked
             || !string.Equals(entity.AutoAimTargetMode, "energy", StringComparison.OrdinalIgnoreCase)
             || !string.Equals(entity.AutoAimTargetKind, "energy_disk", StringComparison.OrdinalIgnoreCase)
             || string.IsNullOrWhiteSpace(entity.AutoAimTargetId)
@@ -16229,7 +16734,25 @@ internal sealed partial class Simulator3dForm : Form
             return false;
         }
 
-        double minimumAccuracy = string.Equals(entity.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase) ? 0.50 : 0.58;
+        if (!TryResolveEnergyAutoFireShotKey(entity, out string groupKey, out string shotKey))
+        {
+            return false;
+        }
+
+        if (!string.Equals(_energyAutoFireGroupKey, groupKey, StringComparison.OrdinalIgnoreCase))
+        {
+            _energyAutoFireGroupKey = groupKey;
+            _energyAutoFireFiredShotKeys.Clear();
+            _energyAutoFireGraceKey = string.Empty;
+            _energyAutoFireGraceUntilSec = 0.0;
+        }
+
+        if (_energyAutoFireFiredShotKeys.Contains(shotKey))
+        {
+            return false;
+        }
+
+        double minimumAccuracy = string.Equals(entity.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase) ? 0.42 : 0.50;
         if (entity.AutoAimAccuracy < minimumAccuracy)
         {
             return false;
@@ -16237,17 +16760,110 @@ internal sealed partial class Simulator3dForm : Form
 
         if (!TryGetAutoAimProjectedPoint(entity, out PointF projectedAim))
         {
-            return entity.AutoAimAccuracy >= minimumAccuracy + 0.12;
+            bool fallbackReady = entity.AutoAimAccuracy >= minimumAccuracy + 0.02;
+            if (fallbackReady)
+            {
+                _energyAutoFireFiredShotKeys.Add(shotKey);
+            }
+
+            return fallbackReady;
         }
 
         PointF center = new(ClientSize.Width * 0.5f, ClientSize.Height * 0.5f);
         float dx = projectedAim.X - center.X;
         float dy = projectedAim.Y - center.Y;
         float thresholdPx = Math.Clamp(
-            46f + (float)entity.AutoAimLeadDistanceM * 2.8f,
-            42f,
-            _firstPersonView ? 92f : 108f);
-        return dx * dx + dy * dy <= thresholdPx * thresholdPx;
+            58f + (float)entity.AutoAimLeadDistanceM * 4.0f,
+            48f,
+            _firstPersonView ? 132f : 156f);
+        bool aligned = dx * dx + dy * dy <= thresholdPx * thresholdPx;
+        if (!aligned
+            && entity.AutoAimAccuracy >= minimumAccuracy + 0.02)
+        {
+            float looseThresholdPx = thresholdPx * 1.46f;
+            aligned = dx * dx + dy * dy <= looseThresholdPx * looseThresholdPx;
+        }
+
+        aligned = ResolveEnergyAutoFireGrace(shotKey, aligned);
+        if (aligned)
+        {
+            _energyAutoFireFiredShotKeys.Add(shotKey);
+        }
+
+        return aligned;
+    }
+
+    private bool ResolveEnergyAutoFireGrace(string shotKey, bool readyNow)
+    {
+        double nowSec = _frameClock.Elapsed.TotalSeconds;
+        if (readyNow)
+        {
+            _energyAutoFireGraceKey = shotKey;
+            _energyAutoFireGraceUntilSec = nowSec + 0.28;
+            return true;
+        }
+
+        return string.Equals(_energyAutoFireGraceKey, shotKey, StringComparison.OrdinalIgnoreCase)
+            && nowSec <= _energyAutoFireGraceUntilSec;
+    }
+
+    private bool TryResolveEnergyAutoFireShotKey(SimulationEntity entity, out string groupKey, out string shotKey)
+    {
+        groupKey = string.Empty;
+        shotKey = string.Empty;
+        if (!_host.World.Teams.TryGetValue(entity.Team, out SimulationTeamState? teamState)
+            || !string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
+            || teamState.EnergyCurrentLitMask == 0)
+        {
+            return false;
+        }
+
+        bool parsedCurrentArm =
+            SimulationCombatMath.TryParseEnergyArmIndex(entity.AutoAimPlateId ?? string.Empty, out string plateTeam, out int armIndex)
+            && armIndex >= 0
+            && armIndex < 5
+            && (teamState.EnergyCurrentLitMask & (1 << armIndex)) != 0
+            && string.Equals(plateTeam, entity.Team, StringComparison.OrdinalIgnoreCase);
+        if (!parsedCurrentArm)
+        {
+            armIndex = ResolveFirstLitEnergyArmIndex(teamState.EnergyCurrentLitMask);
+            if (armIndex < 0)
+            {
+                return false;
+            }
+        }
+
+        groupKey = string.Join(
+            ':',
+            entity.Team,
+            entity.AutoAimTargetId ?? string.Empty,
+            teamState.EnergyLargeMechanismActive ? "large" : "small",
+            teamState.EnergyActiveGroupIndex,
+            teamState.EnergyCurrentLitMask,
+            teamState.EnergyActivatedGroupCount);
+        shotKey = $"{groupKey}:arm{armIndex}";
+        return true;
+    }
+
+    private static int ResolveFirstLitEnergyArmIndex(int litMask)
+    {
+        for (int index = 0; index < 5; index++)
+        {
+            if ((litMask & (1 << index)) != 0)
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private void ClearEnergyAutoFireLatch()
+    {
+        _energyAutoFireGroupKey = null;
+        _energyAutoFireFiredShotKeys.Clear();
+        _energyAutoFireGraceKey = string.Empty;
+        _energyAutoFireGraceUntilSec = 0.0;
     }
 
     private bool IsHeroLobReticleAlignedForAutoFire(SimulationEntity entity)
@@ -16646,17 +17262,9 @@ internal sealed partial class Simulator3dForm : Form
         {
             MoveForward = 0.0,
             MoveRight = 0.0,
-            FirePressed = false,
-            AutoAimPressed = false,
-            AutoAimGuidanceOnly = false,
-            HeroLobAutoFireReady = false,
             JumpRequested = false,
             StepClimbModeActive = false,
             SmallGyroActive = false,
-            BuyAmmoRequested = false,
-            EnergyActivationPressed = false,
-            HeroDeployToggleRequested = false,
-            HeroDeployHoldPressed = false,
             SuperCapActive = false,
             SentryStanceToggleRequested = false,
         };
@@ -16804,11 +17412,6 @@ internal sealed partial class Simulator3dForm : Form
                 return false;
             }
         }
-        else if (!_firstPersonView && !_observerMode && !_sharedHostSimulation)
-        {
-            return false;
-        }
-
         return ignoreWindowFocus
             || (Visible && (ContainsFocus || IsWindowActive()));
     }

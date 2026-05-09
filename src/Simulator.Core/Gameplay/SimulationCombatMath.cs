@@ -189,6 +189,13 @@ public static class SimulationCombatMath
 
     public static double ResolveOutpostRingRelativeRotationRad(SimulationEntity target, double gameTimeSec)
     {
+        if (target.OutpostRotationStopped)
+        {
+            return double.IsFinite(target.OutpostStoppedRelativeRotationRad)
+                ? target.OutpostStoppedRelativeRotationRad
+                : 0.0;
+        }
+
         double clampedTimeSec = Math.Max(0.0, gameTimeSec);
         double activeSpinTimeSec = Math.Min(clampedTimeSec, 180.0);
         if (target.IsAlive)
@@ -218,6 +225,11 @@ public static class SimulationCombatMath
 
     public static double ResolveOutpostRingAngularVelocityRadPerSec(SimulationEntity target, double gameTimeSec)
     {
+        if (target.OutpostRotationStopped)
+        {
+            return 0.0;
+        }
+
         double clampedTimeSec = Math.Max(0.0, gameTimeSec);
         if (target.IsAlive)
         {
@@ -2148,8 +2160,11 @@ public static bool TryAcquireEnergyMechanismTarget(
                 : bodyTopM + shooter.GimbalBodyHeightM * 0.5);
 
         ResolveChassisAxes(shooter.AngleDeg, shooter.ChassisPitchDeg, shooter.ChassisRollDeg, out Vector3 chassisForward, out Vector3 chassisRight, out Vector3 chassisUp);
-        ResolveWorldTurretAxes(
-            DegreesToRadians(turretYawDeg),
+        ResolveMountedTurretAxes(
+            chassisForward,
+            chassisRight,
+            chassisUp,
+            DegreesToRadians(NormalizeSignedDeg(turretYawDeg - shooter.AngleDeg)),
             DegreesToRadians(pitchDeg),
             out _,
             out Vector3 turretRight,
@@ -2194,8 +2209,11 @@ public static bool TryAcquireEnergyMechanismTarget(
                 : bodyTopM + shooter.GimbalBodyHeightM * 0.5);
 
         ResolveChassisAxes(shooter.AngleDeg, shooter.ChassisPitchDeg, shooter.ChassisRollDeg, out Vector3 chassisForward, out Vector3 chassisRight, out Vector3 chassisUp);
-        ResolveWorldTurretAxes(
-            DegreesToRadians(turretYawDeg),
+        ResolveMountedTurretAxes(
+            chassisForward,
+            chassisRight,
+            chassisUp,
+            DegreesToRadians(NormalizeSignedDeg(turretYawDeg - shooter.AngleDeg)),
             DegreesToRadians(pitchDeg),
             out _,
             out Vector3 turretRight,
@@ -2274,10 +2292,10 @@ public static bool TryAcquireEnergyMechanismTarget(
         double yaw = shooter.TurretYawDeg;
         bool useDragSolver = preferHighArc
             || string.Equals(shooter.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase);
-        for (int iteration = 0; iteration < 3; iteration++)
+        for (int iteration = 0; iteration < 4; iteration++)
         {
-            (double cameraX, double cameraY, _) = ComputeFirstPersonCameraPoint(world, shooter, pitch, yaw);
-            yaw = NormalizeDeg(RadiansToDegrees(Math.Atan2(targetY - cameraY, targetX - cameraX)));
+            (double yawMuzzleX, double yawMuzzleY, _) = ComputeMuzzlePoint(world, shooter, pitch, yaw);
+            yaw = NormalizeDeg(RadiansToDegrees(Math.Atan2(targetY - yawMuzzleY, targetX - yawMuzzleX)));
             (double muzzleX, double muzzleY, double muzzleHeightM) = ComputeMuzzlePoint(world, shooter, pitch, yaw);
             double dxWorld = targetX - muzzleX;
             double dyWorld = targetY - muzzleY;
@@ -2823,6 +2841,7 @@ public static bool TryAcquireEnergyMechanismTarget(
             observedVelocityXMps,
             observedVelocityYMps,
             observedVelocityZMps,
+            observedAngularVelocityRadPerSec,
             distanceM,
             heightCompensationM,
             out double leadTimeSec,
@@ -2839,12 +2858,23 @@ public static bool TryAcquireEnergyMechanismTarget(
             observedVelocityYMps,
             observedVelocityZMps,
             observedAngularVelocityRadPerSec);
+        bool energyDiskTarget = string.Equals(ResolveAutoAimTargetKind(target, plate), "energy_disk", StringComparison.OrdinalIgnoreCase);
+        if (energyDiskTarget)
+        {
+            motionCoefficient = 1.0;
+        }
+
         if (target.AutoAimInstabilityTimerSec > 1e-6)
         {
             motionCoefficient *= 0.50;
         }
 
         double accuracy = Math.Clamp(distanceCoefficient * motionCoefficient, 0.08, 1.0);
+        if (energyDiskTarget)
+        {
+            accuracy = 1.0;
+        }
+
         bool heroStructureHighArcTarget = ShouldUseHeroLobStructureAxisAim(world, shooter, target, plate);
         bool criticalStructureTarget = ShouldAimStructureCriticalZone(world.GameTimeSec, target, plate);
         double storedObservedHeightM = ResolveStoredAutoAimPointHeight(observedHeightM, heightCompensationM, heroStructureHighArcTarget);
@@ -2998,6 +3028,7 @@ public static bool TryAcquireEnergyMechanismTarget(
             observedAccelerationXMps2,
             observedAccelerationYMps2,
             observedAccelerationZMps2,
+            observedAngularVelocityRadPerSec,
             distanceM,
             heightCompensationM,
             out double leadTimeSec,
@@ -3020,12 +3051,23 @@ public static bool TryAcquireEnergyMechanismTarget(
             + observedAccelerationZMps2 * observedAccelerationZMps2);
         motionCoefficient -= Math.Clamp(accelerationMagnitudeMps2 * 0.006, 0.0, 0.08);
         motionCoefficient = Math.Clamp(motionCoefficient, 0.72, 1.0);
+        bool energyDiskTarget = string.Equals(ResolveAutoAimTargetKind(target, plate), "energy_disk", StringComparison.OrdinalIgnoreCase);
+        if (energyDiskTarget)
+        {
+            motionCoefficient = 1.0;
+        }
+
         if (target.AutoAimInstabilityTimerSec > 1e-6)
         {
             motionCoefficient *= 0.50;
         }
 
         double accuracy = Math.Clamp(distanceCoefficient * motionCoefficient, 0.08, 1.0);
+        if (energyDiskTarget)
+        {
+            accuracy = 1.0;
+        }
+
         bool heroStructureHighArcTarget = ShouldUseHeroLobStructureAxisAim(world, shooter, target, plate);
         bool criticalStructureTarget = ShouldAimStructureCriticalZone(world.GameTimeSec, target, plate);
         double storedObservedHeightM = ResolveStoredAutoAimPointHeight(observedHeightM, heightCompensationM, heroStructureHighArcTarget);
@@ -3606,10 +3648,10 @@ public static bool TryAcquireEnergyMechanismTarget(
         bool smallProjectile = projectileRadiusM <= 0.005;
         float radialToleranceM = (float)(smallProjectile
             ? Math.Max(0.048, projectileRadiusM + 0.032)
-            : Math.Max(0.036, projectileRadiusM + 0.022));
+            : Math.Max(0.064, projectileRadiusM + 0.042));
         float planeToleranceM = (float)(smallProjectile
             ? Math.Max(0.040, projectileRadiusM + 0.028)
-            : Math.Max(0.030, projectileRadiusM + 0.020));
+            : Math.Max(0.052, projectileRadiusM + 0.034));
 
         float denom = Vector3.Dot(segment, normal);
         if (Math.Abs(denom) > 1e-7f)
@@ -3632,7 +3674,7 @@ public static bool TryAcquireEnergyMechanismTarget(
         }
 
         (double distanceSq, Vector3 closest) = PointToSegmentDistanceSquared(center, segmentStart, segmentEnd);
-        double fallbackRadiusM = diskRadiusM + Math.Max(radialToleranceM, smallProjectile ? 0.042f : 0.032f);
+        double fallbackRadiusM = diskRadiusM + Math.Max(radialToleranceM, smallProjectile ? 0.060f : 0.050f);
         if (distanceSq > fallbackRadiusM * fallbackRadiusM)
         {
             return false;
@@ -3641,7 +3683,7 @@ public static bool TryAcquireEnergyMechanismTarget(
         Vector3 fallbackLocal = closest - center;
         double fallbackPlaneOffsetM = Math.Abs(Vector3.Dot(fallbackLocal, normal));
         double fallbackRadialSq = Math.Pow(Vector3.Dot(fallbackLocal, side), 2) + Math.Pow(Vector3.Dot(fallbackLocal, up), 2);
-        if (fallbackPlaneOffsetM > planeToleranceM + (smallProjectile ? 0.050 : 0.034)
+        if (fallbackPlaneOffsetM > planeToleranceM + (smallProjectile ? 0.070 : 0.058)
             || fallbackRadialSq > fallbackRadiusM * fallbackRadiusM)
         {
             return false;
@@ -4105,19 +4147,9 @@ public static bool TryAcquireEnergyMechanismTarget(
         out Vector3 pitchedForward,
         out Vector3 pitchedUp)
     {
-        Vector3 baseForward = new(chassisForward.X, 0f, chassisForward.Z);
-        if (baseForward.LengthSquared() <= 1e-8f)
-        {
-            baseForward = new(-chassisRight.Z, 0f, chassisRight.X);
-        }
-
-        if (baseForward.LengthSquared() <= 1e-8f)
-        {
-            baseForward = Vector3.UnitX;
-        }
-
-        baseForward = Vector3.Normalize(baseForward);
-        Vector3 baseRight = Vector3.Normalize(new Vector3(-baseForward.Z, 0f, baseForward.X));
+        Vector3 baseForward = chassisForward.LengthSquared() <= 1e-8f ? Vector3.UnitX : Vector3.Normalize(chassisForward);
+        Vector3 baseRight = chassisRight.LengthSquared() <= 1e-8f ? Vector3.UnitZ : Vector3.Normalize(chassisRight);
+        Vector3 baseUp = chassisUp.LengthSquared() <= 1e-8f ? Vector3.UnitY : Vector3.Normalize(chassisUp);
         turretForward = Vector3.Normalize(
             baseForward * (float)Math.Cos(localTurretYawRad)
             + baseRight * (float)Math.Sin(localTurretYawRad));
@@ -4126,7 +4158,7 @@ public static bool TryAcquireEnergyMechanismTarget(
             + baseRight * (float)Math.Cos(localTurretYawRad));
         pitchedForward = Vector3.Normalize(
             turretForward * (float)Math.Cos(gimbalPitchRad)
-            + Vector3.UnitY * (float)Math.Sin(gimbalPitchRad));
+            + baseUp * (float)Math.Sin(gimbalPitchRad));
         pitchedUp = Vector3.Normalize(Vector3.Cross(turretRight, pitchedForward));
     }
 
@@ -4238,6 +4270,7 @@ public static bool TryAcquireEnergyMechanismTarget(
         double observedVelocityXMps,
         double observedVelocityYMps,
         double observedVelocityZMps,
+        double observedAngularVelocityRadPerSec,
         double distanceM,
         double heightCompensationM,
         out double leadTimeSec,
@@ -4267,6 +4300,7 @@ public static bool TryAcquireEnergyMechanismTarget(
                 observedVelocityXMps,
                 observedVelocityYMps,
                 observedVelocityZMps,
+                observedAngularVelocityRadPerSec,
                 leadTimeSec);
             (double yawDeg, double pitchDeg) = ComputeAimAnglesToPoint(
                 world,
@@ -4305,6 +4339,7 @@ public static bool TryAcquireEnergyMechanismTarget(
             observedVelocityXMps,
             observedVelocityYMps,
             observedVelocityZMps,
+            observedAngularVelocityRadPerSec,
             leadTimeSec);
         return (predictedX, predictedY, predictedHeightM);
     }
@@ -4323,6 +4358,7 @@ public static bool TryAcquireEnergyMechanismTarget(
         double observedAccelerationXMps2,
         double observedAccelerationYMps2,
         double observedAccelerationZMps2,
+        double observedAngularVelocityRadPerSec,
         double distanceM,
         double heightCompensationM,
         out double leadTimeSec,
@@ -4355,6 +4391,7 @@ public static bool TryAcquireEnergyMechanismTarget(
                 observedAccelerationXMps2,
                 observedAccelerationYMps2,
                 observedAccelerationZMps2,
+                observedAngularVelocityRadPerSec,
                 leadTimeSec);
             (double yawDeg, double pitchDeg) = ComputeAimAnglesToPoint(
                 world,
@@ -4396,6 +4433,7 @@ public static bool TryAcquireEnergyMechanismTarget(
             observedAccelerationXMps2,
             observedAccelerationYMps2,
             observedAccelerationZMps2,
+            observedAngularVelocityRadPerSec,
             leadTimeSec);
         return (predictedX, predictedY, predictedHeightM);
     }
@@ -4411,6 +4449,7 @@ public static bool TryAcquireEnergyMechanismTarget(
         double observedVelocityXMps,
         double observedVelocityYMps,
         double observedVelocityZMps,
+        double observedAngularVelocityRadPerSec,
         double leadTimeSec)
     {
         double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
@@ -4421,6 +4460,24 @@ public static bool TryAcquireEnergyMechanismTarget(
 
         AutoAimCompensationProfile compensationProfile = ResolveAutoAimCompensationProfile(world, shooter, target, plate);
         double compensatedLeadTimeSec = Math.Max(0.0, leadTimeSec + compensationProfile.TimeBiasSec);
+        if (TryPredictEnergyMechanismPlatePose(
+                world,
+                target,
+                plate,
+                compensatedLeadTimeSec,
+                observedXWorld,
+                observedYWorld,
+                observedHeightM,
+                observedAngularVelocityRadPerSec,
+                out ArmorPlateTarget energyFuturePlate))
+        {
+            double futureLeadDxM = (energyFuturePlate.X - observedXWorld) * metersPerWorldUnit;
+            double futureLeadDyM = (energyFuturePlate.Y - observedYWorld) * metersPerWorldUnit;
+            double futureLeadDzM = energyFuturePlate.HeightM - observedHeightM;
+            double futureLeadDistanceM = Math.Sqrt(futureLeadDxM * futureLeadDxM + futureLeadDyM * futureLeadDyM + futureLeadDzM * futureLeadDzM);
+            return (energyFuturePlate.X, energyFuturePlate.Y, energyFuturePlate.HeightM, futureLeadDistanceM);
+        }
+
         if (TryResolveFutureHeroLobStructurePlate(world, shooter, target, plate, compensatedLeadTimeSec, out ArmorPlateTarget futurePlate))
         {
             double futureLeadDxM = (futurePlate.X - observedXWorld) * metersPerWorldUnit;
@@ -4480,6 +4537,7 @@ public static bool TryAcquireEnergyMechanismTarget(
         double observedAccelerationXMps2,
         double observedAccelerationYMps2,
         double observedAccelerationZMps2,
+        double observedAngularVelocityRadPerSec,
         double leadTimeSec)
     {
         double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
@@ -4490,6 +4548,24 @@ public static bool TryAcquireEnergyMechanismTarget(
 
         AutoAimCompensationProfile compensationProfile = ResolveAutoAimCompensationProfile(world, shooter, target, plate);
         double compensatedLeadTimeSec = Math.Max(0.0, leadTimeSec + compensationProfile.TimeBiasSec);
+        if (TryPredictEnergyMechanismPlatePose(
+                world,
+                target,
+                plate,
+                compensatedLeadTimeSec,
+                observedXWorld,
+                observedYWorld,
+                observedHeightM,
+                observedAngularVelocityRadPerSec,
+                out ArmorPlateTarget energyFuturePlate))
+        {
+            double futureLeadDxM = (energyFuturePlate.X - observedXWorld) * metersPerWorldUnit;
+            double futureLeadDyM = (energyFuturePlate.Y - observedYWorld) * metersPerWorldUnit;
+            double futureLeadDzM = energyFuturePlate.HeightM - observedHeightM;
+            double futureLeadDistanceM = Math.Sqrt(futureLeadDxM * futureLeadDxM + futureLeadDyM * futureLeadDyM + futureLeadDzM * futureLeadDzM);
+            return (energyFuturePlate.X, energyFuturePlate.Y, energyFuturePlate.HeightM, futureLeadDistanceM);
+        }
+
         if (TryResolveFutureHeroLobStructurePlate(world, shooter, target, plate, compensatedLeadTimeSec, out ArmorPlateTarget futurePlate))
         {
             double futureLeadDxM = (futurePlate.X - observedXWorld) * metersPerWorldUnit;
@@ -4955,7 +5031,7 @@ public static bool TryAcquireEnergyMechanismTarget(
             }
             else if (energyTarget)
             {
-                biasSec = 0.026 + 0.018 * distanceRatio + 0.010 * angularSpeedRatio;
+                biasSec = 0.010 + 0.010 * distanceRatio;
             }
             else if (rotatingPlate)
             {
@@ -4970,9 +5046,9 @@ public static bool TryAcquireEnergyMechanismTarget(
         {
             if (energyTarget)
             {
-                // Energy disks rotate fast enough that the camera/shot pipeline delay is visible.
-                // Bias slightly forward so EKF plate observations aim at the disk when the shell arrives.
-                biasSec = 0.034 + 0.024 * distanceRatio + 0.014 * angularSpeedRatio;
+                // Energy disks use deterministic future-pose reconstruction below. Keep
+                // a small positive release bias so the rule pose, not EKF lag, owns lead.
+                biasSec = 0.006 + 0.006 * distanceRatio;
             }
             else if (rotatingPlate)
             {
@@ -5138,6 +5214,169 @@ public static bool TryAcquireEnergyMechanismTarget(
             .FirstOrDefault(candidate => string.Equals(candidate.Id, plate.Id, StringComparison.OrdinalIgnoreCase));
 
         return !string.IsNullOrWhiteSpace(futurePlate.Id);
+    }
+
+    private static bool TryPredictEnergyMechanismPlatePose(
+        SimulationWorldState world,
+        SimulationEntity target,
+        ArmorPlateTarget plate,
+        double leadTimeSec,
+        double observedXWorld,
+        double observedYWorld,
+        double observedHeightM,
+        double observedAngularVelocityRadPerSec,
+        out ArmorPlateTarget futurePlate)
+    {
+        futurePlate = default;
+        if (leadTimeSec <= 1e-4
+            || !string.Equals(target.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase)
+            || !plate.Id.StartsWith("energy_", StringComparison.OrdinalIgnoreCase)
+            || !TryParseEnergyArmIndex(plate.Id, out string team, out _))
+        {
+            return false;
+        }
+
+        world.Teams.TryGetValue(team, out SimulationTeamState? teamState);
+        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
+        double modelOmegaRadPerSec = ResolveAutoAimAngularVelocityRadPerSec(world, target, plate);
+        double omegaRadPerSec = double.IsFinite(observedAngularVelocityRadPerSec)
+            && Math.Abs(observedAngularVelocityRadPerSec) >= 0.03
+                ? Math.Clamp(observedAngularVelocityRadPerSec, -12.0, 12.0)
+                : modelOmegaRadPerSec;
+        bool largeActive = teamState is not null
+            && string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
+            && teamState.EnergyLargeMechanismActive;
+        double angularSpeedRatio = Math.Clamp(Math.Abs(omegaRadPerSec) / 8.0, 0.0, 1.0);
+        double leadScale = largeActive
+            ? 1.08 + 0.12 * angularSpeedRatio
+            : 0.98 + 0.10 * angularSpeedRatio;
+        double predictionLeadSec = Math.Clamp(leadTimeSec * leadScale, 0.0, largeActive ? 0.72 : 0.55);
+        if (TryResolveEnergyMechanismPredictionFrame(
+                world,
+                target,
+                plate,
+                team,
+                teamState,
+                metersPerWorldUnit,
+                out Vector3 pivotM,
+                out Vector3 rotorAxisM))
+        {
+            Vector3 observedM = new(
+                (float)(observedXWorld * metersPerWorldUnit),
+                (float)observedHeightM,
+                (float)(observedYWorld * metersPerWorldUnit));
+            Vector3 observedRel = observedM - pivotM;
+            float axisOffsetM = Vector3.Dot(observedRel, rotorAxisM);
+            Vector3 planarRel = observedRel - rotorAxisM * axisOffsetM;
+            if (planarRel.LengthSquared() > 1e-8f)
+            {
+                double scheduledDeltaRad = ResolveEnergyRotorYawRad(world.GameTimeSec + predictionLeadSec, teamState)
+                    - ResolveEnergyRotorYawRad(world.GameTimeSec, teamState);
+                double measuredDeltaRad = omegaRadPerSec * predictionLeadSec;
+                double deltaRad = largeActive
+                    ? scheduledDeltaRad
+                    : Math.Abs(omegaRadPerSec) >= 0.03
+                        ? measuredDeltaRad
+                        : scheduledDeltaRad;
+                if (Math.Abs(scheduledDeltaRad) > 1e-5 && Math.Sign(deltaRad) != Math.Sign(scheduledDeltaRad))
+                {
+                    deltaRad = -deltaRad;
+                }
+
+                Vector3 futureRel = RotateAroundAxis(planarRel, rotorAxisM, (float)deltaRad) + rotorAxisM * axisOffsetM;
+                Vector3 futureM = pivotM + futureRel;
+                Vector3 plateNormal = new((float)plate.NormalXM, (float)plate.NormalYM, (float)plate.NormalZM);
+                Vector3 futureNormal = plateNormal.LengthSquared() <= 1e-8f
+                    ? rotorAxisM
+                    : Vector3.Normalize(RotateAroundAxis(plateNormal, rotorAxisM, (float)deltaRad));
+                Vector3 planarNormal = new(futureNormal.X, 0f, futureNormal.Z);
+                double yawDeg = planarNormal.LengthSquared() <= 1e-8f
+                    ? plate.YawDeg
+                    : NormalizeDeg(RadiansToDegrees(Math.Atan2(planarNormal.Z, planarNormal.X)));
+                futurePlate = plate with
+                {
+                    X = futureM.X / metersPerWorldUnit,
+                    Y = futureM.Z / metersPerWorldUnit,
+                    HeightM = futureM.Y,
+                    YawDeg = yawDeg,
+                    NormalXM = futureNormal.X,
+                    NormalYM = futureNormal.Y,
+                    NormalZM = futureNormal.Z,
+                };
+                return true;
+            }
+        }
+
+        double predictedGameTimeSec = world.GameTimeSec + predictionLeadSec;
+        futurePlate = GetEnergyMechanismTargets(target, metersPerWorldUnit, predictedGameTimeSec, team, teamState)
+            .FirstOrDefault(candidate => string.Equals(candidate.Id, plate.Id, StringComparison.OrdinalIgnoreCase));
+        return !string.IsNullOrWhiteSpace(futurePlate.Id);
+    }
+
+    private static bool TryResolveEnergyMechanismPredictionFrame(
+        SimulationWorldState world,
+        SimulationEntity target,
+        ArmorPlateTarget plate,
+        string team,
+        SimulationTeamState? teamState,
+        double metersPerWorldUnit,
+        out Vector3 pivotM,
+        out Vector3 rotorAxisM)
+    {
+        pivotM = default;
+        rotorAxisM = default;
+        IReadOnlyList<ArmorPlateTarget> currentTargets = GetEnergyMechanismTargets(
+            target,
+            metersPerWorldUnit,
+            world.GameTimeSec,
+            team,
+            teamState);
+        if (currentTargets.Count == 0)
+        {
+            return false;
+        }
+
+        Vector3 sum = Vector3.Zero;
+        Vector3 normalSum = Vector3.Zero;
+        int count = 0;
+        foreach (ArmorPlateTarget targetPlate in currentTargets)
+        {
+            if (!TryParseEnergyArmIndex(targetPlate.Id, out string targetTeam, out _)
+                || !string.Equals(targetTeam, team, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            sum += new Vector3(
+                (float)(targetPlate.X * metersPerWorldUnit),
+                (float)targetPlate.HeightM,
+                (float)(targetPlate.Y * metersPerWorldUnit));
+            Vector3 normal = new((float)targetPlate.NormalXM, (float)targetPlate.NormalYM, (float)targetPlate.NormalZM);
+            if (normal.LengthSquared() > 1e-8f)
+            {
+                normalSum += Vector3.Normalize(normal);
+            }
+
+            count++;
+        }
+
+        if (count <= 0)
+        {
+            return false;
+        }
+
+        pivotM = sum / count;
+        if (normalSum.LengthSquared() > 1e-8f)
+        {
+            rotorAxisM = Vector3.Normalize(normalSum);
+        }
+        else
+        {
+            Vector3 plateNormal = new((float)plate.NormalXM, (float)plate.NormalYM, (float)plate.NormalZM);
+            rotorAxisM = plateNormal.LengthSquared() <= 1e-8f ? Vector3.UnitZ : Vector3.Normalize(plateNormal);
+        }
+
+        return true;
     }
 
     private static IReadOnlyList<ArmorPlateTarget> GetOutpostArmorPlateTargets(

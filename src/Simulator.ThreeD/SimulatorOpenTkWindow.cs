@@ -196,6 +196,7 @@ internal sealed class SimulatorOpenTkWindow : GameWindow
         TkKeys.L,
         TkKeys.E,
         TkKeys.N,
+        TkKeys.O,
         TkKeys.P,
         TkKeys.Q,
         TkKeys.R,

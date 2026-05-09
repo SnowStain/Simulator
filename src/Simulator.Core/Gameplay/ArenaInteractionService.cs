@@ -17,6 +17,8 @@ public sealed class ArenaInteractionService
     private const double TerrainSlopeDamageTakenMult = 0.90;
     private const double TerrainSlopeCoolingMult = 1.20;
     public const double FortCaptureHoldSec = 3.0;
+    public const double EnemyFortUnlockSec = 180.0;
+    public const double EnemyFortBaseArmorOpenHoldSec = 20.0;
 
     private readonly RuleSet _rules;
 
@@ -49,11 +51,6 @@ public sealed class ArenaInteractionService
                 team.EnergyBuffDamageDealtMult = 1.0;
                 team.EnergyBuffDamageTakenMult = 1.0;
                 team.EnergyBuffCoolingMult = 1.0;
-                if (string.Equals(team.EnergyMechanismState, "activated", StringComparison.OrdinalIgnoreCase))
-                {
-                    team.EnergyMechanismState = "inactive";
-                    ResetEnergyVisualState(team);
-                }
             }
 
             TickEnergyMechanismActivation(world, team, deltaTimeSec, events);
@@ -364,10 +361,11 @@ public sealed class ArenaInteractionService
         entity.FortReserveAmmoCap = 0;
         entity.FortReserveAmmo = 0;
         SimulationTeamState targetTeam = world.GetOrCreateTeamState(facility.Team);
-        if (!targetTeam.BaseArmorForcedOpen)
+        bool baseArmorAlreadyOpen = targetTeam.BaseArmorForcedOpen;
+        entity.FortEnemyOccupationProgressSec = Math.Min(EnemyFortBaseArmorOpenHoldSec, entity.FortEnemyOccupationProgressSec + deltaTimeSec);
+        if (entity.FortEnemyOccupationProgressSec >= EnemyFortBaseArmorOpenHoldSec)
         {
-            entity.FortEnemyOccupationProgressSec += deltaTimeSec;
-            if (entity.FortEnemyOccupationProgressSec >= 20.0)
+            if (!baseArmorAlreadyOpen)
             {
                 targetTeam.BaseArmorForcedOpen = true;
                 events.Add(new FacilityInteractionEvent(
@@ -378,11 +376,18 @@ public sealed class ArenaInteractionService
                     NormalizeFacilityType(facility.Type),
                     "Enemy base armor opened by fort occupation"));
             }
-            else
-            {
-                ApplyDamageTakenBuff(entity, 2.0);
-            }
+
+            ApplyDamageTakenBuff(entity, 0.0);
+            return;
         }
+
+        if (baseArmorAlreadyOpen)
+        {
+            ApplyDamageTakenBuff(entity, 0.0);
+            return;
+        }
+
+        ApplyDamageTakenBuff(entity, 2.0);
     }
 
     private int ResolveFortReserveAmmoCap(SimulationEntity entity)
@@ -784,19 +789,7 @@ public sealed class ArenaInteractionService
         if (!string.Equals(plateTeam, shooter.Team, StringComparison.OrdinalIgnoreCase)
             || (teamState.EnergyCurrentLitMask & (1 << armIndex)) == 0)
         {
-            double failedAverageRing = teamState.EnergyHitRingCount > 0
-                ? teamState.EnergyHitRingSum / Math.Max(1.0, teamState.EnergyHitRingCount)
-                : 0.0;
-            ResetEnergyAttemptProgress(teamState, world.GameTimeSec, armIndex + 31);
-            return new FacilityInteractionEvent(
-                world.GameTimeSec,
-                shooter.Team,
-                shooter.Id,
-                hitPlate.Id,
-                "energy_mechanism",
-                failedAverageRing > 0.0
-                    ? $"\u80fd\u91cf\u673a\u5173\u6fc0\u6d3b\u5931\u8d25\uff1a\u8bef\u51fb\u975e\u5f53\u524d\u76ee\u6807\uff0c\u5e73\u5747\u73af\u6570 {failedAverageRing:0.0}\uff0c\u8fdb\u5ea6\u5df2\u6e05\u96f6\u5e76\u91cd\u65b0\u968f\u673a\u76ee\u6807\u3002"
-                    : "\u80fd\u91cf\u673a\u5173\u6fc0\u6d3b\u5931\u8d25\uff1a\u8bef\u51fb\u975e\u5f53\u524d\u76ee\u6807\uff0c\u8fdb\u5ea6\u5df2\u6e05\u96f6\u5e76\u91cd\u65b0\u968f\u673a\u76ee\u6807\u3002");
+            return null;
         }
         int safeRingScore = Math.Clamp(ringScore, 1, 10);
         if (armIndex >= 0
@@ -1043,11 +1036,6 @@ public sealed class ArenaInteractionService
             teamState.EnergyNextModuleDelaySec = Math.Max(0.0, teamState.EnergyNextModuleDelaySec - deltaTimeSec);
             if (teamState.EnergyNextModuleDelaySec <= 1e-6)
             {
-                if (teamState.EnergyLargeMechanismActive)
-                {
-                    ResetEnergyLargeRoundVisualRings(teamState);
-                }
-
                 teamState.EnergyCurrentLitMask = ResolveEnergyLitMask(teamState);
                 teamState.EnergyLitModuleTimerSec = 0.0;
             }
@@ -1123,6 +1111,9 @@ public sealed class ArenaInteractionService
 
         return false;
     }
+
+    public static void StartForcedEnergyAttempt(SimulationTeamState teamState, bool large, double gameTimeSec)
+        => StartEnergyAttempt(teamState, large, ResolveLargeEnergyAttemptSlot(gameTimeSec), gameTimeSec);
 
     private static void StartEnergyAttempt(SimulationTeamState teamState, bool large, int largeSlot, double gameTimeSec)
     {
@@ -1251,7 +1242,6 @@ public sealed class ArenaInteractionService
         teamState.EnergyLastRingScore = 0;
         teamState.EnergyLastHitArmIndex = -1;
         teamState.EnergyLastHitFlashEndSec = 0.0;
-        Array.Clear(teamState.EnergyHitRingsByArm, 0, teamState.EnergyHitRingsByArm.Length);
     }
     private static void StopEnergyAttempt(SimulationWorldState world, SimulationTeamState teamState)
     {
@@ -1748,7 +1738,12 @@ public sealed class ArenaInteractionService
         }
 
         SimulationEntity? outpost = FindStructure(world, facility.Team, "outpost");
-        return IsStructureDestroyed(outpost) && (friendly || world.GameTimeSec >= 180.0);
+        if (friendly)
+        {
+            return true;
+        }
+
+        return world.GameTimeSec >= EnemyFortUnlockSec && IsStructureDestroyed(outpost);
     }
 
     private static bool IsStructureDestroyed(SimulationEntity? entity)

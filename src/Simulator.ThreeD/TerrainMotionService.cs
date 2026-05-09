@@ -5261,8 +5261,8 @@ internal sealed class TerrainMotionService
         }
         else
         {
-            double yawDeadbandDeg = energyDiskTarget ? 0.055 : (smallGyroVehicleTarget ? 0.22 : 0.05);
-            double pitchDeadbandDeg = energyDiskTarget ? 0.045 : (smallGyroVehicleTarget ? 0.10 : 0.04);
+            double yawDeadbandDeg = energyDiskTarget ? 0.16 : (smallGyroVehicleTarget ? 0.22 : 0.05);
+            double pitchDeadbandDeg = energyDiskTarget ? 0.10 : (smallGyroVehicleTarget ? 0.10 : 0.04);
             if (playerHardLock)
             {
                 yawDeadbandDeg *= energyDiskTarget ? 1.20 : (heroLobAxisAimTarget ? 1.45 : 1.62);
@@ -5273,19 +5273,19 @@ internal sealed class TerrainMotionService
             desiredPitch = ApplyScalarDeadband(entity.AutoAimSmoothedPitchDeg, desiredPitch, pitchDeadbandDeg);
 
             double tau = energyDiskTarget
-                ? (lockChanged ? 0.040 : 0.060)
+                ? (lockChanged ? 0.075 : 0.105)
                 : smallGyroVehicleTarget
                     ? (lockChanged ? (sameTargetSwitch ? 0.090 : 0.135) : 0.125)
                     : (lockChanged ? (sameTargetSwitch ? 0.070 : 0.110) : 0.090);
             double yawTau = tau;
             double pitchTau = tau;
             double maxYawRateDegPerSec = energyDiskTarget
-                ? 980.0
+                ? 620.0
                 : smallGyroVehicleTarget
                     ? 420.0
                     : (heroLobAxisAimTarget ? 390.0 : 600.0);
             double maxPitchRateDegPerSec = energyDiskTarget
-                ? 740.0
+                ? 460.0
                 : smallGyroVehicleTarget
                     ? 320.0
                     : (heroLobPitchHoldTarget ? 280.0 : 460.0);
@@ -5310,10 +5310,10 @@ internal sealed class TerrainMotionService
 
             if (playerHardLock)
             {
-                pitchTau *= energyDiskTarget ? 1.10 : (heroLobPitchHoldTarget ? 1.22 : 1.30);
-                yawTau *= energyDiskTarget ? 1.10 : (heroLobPitchHoldTarget ? 1.22 : 1.30);
-                maxYawRateDegPerSec *= energyDiskTarget ? 0.94 : (heroLobAxisAimTarget ? 0.82 : 0.78);
-                maxPitchRateDegPerSec *= energyDiskTarget ? 0.94 : (heroLobPitchHoldTarget ? 0.84 : 0.80);
+                pitchTau *= energyDiskTarget ? 1.22 : (heroLobPitchHoldTarget ? 1.22 : 1.30);
+                yawTau *= energyDiskTarget ? 1.22 : (heroLobPitchHoldTarget ? 1.22 : 1.30);
+                maxYawRateDegPerSec *= energyDiskTarget ? 0.82 : (heroLobAxisAimTarget ? 0.82 : 0.78);
+                maxPitchRateDegPerSec *= energyDiskTarget ? 0.82 : (heroLobPitchHoldTarget ? 0.84 : 0.80);
             }
 
             if (lockChanged)
@@ -5345,10 +5345,10 @@ internal sealed class TerrainMotionService
         {
             double filteredPitchDeg = Math.Clamp(entity.GimbalPitchDeg, -40.0, 40.0);
             double outputDt = Math.Clamp(dt, 0.005, 0.08);
-            double outputPitchTau = energyDiskTarget ? 0.055 : smallGyroVehicleTarget ? 0.085 : (heroLobPitchHoldTarget ? 0.070 : 0.045);
-            double outputYawTau = energyDiskTarget ? 0.055 : smallGyroVehicleTarget ? 0.090 : (heroLobAxisAimTarget ? 0.070 : 0.045);
-            double outputPitchRateDegPerSec = energyDiskTarget ? 360.0 : smallGyroVehicleTarget ? 260.0 : (heroLobPitchHoldTarget ? 240.0 : 420.0);
-            double outputYawRateDegPerSec = energyDiskTarget ? 420.0 : smallGyroVehicleTarget ? 320.0 : 520.0;
+            double outputPitchTau = energyDiskTarget ? 0.090 : smallGyroVehicleTarget ? 0.085 : (heroLobPitchHoldTarget ? 0.070 : 0.045);
+            double outputYawTau = energyDiskTarget ? 0.095 : smallGyroVehicleTarget ? 0.090 : (heroLobAxisAimTarget ? 0.070 : 0.045);
+            double outputPitchRateDegPerSec = energyDiskTarget ? 260.0 : smallGyroVehicleTarget ? 260.0 : (heroLobPitchHoldTarget ? 240.0 : 420.0);
+            double outputYawRateDegPerSec = energyDiskTarget ? 320.0 : smallGyroVehicleTarget ? 320.0 : 520.0;
             if (heroHeavyGimbal && !energyDiskTarget)
             {
                 outputPitchTau *= heroLobPitchHoldTarget ? 1.30 : 1.40;
@@ -5370,10 +5370,10 @@ internal sealed class TerrainMotionService
 
             if (playerHardLock)
             {
-                outputPitchTau *= energyDiskTarget ? 1.04 : (heroLobPitchHoldTarget ? 1.20 : 1.28);
-                outputYawTau *= energyDiskTarget ? 1.04 : (heroLobAxisAimTarget ? 1.20 : 1.28);
-                outputPitchRateDegPerSec *= energyDiskTarget ? 0.98 : (heroLobPitchHoldTarget ? 0.86 : 0.80);
-                outputYawRateDegPerSec *= energyDiskTarget ? 0.98 : 0.80;
+                outputPitchTau *= energyDiskTarget ? 1.20 : (heroLobPitchHoldTarget ? 1.20 : 1.28);
+                outputYawTau *= energyDiskTarget ? 1.20 : (heroLobAxisAimTarget ? 1.20 : 1.28);
+                outputPitchRateDegPerSec *= energyDiskTarget ? 0.86 : (heroLobPitchHoldTarget ? 0.86 : 0.80);
+                outputYawRateDegPerSec *= energyDiskTarget ? 0.86 : 0.80;
             }
 
             outputPitchTau /= AutoAimGimbalSpeedScale;
@@ -7109,11 +7109,35 @@ internal sealed class TerrainMotionService
         double maxStep = ResolveEffectiveTraversalStepHeightM(entity);
         double jumpClearance = ResolveTerrainClearanceAllowanceM(entity);
         double effectiveDirectStep = directStep + jumpClearance;
+        double strictVerticalRiseLimit = ResolveStrictWheelVerticalRiseLimitM(entity, maxStep);
+        if (heightDelta > strictVerticalRiseLimit + 1e-6)
+        {
+            if (TryMoveToReachableContactPosition(world, runtimeGrid, entity, entity.X, entity.Y, nextX, nextY, currentHeight, strictVerticalRiseLimit, 0.0))
+            {
+                entity.MotionBlockReason = "wheel_step_contact";
+                return false;
+            }
+
+            ApplyBlockedMotionStop(entity, entity.X - nextX, entity.Y - nextY);
+            entity.MotionBlockReason = "wheel_step_too_high";
+            LogTerrainMovementBlockIfDue(
+                entity,
+                runtimeGrid,
+                entity.MotionBlockReason,
+                nextX,
+                nextY,
+                currentHeight,
+                targetHeight,
+                strictVerticalRiseLimit);
+            return false;
+        }
+
         bool slopeTransition = IsTraversableSlopeTransition(runtimeGrid, entity, entity.X, entity.Y, nextX, nextY, currentHeight, targetHeight, maxStep, jumpClearance);
         double footprintAllowedRise = slopeTransition
             ? Math.Max(maxStep, Math.Max(0.0, heightDelta) + ResolveSlopeAllowanceM(entity))
             : maxStep;
         double supportHeight = ResolveFootprintSupportHeight(world, runtimeGrid, entity, nextX, nextY, currentHeight, footprintAllowedRise + jumpClearance);
+        double supportRise = supportHeight - currentHeight;
         double speedMps = Math.Sqrt(
             entity.VelocityXWorldPerSec * entity.VelocityXWorldPerSec
             + entity.VelocityYWorldPerSec * entity.VelocityYWorldPerSec) * Math.Max(world.MetersPerWorldUnit, 1e-6);
@@ -7129,6 +7153,34 @@ internal sealed class TerrainMotionService
             out double forwardDropHeight);
         bool launchOffDrop = ShouldStartLedgeLaunch(entity, speedMps, heightDelta, frontWheelDrop);
         bool inLedgeAirborneWindow = IsInLedgeLaunchAirborneWindow(entity);
+        bool strictWheelSupportRise = string.Equals(entity.WheelStyle, "mecanum", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(entity.WheelStyle, "omni", StringComparison.OrdinalIgnoreCase)
+            || IsPureWheelTraversal(entity.WheelStyle);
+        if (!launchOffDrop
+            && !inLedgeAirborneWindow
+            && (strictWheelSupportRise || !IsAllowedNavigationStepRegion(nextX, nextY))
+            && supportRise > strictVerticalRiseLimit + 1e-6)
+        {
+            if (TryMoveToReachableContactPosition(world, runtimeGrid, entity, entity.X, entity.Y, nextX, nextY, currentHeight, strictVerticalRiseLimit, 0.0))
+            {
+                entity.MotionBlockReason = "wheel_support_step_contact";
+                return false;
+            }
+
+            ApplyBlockedMotionStop(entity, entity.X - nextX, entity.Y - nextY);
+            entity.MotionBlockReason = "wheel_support_step_too_high";
+            LogTerrainMovementBlockIfDue(
+                entity,
+                runtimeGrid,
+                entity.MotionBlockReason,
+                nextX,
+                nextY,
+                currentHeight,
+                supportHeight,
+                strictVerticalRiseLimit);
+            return false;
+        }
+
         if (!launchOffDrop
             && !inLedgeAirborneWindow
             && !slopeTransition
@@ -11037,7 +11089,7 @@ internal sealed class TerrainMotionService
                 }
             }
 
-            bool balanceBodyOrGimbal = IsBalanceInfantry(entity) && (bodyFootprint || gimbalFootprint);
+            bool balanceBodyOrGimbal = IsBalanceInfantry(entity) && bodyFootprint;
             if (!balanceBodyOrGimbal
                 && (bodyFootprint || gimbalFootprint || !ShouldTreatSupportFootprintAsPassable(runtimeGrid, entity, footprint, currentHeight, maxStep + jumpClearance))
                 && TryFindCollisionSurfaceWallContact(
@@ -11148,7 +11200,7 @@ internal sealed class TerrainMotionService
             Vector2 sample = footprint.Center
                 + footprint.Forward * (float)localX
                 + footprint.Right * (float)localY;
-            if (!runtimeGrid.HasCollisionSurfaceWallCellContact(sample.X, sample.Y, minWallHeightM, maxWallHeightM, maxCellRadius: 0))
+            if (!runtimeGrid.HasCollisionSurfaceWallCellContact(sample.X, sample.Y, minWallHeightM, maxWallHeightM, maxCellRadius: 1))
             {
                 return;
             }
@@ -14079,6 +14131,26 @@ internal sealed class TerrainMotionService
 
         double radiusLimitM = Math.Clamp(wheelRadiusM <= 1e-6 ? 0.06 : wheelRadiusM, 0.025, 0.18) * 0.98;
         return Math.Min(configuredStepHeightM, Math.Max(0.02, radiusLimitM));
+    }
+
+    private static double ResolveStrictWheelVerticalRiseLimitM(SimulationEntity entity, double effectiveStepHeightM)
+    {
+        if (string.Equals(entity.WheelStyle, "mecanum", StringComparison.OrdinalIgnoreCase))
+        {
+            return 0.25 + 0.006;
+        }
+
+        if (string.Equals(entity.WheelStyle, "omni", StringComparison.OrdinalIgnoreCase))
+        {
+            return Math.Min(effectiveStepHeightM + 0.004, 0.045);
+        }
+
+        if (IsPureWheelTraversal(entity.WheelStyle))
+        {
+            return effectiveStepHeightM + ResolveStepLipForgivenessM(entity);
+        }
+
+        return double.PositiveInfinity;
     }
 
     private static bool IsPureWheelTraversal(string? wheelStyle)

@@ -398,7 +398,7 @@ internal sealed partial class Simulator3dForm
         if (profile.GimbalLengthM > 0.04f && profile.GimbalWidthM > 0.04f && profile.GimbalBodyHeightM > 0.02f)
         {
             float bodyTop = bodyBase + bodyHeight;
-            ResolveWorldTurretAxes(turretYaw, gimbalPitch, out Vector3 turretForward, out Vector3 turretRight, out Vector3 pitchedForward, out Vector3 pitchedUp);
+            ResolveMountedTurretAxes(chassisForward3, chassisRight3, chassisUp3, turretYaw - yaw, gimbalPitch, out Vector3 turretForward, out Vector3 turretRight, out Vector3 pitchedForward, out Vector3 pitchedUp);
             if (profile.GimbalMountGapM + profile.GimbalMountHeightM > 0.02f)
             {
                 float mountHeight = Math.Max(0.02f, profile.GimbalMountGapM + profile.GimbalMountHeightM + 0.08f);
@@ -450,10 +450,14 @@ internal sealed partial class Simulator3dForm
             if (profile.BarrelLengthM > 0.04f && profile.BarrelRadiusM > 0.004f)
             {
                 Vector3 barrelAxis = pitchedForward;
+                Vector3 barrelShakeCompensation = ShouldBindSelectedFirstPersonViewToGimbal(entity)
+                    ? -(chassisMotionOffset + chassisUp3 * motion.BodyLiftM) * (1f - FirstPersonBarrelShakeScale)
+                    : Vector3.Zero;
                 Vector3 pivot = turretCenter
                     + pitchedForward * (profile.GimbalLengthM * 0.5f + profile.BarrelOffsetXM)
                     + pitchedUp * profile.BarrelOffsetYM
-                    + turretRight * profile.BarrelOffsetZM;
+                    + turretRight * profile.BarrelOffsetZM
+                    + barrelShakeCompensation;
                 Vector3 barrelCenter = pivot + barrelAxis * (profile.BarrelLengthM * 0.5f);
 
                 DrawHollowOctagonalBarrel(
@@ -1038,7 +1042,7 @@ internal sealed partial class Simulator3dForm
         if (profile.GimbalLengthM > 0.04f && profile.GimbalWidthM > 0.04f && profile.GimbalBodyHeightM > 0.02f)
         {
             float bodyTop = bodyBase + bodyHeight;
-            ResolveWorldTurretAxes(turretYaw, gimbalPitch, out Vector3 turretForward, out Vector3 turretRight, out Vector3 pitchedForward, out Vector3 pitchedUp);
+            ResolveMountedTurretAxes(chassisForward3, chassisRight3, chassisUp3, turretYaw - yaw, gimbalPitch, out Vector3 turretForward, out Vector3 turretRight, out Vector3 pitchedForward, out Vector3 pitchedUp);
             if (profile.GimbalMountGapM + profile.GimbalMountHeightM > 0.02f)
             {
                 float mountHeight = Math.Max(0.02f, profile.GimbalMountGapM + profile.GimbalMountHeightM + 0.08f);
@@ -1399,7 +1403,7 @@ internal sealed partial class Simulator3dForm
 
         float maxHeight = bodyBase + bodyHeight;
         ResolveChassisAxes(yaw, entity.ChassisPitchDeg, entity.ChassisRollDeg, out Vector3 chassisForward3, out Vector3 chassisRight3, out Vector3 chassisUp3);
-        ResolveWorldTurretAxes(turretYaw, gimbalPitch, out _, out Vector3 turretRight, out Vector3 pitchedForward, out Vector3 pitchedUp);
+        ResolveMountedTurretAxes(chassisForward3, chassisRight3, chassisUp3, turretYaw - yaw, gimbalPitch, out _, out Vector3 turretRight, out Vector3 pitchedForward, out Vector3 pitchedUp);
         float turretBase = Math.Max(bodyBase + bodyHeight + profile.GimbalMountGapM, profile.GimbalHeightM - profile.GimbalBodyHeightM * 0.5f);
         Vector3 turretCenter = OffsetScenePosition(
             center,
@@ -1777,22 +1781,12 @@ internal sealed partial class Simulator3dForm
         out Vector3 pitchedForward,
         out Vector3 pitchedUp)
     {
-        Vector3 baseForward = new(chassisForward.X, 0f, chassisForward.Z);
-        if (baseForward.LengthSquared() <= 1e-8f)
-        {
-            baseForward = new(-chassisRight.Z, 0f, chassisRight.X);
-        }
-
-        if (baseForward.LengthSquared() <= 1e-8f)
-        {
-            baseForward = Vector3.UnitX;
-        }
-
-        baseForward = Vector3.Normalize(baseForward);
-        Vector3 baseRight = Vector3.Normalize(new Vector3(-baseForward.Z, 0f, baseForward.X));
+        Vector3 baseForward = chassisForward.LengthSquared() <= 1e-8f ? Vector3.UnitX : Vector3.Normalize(chassisForward);
+        Vector3 baseRight = chassisRight.LengthSquared() <= 1e-8f ? Vector3.UnitZ : Vector3.Normalize(chassisRight);
+        Vector3 baseUp = chassisUp.LengthSquared() <= 1e-8f ? Vector3.UnitY : Vector3.Normalize(chassisUp);
         turretForward = Vector3.Normalize(baseForward * MathF.Cos(localTurretYaw) + baseRight * MathF.Sin(localTurretYaw));
         turretRight = Vector3.Normalize(-baseForward * MathF.Sin(localTurretYaw) + baseRight * MathF.Cos(localTurretYaw));
-        pitchedForward = Vector3.Normalize(turretForward * MathF.Cos(gimbalPitch) + Vector3.UnitY * MathF.Sin(gimbalPitch));
+        pitchedForward = Vector3.Normalize(turretForward * MathF.Cos(gimbalPitch) + baseUp * MathF.Sin(gimbalPitch));
         pitchedUp = Vector3.Normalize(Vector3.Cross(turretRight, pitchedForward));
     }
 

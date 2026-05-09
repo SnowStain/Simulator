@@ -223,6 +223,7 @@ internal sealed partial class Simulator3dForm
     private readonly Dictionary<string, FineTerrainStaticMeshCache> _fineTerrainEnergyUnitMeshCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, FineTerrainStaticMeshCache> _fineTerrainOutpostUnitMeshCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, FineTerrainStaticMeshCache> _fineTerrainBaseUnitMeshCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, List<(FineTerrainColoredTriangle Triangle, float Progress)>> _fineTerrainEnergyStripTriangleCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, GpuEntityAppearanceMeshCache> _gpuEntityAppearanceMeshCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly float[] _gpuKeyLightPosition = { -0.42f, 0.96f, -0.26f, 0.0f };
     private readonly float[] _gpuKeyLightAmbient = { 0.30f, 0.36f, 0.48f, 1.0f };
@@ -5080,7 +5081,7 @@ internal sealed partial class Simulator3dForm
 
                 Vector3 center = ToScenePoint(plate.X, plate.Y, (float)plate.HeightM);
                 Vector3 normal = ResolveGpuPlateNormal(plate);
-                float diskRadius = Math.Max(0.06f, (float)Math.Max(plate.WidthM, plate.HeightSpanM) * 0.5f);
+                float diskRadius = ResolveEnergyPendingPatternRadius((float)Math.Max(plate.WidthM, plate.HeightSpanM) * 0.5f);
                 int persistentRingScore = armIndex >= 0 && armIndex < teamState.EnergyHitRingsByArm.Length
                     ? Math.Clamp(teamState.EnergyHitRingsByArm[armIndex], 0, 10)
                     : 0;
@@ -5133,6 +5134,16 @@ internal sealed partial class Simulator3dForm
     {
         Vector3 normal = normalAxis.LengthSquared() <= 1e-8f ? Vector3.UnitX : Vector3.Normalize(normalAxis);
         Vector3 up = upAxis.LengthSquared() <= 1e-8f ? Vector3.UnitY : Vector3.Normalize(upAxis);
+        up -= normal * Vector3.Dot(up, normal);
+        if (up.LengthSquared() <= 1e-8f)
+        {
+            up = MathF.Abs(Vector3.Dot(normal, Vector3.UnitY)) > 0.96f
+                ? Vector3.UnitX
+                : Vector3.UnitY;
+            up -= normal * Vector3.Dot(up, normal);
+        }
+
+        up = up.LengthSquared() <= 1e-8f ? Vector3.UnitZ : Vector3.Normalize(up);
         Vector3 side = Vector3.Cross(up, normal);
         if (side.LengthSquared() <= 1e-8f)
         {
@@ -5144,43 +5155,38 @@ internal sealed partial class Simulator3dForm
         }
 
         Color hot = ResolveEnergyMechanismPendingDiskColor(activeColor);
-        Color core = Color.FromArgb(255, BlendColor(hot, Color.White, 0.20f));
-        Color glow = Color.FromArgb(170, BlendColor(hot, Color.White, 0.38f));
-        DrawGpuAnnulusDoubleSided(center, normal, up, diskRadius * 0.90f, diskRadius * 1.08f, glow, 40, 0.018f);
-        DrawGpuAnnulusDoubleSided(center, normal, up, diskRadius * 0.82f, diskRadius * 0.96f, hot, 40, 0.022f);
-        foreach (int ring in new[] { 3, 5, 7 })
+        float scale = ResolveEnergyPendingPatternRadius(diskRadius) / 0.300f;
+        float ringWidth = 0.040f * scale;
+        foreach (float outerRadius in new[] { 0.070f * scale, 0.150f * scale, 0.270f * scale })
         {
-            float outer = diskRadius * (11 - ring) / 10f;
-            float inner = Math.Max(0.0f, outer - diskRadius * 0.12f);
-            DrawGpuAnnulusDoubleSided(center, normal, up, inner, outer, hot, 40, 0.023f);
+            DrawGpuAnnulus(
+                center + normal * 0.018f,
+                normal,
+                up,
+                MathF.Max(0.0f, outerRadius - ringWidth),
+                outerRadius,
+                hot,
+                64);
         }
 
-        DrawGpuAnnulusDoubleSided(center, normal, up, 0f, diskRadius * 0.24f, core, 40, 0.025f);
-        float spokeLength = diskRadius * 0.92f;
-        float spokeHalfWidth = diskRadius * 0.070f;
-        Vector3 faceCenter = center + normal * 0.026f;
-        for (int index = 0; index < 5; index++)
+        float spokeOuterRadius = 0.300f * scale;
+        float spokeInnerRadius = MathF.Max(0.0f, spokeOuterRadius - 0.200f * scale);
+        float spokeOuterHalfWidth = 0.0350f * scale;
+        float spokeInnerHalfWidth = 0.0100f * scale;
+        Vector3 faceCenter = center + normal * 0.020f;
+        for (int index = 0; index < 4; index++)
         {
-            float angle = index * MathF.Tau / 5f;
+            float angle = index * MathF.Tau / 4f;
             Vector3 radial = Vector3.Normalize(up * MathF.Cos(angle) + side * MathF.Sin(angle));
             Vector3 tangent = Vector3.Normalize(Vector3.Cross(normal, radial));
-            Vector3 inner = faceCenter + radial * (diskRadius * 0.18f);
-            Vector3 outer = faceCenter + radial * spokeLength;
+            Vector3 inner = faceCenter + radial * spokeInnerRadius;
+            Vector3 outer = faceCenter + radial * spokeOuterRadius;
             AppendOrDrawGpuQuad(
-                inner - tangent * spokeHalfWidth,
-                inner + tangent * spokeHalfWidth,
-                outer + tangent * spokeHalfWidth,
-                outer - tangent * spokeHalfWidth,
+                inner - tangent * spokeInnerHalfWidth,
+                inner + tangent * spokeInnerHalfWidth,
+                outer + tangent * spokeOuterHalfWidth,
+                outer - tangent * spokeOuterHalfWidth,
                 hot);
-
-            Vector3 tabInner = faceCenter + radial * (diskRadius * 1.00f);
-            Vector3 tabOuter = faceCenter + radial * (diskRadius * 1.18f);
-            AppendOrDrawGpuQuad(
-                tabInner - tangent * (spokeHalfWidth * 1.15f),
-                tabInner + tangent * (spokeHalfWidth * 1.15f),
-                tabOuter + tangent * (spokeHalfWidth * 1.15f),
-                tabOuter - tangent * (spokeHalfWidth * 1.15f),
-                glow);
         }
     }
 
@@ -5613,6 +5619,7 @@ internal sealed partial class Simulator3dForm
         }
 
         _fineTerrainEnergyStripMeshCache.Clear();
+        _fineTerrainEnergyStripTriangleCache.Clear();
         _fineTerrainEnergyStripMeshSceneKey = sceneKey;
     }
 

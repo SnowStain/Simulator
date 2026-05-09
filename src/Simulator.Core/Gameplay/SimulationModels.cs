@@ -448,6 +448,10 @@ public sealed class SimulationEntity
 
     public double RuntimeOutpostTargetsGameTimeSec { get; set; } = double.NaN;
 
+    public bool OutpostRotationStopped { get; set; }
+
+    public double OutpostStoppedRelativeRotationRad { get; set; } = double.NaN;
+
     public IReadOnlyList<ArmorPlateTarget>? RuntimeBaseTargets { get; set; }
 
     public double WheelRadiusM { get; set; } = 0.08;

@@ -887,8 +887,11 @@ internal sealed partial class Simulator3dForm
         float gimbalPitch = (float)(shooter.GimbalPitchDeg * Math.PI / 180.0);
         RuntimeChassisMotion motion = ResolveRuntimeChassisMotion(shooter);
         ResolveChassisAxes(yaw, shooter.ChassisPitchDeg, shooter.ChassisRollDeg, out Vector3 chassisForward, out Vector3 chassisRight, out Vector3 chassisUp);
-        ResolveWorldTurretAxes(
-            turretYaw,
+        ResolveMountedTurretAxes(
+            chassisForward,
+            chassisRight,
+            chassisUp,
+            turretYaw - yaw,
             gimbalPitch,
             out _,
             out Vector3 turretRight,
@@ -1834,6 +1837,20 @@ internal sealed partial class Simulator3dForm
             buffs.Add($"Energy {teamState.EnergyBuffTimerSec:0}s");
         }
 
+        if (entity.FortReserveAmmoCap > 0)
+        {
+            buffs.Add($"Fort Ammo {entity.FortReserveAmmo}/{entity.FortReserveAmmoCap}");
+        }
+
+        if (entity.FortEnemyOccupationProgressSec >= ArenaInteractionService.EnemyFortBaseArmorOpenHoldSec - 1e-3)
+        {
+            buffs.Add("Enemy Fort Open");
+        }
+        else if (entity.FortEnemyOccupationProgressSec > 1e-3)
+        {
+            debuffs.Add($"Enemy Fort {entity.FortEnemyOccupationProgressSec:0}s");
+        }
+
         AddMultiplierEffect(buffs, debuffs, entity.DynamicDamageTakenMult, "Taken", buffWhenBelowOne: true);
         AddMultiplierEffect(buffs, debuffs, entity.DynamicDamageDealtMult, "Damage", buffWhenBelowOne: false);
         AddMultiplierEffect(buffs, debuffs, entity.DynamicCoolingMult, "Cooling", buffWhenBelowOne: false);
@@ -1864,6 +1881,48 @@ internal sealed partial class Simulator3dForm
                 Color.FromArgb(118, 210, 246),
                 true,
                 Math.Clamp(entity.FortCaptureProgressSec / ArenaInteractionService.FortCaptureHoldSec, 0.0, 1.0)));
+        }
+
+        if (entity.FortReserveAmmoCap > 0)
+        {
+            AddOrMergeBuff(entries, new BuffProgressEntry(
+                "fort_friendly_active",
+                "fort",
+                "\u5df1\u65b9\u5821\u5792",
+                $"\u51b7\u5374 x{Math.Max(1.0, entity.DynamicCoolingMult):0.00}  \u989d\u5916\u5f39\u836f {entity.FortReserveAmmo}/{entity.FortReserveAmmoCap}",
+                0.0,
+                0.0,
+                Color.FromArgb(255, 205, 78),
+                false,
+                Math.Max(1.0, entity.DynamicCoolingMult)));
+        }
+
+        if (entity.FortEnemyOccupationProgressSec > 1e-3
+            && entity.FortEnemyOccupationProgressSec < ArenaInteractionService.EnemyFortBaseArmorOpenHoldSec - 1e-3)
+        {
+            AddOrMergeBuff(entries, new BuffProgressEntry(
+                "fort_enemy_occupation",
+                "fort_enemy_occupation",
+                "\u654c\u65b9\u5821\u5792\u5360\u9886",
+                "20s\u540e\u5c55\u5f00\u654c\u65b9\u57fa\u5730\u5916\u677f",
+                Math.Max(0.0, ArenaInteractionService.EnemyFortBaseArmorOpenHoldSec - entity.FortEnemyOccupationProgressSec),
+                ArenaInteractionService.EnemyFortBaseArmorOpenHoldSec,
+                Color.FromArgb(255, 202, 74),
+                true,
+                Math.Clamp(entity.FortEnemyOccupationProgressSec / ArenaInteractionService.EnemyFortBaseArmorOpenHoldSec, 0.0, 1.0)));
+        }
+        else if (entity.FortEnemyOccupationProgressSec >= ArenaInteractionService.EnemyFortBaseArmorOpenHoldSec - 1e-3)
+        {
+            AddOrMergeBuff(entries, new BuffProgressEntry(
+                "fort_enemy_active",
+                "fort",
+                "\u654c\u65b9\u5821\u5792",
+                "\u654c\u65b9\u57fa\u5730\u5916\u677f\u5df2\u5c55\u5f00  \u5360\u9886\u514d\u4f24",
+                0.0,
+                0.0,
+                Color.FromArgb(255, 174, 82),
+                false,
+                3.0));
         }
 
         if (_host.World.Teams.TryGetValue(entity.Team, out SimulationTeamState? teamState)

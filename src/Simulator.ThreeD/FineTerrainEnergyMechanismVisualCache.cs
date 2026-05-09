@@ -13,6 +13,7 @@ internal static class FineTerrainEnergyMechanismVisualCache
     private const string LightArmKeyword = "\u706f\u81c2";
     private const string GlowArmKeyword = "\u5149\u81c2";
     private const string LightStripKeyword = "\u706f\u6761";
+    private const string InteractiveKeyword = "\u4e92\u52a8";
     private const string CenterKeyword = "\u4e2d\u592e";
     private const string MarkKeyword = "\u6807";
 
@@ -176,20 +177,20 @@ internal static class FineTerrainEnergyMechanismVisualCache
                 continue;
             }
 
-            HashSet<int> centerMarkComponentIds = composite.InteractionUnits
-                .Where(unit => IsCenterMarkUnitName(unit.Name))
-                .SelectMany(unit => unit.ComponentIds)
-                .ToHashSet();
             HashSet<int> compositeComponents = composite.ComponentIds.Length == 0
                 ? new HashSet<int>()
                 : composite.ComponentIds
-                    .Where(componentId => !centerMarkComponentIds.Contains(componentId))
                     .ToHashSet();
             var units = new List<FineTerrainEnergyMechanismUnitVisualItem>(composite.InteractionUnits.Length);
             foreach (RuntimeReferenceInteractionUnit unit in composite.InteractionUnits)
             {
                 if (IsCenterMarkUnitName(unit.Name))
                 {
+                    foreach (int componentId in unit.ComponentIds)
+                    {
+                        compositeComponents.Add(componentId);
+                    }
+
                     continue;
                 }
 
@@ -199,7 +200,6 @@ internal static class FineTerrainEnergyMechanismVisualCache
                 }
 
                 int[] filteredComponentIds = unit.ComponentIds
-                    .Where(componentId => !centerMarkComponentIds.Contains(componentId))
                     .Distinct()
                     .OrderBy(id => id)
                     .ToArray();
@@ -222,7 +222,6 @@ internal static class FineTerrainEnergyMechanismVisualCache
                 }
             }
 
-            compositeComponents.ExceptWith(centerMarkComponentIds);
             if (compositeComponents.Count == 0)
             {
                 continue;
@@ -270,9 +269,16 @@ internal static class FineTerrainEnergyMechanismVisualCache
             }
 
             string role = parts[2];
+            if (role.Contains(LightStripKeyword, StringComparison.Ordinal)
+                || role.Contains(InteractiveKeyword, StringComparison.Ordinal)
+                || role.Contains("interaction", StringComparison.OrdinalIgnoreCase))
+            {
+                kind = FineTerrainEnergyUnitKind.LightStrip;
+                return true;
+            }
+
             if (role.Contains(LightArmKeyword, StringComparison.Ordinal)
-                || role.Contains(GlowArmKeyword, StringComparison.Ordinal)
-                || role.Contains(LightStripKeyword, StringComparison.Ordinal))
+                || role.Contains(GlowArmKeyword, StringComparison.Ordinal))
             {
                 kind = FineTerrainEnergyUnitKind.LightArm;
                 return true;
@@ -669,6 +675,7 @@ internal enum FineTerrainEnergyUnitKind
 {
     Ring,
     LightArm,
+    LightStrip,
     CenterMark,
 }
 

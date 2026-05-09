@@ -3763,6 +3763,8 @@ public sealed class RuleSimulationService
             RuntimeEnergyTargetsGameTimeSec = source.RuntimeEnergyTargetsGameTimeSec,
             AnnotatedOutpost = source.AnnotatedOutpost,
             RuntimeOutpostTargetsGameTimeSec = source.RuntimeOutpostTargetsGameTimeSec,
+            OutpostRotationStopped = source.OutpostRotationStopped,
+            OutpostStoppedRelativeRotationRad = source.OutpostStoppedRelativeRotationRad,
             WheelRadiusM = source.WheelRadiusM,
             RearLegWheelRadiusM = source.RearLegWheelRadiusM,
             WheelOffsetsM = source.WheelOffsetsM.ToArray(),

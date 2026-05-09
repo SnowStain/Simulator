@@ -97,39 +97,10 @@ internal static class FineTerrainBaseVisualCache
         bool hasLightStripHalfSplit = TryResolveLightStripHalfSplit(items, out float lightStripHalfSplitModelX, out bool blueSideLowerModelX);
         foreach (FineTerrainBaseVisualItem item in items)
         {
-            HashSet<int> unitComponentIds = new();
-            foreach (FineTerrainBaseUnitVisualItem unit in item.Units)
-            {
-                foreach (int componentId in unit.ComponentIds)
-                {
-                    unitComponentIds.Add(componentId);
-                }
-            }
-
-            var bodyCandidates = new List<BaseBodyCandidate>(512);
-            foreach (int componentId in item.ComponentIds)
-            {
-                if (unitComponentIds.Contains(componentId))
-                {
-                    continue;
-                }
-
-                if (!boundsByComponent.TryGetValue(componentId, out RuntimeReferenceBounds bounds))
-                {
-                    continue;
-                }
-
-                if (trianglesByComponent.TryGetValue(componentId, out List<FineTerrainColoredTriangle>? componentTriangles))
-                {
-                    bodyCandidates.Add(new BaseBodyCandidate(componentId, bounds, componentTriangles));
-                }
-            }
-
-            var bodyTriangles = new List<FineTerrainColoredTriangle>(2048);
-            foreach (BaseBodyCandidate candidate in bodyCandidates)
-            {
-                bodyTriangles.AddRange(candidate.Triangles);
-            }
+            // The static base body is already rendered by the terrain GPU pipeline.
+            // Keep this overlay cache limited to the movable/interactive units; otherwise
+            // the 400k+ base triangles are uploaded and drawn a second time every frame.
+            var bodyTriangles = new List<FineTerrainColoredTriangle>(0);
             string itemDisplayTeam = hasLightStripHalfSplit
                 ? ResolveLightStripDisplayTeam(item.PositionModel.X, lightStripHalfSplitModelX, blueSideLowerModelX)
                 : item.Team;
@@ -184,7 +155,7 @@ internal static class FineTerrainBaseVisualCache
         var items = new List<FineTerrainBaseVisualItem>(2);
         foreach (RuntimeReferenceComposite composite in runtimeScene.Composites)
         {
-            if (!IsBaseVisualComposite(composite.Name))
+            if (!IsBaseVisualComposite(composite))
             {
                 continue;
             }
@@ -242,11 +213,32 @@ internal static class FineTerrainBaseVisualCache
         return items;
     }
 
+    private static bool IsBaseVisualComposite(RuntimeReferenceComposite composite)
+    {
+        string compositeName = composite.Name ?? string.Empty;
+        if (!compositeName.Contains(BaseKeyword, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (compositeName.Contains(TopArmorKeyword, StringComparison.Ordinal)
+            || compositeName.Contains(MiddleArmorKeyword, StringComparison.Ordinal)
+            || compositeName.Contains(OuterPanelKeyword, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return composite.InteractionUnits.Any(unit => ResolvePlateId(unit.Name) is not null);
+    }
+
     private static bool IsBaseVisualComposite(string compositeName)
-        => compositeName.Contains(BaseKeyword, StringComparison.Ordinal)
-            && (compositeName.Contains(TopArmorKeyword, StringComparison.Ordinal)
-                || compositeName.Contains(MiddleArmorKeyword, StringComparison.Ordinal)
-                || compositeName.Contains(OuterPanelKeyword, StringComparison.Ordinal));
+    {
+        string name = compositeName ?? string.Empty;
+        return name.Contains(BaseKeyword, StringComparison.Ordinal)
+            && (name.Contains(TopArmorKeyword, StringComparison.Ordinal)
+                || name.Contains(MiddleArmorKeyword, StringComparison.Ordinal)
+                || name.Contains(OuterPanelKeyword, StringComparison.Ordinal));
+    }
 
     public static bool IsBaseTopArmorCompositeName(string compositeName)
         => compositeName.Contains(BaseKeyword, StringComparison.Ordinal)
@@ -601,9 +593,30 @@ internal static class FineTerrainBaseVisualCache
     private static string? ResolvePlateId(string unitName)
     {
         if (!unitName.Contains(ArmorPlateKeyword, StringComparison.Ordinal)
-            && !unitName.Contains(LightStripKeyword, StringComparison.Ordinal))
+            && !unitName.Contains(LightStripKeyword, StringComparison.Ordinal)
+            && !unitName.Contains(OuterPanelKeyword, StringComparison.Ordinal))
         {
             return null;
+        }
+
+        if (unitName.Contains(OuterPanelKeyword, StringComparison.Ordinal))
+        {
+            if (unitName.Contains(LeftKeyword, StringComparison.Ordinal))
+            {
+                return "base_outer_left";
+            }
+
+            if (unitName.Contains(RightKeyword, StringComparison.Ordinal))
+            {
+                return "base_outer_right";
+            }
+
+            if (unitName.Contains(FrontKeyword, StringComparison.Ordinal))
+            {
+                return "base_outer_front";
+            }
+
+            return "base_outer";
         }
 
         if (unitName.Contains(MiddleArmorKeyword, StringComparison.Ordinal))
@@ -693,6 +706,7 @@ internal static class FineTerrainBaseVisualCache
         int triangleCount = 0;
         int bodyTriangleCount = 0;
         int unitCount = 0;
+        int outerUnitCount = 0;
         foreach (FineTerrainBaseVisualItem item in scene.Items)
         {
             LogMessage(
@@ -702,13 +716,18 @@ internal static class FineTerrainBaseVisualCache
             {
                 triangleCount += unit.Triangles.Count;
                 unitCount++;
+                if (unit.PlateId.StartsWith("base_outer", StringComparison.OrdinalIgnoreCase))
+                {
+                    outerUnitCount++;
+                }
+
                 LogMessage(
                     $"unit team={item.Team} plate={unit.PlateId} light={unit.IsLightStrip} components={unit.ComponentIds.Length} center=({unit.LocalCentroidModel.X:0.###},{unit.LocalCentroidModel.Y:0.###},{unit.LocalCentroidModel.Z:0.###}) normal=({unit.LocalNormalModel.X:0.###},{unit.LocalNormalModel.Y:0.###},{unit.LocalNormalModel.Z:0.###}) size=({unit.WidthM:0.###},{unit.HeightSpanM:0.###})");
             }
         }
 
         LogMessage(
-            $"load_ok annotation={Path.GetFileName(annotationPath)} terrain={Path.GetFileName(terrainCachePath)} items={scene.Items.Count} units={unitCount} body_triangles={bodyTriangleCount} unit_triangles={triangleCount}");
+            $"load_ok annotation={Path.GetFileName(annotationPath)} terrain={Path.GetFileName(terrainCachePath)} items={scene.Items.Count} units={unitCount} outer_units={outerUnitCount} body_triangles={bodyTriangleCount} unit_triangles={triangleCount}");
     }
 
     private static void LogFailureOnce(string key, string message)
