@@ -13,6 +13,11 @@ internal static class LinuxOperatorApplication
         try
         {
             LinuxOperatorOptions options = LinuxOperatorOptions.Parse(args);
+            if (options.HeadlessDiagnostics)
+            {
+                return LinuxOperatorDiagnostics.Run(options);
+            }
+
             var gameSettings = new GameWindowSettings
             {
                 UpdateFrequency = 240.0,

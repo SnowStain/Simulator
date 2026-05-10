@@ -21,6 +21,47 @@ Platform-neutral game runtime
 
 WinForms should become only a Windows compatibility shell until it can be retired.
 
+## Why The Original Project Was Windows-Locked
+
+The old runnable path was not portable because the executable entry was
+`src/Simulator.ThreeD/Simulator.ThreeD.csproj`, which is intentionally a Windows
+compatibility shell:
+
+| Blocker | Original Location | Why It Blocks Linux | Current Direction |
+| --- | --- | --- | --- |
+| Windows target framework | `Simulator.ThreeD.csproj` uses `net10.0-windows` | The assembly can only be built/run with Windows desktop targeting enabled | Keep it as Windows compatibility, do not make Linux depend on it |
+| WinForms shell | `Program.cs`, `Simulator3dForm.cs`, editor forms | `Application.Run`, WinForms events, Form controls, clipboard/dialog behavior are Windows desktop APIs | Move reusable behavior into platform-neutral projects and call it from OpenTK |
+| OpenTK-to-WinForms input mapping | `SimulatorOpenTkWindow` previously fed Form-oriented behavior | Linux input was still coupled to WinForms key/mouse concepts | `GameInputSnapshot` now lives in `Simulator.Platform` and both shells translate into it |
+| Windows runtime package | `OpenCvSharp4.runtime.win` in `Simulator.ThreeD.csproj` | That NuGet runtime is Windows-only | Linux project does not reference `Simulator.ThreeD`; future OpenCV must be conditional or Linux-native |
+| Windows editor dependencies | `Simulator.LoadLargeTerrain`, WinForms editor forms | File dialogs/forms keep editor executables Windows-targeted | Keep authoring tools separate; extract shared editor document logic before porting UI |
+| Mixed executable/runtime ownership | `Simulator.Runtime` was an `Exe` and also held shared input types | Linux publish should not depend on an executable helper project for platform contracts | `Simulator.Platform` is now the pure shared contract library |
+| Asset and map assumptions | historical paths and empty legacy folders such as `map`, `rules`, `simulator3d`, `cpp` | A naive "all folders must be non-empty" check fails despite usable `maps`, `规则`, appearance data | Linux diagnostics now checks essential assets and reports legacy folders as warnings |
+
+The important practical rule: Linux must not reference `Simulator.ThreeD`,
+`Simulator.LoadLargeTerrain`, `Simulator.Decision`, or any WinForms editor
+project. Port features by extracting platform-neutral state, rendering data,
+and UI layout contracts first.
+
+## What Is Solved Now
+
+The current `linux` branch has these portability foundations in place:
+
+| Area | Status | Files |
+| --- | --- | --- |
+| Linux executable entry | Added an OpenTK-only `net10.0` app with no WinForms reference | `src/Simulator.Linux` |
+| Shared input model | Moved `GameInputSnapshot` and accumulator out of executable runtime into a pure library | `src/Simulator.Platform/Input` |
+| Linux dependency graph | Linux app references only `Simulator.Platform`, `Simulator.Core`, and `Simulator.Assets` | `src/Simulator.Linux/Simulator.Linux.csproj` |
+| Static portability gate | Checks for forbidden Windows project refs, Windows TFMs, WinForms, Win32 P/Invoke, and Windows OpenCV runtime | `scripts/linux/check-linux-portability.*` |
+| Headless diagnostics | Verifies config, map preset, appearance data, rules, asset roots, logs, and input model without a display server | `--diagnostics`, `LinuxOperatorDiagnostics.cs` |
+| Linux publish gate | Produces `linux-x64` artifacts from Windows or Linux | `scripts/linux/verify-linux-port.*` |
+| OpenGL smoke path | Runs OpenTK frame loop and exits automatically; can use Xvfb when available | `scripts/linux/smoke-linux-operator.sh`, `--exit-after` |
+| Documentation | Explains current blockers, project structure, command sequence, and parity scenarios | this README |
+
+This does not mean all gameplay/UI features are already implemented in Linux.
+It means the Linux project now has a clean, testable, non-Windows foundation
+where those features can be moved one by one without reintroducing Windows-only
+dependencies.
+
 ## Linux Screenshot Diagnosis
 
 The current Linux operator screenshot shows that the 3D scene is being restored, but most of the simulator contract is still missing from the OpenTK path:
@@ -82,35 +123,59 @@ docs/skills/artinx-linux-opentk-port/references/scene-ui-contract.md
 ## Repository Orientation
 
 ```text
+src/Simulator.Platform
+  Pure cross-platform contracts. Keep it tiny and dependency-light.
+  Current owner of GameInputSnapshot, GameKey, GameMouseButton, and the input
+  accumulator.
+
 src/Simulator.Core
-  Rules, world entities, physics-facing state, damage, projectiles, buffs, energy mechanisms.
+  Platform-neutral rules and simulation state: world entities, teams, combat,
+  projectiles, buffs, energy mechanism state, and match math. This is safe for
+  Linux as long as new APIs stay free of desktop/window dependencies.
 
 src/Simulator.Assets
-  Map, appearance, and config loading.
-
-src/Simulator.Editors
-  Shared editor documents/import/export helpers.
-
-src/Simulator.Platform
-  Platform-neutral contracts and adapters. `GameInputSnapshot` lives here so
-  Linux, OpenTK, and the Windows compatibility shell can share input without
-  referencing any executable runtime.
-
-src/Simulator.Runtime
-  Platform-neutral runtime CLI and simulation/service extraction landing zone.
-  Do not make the Linux operator depend on this executable project until it is
-  split into a pure library.
+  Platform-neutral asset discovery and loading: config, map presets, appearance
+  JSON, terrain/map document helpers. This is part of the Linux graph.
 
 src/Simulator.Linux
-  New OpenTK-only Linux operator shell. It targets `net10.0`, does not reference
-  WinForms or `Simulator.ThreeD`, and is the active migration entry for Linux.
+  Active Linux operator shell. It owns OpenTK window creation, Linux/OpenTK input
+  capture, diagnostics, GL smoke rendering, and future calls into extracted
+  OpenGK/GPU scene renderers. It must not reference Windows shell projects.
+
+src/Simulator.Runtime
+  Current CLI/runtime-service staging area. It is still an executable project,
+  so Linux should not depend on it until reusable pieces are split into a pure
+  library or moved to Core/Assets/Platform.
+
+src/Simulator.Editors
+  Shared editor documents/import/export helpers. Pure data helpers can be reused
+  by Linux; WinForms editor UI must remain out of the Linux operator graph.
 
 src/Simulator.ThreeD
-  Current Windows game shell and most existing UI/render/game integration.
+  Windows compatibility shell and current feature source of truth for much of
+  the scene, OpenGK UI, LAN, and rendering behavior. Extract from it; do not
+  reference it from Linux.
 
 src/Simulator.LoadLargeTerrain
-  OpenTK/ImGui terrain/map editor. Currently still Windows-targeted because of WinForms file dialogs.
+  Terrain/map editor executable. It still targets Windows because of desktop
+  dialogs/forms. Port editor UI separately after shared document logic is clean.
+
+src/Simulator.Decision and src/Simulator.AutoAimCalibrationTool
+  Windows/operator tools. They are not part of the Linux operator dependency
+  graph.
 ```
+
+### Current Linux Dependency Graph
+
+```text
+Simulator.Linux
+  -> Simulator.Platform
+  -> Simulator.Core
+  -> Simulator.Assets
+```
+
+Everything else is either a Windows compatibility executable, an editor/tool, or
+a future extraction source.
 
 ## Component Invocation Map
 
@@ -926,6 +991,19 @@ Convenience script:
 bash scripts/linux/run-linux-operator.sh rmuc2026
 ```
 
+Headless diagnostics, no display server needed:
+
+```bash
+dotnet run --project src/Simulator.Linux/Simulator.Linux.csproj -- --diagnostics --map rmuc2026
+```
+
+OpenGL smoke run, auto-exits after six seconds. If `xvfb-run` is installed, the
+script uses it automatically:
+
+```bash
+bash scripts/linux/smoke-linux-operator.sh rmuc2026 1280x720 6
+```
+
 Linux portability gate:
 
 ```bash
@@ -952,6 +1030,57 @@ still present for Windows compatibility and authoring tools, but they must not
 be pulled into the Linux operator. When moving a feature to Linux, extract the
 platform-neutral logic into `Simulator.Platform`, `Simulator.Runtime`, `Simulator.Core`,
 `Simulator.Assets`, or a new cross-platform rendering package first.
+
+## Linux Verification Strategy
+
+Use these layers to decide whether a feature can be fully implemented on Linux:
+
+| Layer | Command | What It Proves | What It Does Not Prove |
+| --- | --- | --- | --- |
+| Static portability | `bash scripts/linux/check-linux-portability.sh` | Linux graph has no WinForms, Windows TFM, Windows OpenCV runtime, or Windows shell reference | Runtime feature parity |
+| Headless runtime | `dotnet run --project src/Simulator.Linux/Simulator.Linux.csproj -- --diagnostics --map rmuc2026` | Config, asset catalog, map preset, appearance files, logs, and input model load without a display server | OpenGL rendering correctness |
+| Publish | `dotnet publish src/Simulator.Linux/Simulator.Linux.csproj -c Debug -r linux-x64 --self-contained false` | Project can produce Linux binaries | GPU/driver behavior |
+| OpenGL smoke | `bash scripts/linux/smoke-linux-operator.sh rmuc2026 1280x720 6` | OpenTK window, GL context, frame loop, input capture, and log path work on Linux | Full UI/scene feature parity |
+| Full operator parity | manual/recorded scenarios from the checklist below | Menus, LAN, HUD, energy, base armor, collision, editor data, and combat behavior match Windows | Needs human review until screenshot/video assertions exist |
+
+One-shot Linux verification:
+
+```bash
+bash scripts/linux/verify-linux-port.sh rmuc2026
+```
+
+On Windows handoff machines, use the non-window subset:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\linux\verify-linux-port.ps1 rmuc2026
+```
+
+### Feature Parity Scenarios
+
+Run these on real Linux after each extraction batch:
+
+1. Start screen: open local room, create LAN room, join/direct-connect modal,
+   editor buttons do not crash.
+2. Room: add/remove seats, host referee is visible to clients, ready/start works,
+   robot type/spawn selection stays in preparation.
+3. Match startup: preparation, self-check, countdown, P/O toggle, Enter skip in
+   local mode, only movement keys locked.
+4. Live control: first/third person camera, Alt mouse release, firing, auto-aim,
+   death grayscale/respawn, hit red vignette.
+5. HUD: top UC HUD, active robot cards only, base/outpost HP labels, minimap,
+   ammo/heat/buffer arcs.
+6. Scene interaction: energy mechanism pending markers/arrows/rings, hit rules,
+   base armor panel animation and moved collision, outpost/base armor hit models.
+7. Terrain/collision: edited collision volumes, buff volumes, mecanum step limit,
+   balance infantry chassis collision and downhill smoothing.
+8. LAN: client input uplink, host authoritative snapshot downlink, live roster
+   mutation lock, validation digest, low-latency motion without flashback.
+9. Editors/data: map/buff/collision JSON edits load into runtime, Python
+   appearance editor and map preview scripts remain callable.
+
+For each scenario, keep `logs/linux_operator.log`, LAN logs, and a short screen
+recording. A feature should not be marked Linux-complete until it passes the
+scenario on a native Linux desktop and through the headless diagnostics gate.
 
 ## Runtime Interaction Checklist
 

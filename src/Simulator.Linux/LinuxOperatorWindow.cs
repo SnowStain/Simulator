@@ -23,6 +23,7 @@ internal sealed class LinuxOperatorWindow : GameWindow
     private readonly LinuxOperatorRuntime _runtime;
     private readonly GameInputSnapshotAccumulator _inputAccumulator = new();
     private readonly GlPrimitiveRenderer _renderer = new();
+    private readonly LinuxOperatorOptions _options;
 
     public LinuxOperatorWindow(
         GameWindowSettings gameWindowSettings,
@@ -30,6 +31,7 @@ internal sealed class LinuxOperatorWindow : GameWindow
         LinuxOperatorOptions options)
         : base(gameWindowSettings, nativeWindowSettings)
     {
+        _options = options;
         _runtime = new LinuxOperatorRuntime(options);
     }
 
@@ -55,6 +57,12 @@ internal sealed class LinuxOperatorWindow : GameWindow
         GameInputSnapshot input = CaptureInputSnapshot();
         _runtime.ApplyInput(input);
         _runtime.Tick(args.Time);
+        if (_options.ExitAfterSec is double exitAfterSec && _runtime.TimeSec >= exitAfterSec)
+        {
+            Close();
+            return;
+        }
+
         CursorState = IsFocused && _runtime.CaptureMouse
             ? CursorState.Grabbed
             : CursorState.Normal;

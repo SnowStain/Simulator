@@ -4,7 +4,8 @@ internal sealed record LinuxOperatorOptions(
     string? MapPreset,
     int Width,
     int Height,
-    bool HeadlessDiagnostics)
+    bool HeadlessDiagnostics,
+    double? ExitAfterSec)
 {
     public static LinuxOperatorOptions Parse(IReadOnlyList<string> args)
     {
@@ -12,6 +13,7 @@ internal sealed record LinuxOperatorOptions(
         int width = 1440;
         int height = 900;
         bool headlessDiagnostics = false;
+        double? exitAfterSec = null;
 
         for (int i = 0; i < args.Count; i++)
         {
@@ -35,8 +37,15 @@ internal sealed record LinuxOperatorOptions(
             {
                 headlessDiagnostics = true;
             }
+            else if (string.Equals(arg, "--exit-after", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Count)
+            {
+                if (double.TryParse(args[++i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double parsed))
+                {
+                    exitAfterSec = Math.Clamp(parsed, 0.1, 120.0);
+                }
+            }
         }
 
-        return new LinuxOperatorOptions(mapPreset, width, height, headlessDiagnostics);
+        return new LinuxOperatorOptions(mapPreset, width, height, headlessDiagnostics, exitAfterSec);
     }
 }

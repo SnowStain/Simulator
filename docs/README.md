@@ -32,6 +32,33 @@
 - 能量机关、前哨站、基地等组合体如何和互动组件一起运行。
 - 每次功能更新后，哪些文档必须同步修改。
 
+## 当前项目结构
+
+Linux 迁移时按下面的层级看项目：
+
+| 路径 | 定位 | Linux 状态 |
+| --- | --- | --- |
+| `src/Simulator.Platform` | 跨平台输入和平台契约，包含 `GameInputSnapshot` | Linux 入口直接依赖 |
+| `src/Simulator.Core` | 规则、实体、战斗、弹丸、增益、能量机关状态 | Linux 入口直接依赖 |
+| `src/Simulator.Assets` | 配置、地图 preset、外观和资源加载 | Linux 入口直接依赖 |
+| `src/Simulator.Linux` | 新 OpenTK-only Linux 操作端入口 | 当前 Linux 主入口 |
+| `src/Simulator.Runtime` | CLI 和未来 runtime 抽取暂存区，目前仍是 Exe | 暂不让 Linux 入口依赖 |
+| `src/Simulator.ThreeD` | Windows 兼容主程序，现有 UI/渲染/LAN 功能源 | 只能抽取代码，Linux 不直接引用 |
+| `src/Simulator.LoadLargeTerrain` | 地图/地形编辑器入口 | 仍是 Windows/editor 工具 |
+| `scripts/linux` | Linux 迁移验证和启动脚本 | Linux/交接必跑 |
+
+原项目不能直接在 Linux 上完整运行的核心原因是主入口 `Simulator.ThreeD` 使用
+`net10.0-windows`、WinForms、Windows OpenCV runtime，并且大量 OpenGK UI、LAN
+面板、渲染和编辑器调用还在 Windows shell 内。当前 `linux` 分支已经把 Linux
+入口收紧为：
+
+```text
+Simulator.Linux -> Simulator.Platform / Simulator.Core / Simulator.Assets
+```
+
+Linux 迁移继续推进时，应从 `Simulator.ThreeD` 抽取平台无关的状态、布局、渲染数据和规则，
+不要把 `Simulator.ThreeD` 作为 Linux 项目引用。
+
 如果现在要改自瞄、吊射、自动扳机、提前量或能量机关目标建模，优先读：
 
 - [视觉自瞄、吊射与统一控制链路](algorithms/autoaim.md)
