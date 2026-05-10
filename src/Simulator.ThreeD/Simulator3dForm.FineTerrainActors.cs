@@ -1287,7 +1287,7 @@ internal sealed partial class Simulator3dForm
         FineTerrainEnergyMechanismUnitVisualItem radiusUnit =
             ResolveFineTerrainEnergyRingUnit(item, unit.ArmIndex, preferredRingScore: 1) ?? unit;
         Vector3 extraSceneOffset = ResolveFineTerrainEnergyUnitSceneLift(unit, worldScale, compositeTransform)
-            + ResolveFineTerrainEnergyUnitNormalOffset(unit, worldScale, compositeTransform, 0.0140f);
+            + ResolveFineTerrainEnergyUnitNormalOffset(unit, worldScale, compositeTransform, 0.0060f);
         if (!TryResolveFineTerrainEnergyUnitSurfacePose(
                 item,
                 unit,
@@ -1347,7 +1347,7 @@ internal sealed partial class Simulator3dForm
         Vector3 pivotScene = ModelToScenePoint(Vector3.Transform(item.PivotModel, compositeTransform), worldScale)
             + sceneAlignmentOffset
             + extraSceneOffset;
-        center = MoveFineTerrainEnergyPendingCenterTowardPivot(center, pivotScene, normal, 0.01f);
+        center = MoveFineTerrainEnergyPendingCenterTowardPivot(center, pivotScene, normal, 0.02f);
 
         Color teamColor = ResolveEnergyMechanismPureTeamLightColor(item.Team);
         bool readyToHit = teamState.EnergyNextModuleDelaySec <= 1e-6;
@@ -3593,7 +3593,7 @@ internal sealed partial class Simulator3dForm
             : -0.07f / worldScale.YMetersPerModelUnit;
         float z = MathF.Abs(worldScale.ZMetersPerModelUnit) <= 1e-6f
             ? 0f
-            : -0.35f / worldScale.ZMetersPerModelUnit;
+            : -0.25f / worldScale.ZMetersPerModelUnit;
         return new Vector3(0f, y, z);
     }
 
@@ -3637,7 +3637,7 @@ internal sealed partial class Simulator3dForm
     {
         Vector3 panelOutModel = -ResolveFineTerrainBaseOuterPanelCoordinateAxisModel(item, FineTerrainEditorAxis.Z);
         Vector3 panelDownModel = -ResolveFineTerrainBaseOuterPanelCoordinateAxisModel(item, FineTerrainEditorAxis.Y);
-        float outUnits = ResolveFineTerrainModelDistanceForMeters(worldScale, panelOutModel, 0.35f);
+        float outUnits = ResolveFineTerrainModelDistanceForMeters(worldScale, panelOutModel, 0.25f);
         float downUnits = ResolveFineTerrainModelDistanceForMeters(worldScale, panelDownModel, 0.07f);
         return panelOutModel * outUnits + panelDownModel * downUnits;
     }

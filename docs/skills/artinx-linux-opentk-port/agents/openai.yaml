@@ -1,0 +1,3 @@
+display_name: ARTINX Linux OpenTK Port
+short_description: Linux OpenTK porting workflow
+default_prompt: Use this skill to migrate ARTINX Simulator toward a Linux-capable OpenTK runtime while preserving scene interactions, LAN sync, and all UI panels.

@@ -157,7 +157,8 @@ internal sealed record LanEntitySnapshot(
     int FortReserveAmmo,
     int FortReserveAmmoCap,
     bool IsAlive,
-    bool IsPlayerControlled);
+    bool IsPlayerControlled,
+    long LastProcessedInputSequence = 0);
 
 internal sealed record LanProjectileSnapshot(
     string Id,
@@ -279,7 +280,7 @@ internal sealed class LanMultiplayerSession : IDisposable
     private const int MaxLanPlayerClients = 10;
     private const string ProtocolVersion = "lan-5v5-v1";
     private static readonly TimeSpan ReliableSendLockTimeout = TimeSpan.FromSeconds(2);
-    private static readonly TimeSpan RealtimeSendLockTimeout = TimeSpan.Zero;
+    private static readonly TimeSpan RealtimeSendLockTimeout = TimeSpan.FromMilliseconds(2);
 
     private sealed record WireEnvelope(string Type, JsonElement Payload);
 
@@ -922,7 +923,9 @@ internal sealed class LanMultiplayerSession : IDisposable
     }
 
     private static bool ShouldDropLanMessageWhenSendBusy(string type)
-        => LanProtocolMetadata.Describe(type).Delivery == LanProtocolDelivery.Realtime;
+        => LanProtocolMetadata.Describe(type).Delivery == LanProtocolDelivery.Realtime
+            && !string.Equals(type, LanProtocolMessageTypes.Input, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(type, LanProtocolMessageTypes.PlayerInput, StringComparison.OrdinalIgnoreCase);
 
     private void EnqueueStatus(string message)
         => _events.Enqueue(new LanSessionEvent(LanProtocolMessageTypes.Status, message));

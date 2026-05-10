@@ -15,11 +15,14 @@ using Simulator.Core;
 using Simulator.Core.Gameplay;
 using Simulator.Core.Map;
 using Simulator.Editors;
+using Simulator.Runtime.Input;
 
 namespace Simulator.ThreeD;
 
 internal sealed partial class Simulator3dForm : Form
 {
+    private readonly GameInputSnapshotAccumulator _winFormsInputAccumulator = new();
+
     private enum InMatchKeyAction
     {
         MoveForward,
@@ -701,17 +704,20 @@ internal sealed partial class Simulator3dForm : Form
             _timer.Start();
             Application.Idle += OnApplicationIdle;
 
-            MouseDown += OnMouseDownInternal;
-            MouseUp += OnMouseUpInternal;
-            MouseMove += OnMouseMoveInternal;
-            MouseWheel += OnMouseWheelInternal;
-            KeyDown += OnKeyDownInternal;
-            KeyUp += OnKeyUpInternal;
+            MouseDown += OnWinFormsMouseDownInput;
+            MouseUp += OnWinFormsMouseUpInput;
+            MouseMove += OnWinFormsMouseMoveInput;
+            MouseWheel += OnWinFormsMouseWheelInput;
+            KeyDown += OnWinFormsKeyDownInput;
+            KeyUp += OnWinFormsKeyUpInput;
             Activated += (_, _) => UpdateMouseCaptureState();
             Deactivate += (_, _) =>
             {
                 ReleaseMouseCapture();
                 ResetLiveInput();
+                ExternalApplyInput(_winFormsInputAccumulator.ReleaseAll(
+                    _frameClock.Elapsed.TotalSeconds,
+                    CreateWinFormsPointerState(_lastMouse, wheelDelta: 0, cursorCaptured: false)));
             };
         }
     }
@@ -1155,6 +1161,181 @@ internal sealed partial class Simulator3dForm : Form
         RenderFrameToGraphics(graphics, allowGpuScene: false);
     }
 
+    internal void ExternalApplyInput(GameInputSnapshot snapshot)
+    {
+        Point location = new(
+            (int)Math.Round(snapshot.Pointer.X),
+            (int)Math.Round(snapshot.Pointer.Y));
+        Point delta = new(
+            (int)Math.Round(snapshot.Pointer.DeltaX),
+            (int)Math.Round(snapshot.Pointer.DeltaY));
+
+        foreach (GameKey key in snapshot.ReleasedKeys)
+        {
+            if (TryMapGameKeyToWinForms(key, out Keys mapped))
+            {
+                ExternalKeyUp(
+                    mapped,
+                    snapshot.DownKeys.Contains(GameKey.LeftShift) || snapshot.DownKeys.Contains(GameKey.RightShift),
+                    snapshot.DownKeys.Contains(GameKey.LeftControl) || snapshot.DownKeys.Contains(GameKey.RightControl),
+                    snapshot.DownKeys.Contains(GameKey.LeftAlt) || snapshot.DownKeys.Contains(GameKey.RightAlt));
+            }
+        }
+
+        foreach (GameKey key in snapshot.PressedKeys)
+        {
+            if (TryMapGameKeyToWinForms(key, out Keys mapped))
+            {
+                ExternalKeyDown(
+                    mapped,
+                    snapshot.DownKeys.Contains(GameKey.LeftShift) || snapshot.DownKeys.Contains(GameKey.RightShift),
+                    snapshot.DownKeys.Contains(GameKey.LeftControl) || snapshot.DownKeys.Contains(GameKey.RightControl),
+                    snapshot.DownKeys.Contains(GameKey.LeftAlt) || snapshot.DownKeys.Contains(GameKey.RightAlt));
+            }
+        }
+
+        foreach (GameMouseButton button in snapshot.ReleasedMouseButtons)
+        {
+            MouseButtons mapped = MapGameMouseButtonToWinForms(button);
+            if (mapped != MouseButtons.None)
+            {
+                ExternalMouseUp(mapped, location);
+            }
+        }
+
+        foreach (GameMouseButton button in snapshot.PressedMouseButtons)
+        {
+            MouseButtons mapped = MapGameMouseButtonToWinForms(button);
+            if (mapped != MouseButtons.None)
+            {
+                ExternalMouseDown(mapped, location);
+            }
+        }
+
+        if (Math.Abs(snapshot.Pointer.WheelDelta) >= 1e-6)
+        {
+            ExternalMouseWheel(location, (int)Math.Round(snapshot.Pointer.WheelDelta));
+        }
+
+        if (_externallyDrivenCompatibilityMode)
+        {
+            ExternalMouseMove(location, delta, snapshot.Pointer.CursorCaptured);
+        }
+        else
+        {
+            OnMouseMoveInternal(this, new MouseEventArgs(MouseButtons.None, 0, location.X, location.Y, 0));
+        }
+    }
+
+    private void OnWinFormsKeyDownInput(object? sender, KeyEventArgs eventArgs)
+    {
+        if (_appState == SimulatorAppState.InMatch)
+        {
+            eventArgs.SuppressKeyPress = true;
+            eventArgs.Handled = true;
+        }
+
+        if (!TryMapWinFormsKeyToGameKey(eventArgs.KeyCode, out GameKey key))
+        {
+            OnKeyDownInternal(sender, eventArgs);
+            return;
+        }
+
+        ExternalApplyInput(_winFormsInputAccumulator.CaptureKey(
+            _frameClock.Elapsed.TotalSeconds,
+            key,
+            down: true,
+            CreateWinFormsPointerState(_lastMouse, wheelDelta: 0, cursorCaptured: _mouseCaptureActive)));
+    }
+
+    private void OnWinFormsKeyUpInput(object? sender, KeyEventArgs eventArgs)
+    {
+        if (_appState == SimulatorAppState.InMatch)
+        {
+            eventArgs.SuppressKeyPress = true;
+            eventArgs.Handled = true;
+        }
+
+        if (!TryMapWinFormsKeyToGameKey(eventArgs.KeyCode, out GameKey key))
+        {
+            OnKeyUpInternal(sender, eventArgs);
+            return;
+        }
+
+        ExternalApplyInput(_winFormsInputAccumulator.CaptureKey(
+            _frameClock.Elapsed.TotalSeconds,
+            key,
+            down: false,
+            CreateWinFormsPointerState(_lastMouse, wheelDelta: 0, cursorCaptured: _mouseCaptureActive)));
+    }
+
+    private void OnWinFormsMouseDownInput(object? sender, MouseEventArgs eventArgs)
+    {
+        GameMouseButton button = MapWinFormsMouseButtonToGame(eventArgs.Button);
+        if (button == GameMouseButton.None)
+        {
+            OnMouseDownInternal(sender, eventArgs);
+            return;
+        }
+
+        ExternalApplyInput(_winFormsInputAccumulator.CaptureMouseButton(
+            _frameClock.Elapsed.TotalSeconds,
+            button,
+            down: true,
+            CreateWinFormsPointerState(eventArgs.Location, eventArgs.Delta, cursorCaptured: _mouseCaptureActive)));
+    }
+
+    private void OnWinFormsMouseUpInput(object? sender, MouseEventArgs eventArgs)
+    {
+        GameMouseButton button = MapWinFormsMouseButtonToGame(eventArgs.Button);
+        if (button == GameMouseButton.None)
+        {
+            OnMouseUpInternal(sender, eventArgs);
+            return;
+        }
+
+        ExternalApplyInput(_winFormsInputAccumulator.CaptureMouseButton(
+            _frameClock.Elapsed.TotalSeconds,
+            button,
+            down: false,
+            CreateWinFormsPointerState(eventArgs.Location, eventArgs.Delta, cursorCaptured: _mouseCaptureActive)));
+    }
+
+    private void OnWinFormsMouseMoveInput(object? sender, MouseEventArgs eventArgs)
+    {
+        if (_suppressMouseWarp)
+        {
+            _suppressMouseWarp = false;
+            _lastMouse = eventArgs.Location;
+            _ = _winFormsInputAccumulator.CapturePointer(
+                _frameClock.Elapsed.TotalSeconds,
+                CreateWinFormsPointerState(eventArgs.Location, wheelDelta: 0, cursorCaptured: _mouseCaptureActive));
+            return;
+        }
+
+        ExternalApplyInput(_winFormsInputAccumulator.CapturePointer(
+            _frameClock.Elapsed.TotalSeconds,
+            CreateWinFormsPointerState(eventArgs.Location, wheelDelta: 0, cursorCaptured: _mouseCaptureActive)));
+    }
+
+    private void OnWinFormsMouseWheelInput(object? sender, MouseEventArgs eventArgs)
+    {
+        ExternalApplyInput(_winFormsInputAccumulator.CaptureWheel(
+            _frameClock.Elapsed.TotalSeconds,
+            CreateWinFormsPointerState(eventArgs.Location, eventArgs.Delta, cursorCaptured: _mouseCaptureActive)));
+    }
+
+    private GamePointerState CreateWinFormsPointerState(Point location, int wheelDelta, bool cursorCaptured)
+    {
+        int deltaX = cursorCaptured
+            ? location.X - ClientSize.Width / 2
+            : location.X - _lastMouse.X;
+        int deltaY = cursorCaptured
+            ? location.Y - ClientSize.Height / 2
+            : location.Y - _lastMouse.Y;
+        return _winFormsInputAccumulator.BuildPointer(location.X, location.Y, wheelDelta, cursorCaptured, deltaX, deltaY);
+    }
+
     internal void ExternalKeyDown(Keys keyCode, bool shiftDown, bool controlDown, bool altDown)
     {
         Keys data = keyCode;
@@ -1270,6 +1451,195 @@ internal sealed partial class Simulator3dForm : Form
             _cameraTargetM += (-right * delta.X + forward * delta.Y) * panScale;
             _followSelection = false;
         }
+    }
+
+    private static MouseButtons MapGameMouseButtonToWinForms(GameMouseButton button)
+    {
+        return button switch
+        {
+            GameMouseButton.Left => MouseButtons.Left,
+            GameMouseButton.Right => MouseButtons.Right,
+            GameMouseButton.Middle => MouseButtons.Middle,
+            _ => MouseButtons.None,
+        };
+    }
+
+    private static GameMouseButton MapWinFormsMouseButtonToGame(MouseButtons button)
+    {
+        return button switch
+        {
+            MouseButtons.Left => GameMouseButton.Left,
+            MouseButtons.Right => GameMouseButton.Right,
+            MouseButtons.Middle => GameMouseButton.Middle,
+            MouseButtons.XButton1 => GameMouseButton.Button4,
+            MouseButtons.XButton2 => GameMouseButton.Button5,
+            _ => GameMouseButton.None,
+        };
+    }
+
+    private static bool TryMapGameKeyToWinForms(GameKey key, out Keys mapped)
+    {
+        mapped = key switch
+        {
+            GameKey.Enter => Keys.Enter,
+            GameKey.Escape => Keys.Escape,
+            GameKey.Tab => Keys.Tab,
+            GameKey.Space => Keys.Space,
+            GameKey.Backspace => Keys.Back,
+            GameKey.Delete => Keys.Delete,
+            GameKey.PageUp => Keys.PageUp,
+            GameKey.PageDown => Keys.PageDown,
+            GameKey.LeftShift => Keys.LShiftKey,
+            GameKey.RightShift => Keys.RShiftKey,
+            GameKey.LeftControl => Keys.LControlKey,
+            GameKey.RightControl => Keys.RControlKey,
+            GameKey.LeftAlt => Keys.LMenu,
+            GameKey.RightAlt => Keys.RMenu,
+            GameKey.A => Keys.A,
+            GameKey.B => Keys.B,
+            GameKey.C => Keys.C,
+            GameKey.D => Keys.D,
+            GameKey.E => Keys.E,
+            GameKey.F => Keys.F,
+            GameKey.H => Keys.H,
+            GameKey.I => Keys.I,
+            GameKey.J => Keys.J,
+            GameKey.K => Keys.K,
+            GameKey.L => Keys.L,
+            GameKey.N => Keys.N,
+            GameKey.O => Keys.O,
+            GameKey.P => Keys.P,
+            GameKey.Q => Keys.Q,
+            GameKey.R => Keys.R,
+            GameKey.S => Keys.S,
+            GameKey.T => Keys.T,
+            GameKey.V => Keys.V,
+            GameKey.W => Keys.W,
+            GameKey.X => Keys.X,
+            GameKey.Z => Keys.Z,
+            GameKey.D0 => Keys.D0,
+            GameKey.D1 => Keys.D1,
+            GameKey.D2 => Keys.D2,
+            GameKey.D3 => Keys.D3,
+            GameKey.D4 => Keys.D4,
+            GameKey.D5 => Keys.D5,
+            GameKey.D6 => Keys.D6,
+            GameKey.D7 => Keys.D7,
+            GameKey.D8 => Keys.D8,
+            GameKey.D9 => Keys.D9,
+            GameKey.NumPad0 => Keys.NumPad0,
+            GameKey.NumPad1 => Keys.NumPad1,
+            GameKey.NumPad2 => Keys.NumPad2,
+            GameKey.NumPad3 => Keys.NumPad3,
+            GameKey.NumPad4 => Keys.NumPad4,
+            GameKey.NumPad5 => Keys.NumPad5,
+            GameKey.NumPad6 => Keys.NumPad6,
+            GameKey.NumPad7 => Keys.NumPad7,
+            GameKey.NumPad8 => Keys.NumPad8,
+            GameKey.NumPad9 => Keys.NumPad9,
+            GameKey.NumPadDecimal => Keys.Decimal,
+            GameKey.NumPadSubtract => Keys.Subtract,
+            GameKey.Oem1 => Keys.Oem1,
+            GameKey.OemPeriod => Keys.OemPeriod,
+            GameKey.OemMinus => Keys.OemMinus,
+            GameKey.OemQuestion => Keys.OemQuestion,
+            GameKey.F1 => Keys.F1,
+            GameKey.F2 => Keys.F2,
+            GameKey.F3 => Keys.F3,
+            GameKey.F4 => Keys.F4,
+            GameKey.F5 => Keys.F5,
+            GameKey.F6 => Keys.F6,
+            GameKey.F7 => Keys.F7,
+            GameKey.F8 => Keys.F8,
+            GameKey.F9 => Keys.F9,
+            _ => Keys.None,
+        };
+
+        return mapped != Keys.None;
+    }
+
+    private static bool TryMapWinFormsKeyToGameKey(Keys key, out GameKey mapped)
+    {
+        mapped = NormalizeComparableKey(key) switch
+        {
+            Keys.Enter => GameKey.Enter,
+            Keys.Escape => GameKey.Escape,
+            Keys.Tab => GameKey.Tab,
+            Keys.Space => GameKey.Space,
+            Keys.Back => GameKey.Backspace,
+            Keys.Delete => GameKey.Delete,
+            Keys.PageUp => GameKey.PageUp,
+            Keys.PageDown => GameKey.PageDown,
+            Keys.ShiftKey => GameKey.LeftShift,
+            Keys.LShiftKey => GameKey.LeftShift,
+            Keys.RShiftKey => GameKey.RightShift,
+            Keys.ControlKey => GameKey.LeftControl,
+            Keys.LControlKey => GameKey.LeftControl,
+            Keys.RControlKey => GameKey.RightControl,
+            Keys.Menu => GameKey.LeftAlt,
+            Keys.LMenu => GameKey.LeftAlt,
+            Keys.RMenu => GameKey.RightAlt,
+            Keys.A => GameKey.A,
+            Keys.B => GameKey.B,
+            Keys.C => GameKey.C,
+            Keys.D => GameKey.D,
+            Keys.E => GameKey.E,
+            Keys.F => GameKey.F,
+            Keys.H => GameKey.H,
+            Keys.I => GameKey.I,
+            Keys.J => GameKey.J,
+            Keys.K => GameKey.K,
+            Keys.L => GameKey.L,
+            Keys.N => GameKey.N,
+            Keys.O => GameKey.O,
+            Keys.P => GameKey.P,
+            Keys.Q => GameKey.Q,
+            Keys.R => GameKey.R,
+            Keys.S => GameKey.S,
+            Keys.T => GameKey.T,
+            Keys.V => GameKey.V,
+            Keys.W => GameKey.W,
+            Keys.X => GameKey.X,
+            Keys.Z => GameKey.Z,
+            Keys.D0 => GameKey.D0,
+            Keys.D1 => GameKey.D1,
+            Keys.D2 => GameKey.D2,
+            Keys.D3 => GameKey.D3,
+            Keys.D4 => GameKey.D4,
+            Keys.D5 => GameKey.D5,
+            Keys.D6 => GameKey.D6,
+            Keys.D7 => GameKey.D7,
+            Keys.D8 => GameKey.D8,
+            Keys.D9 => GameKey.D9,
+            Keys.NumPad0 => GameKey.NumPad0,
+            Keys.NumPad1 => GameKey.NumPad1,
+            Keys.NumPad2 => GameKey.NumPad2,
+            Keys.NumPad3 => GameKey.NumPad3,
+            Keys.NumPad4 => GameKey.NumPad4,
+            Keys.NumPad5 => GameKey.NumPad5,
+            Keys.NumPad6 => GameKey.NumPad6,
+            Keys.NumPad7 => GameKey.NumPad7,
+            Keys.NumPad8 => GameKey.NumPad8,
+            Keys.NumPad9 => GameKey.NumPad9,
+            Keys.Decimal => GameKey.NumPadDecimal,
+            Keys.Subtract => GameKey.NumPadSubtract,
+            Keys.Oem1 => GameKey.Oem1,
+            Keys.OemPeriod => GameKey.OemPeriod,
+            Keys.OemMinus => GameKey.OemMinus,
+            Keys.OemQuestion => GameKey.OemQuestion,
+            Keys.F1 => GameKey.F1,
+            Keys.F2 => GameKey.F2,
+            Keys.F3 => GameKey.F3,
+            Keys.F4 => GameKey.F4,
+            Keys.F5 => GameKey.F5,
+            Keys.F6 => GameKey.F6,
+            Keys.F7 => GameKey.F7,
+            Keys.F8 => GameKey.F8,
+            Keys.F9 => GameKey.F9,
+            _ => GameKey.None,
+        };
+
+        return mapped != GameKey.None;
     }
 
     private void EnqueueDelayedLookInput(double yawDeltaDeg, double pitchDeltaDeg)
@@ -1763,10 +2133,16 @@ internal sealed partial class Simulator3dForm : Form
         while (_simulationAccumulatorSec + 1e-9 >= fixedDt && simulatedSteps < MaxSimulationCatchUpSteps)
         {
             PlayerControlState localStepState = simulatedSteps == 0 ? firstState : repeatedState;
+            if (IsLanRemoteAuthoritativeClient && _lanAwaitingFirstLiveAuthoritativeSnapshot)
+            {
+                _simulationAccumulatorSec = Math.Min(_simulationAccumulatorSec, fixedDt);
+                break;
+            }
+
             PublishLanInput(localStepState);
             if (IsLanRemoteAuthoritativeClient)
             {
-                _host.ApplyAimOnlyControlState(localStepState);
+                _host.Step(localStepState);
                 AdvanceLanClientSimulationSequence();
                 _simulationAccumulatorSec -= fixedDt;
                 simulatedSteps++;
@@ -11674,6 +12050,12 @@ internal sealed partial class Simulator3dForm : Form
         }
 
         _lanPreparationConfirmed = false;
+        if (IsLanMultiplayerActive)
+        {
+            _lanLiveSyncBoundaryApplied = false;
+            _lanAwaitingFirstLiveAuthoritativeSnapshot = false;
+        }
+
         _appState = SimulatorAppState.InMatch;
         _matchStartupPhase = MatchStartupPhase.Loading;
         _matchStartupPhaseStartTicks = _frameClock.ElapsedTicks;
@@ -11785,6 +12167,11 @@ internal sealed partial class Simulator3dForm : Form
             LogMatchStartupProgressIfDue(nowTicks, terrainReady);
             if (_matchStartupViewReady && terrainReady)
             {
+                if (IsLanRemoteAuthoritativeClient)
+                {
+                    return;
+                }
+
                 _matchStartupPhase = ShouldRunMatchStartupPreparation()
                     ? MatchStartupPhase.Preparation
                     : (ShouldSkipMatchStartupSelfCheck()
@@ -11892,6 +12279,7 @@ internal sealed partial class Simulator3dForm : Form
         _lastFrameClockTicks = nowTicks;
         _matchSelfCheckPanelOpen = false;
         _paused = false;
+        ResetLanLiveSyncBoundary("match_live");
         ResetLiveInput();
         InvalidateGpuOverlayLayer();
         UpdateMouseCaptureState();

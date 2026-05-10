@@ -15,8 +15,9 @@
 8. [能量机关渲染与交互](algorithms/energy-mechanism.md)
 9. [弹丸与模型碰撞](algorithms/projectile-collision.md)
 10. [经验、等级与左下角 HUD](algorithms/experience-hud.md)
-11. [项目日志](project-log.md)
-12. [文档维护工作流](documentation-workflow.md)
+11. [Linux / OpenTK 迁移 README](linux-opentk-port-readme.md)
+12. [项目日志](project-log.md)
+13. [文档维护工作流](documentation-workflow.md)
 
 ## 文档目标
 

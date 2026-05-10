@@ -18,19 +18,22 @@ internal sealed partial class Simulator3dForm
         Ai,
     }
 
-    private const double LanSnapshotIntervalSec = 0.10;
+    private const double LanSnapshotIntervalSec = 1.0 / 30.0;
     private const double LanDigestIntervalSec = 0.50;
     private const int LanRemoteInputBufferLimit = 180;
     private const int LanMaxRefereeCount = 3;
     private const int LanMaxSpectatorCount = 5;
     private const int LanSpawnPointCount = 5;
+    private const string LanHostRefereeSeatId = "referee_host";
     private static readonly string[] LanUcEntityKeys = LanRobotSeatCatalog.ControllableEntityKeys.ToArray();
     private static readonly string[] LanUcRoomSeatEntityKeys = LanRobotSeatCatalog.RoomSeatEntityKeys.ToArray();
 
     private LanMultiplayerSession? _lanSession;
-    private PlayerControlState? _latestLanRemoteInput;
     private readonly SortedDictionary<long, PlayerControlState> _lanLocalInputFrames = new();
     private readonly SortedDictionary<long, PlayerControlState> _lanRemoteInputFrames = new();
+    private readonly Dictionary<string, PlayerControlState> _latestLanRemoteInputsByEntity = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, long> _latestLanRemoteInputSequenceByEntity = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, long> _lanProcessedInputSequenceByEntity = new(StringComparer.OrdinalIgnoreCase);
     private long _lanSimulationSequence;
     private long _lanInputSequence;
     private long _lanLobbySequence;
@@ -57,9 +60,15 @@ internal sealed partial class Simulator3dForm
     private double _lastLanCoalescedRealtimeLogSec = double.NegativeInfinity;
     private double _lastLanSnapshotDetailLogSec = double.NegativeInfinity;
     private double _lastLanAuthoritativeSnapshotDetailLogSec = double.NegativeInfinity;
-    private double _lastLanSnapshotTxDetailLogSec = double.NegativeInfinity;
     private double _lastLanAuthoritativeSnapshotTxDetailLogSec = double.NegativeInfinity;
+    private double _lastLanInputTxDetailLogSec = double.NegativeInfinity;
+    private double _lastLanInputRxDetailLogSec = double.NegativeInfinity;
+    private double _lastLanLegacyInputRxDetailLogSec = double.NegativeInfinity;
+    private long _lanCoalescedInputTxLogs;
+    private long _lanCoalescedInputRxLogs;
     private long _lanCoalescedRealtimeEvents;
+    private bool _lanLiveSyncBoundaryApplied;
+    private bool _lanAwaitingFirstLiveAuthoritativeSnapshot;
     private string _lanStatusLine = string.Empty;
     private string _lanLocalPlayerId = Guid.NewGuid().ToString("N");
     private LanValidationDigest? _lastLanRemoteDigest;
@@ -118,6 +127,16 @@ internal sealed partial class Simulator3dForm
     private bool IsLanRemoteAuthoritativeClient
         => IsLanMultiplayerMatchActive
             && _lanSession?.IsHost == false;
+
+    private bool IsLanLiveMatchPhase
+        => IsLanMultiplayerMatchActive
+            && _matchStartupPhase == MatchStartupPhase.Live;
+
+    private bool IsLanLiveRosterMutationLocked
+        => _lanSession is not null
+            && (_lanLiveSyncBoundaryApplied
+                || _matchStartupPhase == MatchStartupPhase.Live
+                || _lastAppliedLanStartupPhase == MatchStartupPhase.Live);
 
     private bool IsLanRefereeClient
         => _lanSession is not null
@@ -651,6 +670,12 @@ internal sealed partial class Simulator3dForm
 
     private void StartLanRoomMatchFromRoom()
     {
+        if (IsLanMultiplayerMatchActive)
+        {
+            _lanRoomStatusText = "对局已经开始，不能重复开局。";
+            return;
+        }
+
         if (_lanSession is null)
         {
             _lanRoomStatusText = "请先创建房间。";
@@ -740,9 +765,11 @@ internal sealed partial class Simulator3dForm
 
     private void ResetLanRuntimeSyncState()
     {
-        _latestLanRemoteInput = null;
         _lanLocalInputFrames.Clear();
         _lanRemoteInputFrames.Clear();
+        _latestLanRemoteInputsByEntity.Clear();
+        _latestLanRemoteInputSequenceByEntity.Clear();
+        _lanProcessedInputSequenceByEntity.Clear();
         _lanSimulationSequence = 0;
         _lanInputSequence = 0;
         _lanDigestSequence = 0;
@@ -768,14 +795,85 @@ internal sealed partial class Simulator3dForm
         _lastLanCoalescedRealtimeLogSec = double.NegativeInfinity;
         _lastLanSnapshotDetailLogSec = double.NegativeInfinity;
         _lastLanAuthoritativeSnapshotDetailLogSec = double.NegativeInfinity;
-        _lastLanSnapshotTxDetailLogSec = double.NegativeInfinity;
         _lastLanAuthoritativeSnapshotTxDetailLogSec = double.NegativeInfinity;
+        _lastLanInputTxDetailLogSec = double.NegativeInfinity;
+        _lastLanInputRxDetailLogSec = double.NegativeInfinity;
+        _lastLanLegacyInputRxDetailLogSec = double.NegativeInfinity;
+        _lanCoalescedInputTxLogs = 0;
+        _lanCoalescedInputRxLogs = 0;
         _lanCoalescedRealtimeEvents = 0;
+        _lanLiveSyncBoundaryApplied = false;
+        _lanAwaitingFirstLiveAuthoritativeSnapshot = false;
         _lastLanRemoteDigest = null;
         _lanRefereeReports.Clear();
         _lanUplinkEventLog.Clear();
         _lanDownlinkEventLog.Clear();
         _lastAppliedLanStartupPhase = MatchStartupPhase.None;
+    }
+
+    private void ResetLanLiveSyncBoundary(string reason)
+    {
+        if (!IsLanMultiplayerActive || _lanLiveSyncBoundaryApplied)
+        {
+            return;
+        }
+
+        _lanLocalInputFrames.Clear();
+        _lanRemoteInputFrames.Clear();
+        _latestLanRemoteInputsByEntity.Clear();
+        _latestLanRemoteInputSequenceByEntity.Clear();
+        _lanProcessedInputSequenceByEntity.Clear();
+        _lanSimulationSequence = 0;
+        _lanInputSequence = 0;
+        _lastLanSnapshotSentAtSec = double.NegativeInfinity;
+        _lastLanSnapshotReceivedAtSec = double.NegativeInfinity;
+        _lastLanPoseDriftLogSec = 0.0;
+        _lanCoalescedInputTxLogs = 0;
+        _lanCoalescedInputRxLogs = 0;
+        _lanLiveSyncBoundaryApplied = true;
+        _lanAwaitingFirstLiveAuthoritativeSnapshot = IsLanRemoteAuthoritativeClient;
+        AppendLanTrafficDetailLog(true, $"live_sync_boundary reason={reason} host={(_lanSession?.IsHost == true ? 1 : 0)} await_auth={(_lanAwaitingFirstLiveAuthoritativeSnapshot ? 1 : 0)}");
+        SendImmediateLanAuthoritativeSnapshotIfHost(reason);
+    }
+
+    private void CompleteLanLiveAuthoritativeHandshake(LanAuthoritativeMatchSnapshot snapshot)
+    {
+        if (!_lanAwaitingFirstLiveAuthoritativeSnapshot
+            || _lanSession?.IsHost == true
+            || !TryParseLanStartupPhase(snapshot.StartupPhase, out MatchStartupPhase phase)
+            || phase != MatchStartupPhase.Live)
+        {
+            return;
+        }
+
+        _lanLocalInputFrames.Clear();
+        _lanRemoteInputFrames.Clear();
+        _latestLanRemoteInputsByEntity.Clear();
+        _latestLanRemoteInputSequenceByEntity.Clear();
+        _lanProcessedInputSequenceByEntity.Clear();
+        _lanSimulationSequence = Math.Max(0, snapshot.SimulationTick);
+        _lanInputSequence = _lanSimulationSequence;
+        _simulationAccumulatorSec = 0.0;
+        _lastFrameClockTicks = _frameClock.ElapsedTicks;
+        _host.World.GameTimeSec = Math.Max(0.0, snapshot.GameTimeSec);
+        _paused = false;
+        _lanAwaitingFirstLiveAuthoritativeSnapshot = false;
+        AppendLanTrafficDetailLog(false, $"live_authority_handshake seq={snapshot.Sequence} tick={snapshot.SimulationTick} game_t={snapshot.GameTimeSec:0.000}");
+    }
+
+    private void SendImmediateLanAuthoritativeSnapshotIfHost(string reason)
+    {
+        if (_lanSession?.IsHost != true || !_lanSession.IsConnected || !IsLanMultiplayerMatchActive)
+        {
+            return;
+        }
+
+        _lastLanSnapshotSentAtSec = _frameClock.Elapsed.TotalSeconds;
+        _lanSnapshotSequence++;
+        LanAuthoritativeMatchSnapshot authoritative = CreateLanAuthoritativeMatchSnapshot(_lanSnapshotSequence);
+        AppendLanTrafficDetailLog(true, $"tx_authoritative_snapshot_immediate reason={reason} seq={authoritative.Sequence} tick={authoritative.SimulationTick} game_t={authoritative.GameTimeSec:0.000} phase={authoritative.MatchPhase} entities={authoritative.Entities.Count} projectiles={authoritative.Projectiles.Count} startup={authoritative.StartupPhase}/{authoritative.StartupActive}");
+        _ = _lanSession.SendAuthoritativeSnapshotAsync(authoritative);
+        _lanAuthoritativeSnapshotsSent++;
     }
 
     private void AppendLanTrafficLog(bool uplink, string message)
@@ -818,6 +916,28 @@ internal sealed partial class Simulator3dForm
 
         lastLogSec = nowSec;
         return true;
+    }
+
+    private bool ShouldLogLanInputTx()
+    {
+        if (TryMarkLanDetailLogInterval(ref _lastLanInputTxDetailLogSec, 0.25))
+        {
+            return true;
+        }
+
+        _lanCoalescedInputTxLogs++;
+        return false;
+    }
+
+    private bool ShouldLogLanInputRx()
+    {
+        if (TryMarkLanDetailLogInterval(ref _lastLanInputRxDetailLogSec, 0.25))
+        {
+            return true;
+        }
+
+        _lanCoalescedInputRxLogs++;
+        return false;
     }
 
     private void PublishLanTrafficReportIfDue()
@@ -919,9 +1039,11 @@ internal sealed partial class Simulator3dForm
 
         _lanSession?.Dispose();
         _lanSession = null;
-        _latestLanRemoteInput = null;
         _lanLocalInputFrames.Clear();
         _lanRemoteInputFrames.Clear();
+        _latestLanRemoteInputsByEntity.Clear();
+        _latestLanRemoteInputSequenceByEntity.Clear();
+        _lanProcessedInputSequenceByEntity.Clear();
         _lanSimulationSequence = 0;
         _lastLanRemoteDigest = null;
         _lanStatusLine = closeMessage;
@@ -1000,6 +1122,12 @@ internal sealed partial class Simulator3dForm
 
     private void SetLanLocalTeam(string team, bool broadcast)
     {
+        if (IsLanLiveRosterMutationLocked)
+        {
+            _lanRoomStatusText = "对局已开始，车辆阵营已锁定。";
+            return;
+        }
+
         _lanLocalTeam = Simulator3dOptions.NormalizeTeam(team);
         _lanRemoteTeam = OppositeLanTeam(_lanLocalTeam);
         _lanLocalReady = _lanSession?.IsHost == true;
@@ -1017,6 +1145,12 @@ internal sealed partial class Simulator3dForm
 
     private void SetLanLocalEntityKey(string entityKey, bool broadcast, bool resetSpawnPoint = true)
     {
+        if (IsLanLiveRosterMutationLocked)
+        {
+            _lanRoomStatusText = "对局已开始，车辆构型已锁定。";
+            return;
+        }
+
         string normalizedEntityKey = NormalizeLanDuelEntityKey(entityKey);
         if (!IsLanControllableRobotSeat(normalizedEntityKey))
         {
@@ -1051,6 +1185,12 @@ internal sealed partial class Simulator3dForm
     {
         if (_lanSession is null)
         {
+            return;
+        }
+
+        if (IsLanLiveRosterMutationLocked)
+        {
+            AppendLanTrafficDetailLog(false, $"lobby_selection_ignored_live seq={selection.Sequence} role={selection.MemberRole} player={selection.PlayerId}");
             return;
         }
 
@@ -1111,6 +1251,12 @@ internal sealed partial class Simulator3dForm
             return;
         }
 
+        if (IsLanLiveRosterMutationLocked)
+        {
+            RememberLocalLanRoomMember();
+            return;
+        }
+
         _lanLobbySequence++;
         _ = _lanSession.SendLobbySelectionAsync(new LanLobbySelection(
             _lanLobbySequence,
@@ -1142,6 +1288,7 @@ internal sealed partial class Simulator3dForm
     {
         if (!IsLanMultiplayerMatchActive
             || _lanSession is null
+            || IsLanLiveRosterMutationLocked
             || !string.Equals(ResolveLanLocalMemberRole(), "player", StringComparison.OrdinalIgnoreCase)
             || !IsLanControllableRobotSeat(_lanLocalEntityKey))
         {
@@ -1266,6 +1413,8 @@ internal sealed partial class Simulator3dForm
 
     private bool CanAcceptLanRoleClaim(string playerId, string role, string seatId)
     {
+        EnsureLanHostRefereeRosterSeat();
+
         if (string.Equals(role, "player", StringComparison.OrdinalIgnoreCase))
         {
             string entityKey = ResolveLanEntityKeyFromSeatId(seatId);
@@ -1988,7 +2137,6 @@ internal sealed partial class Simulator3dForm
             LanInputFrame startupInputFrame = ToLanInputFrame(startupState, _lanInputSequence);
             _lanInputFramesSent++;
             _lastLanLocalInputSentAtSec = _host.World.GameTimeSec;
-            AppendLanTrafficLog(true, $"startup_aim seq={_lanInputSequence} seat={ResolveLanSeatId(_lanLocalTeam, _lanLocalEntityKey)} entity={startupState.EntityId ?? startupInputFrame.EntityId}");
             var startupPlayerInput = new LanPlayerInputFrame(
                 _lanInputSequence,
                 _lanLocalPlayerId,
@@ -1997,7 +2145,13 @@ internal sealed partial class Simulator3dForm
                 _lanInputSequence,
                 _host.World.GameTimeSec,
                 startupInputFrame);
-            AppendLanTrafficDetailLog(true, FormatLanPlayerInputDetail("tx_startup", startupPlayerInput));
+            if (ShouldLogLanInputTx())
+            {
+                long skipped = Interlocked.Exchange(ref _lanCoalescedInputTxLogs, 0);
+                AppendLanTrafficLog(true, $"startup_aim seq={_lanInputSequence} seat={startupPlayerInput.SeatId} entity={startupPlayerInput.EntityId} coalesced={skipped}");
+                AppendLanTrafficDetailLog(true, FormatLanPlayerInputDetail("tx_startup", startupPlayerInput));
+            }
+
             _ = _lanSession.SendPlayerInputAsync(startupPlayerInput);
             return;
         }
@@ -2013,7 +2167,6 @@ internal sealed partial class Simulator3dForm
         LanInputFrame inputFrame = ToLanInputFrame(bufferedState, _lanInputSequence);
         _lanInputFramesSent++;
         _lastLanLocalInputSentAtSec = _host.World.GameTimeSec;
-        AppendLanTrafficLog(true, $"player_input seq={_lanInputSequence} seat={ResolveLanSeatId(_lanLocalTeam, _lanLocalEntityKey)} entity={bufferedState.EntityId ?? inputFrame.EntityId}");
         var playerInput = new LanPlayerInputFrame(
             _lanInputSequence,
             _lanLocalPlayerId,
@@ -2022,7 +2175,13 @@ internal sealed partial class Simulator3dForm
             _lanInputSequence,
             _host.World.GameTimeSec,
             inputFrame);
-        AppendLanTrafficDetailLog(true, FormatLanPlayerInputDetail("tx", playerInput));
+        if (ShouldLogLanInputTx())
+        {
+            long skipped = Interlocked.Exchange(ref _lanCoalescedInputTxLogs, 0);
+            AppendLanTrafficLog(true, $"player_input seq={_lanInputSequence} seat={playerInput.SeatId} entity={playerInput.EntityId} coalesced={skipped}");
+            AppendLanTrafficDetailLog(true, FormatLanPlayerInputDetail("tx", playerInput));
+        }
+
         _ = _lanSession.SendPlayerInputAsync(playerInput);
     }
 
@@ -2042,26 +2201,29 @@ internal sealed partial class Simulator3dForm
                 && bufferedLocal is not null
                 ? bufferedLocal
                 : localState;
-            _lanLocalInputFrames.Remove(localSequence);
-            PruneLanLocalInputFrames(localSequence);
             _lanSimulationSequence = localSequence;
+            while (_lanLocalInputFrames.Count > LanRemoteInputBufferLimit)
+            {
+                _lanLocalInputFrames.Remove(_lanLocalInputFrames.Keys.First());
+            }
+
             states = new[] { stepLocalState };
             return true;
         }
 
         long expectedSequence = _lanSimulationSequence + 1;
+        if (!IsLanDuelRoomMode)
+        {
+            PlayerControlState[] latestStates = BuildLatestLanRemoteInputStates();
+            MarkLatestLanInputsProcessed(latestStates);
+            _lanSimulationSequence = expectedSequence;
+            states = latestStates;
+            return true;
+        }
+
         if (!_lanRemoteInputFrames.TryGetValue(expectedSequence, out PlayerControlState? remoteState)
             || remoteState is null)
         {
-            if (!IsLanDuelRoomMode)
-            {
-                _lanSimulationSequence = expectedSequence;
-                states = _latestLanRemoteInput is not null
-                    ? new[] { _latestLanRemoteInput }
-                    : Array.Empty<PlayerControlState>();
-                return true;
-            }
-
             waitingForRemoteInput = true;
             _lanStatusLine = $"等待远端输入 step {expectedSequence}";
             return false;
@@ -2070,7 +2232,8 @@ internal sealed partial class Simulator3dForm
         _lanRemoteInputFrames.Remove(expectedSequence);
         PruneLanRemoteInputFrames(expectedSequence);
         _lanSimulationSequence = expectedSequence;
-        _latestLanRemoteInput = remoteState;
+        StoreLatestLanRemoteInput(remoteState, expectedSequence);
+        MarkLatestLanInputsProcessed(new[] { remoteState });
         _lanLocalInputFrames.Remove(expectedSequence);
         PruneLanLocalInputFrames(expectedSequence);
         states = new[] { remoteState };
@@ -2094,8 +2257,10 @@ internal sealed partial class Simulator3dForm
     {
         long completedSequence = _lanSimulationSequence + 1;
         _lanSimulationSequence = completedSequence;
-        _lanLocalInputFrames.Remove(completedSequence);
-        PruneLanLocalInputFrames(completedSequence);
+        while (_lanLocalInputFrames.Count > LanRemoteInputBufferLimit)
+        {
+            _lanLocalInputFrames.Remove(_lanLocalInputFrames.Keys.First());
+        }
     }
 
     private void PruneLanRemoteInputFrames(long completedSequence)
@@ -2110,6 +2275,80 @@ internal sealed partial class Simulator3dForm
             _lanRemoteInputFrames.Remove(_lanRemoteInputFrames.Keys.First());
         }
     }
+
+    private void StoreLatestLanRemoteInput(PlayerControlState state, long sequence)
+    {
+        if (string.IsNullOrWhiteSpace(state.EntityId))
+        {
+            return;
+        }
+
+        if (_latestLanRemoteInputSequenceByEntity.TryGetValue(state.EntityId, out long previousSequence)
+            && sequence < previousSequence)
+        {
+            return;
+        }
+
+        _latestLanRemoteInputsByEntity[state.EntityId] = state;
+        _latestLanRemoteInputSequenceByEntity[state.EntityId] = sequence;
+    }
+
+    private PlayerControlState[] BuildLatestLanRemoteInputStates()
+    {
+        if (_latestLanRemoteInputsByEntity.Count == 0)
+        {
+            return Array.Empty<PlayerControlState>();
+        }
+
+        var states = new List<PlayerControlState>(_latestLanRemoteInputsByEntity.Count);
+        foreach ((string entityId, PlayerControlState state) in _latestLanRemoteInputsByEntity)
+        {
+            if (_host.World.Entities.Any(entity =>
+                    !entity.IsSimulationSuppressed
+                    && string.Equals(entity.Id, entityId, StringComparison.OrdinalIgnoreCase)))
+            {
+                states.Add(state);
+            }
+        }
+
+        return states.ToArray();
+    }
+
+    private void MarkLatestLanInputsProcessed(IEnumerable<PlayerControlState> states)
+    {
+        foreach (PlayerControlState state in states)
+        {
+            if (string.IsNullOrWhiteSpace(state.EntityId))
+            {
+                continue;
+            }
+
+            if (_latestLanRemoteInputSequenceByEntity.TryGetValue(state.EntityId, out long sequence))
+            {
+                _lanProcessedInputSequenceByEntity[state.EntityId] = sequence;
+            }
+        }
+    }
+
+    private bool IsLanLocalPredictedEntity(string entityId)
+    {
+        if (string.IsNullOrWhiteSpace(entityId)
+            || _lanSession?.IsHost == true
+            || !string.Equals(ResolveLanLocalMemberRole(), "player", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        string localEntityId = $"{Simulator3dOptions.NormalizeTeam(_lanLocalTeam)}_{NormalizeLanDuelEntityKey(_lanLocalEntityKey)}";
+        return string.Equals(entityId, localEntityId, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(entityId, _host.SelectedEntity?.Id, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private long ResolveLanProcessedInputSequenceForSnapshot(string entityId)
+        => !string.IsNullOrWhiteSpace(entityId)
+            && _lanProcessedInputSequenceByEntity.TryGetValue(entityId, out long sequence)
+                ? sequence
+                : 0L;
 
     private void PumpLanMultiplayerMessages()
     {
@@ -2403,6 +2642,17 @@ internal sealed partial class Simulator3dForm
 
     private void HandleLanSeatClaim(LanSeatClaim claim)
     {
+        if (IsLanLiveRosterMutationLocked)
+        {
+            if (_lanSession?.IsHost == true)
+            {
+                SendImmediateLanAuthoritativeSnapshotIfHost("seat_claim_ignored_live");
+            }
+
+            AppendLanTrafficDetailLog(false, $"seat_claim_ignored_live seq={claim.Sequence} seat={claim.SeatId} role={claim.Role} player={claim.PlayerId}");
+            return;
+        }
+
         string team = Simulator3dOptions.NormalizeTeam(claim.Team);
         string entityKey = NormalizeLanDuelEntityKey(claim.EntityKey);
         string seatId = string.IsNullOrWhiteSpace(claim.SeatId)
@@ -2483,7 +2733,9 @@ internal sealed partial class Simulator3dForm
                          !string.Equals(pair.Key, exceptSeatId, StringComparison.OrdinalIgnoreCase)
                          && ((!string.IsNullOrWhiteSpace(normalizedPlayerId)
                                  && string.Equals(pair.Value.PlayerId, normalizedPlayerId, StringComparison.OrdinalIgnoreCase))
-                             || (!string.IsNullOrWhiteSpace(normalizedPlayerName)
+                             || (string.IsNullOrWhiteSpace(normalizedPlayerId)
+                                 && string.IsNullOrWhiteSpace(pair.Value.PlayerId)
+                                 && !string.IsNullOrWhiteSpace(normalizedPlayerName)
                                  && string.Equals(NormalizeLanPlayerName(pair.Value.PlayerName), normalizedPlayerName, StringComparison.OrdinalIgnoreCase))))
                      .Select(pair => pair.Key)
                      .ToArray())
@@ -2497,6 +2749,12 @@ internal sealed partial class Simulator3dForm
 
     private void HandleLanRoster(LanRoomRoster roster)
     {
+        if (IsLanLiveRosterMutationLocked)
+        {
+            AppendLanTrafficDetailLog(false, $"roster_ignored_live seq={roster.Sequence} seats={roster.Seats.Count}");
+            return;
+        }
+
         Dictionary<string, LanMatchSeatState> previousConnectedSeats = _lanRosterBySeatId.Values
             .Where(seat => seat.Connected)
             .GroupBy(BuildLanPresenceIdentity, StringComparer.OrdinalIgnoreCase)
@@ -2578,6 +2836,7 @@ internal sealed partial class Simulator3dForm
 
     private LanRoomRoster CreateLanRoomRoster(long sequence)
     {
+        EnsureLanHostRefereeRosterSeat();
         NormalizeLanRosterOccupancy();
         var seats = new List<LanMatchSeatState>(18);
         foreach (string team in new[] { "red", "blue" })
@@ -2615,6 +2874,36 @@ internal sealed partial class Simulator3dForm
         }
 
         return new LanRoomRoster(sequence, _lanSession?.RoomName ?? "ARTINX 5v5", seats, _lanRoomSettings);
+    }
+
+    private void EnsureLanHostRefereeRosterSeat()
+    {
+        if (_lanSession?.IsHost != true || IsLanDuelRoomMode)
+        {
+            if (_lanRosterBySeatId.TryGetValue(LanHostRefereeSeatId, out LanMatchSeatState? staleHostSeat)
+                && string.Equals(staleHostSeat.PlayerId, _lanLocalPlayerId, StringComparison.OrdinalIgnoreCase))
+            {
+                _lanRosterBySeatId.Remove(LanHostRefereeSeatId);
+            }
+
+            return;
+        }
+
+        string playerName = string.IsNullOrWhiteSpace(_lanPlayerNameText)
+            ? Environment.UserName
+            : _lanPlayerNameText.Trim();
+        _lanRosterBySeatId[LanHostRefereeSeatId] = new LanMatchSeatState(
+            LanHostRefereeSeatId,
+            Simulator3dOptions.NormalizeTeam(_lanLocalTeam),
+            0,
+            string.Empty,
+            _lanLocalPlayerId,
+            playerName,
+            Connected: true,
+            Ready: true,
+            Role: "referee",
+            SpawnPointIndex: 0,
+            ChassisMode: string.Empty);
     }
 
     private static async Task SendLanMatchStartSequenceAsync(
@@ -2725,6 +3014,12 @@ internal sealed partial class Simulator3dForm
             return;
         }
 
+        if (IsLanLiveRosterMutationLocked)
+        {
+            AppendLanTrafficDetailLog(true, "apply_preparation_ignored_live");
+            return;
+        }
+
         _host.ApplyRoomGameSettings(_lanRoomSettings);
         _host.ApplyLanPreparationSelections(_lanRosterBySeatId.Values.ToArray(), hardTrimInactiveRobots: IsLanMultiplayerMatchActive);
         InvalidateOpenGkUcTopHudCache();
@@ -2746,8 +3041,12 @@ internal sealed partial class Simulator3dForm
             return;
         }
 
-        AppendLanTrafficLog(false, $"player_input seq={input.Sequence} seat={input.SeatId} entity={input.EntityId}");
-        AppendLanTrafficDetailLog(false, FormatLanPlayerInputDetail("rx", input));
+        if (ShouldLogLanInputRx())
+        {
+            long skipped = Interlocked.Exchange(ref _lanCoalescedInputRxLogs, 0);
+            AppendLanTrafficLog(false, $"player_input seq={input.Sequence} seat={input.SeatId} entity={input.EntityId} coalesced={skipped}");
+            AppendLanTrafficDetailLog(false, FormatLanPlayerInputDetail("rx", input));
+        }
 
         if (!_host.World.Entities.Any(entity =>
                 !entity.IsSimulationSuppressed
@@ -2807,7 +3106,7 @@ internal sealed partial class Simulator3dForm
         {
             if (!IsLanDuelRoomMode)
             {
-                _latestLanRemoteInput = state;
+                StoreLatestLanRemoteInput(state, input.Sequence);
                 _lanInputFramesReceived++;
                 _lastLanRemoteInputReceivedAtSec = _host.World.GameTimeSec;
                 AppendLanTrafficDetailLog(false, $"rx_player_input_late_promoted seq={input.Sequence} sim_seq={_lanSimulationSequence} seat={input.SeatId} entity={input.EntityId}");
@@ -2819,15 +3118,23 @@ internal sealed partial class Simulator3dForm
         if (IsMatchStartupControlLockActive)
         {
             state = SanitizeStartupLockedPlayerControl(state);
-            _latestLanRemoteInput = state;
+            StoreLatestLanRemoteInput(state, input.Sequence);
             _lanInputFramesReceived++;
             _lastLanRemoteInputReceivedAtSec = _host.World.GameTimeSec;
             _host.ApplyAimOnlyControlState(state);
             return;
         }
 
+        if (!IsLanDuelRoomMode)
+        {
+            StoreLatestLanRemoteInput(state, input.Sequence);
+            _lanInputFramesReceived++;
+            _lastLanRemoteInputReceivedAtSec = _host.World.GameTimeSec;
+            return;
+        }
+
         _lanRemoteInputFrames[input.Sequence] = state;
-        _latestLanRemoteInput = state;
+        StoreLatestLanRemoteInput(state, input.Sequence);
         _lanInputFramesReceived++;
         _lastLanRemoteInputReceivedAtSec = _host.World.GameTimeSec;
         PruneLanRemoteInputFrames(_lanSimulationSequence);
@@ -2841,18 +3148,35 @@ internal sealed partial class Simulator3dForm
         }
 
         ApplyLanAuthoritativeStartupState(snapshot);
+        CompleteLanLiveAuthoritativeHandshake(snapshot);
         _host.World.GameTimeSec = Math.Max(_host.World.GameTimeSec, snapshot.GameTimeSec);
 
         foreach (LanEntitySnapshot entitySnapshot in snapshot.Entities)
         {
-            _host.ApplyNetworkEntitySnapshot(entitySnapshot, applyRuleState: true, hardPoseCorrection: false);
+            bool localPredicted = IsLanLocalPredictedEntity(entitySnapshot.Id);
+            if (localPredicted && entitySnapshot.LastProcessedInputSequence > 0)
+            {
+                PruneLanLocalInputFrames(entitySnapshot.LastProcessedInputSequence);
+            }
+
+            _host.ApplyNetworkEntitySnapshot(
+                entitySnapshot,
+                applyRuleState: true,
+                hardPoseCorrection: false,
+                poseBlendOverride: localPredicted ? 0.08 : 0.45,
+                hardSnapDistanceSqOverride: localPredicted ? 400.0 : null);
         }
 
         ApplyLanAuthoritativeProjectiles(snapshot.Projectiles);
         ApplyLanAuthoritativeTeams(snapshot.Teams);
         if (TryMarkLanDetailLogInterval(ref _lastLanAuthoritativeSnapshotDetailLogSec, 1.0))
         {
-            AppendLanTrafficDetailLog(false, $"rx_authoritative_snapshot seq={snapshot.Sequence} tick={snapshot.SimulationTick} game_t={snapshot.GameTimeSec:0.000} phase={snapshot.MatchPhase} entities={snapshot.Entities.Count} projectiles={snapshot.Projectiles.Count} teams={snapshot.Teams.Count} startup={snapshot.StartupPhase}/{snapshot.StartupActive} local_t={_host.World.GameTimeSec:0.000}");
+            long localAck = snapshot.Entities
+                .Where(entity => IsLanLocalPredictedEntity(entity.Id))
+                .Select(entity => entity.LastProcessedInputSequence)
+                .DefaultIfEmpty(0L)
+                .Max();
+            AppendLanTrafficDetailLog(false, $"rx_authoritative_snapshot seq={snapshot.Sequence} tick={snapshot.SimulationTick} ack={localAck} local_seq={_lanSimulationSequence} game_t={snapshot.GameTimeSec:0.000} phase={snapshot.MatchPhase} entities={snapshot.Entities.Count} projectiles={snapshot.Projectiles.Count} teams={snapshot.Teams.Count} startup={snapshot.StartupPhase}/{snapshot.StartupActive} local_t={_host.World.GameTimeSec:0.000}");
         }
 
         _lanAuthoritativeSnapshotsReceived++;
@@ -2921,6 +3245,7 @@ internal sealed partial class Simulator3dForm
             _paused = snapshot.Paused;
             _simulationAccumulatorSec = 0.0;
             _lastFrameClockTicks = nowTicks;
+            ResetLanLiveSyncBoundary("lan_authoritative_live");
             ResetLiveInput();
             InvalidateGpuOverlayLayer();
             UpdateMouseCaptureState();
@@ -3094,19 +3419,23 @@ internal sealed partial class Simulator3dForm
 
     private void BufferLanRemoteInput(LanInputFrame input)
     {
-        AppendLanTrafficDetailLog(false, FormatLanPlayerInputDetail("rx_legacy", new LanPlayerInputFrame(
-            input.Sequence,
-            "legacy",
-            ResolveLanSeatId(_lanRemoteTeam, ResolveLanEntityKeyFromEntityId(input.EntityId)),
-            input.EntityId,
-            input.Sequence,
-            _host.World.GameTimeSec,
-            input)));
+        if (TryMarkLanDetailLogInterval(ref _lastLanLegacyInputRxDetailLogSec, 0.25))
+        {
+            AppendLanTrafficDetailLog(false, FormatLanPlayerInputDetail("rx_legacy", new LanPlayerInputFrame(
+                input.Sequence,
+                "legacy",
+                ResolveLanSeatId(_lanRemoteTeam, ResolveLanEntityKeyFromEntityId(input.EntityId)),
+                input.EntityId,
+                input.Sequence,
+                _host.World.GameTimeSec,
+                input)));
+        }
+
         PlayerControlState state = FromLanInputFrame(input);
         if (IsMatchStartupControlLockActive)
         {
             state = SanitizeStartupLockedPlayerControl(state);
-            _latestLanRemoteInput = state;
+            StoreLatestLanRemoteInput(state, input.Sequence);
             _lanInputFramesReceived++;
             _lastLanRemoteInputReceivedAtSec = _host.World.GameTimeSec;
             _host.ApplyAimOnlyControlState(state);
@@ -3115,11 +3444,26 @@ internal sealed partial class Simulator3dForm
 
         if (input.Sequence <= _lanSimulationSequence)
         {
+            if (!IsLanDuelRoomMode)
+            {
+                StoreLatestLanRemoteInput(state, input.Sequence);
+                _lanInputFramesReceived++;
+                _lastLanRemoteInputReceivedAtSec = _host.World.GameTimeSec;
+            }
+
+            return;
+        }
+
+        if (!IsLanDuelRoomMode)
+        {
+            StoreLatestLanRemoteInput(state, input.Sequence);
+            _lanInputFramesReceived++;
+            _lastLanRemoteInputReceivedAtSec = _host.World.GameTimeSec;
             return;
         }
 
         _lanRemoteInputFrames[input.Sequence] = state;
-        _latestLanRemoteInput = state;
+        StoreLatestLanRemoteInput(state, input.Sequence);
         _lanInputFramesReceived++;
         _lastLanRemoteInputReceivedAtSec = _host.World.GameTimeSec;
         PruneLanRemoteInputFrames(_lanSimulationSequence);
@@ -3357,6 +3701,11 @@ internal sealed partial class Simulator3dForm
             return;
         }
 
+        if (!_lanSession.IsHost)
+        {
+            return;
+        }
+
         _lastLanDigestSentAtSec = nowSec;
         _lanDigestSequence++;
         LanValidationDigest digest = CreateLanValidationDigest(_lanDigestSequence);
@@ -3366,34 +3715,31 @@ internal sealed partial class Simulator3dForm
 
     private void PublishLanHostSnapshotIfDue(double nowSec)
     {
-        if (_lanSession is null || nowSec - _lastLanSnapshotSentAtSec < LanSnapshotIntervalSec)
+        if (_lanSession is null)
+        {
+            return;
+        }
+
+        if (!_lanSession.IsHost)
+        {
+            return;
+        }
+
+        if (nowSec - _lastLanSnapshotSentAtSec < LanSnapshotIntervalSec)
         {
             return;
         }
 
         _lastLanSnapshotSentAtSec = nowSec;
         _lanSnapshotSequence++;
-        if (_lanSession.IsHost)
+        LanAuthoritativeMatchSnapshot authoritative = CreateLanAuthoritativeMatchSnapshot(_lanSnapshotSequence);
+        if (TryMarkLanDetailLogInterval(ref _lastLanAuthoritativeSnapshotTxDetailLogSec, 1.0))
         {
-            LanAuthoritativeMatchSnapshot authoritative = CreateLanAuthoritativeMatchSnapshot(_lanSnapshotSequence);
-            if (TryMarkLanDetailLogInterval(ref _lastLanAuthoritativeSnapshotTxDetailLogSec, 1.0))
-            {
-                AppendLanTrafficDetailLog(true, $"tx_authoritative_snapshot seq={authoritative.Sequence} tick={authoritative.SimulationTick} game_t={authoritative.GameTimeSec:0.000} phase={authoritative.MatchPhase} entities={authoritative.Entities.Count} projectiles={authoritative.Projectiles.Count} teams={authoritative.Teams.Count} startup={authoritative.StartupPhase}/{authoritative.StartupActive}");
-            }
-
-            _ = _lanSession.SendAuthoritativeSnapshotAsync(authoritative);
-            _lanAuthoritativeSnapshotsSent++;
-            return;
+            AppendLanTrafficDetailLog(true, $"tx_authoritative_snapshot seq={authoritative.Sequence} tick={authoritative.SimulationTick} game_t={authoritative.GameTimeSec:0.000} phase={authoritative.MatchPhase} entities={authoritative.Entities.Count} projectiles={authoritative.Projectiles.Count} teams={authoritative.Teams.Count} startup={authoritative.StartupPhase}/{authoritative.StartupActive}");
         }
 
-        LanWorldSnapshot snapshot = CreateLanWorldSnapshot(_lanSnapshotSequence);
-        if (TryMarkLanDetailLogInterval(ref _lastLanSnapshotTxDetailLogSec, 1.0))
-        {
-            AppendLanTrafficDetailLog(true, $"tx_snapshot seq={snapshot.Sequence} game_t={snapshot.GameTimeSec:0.000} entities={snapshot.Entities.Count} authoritative={snapshot.AuthoritativeEntityId}");
-        }
-
-        _ = _lanSession.SendSnapshotAsync(snapshot);
-        _lanSnapshotsSent++;
+        _ = _lanSession.SendAuthoritativeSnapshotAsync(authoritative);
+        _lanAuthoritativeSnapshotsSent++;
     }
 
     private LanValidationDigest CreateLanValidationDigest(long sequence)
@@ -3401,7 +3747,7 @@ internal sealed partial class Simulator3dForm
         ulong hash = 14695981039346656037UL;
         int entityCount = 0;
         foreach (SimulationEntity entity in _host.World.Entities
-                     .Where(entity => !entity.IsSimulationSuppressed)
+                     .Where(ShouldIncludeLanAuthoritativeSnapshotEntity)
                      .OrderBy(entity => entity.Id, StringComparer.OrdinalIgnoreCase))
         {
             entityCount++;
@@ -3483,7 +3829,10 @@ internal sealed partial class Simulator3dForm
                 entity.FortReserveAmmo,
                 entity.FortReserveAmmoCap,
                 entity.IsAlive,
-                entity.IsPlayerControlled))
+                entity.IsPlayerControlled,
+                _lanSession?.IsHost == true
+                    ? ResolveLanProcessedInputSequenceForSnapshot(entity.Id)
+                    : _lanInputSequence))
             .ToArray();
         return new LanWorldSnapshot(sequence, _host.World.GameTimeSec, authoritativeEntityId, authoritativeTeam, entities);
     }
@@ -3491,12 +3840,16 @@ internal sealed partial class Simulator3dForm
     private LanAuthoritativeMatchSnapshot CreateLanAuthoritativeMatchSnapshot(long sequence)
     {
         LanEntitySnapshot[] entities = _host.World.Entities
-            .Where(entity => !entity.IsSimulationSuppressed)
+            .Where(ShouldIncludeLanAuthoritativeSnapshotEntity)
             .OrderBy(entity => entity.Id, StringComparer.OrdinalIgnoreCase)
             .Select(CreateLanEntitySnapshot)
             .ToArray();
 
+        HashSet<string> snapshotEntityIds = entities
+            .Select(entity => entity.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         LanProjectileSnapshot[] projectiles = _host.World.Projectiles
+            .Where(projectile => snapshotEntityIds.Contains(projectile.ShooterId))
             .OrderBy(projectile => projectile.Id, StringComparer.OrdinalIgnoreCase)
             .Select(projectile => new LanProjectileSnapshot(
                 projectile.Id,
@@ -3552,7 +3905,32 @@ internal sealed partial class Simulator3dForm
             _ => 0.0,
         };
 
-    private static LanEntitySnapshot CreateLanEntitySnapshot(SimulationEntity entity)
+    private bool ShouldIncludeLanAuthoritativeSnapshotEntity(SimulationEntity entity)
+    {
+        if (entity.IsSimulationSuppressed)
+        {
+            return false;
+        }
+
+        if (!IsLanMultiplayerMatchActive || _lanRosterBySeatId.Count == 0)
+        {
+            return true;
+        }
+
+        if (!LanRobotSeatCatalog.IsControllableRobot(ResolveLanEntityKeyFromEntityId(entity.Id)))
+        {
+            return true;
+        }
+
+        string entityKey = ResolveLanEntityKeyFromEntityId(entity.Id);
+        return _lanRosterBySeatId.Values.Any(seat =>
+            seat.Connected
+            && string.Equals(seat.Role, "player", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(Simulator3dOptions.NormalizeTeam(seat.Team), Simulator3dOptions.NormalizeTeam(entity.Team), StringComparison.OrdinalIgnoreCase)
+            && string.Equals(NormalizeLanDuelEntityKey(seat.EntityKey), entityKey, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private LanEntitySnapshot CreateLanEntitySnapshot(SimulationEntity entity)
         => new(
             entity.Id,
             entity.Team,
@@ -3573,7 +3951,8 @@ internal sealed partial class Simulator3dForm
             entity.FortReserveAmmo,
             entity.FortReserveAmmoCap,
             entity.IsAlive,
-            entity.IsPlayerControlled);
+            entity.IsPlayerControlled,
+            ResolveLanProcessedInputSequenceForSnapshot(entity.Id));
 
     private int ResolveLanTeamScore(string team)
     {

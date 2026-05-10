@@ -24,3 +24,8 @@ E:\Artinx\260111new\Simulator\src\Simulator.Runtime\obj\Debug\net10.0\refint\Sim
 E:\Artinx\260111new\Simulator\src\Simulator.Runtime\obj\Debug\net10.0\Simulator.Runtime.pdb
 E:\Artinx\260111new\Simulator\src\Simulator.Runtime\obj\Debug\net10.0\Simulator.Runtime.genruntimeconfig.cache
 E:\Artinx\260111new\Simulator\src\Simulator.Runtime\obj\Debug\net10.0\ref\Simulator.Runtime.dll
+E:\Artinx\260111new\Simulator\build_verify\launcher_builds\debug\threeD_instances\20260510_190703_80164_8e43c886\Simulator.Runtime.exe
+E:\Artinx\260111new\Simulator\build_verify\launcher_builds\debug\threeD_instances\20260510_190703_80164_8e43c886\Simulator.Runtime.deps.json
+E:\Artinx\260111new\Simulator\build_verify\launcher_builds\debug\threeD_instances\20260510_190703_80164_8e43c886\Simulator.Runtime.runtimeconfig.json
+E:\Artinx\260111new\Simulator\build_verify\launcher_builds\debug\threeD_instances\20260510_190703_80164_8e43c886\Simulator.Runtime.dll
+E:\Artinx\260111new\Simulator\build_verify\launcher_builds\debug\threeD_instances\20260510_190703_80164_8e43c886\Simulator.Runtime.pdb

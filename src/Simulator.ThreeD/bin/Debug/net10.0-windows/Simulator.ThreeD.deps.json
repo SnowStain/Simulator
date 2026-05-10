@@ -16,7 +16,8 @@
           "OpenTK": "4.9.3",
           "Simulator.Assets": "1.0.0",
           "Simulator.Core": "1.0.0",
-          "Simulator.Editors": "1.0.0"
+          "Simulator.Editors": "1.0.0",
+          "Simulator.Runtime": "1.0.0"
         },
         "runtime": {
           "Simulator.ThreeD.dll": {}
@@ -327,6 +328,19 @@
             "fileVersion": "1.0.0.0"
           }
         }
+      },
+      "Simulator.Runtime/1.0.0": {
+        "dependencies": {
+          "Simulator.Assets": "1.0.0",
+          "Simulator.Core": "1.0.0",
+          "Simulator.Editors": "1.0.0"
+        },
+        "runtime": {
+          "Simulator.Runtime.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
       }
     }
   },
@@ -485,6 +499,11 @@
       "sha512": ""
     },
     "Simulator.Editors/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Simulator.Runtime/1.0.0": {
       "type": "project",
       "serviceable": false,
       "sha512": ""

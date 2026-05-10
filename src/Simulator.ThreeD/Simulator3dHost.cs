@@ -1787,7 +1787,12 @@ internal sealed class Simulator3dHost
             .ToArray();
     }
 
-    public bool ApplyNetworkEntitySnapshot(LanEntitySnapshot snapshot, bool applyRuleState, bool hardPoseCorrection)
+    public bool ApplyNetworkEntitySnapshot(
+        LanEntitySnapshot snapshot,
+        bool applyRuleState,
+        bool hardPoseCorrection,
+        double? poseBlendOverride = null,
+        double? hardSnapDistanceSqOverride = null)
     {
         SimulationEntity? entity = World.Entities.FirstOrDefault(candidate =>
             string.Equals(candidate.Id, snapshot.Id, StringComparison.OrdinalIgnoreCase));
@@ -1800,7 +1805,10 @@ internal sealed class Simulator3dHost
         double dx = snapshot.X - entity.X;
         double dy = snapshot.Y - entity.Y;
         double distanceSq = dx * dx + dy * dy;
-        double poseBlend = hardPoseCorrection || distanceSq > 36.0 ? 1.0 : 0.35;
+        double hardSnapDistanceSq = Math.Max(0.0, hardSnapDistanceSqOverride ?? 36.0);
+        double poseBlend = hardPoseCorrection || distanceSq > hardSnapDistanceSq
+            ? 1.0
+            : Math.Clamp(poseBlendOverride ?? 0.35, 0.0, 1.0);
         if (distanceSq > 0.01 || hardPoseCorrection)
         {
             entity.X += dx * poseBlend;

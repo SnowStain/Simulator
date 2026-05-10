@@ -5156,7 +5156,7 @@ internal sealed partial class Simulator3dForm
         foreach (float outerRadius in new[] { 0.070f * scale, 0.150f * scale, 0.270f * scale })
         {
             DrawGpuAnnulus(
-                center + normal * 0.018f,
+                center + normal * 0.006f,
                 normal,
                 up,
                 MathF.Max(0.0f, outerRadius - ringWidth),
@@ -5169,7 +5169,7 @@ internal sealed partial class Simulator3dForm
         float spokeInnerRadius = MathF.Max(0.0f, spokeOuterRadius - 0.200f * scale);
         float spokeOuterHalfWidth = 0.0350f * scale;
         float spokeInnerHalfWidth = 0.0100f * scale;
-        Vector3 faceCenter = center + normal * 0.020f;
+        Vector3 faceCenter = center + normal * 0.007f;
         for (int index = 0; index < 4; index++)
         {
             float angle = index * MathF.Tau / 4f;

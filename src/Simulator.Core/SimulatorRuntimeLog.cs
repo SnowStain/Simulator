@@ -8,6 +8,7 @@ public static class SimulatorRuntimeLog
     private const int MaxQueuedLines = 4096;
     private static readonly ConcurrentQueue<(string FileName, string Line)> PendingLines = new();
     private static readonly SemaphoreSlim Signal = new(0);
+    private static readonly Lazy<string> LogDirectory = new(ResolveLogDirectory);
     private static int _pendingCount;
     private static int _workerStarted;
 
@@ -90,7 +91,7 @@ public static class SimulatorRuntimeLog
 
         try
         {
-            string logDirectory = Path.Combine(AppContext.BaseDirectory, "logs");
+            string logDirectory = LogDirectory.Value;
             Directory.CreateDirectory(logDirectory);
             foreach ((string fileName, StringBuilder builder) in batches)
             {
@@ -100,5 +101,39 @@ public static class SimulatorRuntimeLog
         catch
         {
         }
+    }
+
+    private static string ResolveLogDirectory()
+    {
+        string? repositoryRoot = FindRepositoryRoot(AppContext.BaseDirectory)
+            ?? FindRepositoryRoot(Directory.GetCurrentDirectory());
+        return Path.Combine(repositoryRoot ?? AppContext.BaseDirectory, "logs");
+    }
+
+    private static string? FindRepositoryRoot(string startPath)
+    {
+        if (string.IsNullOrWhiteSpace(startPath))
+        {
+            return null;
+        }
+
+        DirectoryInfo? current = new(startPath);
+        if (!current.Exists)
+        {
+            current = current.Parent;
+        }
+
+        while (current is not null)
+        {
+            if (Directory.Exists(Path.Combine(current.FullName, ".git"))
+                || File.Exists(Path.Combine(current.FullName, "Simulator.sln")))
+            {
+                return current.FullName;
+            }
+
+            current = current.Parent;
+        }
+
+        return null;
     }
 }

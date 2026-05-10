@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
@@ -8,8 +9,7 @@ using OpenTK.Windowing.Common.Input;
 using OpenTK.Windowing.Desktop;
 using OpenTK.Windowing.GraphicsLibraryFramework;
 using Simulator.Core;
-using WinFormsKeys = System.Windows.Forms.Keys;
-using WinFormsMouseButtons = System.Windows.Forms.MouseButtons;
+using Simulator.Runtime.Input;
 using TkKeys = OpenTK.Windowing.GraphicsLibraryFramework.Keys;
 using TkImage = OpenTK.Windowing.Common.Input.Image;
 using TkMouseButton = OpenTK.Windowing.GraphicsLibraryFramework.MouseButton;
@@ -96,11 +96,9 @@ internal static class SimulatorOpenTkApplication
     {
         try
         {
-            string logDirectory = Path.Combine(AppContext.BaseDirectory, "logs");
-            Directory.CreateDirectory(logDirectory);
-            File.AppendAllText(
-                Path.Combine(logDirectory, "opentk_shutdown.log"),
-                $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {exception.GetType().Name}: {exception.Message}{Environment.NewLine}");
+            SimulatorRuntimeLog.Append(
+                "opentk_shutdown.log",
+                $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {exception.GetType().Name}: {exception.Message}");
         }
         catch (Exception logException) when (logException is IOException or UnauthorizedAccessException or DirectoryNotFoundException)
         {
@@ -253,9 +251,9 @@ internal sealed class SimulatorOpenTkWindow : GameWindow
         TkKeys.KeyPadSubtract,
     };
 
-    private readonly Simulator3dForm _runtime;
-    private readonly HashSet<TkKeys> _pressedKeys = new();
-    private readonly HashSet<TkMouseButton> _pressedMouseButtons = new();
+    private readonly ISimulatorOpenTkRuntime _runtime;
+    private readonly GameInputSnapshotAccumulator _inputAccumulator = new();
+    private readonly Stopwatch _inputClock = Stopwatch.StartNew();
     private Bitmap? _frameBitmap;
     private Graphics? _frameGraphics;
     private int _shaderProgram;
@@ -270,7 +268,7 @@ internal sealed class SimulatorOpenTkWindow : GameWindow
         Simulator3dOptions options)
         : base(gameWindowSettings, nativeWindowSettings)
     {
-        _runtime = Simulator3dForm.CreateExternalCompatibilityRuntime(options);
+        _runtime = SimulatorOpenTkRuntimeFactory.CreateCompatibilityRuntime(options);
         _runtime.ExternalResize(new Size(nativeWindowSettings.ClientSize.X, nativeWindowSettings.ClientSize.Y));
     }
 
@@ -315,8 +313,7 @@ internal sealed class SimulatorOpenTkWindow : GameWindow
                 return;
             }
 
-            ProcessKeyboard();
-            ProcessMouse();
+            ProcessInputSnapshot();
             _runtime.ExternalAdvanceFrame();
 
             bool captureMouse = IsFocused && _runtime.ShouldCaptureMouseExternally();
@@ -409,74 +406,44 @@ internal sealed class SimulatorOpenTkWindow : GameWindow
             return;
         }
 
-        bool shiftDown = false;
-        bool controlDown = false;
-        bool altDown = false;
-        foreach (TkKeys key in _pressedKeys.ToArray())
-        {
-            if (TryMapKey(key, out WinFormsKeys mapped))
-            {
-                _runtime.ExternalKeyUp(mapped, shiftDown, controlDown, altDown);
-            }
-        }
-
-        _pressedKeys.Clear();
-        foreach (TkMouseButton button in _pressedMouseButtons.ToArray())
-        {
-            _runtime.ExternalMouseUp(MapMouseButton(button), Point.Empty);
-        }
-
-        _pressedMouseButtons.Clear();
+        _runtime.ExternalApplyInput(_inputAccumulator.ReleaseAll(
+            _inputClock.Elapsed.TotalSeconds,
+            new GamePointerState(0, 0, 0, 0, 0, CursorCaptured: false)));
     }
 
-    private void ProcessKeyboard()
+    private void ProcessInputSnapshot()
     {
-        bool shiftDown = KeyboardState.IsKeyDown(TkKeys.LeftShift) || KeyboardState.IsKeyDown(TkKeys.RightShift);
-        bool controlDown = KeyboardState.IsKeyDown(TkKeys.LeftControl) || KeyboardState.IsKeyDown(TkKeys.RightControl);
-        bool altDown = KeyboardState.IsKeyDown(TkKeys.LeftAlt) || KeyboardState.IsKeyDown(TkKeys.RightAlt);
-
+        HashSet<GameKey> downKeys = new();
         foreach (TkKeys key in MonitoredKeys)
         {
-            bool down = KeyboardState.IsKeyDown(key);
-            bool pressed = _pressedKeys.Contains(key);
-            if (down && !pressed)
+            if (KeyboardState.IsKeyDown(key) && TryMapKey(key, out GameKey downMapped))
             {
-                if (TryMapKey(key, out WinFormsKeys mapped))
-                {
-                    _runtime.ExternalKeyDown(mapped, shiftDown, controlDown, altDown);
-                }
-
-                _pressedKeys.Add(key);
-            }
-            else if (!down && pressed)
-            {
-                if (TryMapKey(key, out WinFormsKeys mapped))
-                {
-                    _runtime.ExternalKeyUp(mapped, shiftDown, controlDown, altDown);
-                }
-
-                _pressedKeys.Remove(key);
+                downKeys.Add(downMapped);
             }
         }
-    }
 
-    private void ProcessMouse()
-    {
         Point location = ResolveRuntimeMouseLocation(MousePosition);
         Point delta = ResolveRuntimeMouseDelta(MouseState.Delta);
+        HashSet<GameMouseButton> downButtons = new();
 
-        HandleMouseButton(TkMouseButton.Left, WinFormsMouseButtons.Left, location);
-        HandleMouseButton(TkMouseButton.Right, WinFormsMouseButtons.Right, location);
-        HandleMouseButton(TkMouseButton.Middle, WinFormsMouseButtons.Middle, location);
+        CaptureMouseButton(TkMouseButton.Left, downButtons);
+        CaptureMouseButton(TkMouseButton.Right, downButtons);
+        CaptureMouseButton(TkMouseButton.Middle, downButtons);
 
         int wheelDelta = (int)Math.Round(MouseState.ScrollDelta.Y * 120.0f);
-        if (wheelDelta != 0)
-        {
-            _runtime.ExternalMouseWheel(location, wheelDelta);
-        }
-
         bool capturedLook = IsFocused && _runtime.ShouldCaptureMouseExternally();
-        _runtime.ExternalMouseMove(location, delta, capturedLook);
+        GamePointerState pointer = _inputAccumulator.BuildPointer(
+            location.X,
+            location.Y,
+            wheelDelta,
+            capturedLook,
+            delta.X,
+            delta.Y);
+        _runtime.ExternalApplyInput(_inputAccumulator.CaptureState(
+            _inputClock.Elapsed.TotalSeconds,
+            downKeys,
+            downButtons,
+            pointer));
     }
 
     private Point ResolveRuntimeMouseLocation(Vector2 mousePosition)
@@ -491,30 +458,23 @@ internal sealed class SimulatorOpenTkWindow : GameWindow
     private static Point ResolveRuntimeMouseDelta(Vector2 delta)
         => new((int)Math.Round(delta.X), (int)Math.Round(delta.Y));
 
-    private void HandleMouseButton(TkMouseButton button, WinFormsMouseButtons mapped, Point location)
+    private void CaptureMouseButton(TkMouseButton button, HashSet<GameMouseButton> downButtons)
     {
-        bool down = MouseState.IsButtonDown(button);
-        bool pressed = _pressedMouseButtons.Contains(button);
-        if (down && !pressed)
+        GameMouseButton mapped = MapMouseButton(button);
+        if (MouseState.IsButtonDown(button) && mapped != GameMouseButton.None)
         {
-            _runtime.ExternalMouseDown(mapped, location);
-            _pressedMouseButtons.Add(button);
-        }
-        else if (!down && pressed)
-        {
-            _runtime.ExternalMouseUp(mapped, location);
-            _pressedMouseButtons.Remove(button);
+            downButtons.Add(mapped);
         }
     }
 
-    private static WinFormsMouseButtons MapMouseButton(TkMouseButton button)
+    private static GameMouseButton MapMouseButton(TkMouseButton button)
     {
         return button switch
         {
-            TkMouseButton.Left => WinFormsMouseButtons.Left,
-            TkMouseButton.Right => WinFormsMouseButtons.Right,
-            TkMouseButton.Middle => WinFormsMouseButtons.Middle,
-            _ => WinFormsMouseButtons.None,
+            TkMouseButton.Left => GameMouseButton.Left,
+            TkMouseButton.Right => GameMouseButton.Right,
+            TkMouseButton.Middle => GameMouseButton.Middle,
+            _ => GameMouseButton.None,
         };
     }
 
@@ -596,11 +556,9 @@ internal sealed class SimulatorOpenTkWindow : GameWindow
     {
         try
         {
-            string logDirectory = Path.Combine(AppContext.BaseDirectory, "logs");
-            Directory.CreateDirectory(logDirectory);
-            File.AppendAllText(
-                Path.Combine(logDirectory, "opentk_crash.log"),
-                $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {stage} {exception.GetType().Name}: {exception.Message}{Environment.NewLine}{exception}{Environment.NewLine}");
+            SimulatorRuntimeLog.Append(
+                "opentk_crash.log",
+                $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {stage} {exception.GetType().Name}: {exception.Message} {exception}");
         }
         catch
         {
@@ -631,85 +589,85 @@ internal sealed class SimulatorOpenTkWindow : GameWindow
         GL.BindVertexArray(0);
     }
 
-    private static bool TryMapKey(TkKeys key, out WinFormsKeys mapped)
+    private static bool TryMapKey(TkKeys key, out GameKey mapped)
     {
         mapped = key switch
         {
-            TkKeys.Enter => WinFormsKeys.Enter,
-            TkKeys.Escape => WinFormsKeys.Escape,
-            TkKeys.Tab => WinFormsKeys.Tab,
-            TkKeys.Space => WinFormsKeys.Space,
-            TkKeys.A => WinFormsKeys.A,
-            TkKeys.B => WinFormsKeys.B,
-            TkKeys.C => WinFormsKeys.C,
-            TkKeys.D => WinFormsKeys.D,
-            TkKeys.F => WinFormsKeys.F,
-            TkKeys.H => WinFormsKeys.H,
-            TkKeys.I => WinFormsKeys.I,
-            TkKeys.J => WinFormsKeys.J,
-            TkKeys.K => WinFormsKeys.K,
-            TkKeys.L => WinFormsKeys.L,
-            TkKeys.E => WinFormsKeys.E,
-            TkKeys.N => WinFormsKeys.N,
-            TkKeys.O => WinFormsKeys.O,
-            TkKeys.P => WinFormsKeys.P,
-            TkKeys.Q => WinFormsKeys.Q,
-            TkKeys.R => WinFormsKeys.R,
-            TkKeys.S => WinFormsKeys.S,
-            TkKeys.T => WinFormsKeys.T,
-            TkKeys.V => WinFormsKeys.V,
-            TkKeys.W => WinFormsKeys.W,
-            TkKeys.X => WinFormsKeys.X,
-            TkKeys.Z => WinFormsKeys.Z,
-            TkKeys.Backspace => WinFormsKeys.Back,
-            TkKeys.Delete => WinFormsKeys.Delete,
-            TkKeys.PageUp => WinFormsKeys.PageUp,
-            TkKeys.PageDown => WinFormsKeys.PageDown,
-            TkKeys.LeftShift => WinFormsKeys.LShiftKey,
-            TkKeys.RightShift => WinFormsKeys.RShiftKey,
-            TkKeys.LeftControl => WinFormsKeys.LControlKey,
-            TkKeys.RightControl => WinFormsKeys.RControlKey,
-            TkKeys.LeftAlt => WinFormsKeys.LMenu,
-            TkKeys.RightAlt => WinFormsKeys.RMenu,
-            TkKeys.F1 => WinFormsKeys.F1,
-            TkKeys.F2 => WinFormsKeys.F2,
-            TkKeys.F3 => WinFormsKeys.F3,
-            TkKeys.F4 => WinFormsKeys.F4,
-            TkKeys.F5 => WinFormsKeys.F5,
-            TkKeys.F6 => WinFormsKeys.F6,
-            TkKeys.F7 => WinFormsKeys.F7,
-            TkKeys.F8 => WinFormsKeys.F8,
-            TkKeys.F9 => WinFormsKeys.F9,
-            TkKeys.Semicolon => WinFormsKeys.Oem1,
-            TkKeys.Period => WinFormsKeys.OemPeriod,
-            TkKeys.Minus => WinFormsKeys.OemMinus,
-            TkKeys.Slash => WinFormsKeys.OemQuestion,
-            TkKeys.D1 => WinFormsKeys.D1,
-            TkKeys.D2 => WinFormsKeys.D2,
-            TkKeys.D3 => WinFormsKeys.D3,
-            TkKeys.D4 => WinFormsKeys.D4,
-            TkKeys.D5 => WinFormsKeys.D5,
-            TkKeys.D6 => WinFormsKeys.D6,
-            TkKeys.D7 => WinFormsKeys.D7,
-            TkKeys.D8 => WinFormsKeys.D8,
-            TkKeys.D9 => WinFormsKeys.D9,
-            TkKeys.D0 => WinFormsKeys.D0,
-            TkKeys.KeyPad0 => WinFormsKeys.NumPad0,
-            TkKeys.KeyPad1 => WinFormsKeys.NumPad1,
-            TkKeys.KeyPad2 => WinFormsKeys.NumPad2,
-            TkKeys.KeyPad3 => WinFormsKeys.NumPad3,
-            TkKeys.KeyPad4 => WinFormsKeys.NumPad4,
-            TkKeys.KeyPad5 => WinFormsKeys.NumPad5,
-            TkKeys.KeyPad6 => WinFormsKeys.NumPad6,
-            TkKeys.KeyPad7 => WinFormsKeys.NumPad7,
-            TkKeys.KeyPad8 => WinFormsKeys.NumPad8,
-            TkKeys.KeyPad9 => WinFormsKeys.NumPad9,
-            TkKeys.KeyPadDecimal => WinFormsKeys.Decimal,
-            TkKeys.KeyPadSubtract => WinFormsKeys.Subtract,
-            _ => WinFormsKeys.None,
+            TkKeys.Enter => GameKey.Enter,
+            TkKeys.Escape => GameKey.Escape,
+            TkKeys.Tab => GameKey.Tab,
+            TkKeys.Space => GameKey.Space,
+            TkKeys.A => GameKey.A,
+            TkKeys.B => GameKey.B,
+            TkKeys.C => GameKey.C,
+            TkKeys.D => GameKey.D,
+            TkKeys.F => GameKey.F,
+            TkKeys.H => GameKey.H,
+            TkKeys.I => GameKey.I,
+            TkKeys.J => GameKey.J,
+            TkKeys.K => GameKey.K,
+            TkKeys.L => GameKey.L,
+            TkKeys.E => GameKey.E,
+            TkKeys.N => GameKey.N,
+            TkKeys.O => GameKey.O,
+            TkKeys.P => GameKey.P,
+            TkKeys.Q => GameKey.Q,
+            TkKeys.R => GameKey.R,
+            TkKeys.S => GameKey.S,
+            TkKeys.T => GameKey.T,
+            TkKeys.V => GameKey.V,
+            TkKeys.W => GameKey.W,
+            TkKeys.X => GameKey.X,
+            TkKeys.Z => GameKey.Z,
+            TkKeys.Backspace => GameKey.Backspace,
+            TkKeys.Delete => GameKey.Delete,
+            TkKeys.PageUp => GameKey.PageUp,
+            TkKeys.PageDown => GameKey.PageDown,
+            TkKeys.LeftShift => GameKey.LeftShift,
+            TkKeys.RightShift => GameKey.RightShift,
+            TkKeys.LeftControl => GameKey.LeftControl,
+            TkKeys.RightControl => GameKey.RightControl,
+            TkKeys.LeftAlt => GameKey.LeftAlt,
+            TkKeys.RightAlt => GameKey.RightAlt,
+            TkKeys.F1 => GameKey.F1,
+            TkKeys.F2 => GameKey.F2,
+            TkKeys.F3 => GameKey.F3,
+            TkKeys.F4 => GameKey.F4,
+            TkKeys.F5 => GameKey.F5,
+            TkKeys.F6 => GameKey.F6,
+            TkKeys.F7 => GameKey.F7,
+            TkKeys.F8 => GameKey.F8,
+            TkKeys.F9 => GameKey.F9,
+            TkKeys.Semicolon => GameKey.Oem1,
+            TkKeys.Period => GameKey.OemPeriod,
+            TkKeys.Minus => GameKey.OemMinus,
+            TkKeys.Slash => GameKey.OemQuestion,
+            TkKeys.D1 => GameKey.D1,
+            TkKeys.D2 => GameKey.D2,
+            TkKeys.D3 => GameKey.D3,
+            TkKeys.D4 => GameKey.D4,
+            TkKeys.D5 => GameKey.D5,
+            TkKeys.D6 => GameKey.D6,
+            TkKeys.D7 => GameKey.D7,
+            TkKeys.D8 => GameKey.D8,
+            TkKeys.D9 => GameKey.D9,
+            TkKeys.D0 => GameKey.D0,
+            TkKeys.KeyPad0 => GameKey.NumPad0,
+            TkKeys.KeyPad1 => GameKey.NumPad1,
+            TkKeys.KeyPad2 => GameKey.NumPad2,
+            TkKeys.KeyPad3 => GameKey.NumPad3,
+            TkKeys.KeyPad4 => GameKey.NumPad4,
+            TkKeys.KeyPad5 => GameKey.NumPad5,
+            TkKeys.KeyPad6 => GameKey.NumPad6,
+            TkKeys.KeyPad7 => GameKey.NumPad7,
+            TkKeys.KeyPad8 => GameKey.NumPad8,
+            TkKeys.KeyPad9 => GameKey.NumPad9,
+            TkKeys.KeyPadDecimal => GameKey.NumPadDecimal,
+            TkKeys.KeyPadSubtract => GameKey.NumPadSubtract,
+            _ => GameKey.None,
         };
 
-        return mapped != WinFormsKeys.None;
+        return mapped != GameKey.None;
     }
 
     private static int BuildShaderProgram()

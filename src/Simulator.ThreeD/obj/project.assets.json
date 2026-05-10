@@ -395,6 +395,21 @@
         "runtime": {
           "bin/placeholder/Simulator.Editors.dll": {}
         }
+      },
+      "Simulator.Runtime/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v10.0",
+        "dependencies": {
+          "Simulator.Assets": "1.0.0",
+          "Simulator.Core": "1.0.0",
+          "Simulator.Editors": "1.0.0"
+        },
+        "compile": {
+          "bin/placeholder/Simulator.Runtime.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/Simulator.Runtime.dll": {}
+        }
       }
     }
   },
@@ -752,6 +767,11 @@
       "type": "project",
       "path": "../Simulator.Editors/Simulator.Editors.csproj",
       "msbuildProject": "../Simulator.Editors/Simulator.Editors.csproj"
+    },
+    "Simulator.Runtime/1.0.0": {
+      "type": "project",
+      "path": "../Simulator.Runtime/Simulator.Runtime.csproj",
+      "msbuildProject": "../Simulator.Runtime/Simulator.Runtime.csproj"
     }
   },
   "projectFileDependencyGroups": {
@@ -764,7 +784,8 @@
       "OpenTK >= 4.9.3",
       "Simulator.Assets >= 1.0.0",
       "Simulator.Core >= 1.0.0",
-      "Simulator.Editors >= 1.0.0"
+      "Simulator.Editors >= 1.0.0",
+      "Simulator.Runtime >= 1.0.0"
     ]
   },
   "packageFolders": {
@@ -803,6 +824,9 @@
             },
             "E:\\Artinx\\260111new\\Simulator\\src\\Simulator.LoadLargeTerrain\\LoadLargeTerrain.csproj": {
               "projectPath": "E:\\Artinx\\260111new\\Simulator\\src\\Simulator.LoadLargeTerrain\\LoadLargeTerrain.csproj"
+            },
+            "E:\\Artinx\\260111new\\Simulator\\src\\Simulator.Runtime\\Simulator.Runtime.csproj": {
+              "projectPath": "E:\\Artinx\\260111new\\Simulator\\src\\Simulator.Runtime\\Simulator.Runtime.csproj"
             }
           }
         }

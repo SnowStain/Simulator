@@ -5,6 +5,7 @@
     <ProjectReference Include="..\Simulator.Assets\Simulator.Assets.csproj" />
     <ProjectReference Include="..\Simulator.Editors\Simulator.Editors.csproj" />
     <ProjectReference Include="..\Simulator.LoadLargeTerrain\LoadLargeTerrain.csproj" />
+    <ProjectReference Include="..\Simulator.Runtime\Simulator.Runtime.csproj" />
   </ItemGroup>
 
   <ItemGroup>
