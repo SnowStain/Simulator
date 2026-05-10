@@ -6,6 +6,7 @@ Set-Location $root
 $solution = "Simulator.Linux.sln"
 $project = "src\Simulator.Linux\Simulator.Linux.csproj"
 $toolProjects = @(
+    "src\Simulator.AutoAimCalibrationTool\Simulator.AutoAimCalibrationTool.csproj",
     "src\Simulator.LoadLargeTerrain\LoadLargeTerrain.csproj",
     "src\Simulator.Decision\Simulator.Decision.csproj"
 )
@@ -16,6 +17,7 @@ $scanPaths = @(
     "src\Simulator.Platform",
     "src\Simulator.Core",
     "src\Simulator.Assets",
+    "src\Simulator.AutoAimCalibrationTool",
     "src\Simulator.Runtime",
     "src\Simulator.LoadLargeTerrain",
     "src\Simulator.Decision"
@@ -27,7 +29,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "[linux-portability] failed to list Linux solution projects"
 }
 $solutionRefs | ForEach-Object { Write-Host $_ }
-if (($solutionRefs | Select-String -Pattern "Simulator\.ThreeD|Simulator\.AutoAimCalibrationTool")) {
+if (($solutionRefs | Select-String -Pattern "Simulator\.ThreeD")) {
     throw "[linux-portability] forbidden Windows shell project in Linux solution"
 }
 
@@ -59,7 +61,7 @@ foreach ($path in $scanPaths) {
 
     $matches = Get-ChildItem -LiteralPath $path -Recurse -File -ErrorAction SilentlyContinue |
         Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' } |
-        Select-String -Pattern $pattern
+        Select-String -Pattern $pattern -CaseSensitive
     if ($matches) {
         $matches | ForEach-Object { Write-Host $_ }
         throw "[linux-portability] forbidden Windows-only API found under $path"

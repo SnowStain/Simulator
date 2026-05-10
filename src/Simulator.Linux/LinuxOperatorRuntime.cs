@@ -1,14 +1,9 @@
 using Simulator.Assets;
 using Simulator.Core;
+using Simulator.Platform.Ui;
 using Simulator.Runtime.Input;
 
 namespace Simulator.Linux;
-
-internal enum LocalControlPanelPage
-{
-    Main,
-    Energy,
-}
 
 internal sealed class LinuxOperatorRuntime
 {
@@ -38,7 +33,7 @@ internal sealed class LinuxOperatorRuntime
 
     public bool OperatorPanelOpen { get; private set; }
 
-    public LocalControlPanelPage LocalPanelPage { get; private set; } = LocalControlPanelPage.Main;
+    public OpenGkRefereePanelPage LocalPanelPage { get; private set; } = OpenGkRefereePanelPage.Main;
 
     public bool CaptureMouse => _captureMouse && !OperatorPanelOpen;
 
@@ -112,8 +107,8 @@ internal sealed class LinuxOperatorRuntime
         else if (action.StartsWith("local_page:", StringComparison.OrdinalIgnoreCase))
         {
             LocalPanelPage = action.EndsWith(":energy", StringComparison.OrdinalIgnoreCase)
-                ? LocalControlPanelPage.Energy
-                : LocalControlPanelPage.Main;
+                ? OpenGkRefereePanelPage.Energy
+                : OpenGkRefereePanelPage.Main;
         }
 
         SimulatorRuntimeLog.Append(

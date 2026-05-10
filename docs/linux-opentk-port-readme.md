@@ -65,9 +65,9 @@ compatibility shell:
 | Asset and map assumptions | historical paths and empty legacy folders such as `map`, `rules`, `simulator3d`, `cpp` | A naive "all folders must be non-empty" check fails despite usable `maps`, `规则`, appearance data | Linux diagnostics now checks essential assets and reports legacy folders as warnings |
 
 The important practical rule: the Linux operator runtime must not reference
-`Simulator.ThreeD`, `Simulator.AutoAimCalibrationTool`, or any WinForms editor
-project. Cross-platform helper tools such as `LoadLargeTerrain` and `Decision`
-may live in the Linux solution only if they stay `net10.0` and free of
+`Simulator.ThreeD` or any WinForms editor project. Cross-platform helper tools
+such as `LoadLargeTerrain`, `Decision`, and `AutoAimCalibrationTool` may live in
+the Linux solution only if they stay `net10.0` and free of
 WinForms/Windows-only packages.
 
 ## What Is Solved Now
@@ -82,6 +82,7 @@ The current `linux` branch has these portability foundations in place:
 | Shared OpenTK input adapter | Moved OpenTK key/mouse mapping into one reusable adapter used by both Linux and the ThreeD OpenTK compatibility window | `src/Simulator.OpenTk/Input` |
 | Shared OpenGK button model | Moved UI button registration, cached button lists, and reverse hit-testing into a pure platform layer | `src/Simulator.Platform/Ui/OpenGkUiButton.cs` |
 | Shared OpenGK draw commands | Added a platform-neutral draw list for panel/button/text primitives; Windows renders it through GDI for now and Linux renders primitive rectangles through OpenGL | `src/Simulator.Platform/Ui/OpenGkUiDrawList.cs` |
+| Linux text fallback | Linux OpenTK now consumes draw-list text commands through a no-GDI vector glyph fallback, enough for ASCII operator labels while full Chinese font atlas work is extracted | `src/Simulator.Platform/Ui/OpenGkUiVectorFont.cs`, `src/Simulator.Linux/GlPrimitiveRenderer.cs` |
 | Shared OpenGK text painter contract | Added a cross-platform text-painter interface; Windows ThreeD now uses a WinForms/GDI adapter for draw-list text | `src/Simulator.Platform/Ui/IOpenGkUiTextPainter.cs`, `src/Simulator.ThreeD/WinFormsOpenGkTextPainter.cs` |
 | Shared room layout | Extracted the OpenGK room top bar, red/blue columns, referee/settings side panel, and bottom actions into a pure layout resolver | `src/Simulator.Platform/Ui/OpenGkRoomLayout.cs` |
 | Shared frame ticker contract | Added a platform-neutral frame ticker interface; Windows ThreeD now uses a WinForms adapter instead of owning `Timer` directly | `src/Simulator.Platform/Runtime/IFrameTicker.cs`, `src/Simulator.ThreeD/WinFormsFrameTicker.cs` |
@@ -110,6 +111,7 @@ Simulator.Linux.sln
   -> Simulator.Platform
   -> Simulator.Core
   -> Simulator.Assets
+  -> Simulator.AutoAimCalibrationTool
   -> Simulator.Editors
   -> Simulator.LoadLargeTerrain
   -> Simulator.Decision
@@ -139,10 +141,10 @@ the Linux graph:
 | Windows icon/cursor helpers | `Simulator3dForm.cs` and `LiveControl` still use `user32.dll`, `GetHicon`, cursor capture | Move behind window-service interfaces before making ThreeD portable |
 | Windows-only OpenCV runtime | `Simulator.ThreeD.csproj` conditionally references `OpenCvSharp4.runtime.win` | Windows shell uses `OpenCvBackgroundVideoSource`; Linux should use a Linux-native implementation or the null source |
 
-The former `LoadLargeTerrain` and `Decision` Windows locks have been removed
-from the Linux tool gate: both now build as `net10.0` helper tools. They still
-must stay outside the Linux operator runtime unless their UI/data contracts are
-explicitly extracted.
+The former `LoadLargeTerrain`, `Decision`, and `AutoAimCalibrationTool` Windows
+or Windows-path assumptions have been removed from the Linux tool gate: they now
+build as `net10.0` helper tools. They still must stay outside the Linux operator
+runtime unless their UI/data contracts are explicitly extracted.
 
 Do not mark a feature Linux-complete because it exists in `Simulator.ThreeD`.
 It is Linux-complete only when the Linux project can call it without referencing
@@ -1150,7 +1152,7 @@ OpenCV runtime. It is intentionally scoped to the Linux-callable graph:
 ```text
 Simulator.Linux.sln
   -> Simulator.Linux / Simulator.OpenTk / Simulator.Platform
-  -> Simulator.Core / Simulator.Assets / Simulator.Editors
+  -> Simulator.Core / Simulator.Assets / Simulator.AutoAimCalibrationTool / Simulator.Editors
   -> Simulator.LoadLargeTerrain / Simulator.Decision / Simulator.Runtime
 ```
 

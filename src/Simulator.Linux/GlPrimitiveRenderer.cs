@@ -63,6 +63,10 @@ internal sealed class GlPrimitiveRenderer : IDisposable
                 case OpenGkUiDrawCommandKind.StrokeRect:
                     DrawStroke(command.Rect, command.Color, Math.Max(1.0f, command.StrokeWidth));
                     break;
+
+                case OpenGkUiDrawCommandKind.Text:
+                    DrawText(command);
+                    break;
             }
         }
     }
@@ -119,6 +123,59 @@ internal sealed class GlPrimitiveRenderer : IDisposable
 
     private static Vector4 ToVector(Color color)
         => new(color.R / 255.0f, color.G / 255.0f, color.B / 255.0f, color.A / 255.0f);
+
+    private void DrawText(OpenGkUiDrawCommand command)
+    {
+        if (string.IsNullOrWhiteSpace(command.Text) || command.Rect.Width <= 0 || command.Rect.Height <= 0)
+        {
+            return;
+        }
+
+        float scale = OpenGkUiVectorFont.ResolveScale(command.TextStyle);
+        scale = MathF.Min(scale, MathF.Max(1.0f, (command.Rect.Height - 4) / 7.0f));
+        float measuredWidth = OpenGkUiVectorFont.MeasureText(command.Text, scale);
+        if (measuredWidth > command.Rect.Width - 4)
+        {
+            scale = MathF.Max(1.0f, scale * (command.Rect.Width - 4) / MathF.Max(1.0f, measuredWidth));
+            measuredWidth = OpenGkUiVectorFont.MeasureText(command.Text, scale);
+        }
+
+        float x = command.TextAlign switch
+        {
+            OpenGkUiTextAlign.Right => command.Rect.Right - measuredWidth - 2,
+            OpenGkUiTextAlign.Center => command.Rect.X + (command.Rect.Width - measuredWidth) * 0.5f,
+            _ => command.Rect.X + 2,
+        };
+        float y = command.Rect.Y + (command.Rect.Height - 7.0f * scale) * 0.5f;
+        Vector4 color = ToVector(command.Color);
+
+        foreach (char original in command.Text)
+        {
+            if (x > command.Rect.Right - scale)
+            {
+                break;
+            }
+
+            OpenGkUiVectorGlyph glyph = OpenGkUiVectorFont.ResolveGlyph(original);
+            DrawGlyph(glyph, x, y, scale, color);
+            x += (glyph.Width + 1) * scale;
+        }
+    }
+
+    private void DrawGlyph(OpenGkUiVectorGlyph glyph, float x, float y, float scale, Vector4 color)
+    {
+        for (int row = 0; row < glyph.Rows.Count; row++)
+        {
+            string line = glyph.Rows[row];
+            for (int column = 0; column < line.Length; column++)
+            {
+                if (line[column] == '1')
+                {
+                    Rect(x + column * scale, y + row * scale, scale, scale, color);
+                }
+            }
+        }
+    }
 
     private static int BuildProgram()
     {

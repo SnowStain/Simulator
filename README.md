@@ -5,7 +5,7 @@
 - Linux 分支默认入口是 `Simulator.Linux.sln`：
   `dotnet build Simulator.Linux.sln -c Debug`。
 - `Simulator.Linux.sln` 只包含 Linux 可调用的跨平台项目和 helper tools，
-  不包含 `Simulator.ThreeD`、WinForms 壳或 Windows-only 校准工具。
+  不包含 `Simulator.ThreeD` 或 WinForms 壳；自瞄校准等工具必须保持 `net10.0` 跨平台。
 - `src/Simulator.Platform/Input` is the shared input model used by Windows and Linux.
 - `src/Simulator.Platform/Ui` contains the first extracted OpenGK UI contracts: button hit-testing plus panel/button/text draw commands.
 - `src/Simulator.Linux` must keep calling shared contracts from `Simulator.Platform`, `Simulator.Core`, and `Simulator.Assets`; it must not reference the Windows `Simulator.ThreeD` shell.

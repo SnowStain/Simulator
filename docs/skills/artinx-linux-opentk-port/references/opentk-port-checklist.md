@@ -7,8 +7,9 @@ Use this checklist when converting mixed WinForms/OpenTK/OpenGK code into a Linu
 - `Simulator.ThreeD` is `net10.0-windows` with `UseWindowsForms=true`.
 - `Simulator.ThreeD` is now legacy Windows reference code for the Linux branch,
   not part of the default Linux solution.
-- `Simulator.LoadLargeTerrain` and `Simulator.Decision` build as `net10.0`
-  helper tools and stay in the Linux portability gate.
+- `Simulator.LoadLargeTerrain`, `Simulator.Decision`, and
+  `Simulator.AutoAimCalibrationTool` build as `net10.0` helper tools and stay
+  in the Linux portability gate.
 - `SimulatorOpenTkWindow` exists, and OpenTK input mapping is being moved into
   the shared `Simulator.OpenTk` adapter layer.
 - OpenGK is a UI style/self-drawn layer, not a standalone platform.
@@ -38,6 +39,8 @@ LoadLargeTerrain       OpenTK/ImGui map editor, no WinForms dependency
 4. Move simple OpenGK panel/button/text rendering into `OpenGkUiDrawList`.
    - `IOpenGkUiTextPainter<TSurface>` is the cross-platform text backend hook.
    - Windows ThreeD currently adapts it through `WinFormsOpenGkTextPainter`.
+   - `OpenGkUiVectorFont` provides a no-GDI vector glyph fallback for ASCII
+     text; full Chinese text parity still needs a font atlas backend.
 5. Move live-control decisions to platform-neutral input.
 6. Replace `System.Windows.Forms.Timer` with a runtime tick loop interface.
    - `IFrameTicker` now exists in `Simulator.Platform/Runtime`.
@@ -75,9 +78,8 @@ bash scripts/linux/check-linux-portability.sh
 ```
 
 The portability gate builds `Simulator.Linux.sln` and scans the Linux-callable
-graph for Windows-only APIs. `Simulator.ThreeD` and
-`Simulator.AutoAimCalibrationTool` must never be added to this solution. If a
-future extraction needs code from `Simulator.ThreeD`, move the
+graph for Windows-only APIs. `Simulator.ThreeD` must never be added to this
+solution. If a future extraction needs code from `Simulator.ThreeD`, move the
 platform-neutral contract first instead of adding a project reference.
 
 Linux-portable core:

@@ -12,15 +12,13 @@ namespace Simulator.Linux;
 
 internal sealed class LinuxOperatorWindow : GameWindow
 {
-    private readonly record struct LocalControlPanelLayout(
-        Rectangle Panel,
-        Rectangle Title,
-        Rectangle Help,
-        Rectangle BackButton,
-        Rectangle CloseButton,
-        Rectangle MainTab,
-        Rectangle EnergyTab,
-        Rectangle Content);
+    private static readonly OpenGkRefereeEnergyCard[] LocalEnergyCards =
+    [
+        new("Red Small Energy", "local_energy:Red Small Energy"),
+        new("Red Large Energy", "local_energy:Red Large Energy"),
+        new("Blue Small Energy", "local_energy:Blue Small Energy"),
+        new("Blue Large Energy", "local_energy:Blue Large Energy"),
+    ];
 
     private readonly LinuxOperatorRuntime _runtime;
     private readonly GameInputSnapshotAccumulator _inputAccumulator = new();
@@ -207,100 +205,30 @@ internal sealed class LinuxOperatorWindow : GameWindow
     {
         var panel = new OpenGkUiDrawList();
         panel.FillRect(new Rectangle(0, 0, (int)width, (int)height), Color.FromArgb(154, 8, 10, 12));
-        LocalControlPanelLayout layout = ResolveLocalPanelLayout(new Size((int)width, (int)height));
-        AddLocalPanelChrome(
+        OpenGkRefereePanelLayout layout = OpenGkRefereePanelLayoutResolver.Resolve(new Size((int)width, (int)height), showLogout: true);
+        OpenGkRefereePanelLayoutResolver.AddChrome(
             panel,
             layout,
             "Local Control",
             "O closes / Alt releases mouse / local game only",
-            _runtime.LocalPanelPage);
+            showLogout: true,
+            logoutLabel: "Back",
+            page: _runtime.LocalPanelPage,
+            closeAction: "local_close",
+            logoutAction: "local_return",
+            mainTabAction: "local_page:main",
+            energyTabAction: "local_page:energy");
 
-        if (_runtime.LocalPanelPage == LocalControlPanelPage.Energy)
+        if (_runtime.LocalPanelPage == OpenGkRefereePanelPage.Energy)
         {
-            DrawLinuxEnergyPanel(panel, layout.Content);
+            OpenGkRefereePanelContent.AddEnergyGrid(panel, layout.Content, LocalEnergyCards);
         }
         else
         {
-            int gap = 14;
-            int colWidth = (layout.Content.Width - gap * 2) / 3;
-            Rectangle left = new(layout.Content.X, layout.Content.Y, colWidth, Math.Max(180, layout.Content.Height - 178));
-            Rectangle mid = new(left.Right + gap, layout.Content.Y, colWidth, left.Height);
-            Rectangle right = new(mid.Right + gap, layout.Content.Y, colWidth, left.Height);
-            Rectangle logs = new(layout.Content.X, left.Bottom + gap, layout.Content.Width, Math.Max(120, layout.Content.Bottom - left.Bottom - gap));
-            AddLocalPanelFrame(panel, left, "Facilities");
-            AddLocalPanelFrame(panel, mid, "Robots");
-            AddLocalPanelFrame(panel, right, "Economy / View");
-            AddLocalPanelFrame(panel, logs, "Local Event Log");
-            panel.Text(new Rectangle(left.X + 22, left.Y + 72, left.Width - 44, 24), _runtime.Status, Color.FromArgb(224, 232, 238), OpenGkUiTextStyle.Small, OpenGkUiTextAlign.Left);
+            OpenGkRefereePanelContent.AddLocalOverview(panel, layout.Content, _runtime.Status);
         }
 
         _renderer.Draw(panel);
         _uiButtons.AddRange(panel.Buttons);
-    }
-
-    private static void DrawLinuxEnergyPanel(OpenGkUiDrawList panel, Rectangle content)
-    {
-        int gap = 14;
-        int columnWidth = (content.Width - gap) / 2;
-        int rowHeight = (content.Height - gap) / 2;
-        DrawLinuxEnergyCard(panel, new Rectangle(content.X, content.Y, columnWidth, rowHeight), "Red Small Energy");
-        DrawLinuxEnergyCard(panel, new Rectangle(content.X + columnWidth + gap, content.Y, columnWidth, rowHeight), "Red Large Energy");
-        DrawLinuxEnergyCard(panel, new Rectangle(content.X, content.Y + rowHeight + gap, columnWidth, rowHeight), "Blue Small Energy");
-        DrawLinuxEnergyCard(panel, new Rectangle(content.X + columnWidth + gap, content.Y + rowHeight + gap, columnWidth, rowHeight), "Blue Large Energy");
-    }
-
-    private static void DrawLinuxEnergyCard(OpenGkUiDrawList panel, Rectangle rect, string title)
-    {
-        AddLocalPanelFrame(panel, rect, title);
-        int x = rect.X + 18;
-        int y = rect.Y + 68;
-        int buttonWidth = Math.Max(52, (rect.Width - 36 - 5 * 6) / 6);
-        for (int i = 0; i <= 5; i++)
-        {
-            OpenGkUiPainter.AddPButton(panel, new Rectangle(x + i * (buttonWidth + 6), y, buttonWidth, 28), i.ToString(), $"local_energy:{title}:{i}", active: false, enabled: true);
-        }
-    }
-
-    private static LocalControlPanelLayout ResolveLocalPanelLayout(Size clientSize)
-    {
-        int width = Math.Max(1, clientSize.Width);
-        int height = Math.Max(1, clientSize.Height);
-        int panelWidth = Math.Min(Math.Max(920, (int)(width * 0.82)), width - 24);
-        int panelHeight = Math.Min(Math.Max(610, (int)(height * 0.76)), height - 24);
-        panelWidth = Math.Max(320, panelWidth);
-        panelHeight = Math.Max(360, panelHeight);
-        Rectangle panel = new((width - panelWidth) / 2, (height - panelHeight) / 2, panelWidth, panelHeight);
-        Rectangle close = new(panel.Right - 116, panel.Y + 20, 84, 30);
-        Rectangle back = new(close.X - 106, panel.Y + 20, 98, 30);
-        Rectangle title = new(panel.X + 24, panel.Y + 16, 260, 38);
-        Rectangle help = new(panel.X + 290, panel.Y + 24, Math.Max(80, back.X - 14 - (panel.X + 290)), 24);
-        Rectangle mainTab = new(panel.X + 24, panel.Y + 54, 88, 28);
-        Rectangle energyTab = new(mainTab.Right + 10, mainTab.Y, 120, 28);
-        Rectangle content = new(panel.X + 24, panel.Y + 94, panel.Width - 48, panel.Height - 118);
-        return new LocalControlPanelLayout(panel, title, help, back, close, mainTab, energyTab, content);
-    }
-
-    private static void AddLocalPanelChrome(
-        OpenGkUiDrawList drawList,
-        LocalControlPanelLayout layout,
-        string title,
-        string help,
-        LocalControlPanelPage page)
-    {
-        drawList.FillRect(layout.Panel, Color.FromArgb(232, 10, 14, 18));
-        drawList.StrokeRect(layout.Panel, Color.FromArgb(172, 126, 174, 190), 1.4f);
-        drawList.Text(layout.Title, title, Color.WhiteSmoke, OpenGkUiTextStyle.HudBig, OpenGkUiTextAlign.Left);
-        drawList.Text(layout.Help, help, Color.FromArgb(190, 206, 218, 226), OpenGkUiTextStyle.Tiny, OpenGkUiTextAlign.Left);
-        OpenGkUiPainter.AddPButton(drawList, layout.BackButton, "Back", "local_return", active: true, enabled: true);
-        OpenGkUiPainter.AddPButton(drawList, layout.CloseButton, "Close", "local_close", active: false, enabled: true);
-        OpenGkUiPainter.AddPButton(drawList, layout.MainTab, "Overview", "local_page:main", active: page == LocalControlPanelPage.Main, enabled: true);
-        OpenGkUiPainter.AddPButton(drawList, layout.EnergyTab, "Energy", "local_page:energy", active: page == LocalControlPanelPage.Energy, enabled: true);
-    }
-
-    private static void AddLocalPanelFrame(OpenGkUiDrawList drawList, Rectangle rect, string title)
-    {
-        drawList.FillRect(rect, Color.FromArgb(116, 23, 25, 27));
-        drawList.StrokeRect(rect, Color.FromArgb(96, 98, 104, 108), 2f);
-        drawList.Text(new Rectangle(rect.X + 22, rect.Y + 24, rect.Width - 44, 32), title, Color.FromArgb(236, 238, 240), OpenGkUiTextStyle.HudMid, OpenGkUiTextAlign.Left);
     }
 }

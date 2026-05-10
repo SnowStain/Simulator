@@ -3,7 +3,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 
 var repoRoot = ResolveRepoRoot();
-string defaultLogPath = Path.Combine(repoRoot, "src", "Simulator.ThreeD", "bin", "Debug", "net10.0-windows", "logs", "autoaim_training.log");
+string defaultLogPath = ResolveDefaultLogPath(repoRoot);
 string inputPath = args.Length > 0 ? Path.GetFullPath(args[0]) : defaultLogPath;
 if (!File.Exists(inputPath))
 {
@@ -81,6 +81,31 @@ static string ResolveRepoRoot()
     }
 
     return current;
+}
+
+static string ResolveDefaultLogPath(string repoRoot)
+{
+    string rootLog = Path.Combine(repoRoot, "logs", "autoaim_training.log");
+    if (File.Exists(rootLog))
+    {
+        return rootLog;
+    }
+
+    string threeDDebugRoot = Path.Combine(repoRoot, "src", "Simulator.ThreeD", "bin", "Debug");
+    if (Directory.Exists(threeDDebugRoot))
+    {
+        foreach (string targetDir in Directory.EnumerateDirectories(threeDDebugRoot, "net10.0*", SearchOption.TopDirectoryOnly))
+        {
+            string candidate = Path.Combine(targetDir, "logs", "autoaim_training.log");
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+    }
+
+    string launcherLog = Path.Combine(repoRoot, "build_verify", "launcher_builds", "debug", "threeD", "logs", "autoaim_training.log");
+    return File.Exists(launcherLog) ? launcherLog : rootLog;
 }
 
 static List<CalibrationSample> LoadSamples(string path)

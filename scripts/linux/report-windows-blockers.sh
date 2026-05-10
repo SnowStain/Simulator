@@ -21,6 +21,7 @@ else
     "src/Simulator.Platform"
     "src/Simulator.Core"
     "src/Simulator.Assets"
+    "src/Simulator.AutoAimCalibrationTool"
     "src/Simulator.Editors"
     "src/Simulator.LoadLargeTerrain"
     "src/Simulator.Decision"

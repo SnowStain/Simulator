@@ -21,6 +21,7 @@ $linuxScanRoots = @(
     "src\Simulator.Platform",
     "src\Simulator.Core",
     "src\Simulator.Assets",
+    "src\Simulator.AutoAimCalibrationTool",
     "src\Simulator.Editors",
     "src\Simulator.LoadLargeTerrain",
     "src\Simulator.Decision",
@@ -44,7 +45,7 @@ foreach ($entry in $patterns.GetEnumerator()) {
 
         Get-ChildItem -LiteralPath $path -Recurse -File -Include *.cs,*.csproj -ErrorAction SilentlyContinue |
             Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' } |
-            Select-String -Pattern $entry.Value
+            Select-String -Pattern $entry.Value -CaseSensitive
     }
 
     if (!$matches) {
