@@ -1028,7 +1028,8 @@ internal sealed partial class Simulator3dForm
             center,
             EnergyMechanismGeometry.ResolveAccentColor(region.Team),
             (float)_host.World.GameTimeSec,
-            ResolveEnergyRotorYawForRender);
+            ResolveEnergyRotorYawForRender,
+            ResolveEnergyMechanismArmVisualStateForRender);
 
         SmoothingMode previousSmoothing = graphics.SmoothingMode;
         PixelOffsetMode previousPixelOffset = graphics.PixelOffsetMode;
@@ -1318,51 +1319,21 @@ internal sealed partial class Simulator3dForm
         }
 
         up = up.LengthSquared() <= 1e-8f ? Vector3.UnitZ : Vector3.Normalize(up);
-        Vector3 side = Vector3.Cross(up, normal);
-        if (side.LengthSquared() <= 1e-8f)
-        {
-            side = Vector3.UnitX;
-        }
-        else
-        {
-            side = Vector3.Normalize(side);
-        }
-
         Color hot = ResolveEnergyMechanismPendingDiskColor(activeColor);
         float scale = ResolveEnergyPendingPatternRadius(diskRadius) / 0.300f;
-        float ringWidth = 0.040f * scale;
-        foreach (float outerRadius in new[] { 0.070f * scale, 0.150f * scale, 0.270f * scale })
+        foreach (int ringScore in new[] { 4, 7 })
         {
+            float outerRadius = 0.300f * scale * (11 - ringScore) / 10f;
+            float innerRadius = 0.300f * scale * (10 - ringScore) / 10f;
             DrawEnergyMechanismAnnulus(
                 graphics,
                 center + normal * 0.018f,
                 normal,
                 up,
-                MathF.Max(0.0f, outerRadius - ringWidth),
+                innerRadius,
                 outerRadius,
                 hot,
                 64);
-        }
-
-        float spokeOuterRadius = 0.300f * scale;
-        float spokeInnerRadius = MathF.Max(0.0f, spokeOuterRadius - 0.200f * scale);
-        float spokeOuterHalfWidth = 0.0350f * scale;
-        float spokeInnerHalfWidth = 0.0100f * scale;
-        Vector3 faceCenter = center + normal * 0.020f;
-        for (int index = 0; index < 4; index++)
-        {
-            float angle = index * MathF.Tau / 4f;
-            Vector3 radial = Vector3.Normalize(up * MathF.Cos(angle) + side * MathF.Sin(angle));
-            Vector3 tangent = Vector3.Normalize(Vector3.Cross(normal, radial));
-            Vector3 inner = faceCenter + radial * spokeInnerRadius;
-            Vector3 outer = faceCenter + radial * spokeOuterRadius;
-            DrawCpuMarkerQuad(
-                graphics,
-                inner - tangent * spokeInnerHalfWidth,
-                inner + tangent * spokeInnerHalfWidth,
-                outer + tangent * spokeOuterHalfWidth,
-                outer - tangent * spokeOuterHalfWidth,
-                hot);
         }
     }
 

@@ -4802,42 +4802,13 @@ internal sealed partial class Simulator3dForm : Form
     }
 
     private static int ResolveEnergyHitMaskForUi(SimulationTeamState state, bool large)
-    {
-        if (state.EnergyLargeMechanismActive != large)
-        {
-            return 0;
-        }
-
-        int mask = 0;
-        for (int index = 0; index < Math.Min(5, state.EnergyHitRingsByArm.Length); index++)
-        {
-            if (state.EnergyHitRingsByArm[index] > 0)
-            {
-                mask |= 1 << index;
-            }
-        }
-
-        return mask;
-    }
+        => EnergyMechanismVisualLogic.ResolveHitMask(state, large);
 
     private static int ResolveEnergyLitMaskForUi(SimulationTeamState state, bool large)
-        => state.EnergyLargeMechanismActive == large
-            && string.Equals(state.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
-                ? state.EnergyCurrentLitMask & 0x1F
-                : 0;
+        => EnergyMechanismVisualLogic.ResolveLitMask(state, large);
 
     private static int CountMaskBits(int mask)
-    {
-        int count = 0;
-        int value = mask & 0x1F;
-        while (value != 0)
-        {
-            count += value & 1;
-            value >>= 1;
-        }
-
-        return count;
-    }
+        => EnergyMechanismVisualLogic.CountMaskBits(mask);
 
     private static string FormatEnergyArmMask(int mask)
     {

@@ -23,6 +23,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LoadLargeTerrain", "src\Sim
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Simulator.AutoAimCalibrationTool", "src\Simulator.AutoAimCalibrationTool\Simulator.AutoAimCalibrationTool.csproj", "{882716C0-E82A-4E26-84C2-4998B10F3024}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Simulator.LinuxOperator", "src\Simulator.LinuxOperator\Simulator.LinuxOperator.csproj", "{007DC450-5E5C-400E-8C71-81F93120145C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -129,6 +131,18 @@ Global
 		{882716C0-E82A-4E26-84C2-4998B10F3024}.Release|x64.Build.0 = Release|Any CPU
 		{882716C0-E82A-4E26-84C2-4998B10F3024}.Release|x86.ActiveCfg = Release|Any CPU
 		{882716C0-E82A-4E26-84C2-4998B10F3024}.Release|x86.Build.0 = Release|Any CPU
+		{007DC450-5E5C-400E-8C71-81F93120145C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{007DC450-5E5C-400E-8C71-81F93120145C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{007DC450-5E5C-400E-8C71-81F93120145C}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{007DC450-5E5C-400E-8C71-81F93120145C}.Debug|x64.Build.0 = Debug|Any CPU
+		{007DC450-5E5C-400E-8C71-81F93120145C}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{007DC450-5E5C-400E-8C71-81F93120145C}.Debug|x86.Build.0 = Debug|Any CPU
+		{007DC450-5E5C-400E-8C71-81F93120145C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{007DC450-5E5C-400E-8C71-81F93120145C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{007DC450-5E5C-400E-8C71-81F93120145C}.Release|x64.ActiveCfg = Release|Any CPU
+		{007DC450-5E5C-400E-8C71-81F93120145C}.Release|x64.Build.0 = Release|Any CPU
+		{007DC450-5E5C-400E-8C71-81F93120145C}.Release|x86.ActiveCfg = Release|Any CPU
+		{007DC450-5E5C-400E-8C71-81F93120145C}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -143,5 +157,6 @@ Global
 		{4D1375A5-BA09-1F76-F437-B7AA1C08D2E1} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{E2F29512-B9BC-40FE-A4BE-0B4ECB89308C} = {4D1375A5-BA09-1F76-F437-B7AA1C08D2E1}
 		{882716C0-E82A-4E26-84C2-4998B10F3024} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{007DC450-5E5C-400E-8C71-81F93120145C} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

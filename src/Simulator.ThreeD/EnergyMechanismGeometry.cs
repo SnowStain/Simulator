@@ -40,6 +40,10 @@ internal readonly record struct EnergyRenderAnnulus(
     Color FillColor,
     int Segments);
 
+internal readonly record struct EnergyMechanismArmVisualState(
+    Color DiskAccentColor,
+    Color ArmFillColor);
+
 internal sealed class EnergyRenderMesh
 {
     public List<EnergyRenderBox> Boxes { get; } = new();
@@ -99,6 +103,7 @@ internal static class EnergyMechanismGeometry
         Color accentColor,
         float animationTimeSec,
         Func<int, float>? rotorYawResolver = null,
+        Func<int, int, EnergyMechanismArmVisualState>? armVisualResolver = null,
         bool includeRotorAssemblies = true)
     {
         _ = accentColor;
@@ -238,7 +243,9 @@ internal static class EnergyMechanismGeometry
                 for (int index = 0; index < 5; index++)
                 {
                     float yaw = rotorYaw + rotorPhaseRad + MathF.Tau * index / 5f;
-                    AddEnergyArm(mesh, anchor, groundForward, groundRight, cx, cy, cz, yaw, armInnerRadius, armOuterRadius, railGap, armWidth, armHeight, frameColor, rotorColor);
+                    EnergyMechanismArmVisualState armVisual = armVisualResolver?.Invoke(rotorIndex, index)
+                        ?? new EnergyMechanismArmVisualState(rotorColor, frameColor);
+                    AddEnergyArm(mesh, anchor, groundForward, groundRight, cx, cy, cz, yaw, armInnerRadius, armOuterRadius, railGap, armWidth, armHeight, armVisual.ArmFillColor, rotorColor);
                     float lampX = cx + MathF.Cos(yaw) * lampCenterRadius;
                     float lampY = cy + MathF.Sin(yaw) * lampCenterRadius;
 
@@ -250,7 +257,7 @@ internal static class EnergyMechanismGeometry
                         Vector3.UnitY,
                         lampDiskRadius,
                         Math.Max(0.005f, podDepth * 0.18f),
-                        rotorColor,
+                        armVisual.DiskAccentColor,
                         ringGrayOuter,
                         ringGrayInner,
                         10,

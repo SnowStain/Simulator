@@ -1747,7 +1747,6 @@ public sealed class RuleSimulationService
         world.Teams.TryGetValue(shooter.Team, out SimulationTeamState? shooterTeamState);
         bool restrictToCurrentEnergyTarget = shooterTeamState is not null
             && string.Equals(shooterTeamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
-            && shooterTeamState.EnergyNextModuleDelaySec <= 1e-6
             && shooterTeamState.EnergyCurrentLitMask != 0;
         IEnumerable<SimulationEntity> candidates = obstacleCandidates is not null
             ? obstacleCandidates
@@ -1774,8 +1773,7 @@ public sealed class RuleSimulationService
 
                 if (restrictToCurrentEnergyTarget
                     && (!string.Equals(plateTeam, shooter.Team, StringComparison.OrdinalIgnoreCase)
-                        || shooterTeamState is null
-                        || (shooterTeamState.EnergyCurrentLitMask & (1 << armIndex)) == 0))
+                        || shooterTeamState is null))
                 {
                     continue;
                 }

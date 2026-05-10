@@ -788,10 +788,21 @@ public sealed class ArenaInteractionService
             return null;
         }
 
-        if (!string.Equals(plateTeam, shooter.Team, StringComparison.OrdinalIgnoreCase)
-            || (teamState.EnergyCurrentLitMask & (1 << armIndex)) == 0)
+        if (!string.Equals(plateTeam, shooter.Team, StringComparison.OrdinalIgnoreCase))
         {
             return null;
+        }
+
+        if ((teamState.EnergyCurrentLitMask & (1 << armIndex)) == 0)
+        {
+            ResetEnergyAttemptProgress(teamState, world.GameTimeSec, 83 + armIndex);
+            return new FacilityInteractionEvent(
+                world.GameTimeSec,
+                shooter.Team,
+                shooter.Id,
+                hitPlate.Id,
+                "energy_mechanism",
+                "\u80fd\u91cf\u673a\u5173\u6fc0\u6d3b\u5931\u8d25\uff1a\u51fb\u4e2d\u975e\u968f\u673a\u70b9\u4eae\u7684\u88c5\u7532\u6a21\u5757\uff0c\u8fdb\u5ea6\u5df2\u6e05\u96f6\u5e76\u91cd\u65b0\u968f\u673a\u76ee\u6807\u3002");
         }
         int safeRingScore = Math.Clamp(ringScore, 1, 10);
         if (armIndex >= 0

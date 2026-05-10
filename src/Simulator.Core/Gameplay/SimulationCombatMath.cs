@@ -3355,10 +3355,14 @@ public static bool TryAcquireEnergyMechanismTarget(
             bool restrictToCurrentEnergyTarget = energyMechanismTarget
                 && shooterTeamState is not null
                 && string.Equals(shooterTeamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
-                && shooterTeamState.EnergyNextModuleDelaySec <= 1e-6
                 && shooterTeamState.EnergyCurrentLitMask != 0;
             IReadOnlyList<ArmorPlateTarget> collisionTargets = energyMechanismTarget
-                ? GetEnergyMechanismCollisionPlates(armorTargets, shooter.Team, shooterTeamState, restrictToCurrentEnergyTarget)
+                ? GetEnergyMechanismCollisionPlates(
+                    armorTargets,
+                    shooter.Team,
+                    shooterTeamState,
+                    restrictToCurrentEnergyTarget,
+                    includeOnlyLitArms: false)
                 : armorTargets;
             foreach (ArmorPlateTarget plate in collisionTargets)
             {
@@ -3408,7 +3412,8 @@ public static bool TryAcquireEnergyMechanismTarget(
         IReadOnlyList<ArmorPlateTarget> armorTargets,
         string shooterTeam,
         SimulationTeamState? shooterTeamState,
-        bool restrictToCurrentEnergyTarget)
+        bool restrictToShooterTeam,
+        bool includeOnlyLitArms)
     {
         var selectedByArm = new Dictionary<string, ArmorPlateTarget>(StringComparer.OrdinalIgnoreCase);
         foreach (ArmorPlateTarget plate in armorTargets)
@@ -3418,10 +3423,10 @@ public static bool TryAcquireEnergyMechanismTarget(
                 continue;
             }
 
-            if (restrictToCurrentEnergyTarget
+            if (restrictToShooterTeam
                 && (!string.Equals(plateTeam, shooterTeam, StringComparison.OrdinalIgnoreCase)
                     || shooterTeamState is null
-                    || (shooterTeamState.EnergyCurrentLitMask & (1 << armIndex)) == 0))
+                    || (includeOnlyLitArms && (shooterTeamState.EnergyCurrentLitMask & (1 << armIndex)) == 0)))
             {
                 continue;
             }
