@@ -15,7 +15,9 @@ using Simulator.Core;
 using Simulator.Core.Gameplay;
 using Simulator.Core.Map;
 using Simulator.Editors;
+using Simulator.Platform.Ui;
 using Simulator.Runtime.Input;
+using UiButton = Simulator.Platform.Ui.OpenGkUiButton;
 
 namespace Simulator.ThreeD;
 
@@ -179,8 +181,6 @@ internal sealed partial class Simulator3dForm : Form
         Main,
         Energy,
     }
-
-    private readonly record struct UiButton(Rectangle Rect, string Action);
 
     private readonly record struct DelayedLookInput(double DueTimeSec, double YawDeltaDeg, double PitchDeltaDeg);
 
@@ -360,7 +360,7 @@ internal sealed partial class Simulator3dForm : Form
     private readonly Font _menuEyebrowFont = new("Microsoft YaHei UI", 8.8f, FontStyle.Bold, GraphicsUnit.Point);
     private readonly Font _menuButtonFont = new("Microsoft YaHei UI", 13f, FontStyle.Bold, GraphicsUnit.Point);
     private readonly Font _menuFootnoteFont = new("Microsoft YaHei UI", 9.2f, FontStyle.Regular, GraphicsUnit.Point);
-    private readonly List<UiButton> _uiButtons = new();
+    private readonly OpenGkUiButtonRegistry _uiButtons = new();
     private readonly HashSet<Keys> _heldKeys = new();
     private readonly HashSet<string> _energyAutoFireFiredShotKeys = new(StringComparer.OrdinalIgnoreCase);
     private string? _energyAutoFireGroupKey;
@@ -6017,15 +6017,9 @@ internal sealed partial class Simulator3dForm : Form
 
     private void DrawPButton(Graphics graphics, Rectangle rect, string label, string action, bool active, bool enabled)
     {
-        using var fill = new SolidBrush(active ? Color.FromArgb(80, 36, 46, 48) : Color.FromArgb(54, 34, 38, 40));
-        using var border = new Pen(enabled ? Color.FromArgb(178, 146, 184, 184) : Color.FromArgb(90, 110, 120, 122), 1.2f);
-        graphics.FillRectangle(fill, rect);
-        graphics.DrawRectangle(border, rect);
-        DrawUiButtonText(graphics, rect, label, ResolveUiButtonFont(graphics, label, rect, _smallHudFont, _tinyHudFont), enabled ? Color.FromArgb(232, 236, 238) : Color.FromArgb(126, 134, 138));
-        if (enabled && !string.IsNullOrWhiteSpace(action))
-        {
-            _uiButtons.Add(new UiButton(Rectangle.Inflate(rect, 5, 4), action));
-        }
+        var drawList = new OpenGkUiDrawList();
+        OpenGkUiPainter.AddPButton(drawList, rect, label, action, active, enabled);
+        RenderOpenGkDrawList(graphics, drawList);
     }
 
     private void DrawPBottomStatus(Graphics graphics, int x, int width, int y)
@@ -11623,18 +11617,9 @@ internal sealed partial class Simulator3dForm : Form
             return CanExecuteUiActionForCurrentState(openGkAction) ? openGkAction : null;
         }
 
-        for (int index = _uiButtons.Count - 1; index >= 0; index--)
+        if (_uiButtons.TryResolve(point, CanExecuteUiActionForCurrentState, out string? action))
         {
-            UiButton button = _uiButtons[index];
-            if (button.Rect.Contains(point))
-            {
-                if (!CanExecuteUiActionForCurrentState(button.Action))
-                {
-                    continue;
-                }
-
-                return button.Action;
-            }
+            return action;
         }
 
         return null;
@@ -12656,10 +12641,9 @@ internal sealed partial class Simulator3dForm : Form
 
     private void DrawPanel(Graphics graphics, Rectangle rect, int alpha = 152)
     {
-        using var panelBrush = new SolidBrush(Color.FromArgb(alpha, 18, 22, 30));
-        using var panelBorderPen = new Pen(Color.FromArgb(Math.Min(255, alpha + 48), 132, 146, 164), 1f);
-        graphics.FillRectangle(panelBrush, rect);
-        graphics.DrawRectangle(panelBorderPen, rect);
+        var drawList = new OpenGkUiDrawList();
+        OpenGkUiPainter.AddPanel(drawList, rect, alpha);
+        RenderOpenGkDrawList(graphics, drawList);
     }
 
     private static GraphicsPath CreateRoundedRectangle(Rectangle rect, int radius)
@@ -12698,44 +12682,9 @@ internal sealed partial class Simulator3dForm : Form
         Color? activeColor = null,
         bool registerOnly = false)
     {
-        if (!registerOnly)
-        {
-            float hoverMix = ResolveUiHoverMix(action);
-            Color idleColor = Color.FromArgb(64, 76, 92);
-            Color accentColor = activeColor ?? Color.FromArgb(58, 124, 214);
-            Color fillColor = BlendUiColor(idleColor, accentColor, active ? 0.72f : hoverMix * 0.48f);
-            fillColor = Color.FromArgb(
-                Math.Clamp(fillColor.A + (int)MathF.Round(hoverMix * 10f), 0, 255),
-                fillColor.R,
-                fillColor.G,
-                fillColor.B);
-            Rectangle drawRect = hoverMix > 0.01f ? Rectangle.Inflate(rect, 1, 1) : rect;
-            using var brush = new SolidBrush(fillColor);
-            using var borderPen = new Pen(
-                active
-                    ? BlendUiColor(Color.FromArgb(210, 236, 242, 248), Color.White, hoverMix * 0.35f)
-                    : BlendUiColor(Color.FromArgb(140, 156, 170, 188), Color.FromArgb(208, 228, 238, 248), hoverMix * 0.55f),
-                active ? 1.5f : 1.0f + hoverMix * 0.4f);
-            graphics.FillRectangle(brush, drawRect);
-            graphics.DrawRectangle(borderPen, drawRect);
-            if (hoverMix > 0.01f || active)
-            {
-                using var highlight = new SolidBrush(Color.FromArgb(Math.Clamp((int)MathF.Round((active ? 46f : 28f) + hoverMix * 36f), 0, 255), 255, 255, 255));
-                graphics.FillRectangle(highlight, drawRect.X + 1, drawRect.Y + 1, Math.Max(1, drawRect.Width - 2), Math.Max(2, drawRect.Height / 4));
-            }
-
-            if (!string.IsNullOrWhiteSpace(label))
-            {
-                Font preferredButtonFont = drawRect.Height <= 32 ? _smallHudFont : _menuSubtitleFont;
-                Font buttonFont = ResolveUiButtonFont(graphics, label, drawRect, preferredButtonFont, _tinyHudFont);
-                DrawUiButtonText(graphics, drawRect, label, buttonFont, Color.WhiteSmoke);
-            }
-        }
-
-        if (!string.IsNullOrWhiteSpace(action))
-        {
-            _uiButtons.Add(new UiButton(Rectangle.Inflate(rect, 6, 4), action));
-        }
+        var drawList = new OpenGkUiDrawList();
+        OpenGkUiPainter.AddFlatButton(drawList, rect, label, action, active, true, ResolveUiHoverMix(action), activeColor, registerOnly);
+        RenderOpenGkDrawList(graphics, drawList);
     }
 
     private static Color BlendUiColor(Color from, Color to, float t)

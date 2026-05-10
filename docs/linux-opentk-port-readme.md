@@ -50,6 +50,9 @@ The current `linux` branch has these portability foundations in place:
 | --- | --- | --- |
 | Linux executable entry | Added an OpenTK-only `net10.0` app with no WinForms reference | `src/Simulator.Linux` |
 | Shared input model | Moved `GameInputSnapshot` and accumulator out of executable runtime into a pure library | `src/Simulator.Platform/Input` |
+| Shared OpenGK button model | Moved UI button registration, cached button lists, and reverse hit-testing into a pure platform layer | `src/Simulator.Platform/Ui/OpenGkUiButton.cs` |
+| Shared OpenGK draw commands | Added a platform-neutral draw list for panel/button/text primitives; Windows renders it through GDI for now and Linux renders primitive rectangles through OpenGL | `src/Simulator.Platform/Ui/OpenGkUiDrawList.cs` |
+| Shared room layout | Extracted the OpenGK room top bar, red/blue columns, referee/settings side panel, and bottom actions into a pure layout resolver | `src/Simulator.Platform/Ui/OpenGkRoomLayout.cs` |
 | Linux dependency graph | Linux app references only `Simulator.Platform`, `Simulator.Core`, and `Simulator.Assets` | `src/Simulator.Linux/Simulator.Linux.csproj` |
 | Static portability gate | Checks for forbidden Windows project refs, Windows TFMs, WinForms, Win32 P/Invoke, and Windows OpenCV runtime | `scripts/linux/check-linux-portability.*` |
 | Headless diagnostics | Verifies config, map preset, appearance data, rules, asset roots, logs, and input model without a display server | `--diagnostics`, `LinuxOperatorDiagnostics.cs` |
@@ -61,6 +64,40 @@ This does not mean all gameplay/UI features are already implemented in Linux.
 It means the Linux project now has a clean, testable, non-Windows foundation
 where those features can be moved one by one without reintroducing Windows-only
 dependencies.
+
+## Current Portability Audit
+
+The Linux runnable graph is currently:
+
+```text
+Simulator.Linux -> Simulator.Platform / Simulator.Core / Simulator.Assets
+```
+
+This graph passes the portability gate and must stay free of:
+
+- `net*-windows` target frameworks
+- `UseWindowsForms`
+- `System.Windows.Forms`
+- `TextRenderer` and `System.Drawing.Graphics`
+- Win32 `user32/gdi32/kernel32` P/Invoke
+- Windows-only OpenCV packages
+- WinForms file dialogs
+
+The still-unmigrated Windows compatibility surfaces are intentionally outside
+the Linux graph:
+
+| Area | Still Windows-bound files | Migration action |
+| --- | --- | --- |
+| Main game shell | `src/Simulator.ThreeD`, `Program.cs`, `Simulator3dForm*.cs` | Continue extracting runtime state, UI layout, and render commands into `Simulator.Platform`/runtime-neutral code |
+| Existing OpenGL scene renderer | `Simulator3dForm.GpuRenderer.cs` uses Win32/WGL and `gdi32/opengl32` P/Invoke | Move scene renderer behind an OpenTK renderer facade, then call it from Linux |
+| P/O panel and complex HUD text | Many `TextRenderer` calls in `Simulator3dForm.cs` and `Simulator3dForm.OpenGkUi.cs` | Convert one panel section at a time into `OpenGkUiDrawList` plus a Linux text renderer |
+| Map editor executable | `src/Simulator.LoadLargeTerrain` targets `net10.0-windows` because of file dialogs | Keep data/document logic shared; replace `FileDialogService` with a platform service or ImGui path picker |
+| Decision tool | `src/Simulator.Decision` WinForms executable | Keep out of Linux graph; extract only decision data models if needed |
+| Windows-only OpenCV | `Simulator.ThreeD.csproj` references `OpenCvSharp4.runtime.win` | Keep in Windows shell; future Linux vision support must use a Linux-native runtime or optional service |
+
+Do not mark a feature Linux-complete because it exists in `Simulator.ThreeD`.
+It is Linux-complete only when the Linux project can call it without referencing
+Windows assemblies or shell-only adapters.
 
 ## Linux Screenshot Diagnosis
 
@@ -127,6 +164,27 @@ src/Simulator.Platform
   Pure cross-platform contracts. Keep it tiny and dependency-light.
   Current owner of GameInputSnapshot, GameKey, GameMouseButton, and the input
   accumulator.
+  Also owns the first extracted OpenGK UI contract:
+  OpenGkUiButton and OpenGkUiButtonRegistry.
+  It also owns the first OpenGK rendering contract:
+  OpenGkUiDrawList, OpenGkUiDrawCommand, and OpenGkUiPainter.
+  Room layout rectangles are resolved by OpenGkRoomLayout.
+
+  OpenGkUiButtonRegistry is deliberately small:
+  - Register screen rectangles and action strings during drawing.
+  - Resolve clicks from the last visible button to the first visible button.
+  - Remove hidden panel actions when a panel closes.
+  - Cache button lists for expensive room/HUD surfaces.
+
+  Windows ThreeD and Linux OpenTK should both use this registry. Do not create
+  a second hit-test list in the Linux shell.
+
+  OpenGkUiDrawList is the migration bridge for HUD/room/P/O panels:
+  - Windows may still render commands through `Graphics`/`TextRenderer`.
+  - Linux should render the same commands through OpenGL/Skia/ImGui adapters.
+  - New simple panels/buttons should emit commands first, then render through an adapter.
+  - Complex text and silhouettes can stay in the old path until their data shape is extracted.
+  - Room screens should use `OpenGkRoomLayout.Resolve(...)` for top/column/sidebar/action placement.
 
 src/Simulator.Core
   Platform-neutral rules and simulation state: world entities, teams, combat,
@@ -838,12 +896,20 @@ Add and use platform-neutral types:
 - `GameKey`
 - `GameMouseButton`
 - `GameInputSnapshot`
+- `OpenGkUiButton`
+- `OpenGkUiButtonRegistry`
+- `OpenGkUiDrawList`
+- `OpenGkUiPainter`
 - `ICursorCaptureService`
 - `IClipboardService`
 - `IFileDialogService`
 - runtime tick/frame timing service
 
 WinForms and OpenTK should both translate into the same game input model.
+OpenGK UI code should register button hit areas into `OpenGkUiButtonRegistry`
+instead of keeping per-shell private button lists.
+OpenGK panel/button drawing should emit `OpenGkUiDrawList` commands before
+calling a shell-specific renderer.
 
 ### Phase 2: Runtime extraction
 

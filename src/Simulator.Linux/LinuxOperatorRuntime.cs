@@ -68,6 +68,22 @@ internal sealed class LinuxOperatorRuntime
         }
     }
 
+    public void ApplyUiAction(string action)
+    {
+        if (string.Equals(action, "linux:release_mouse", StringComparison.OrdinalIgnoreCase))
+        {
+            CaptureMouse = false;
+        }
+        else if (string.Equals(action, "linux:capture_mouse", StringComparison.OrdinalIgnoreCase))
+        {
+            CaptureMouse = true;
+        }
+
+        SimulatorRuntimeLog.Append(
+            "linux_operator.log",
+            $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} ui action={action} frame={_frame}");
+    }
+
     public void Tick(double deltaSec)
     {
         _timeSec += Math.Max(0.0, deltaSec);

@@ -8,6 +8,8 @@ using System.Numerics;
 using System.Windows.Forms;
 using Simulator.Core;
 using Simulator.Core.Gameplay;
+using Simulator.Platform.Ui;
+using UiButton = Simulator.Platform.Ui.OpenGkUiButton;
 
 namespace Simulator.ThreeD;
 
@@ -2417,47 +2419,29 @@ internal sealed partial class Simulator3dForm
 
     private void DrawOpenGkLanRoomScreenCore(Graphics graphics, Rectangle root)
     {
-        DrawOpenGkRoomTopBar(graphics, new Rectangle(root.X, root.Y, root.Width, 72));
+        OpenGkRoomScreenLayout layout = OpenGkRoomLayout.Resolve(root);
+        DrawOpenGkRoomTopBar(graphics, layout.TopBar);
+        DrawOpenGkTeamRoomColumn(graphics, layout.RedTeam, "red", "\u7ea2\u65b9");
+        DrawOpenGkTeamRoomColumn(graphics, layout.BlueTeam, "blue", "\u84dd\u65b9");
+        DrawOpenGkRefereeAndSettingsPanel(graphics, layout.RefereeAndSettings);
 
-        int gap = Math.Clamp(root.Width / 90, 10, 16);
-        int minTeamWidth = Math.Clamp(root.Width / 4, 232, 280);
-        int minSideWidth = Math.Clamp(root.Width / 5, 230, 320);
-        int sideWidth = Math.Clamp(root.Width / 4, minSideWidth, 410);
-        int columnWidth = Math.Max(minTeamWidth, (root.Width - sideWidth - gap * 2) / 2);
-        if (columnWidth * 2 + sideWidth + gap * 2 > root.Width)
-        {
-            columnWidth = Math.Max(180, (root.Width - minSideWidth - gap * 2) / 2);
-            sideWidth = Math.Max(180, root.Width - columnWidth * 2 - gap * 2);
-        }
-        int top = root.Y + 92;
-        int bottomButtons = 58;
-        int contentHeight = root.Bottom - top - bottomButtons;
-        Rectangle red = new(root.X, top, columnWidth, contentHeight);
-        Rectangle blue = new(red.Right + gap, top, columnWidth, contentHeight);
-        Rectangle side = new(blue.Right + gap, top, root.Right - blue.Right - gap, contentHeight);
-
-        DrawOpenGkTeamRoomColumn(graphics, red, "red", "\u7ea2\u65b9");
-        DrawOpenGkTeamRoomColumn(graphics, blue, "blue", "\u84dd\u65b9");
-        DrawOpenGkRefereeAndSettingsPanel(graphics, side);
-
-        int buttonY = root.Bottom - 42;
         if (_localRoomPanelOpen && _lanSession is null)
         {
-            DrawOpenGkButton(graphics, new Rectangle(root.X, buttonY, 132, 36), "离开房间", "local_room_disconnect", false, Color.FromArgb(96, 84, 88), enabled: true);
+            DrawOpenGkButton(graphics, layout.LeftAction, "离开房间", "local_room_disconnect", false, Color.FromArgb(96, 84, 88), enabled: true);
             bool canStart = _localRoomSeats.Count > 0;
-            DrawOpenGkButton(graphics, new Rectangle(root.Right - 178, buttonY, 178, 36), "开始本地对局", "local_room_start_match", true, Color.FromArgb(64, 132, 226), enabled: canStart);
+            DrawOpenGkButton(graphics, layout.RightAction, "开始本地对局", "local_room_start_match", true, Color.FromArgb(64, 132, 226), enabled: canStart);
         }
         else
         {
-            DrawOpenGkButton(graphics, new Rectangle(root.X, buttonY, 132, 36), "\u79bb\u5f00\u623f\u95f4", "lan_room_disconnect", false, Color.FromArgb(96, 84, 88), enabled: true);
+            DrawOpenGkButton(graphics, layout.LeftAction, "\u79bb\u5f00\u623f\u95f4", "lan_room_disconnect", false, Color.FromArgb(96, 84, 88), enabled: true);
             if (_lanSession?.IsHost == true)
             {
                 bool canStart = CanLanHostStartRoomMatch();
-                DrawOpenGkButton(graphics, new Rectangle(root.Right - 178, buttonY, 178, 36), "\u5f00\u59cb\u5bf9\u5c40", "lan_room_start_match", true, Color.FromArgb(64, 132, 226), enabled: canStart);
+                DrawOpenGkButton(graphics, layout.RightAction, "\u5f00\u59cb\u5bf9\u5c40", "lan_room_start_match", true, Color.FromArgb(64, 132, 226), enabled: canStart);
             }
             else
             {
-                DrawOpenGkButton(graphics, new Rectangle(root.Right - 178, buttonY, 178, 36), _lanLocalReady ? "\u53d6\u6d88\u51c6\u5907" : "\u51c6\u5907", "lan_toggle_ready", true, _lanLocalReady ? Color.FromArgb(96, 118, 138) : Color.FromArgb(64, 132, 226), enabled: true);
+                DrawOpenGkButton(graphics, layout.RightAction, _lanLocalReady ? "\u53d6\u6d88\u51c6\u5907" : "\u51c6\u5907", "lan_toggle_ready", true, _lanLocalReady ? Color.FromArgb(96, 118, 138) : Color.FromArgb(64, 132, 226), enabled: true);
             }
         }
     }

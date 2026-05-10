@@ -1,5 +1,7 @@
+using System.Drawing;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
+using Simulator.Platform.Ui;
 
 namespace Simulator.Linux;
 
@@ -48,6 +50,23 @@ internal sealed class GlPrimitiveRenderer : IDisposable
         Add(x, y2, color);
     }
 
+    public void Draw(OpenGkUiDrawList drawList)
+    {
+        foreach (OpenGkUiDrawCommand command in drawList.Commands)
+        {
+            switch (command.Kind)
+            {
+                case OpenGkUiDrawCommandKind.FillRect:
+                    Rect(command.Rect.X, command.Rect.Y, command.Rect.Width, command.Rect.Height, ToVector(command.Color));
+                    break;
+
+                case OpenGkUiDrawCommandKind.StrokeRect:
+                    DrawStroke(command.Rect, command.Color, Math.Max(1.0f, command.StrokeWidth));
+                    break;
+            }
+        }
+    }
+
     public void End()
     {
         if (_vertices.Count == 0)
@@ -88,6 +107,18 @@ internal sealed class GlPrimitiveRenderer : IDisposable
 
     private void Add(float x, float y, Vector4 color)
         => _vertices.Add(new Vertex(x, y, color.X, color.Y, color.Z, color.W));
+
+    private void DrawStroke(Rectangle rect, Color color, float width)
+    {
+        Vector4 vector = ToVector(color);
+        Rect(rect.X, rect.Y, rect.Width, width, vector);
+        Rect(rect.X, rect.Bottom - width, rect.Width, width, vector);
+        Rect(rect.X, rect.Y, width, rect.Height, vector);
+        Rect(rect.Right - width, rect.Y, width, rect.Height, vector);
+    }
+
+    private static Vector4 ToVector(Color color)
+        => new(color.R / 255.0f, color.G / 255.0f, color.B / 255.0f, color.A / 255.0f);
 
     private static int BuildProgram()
     {

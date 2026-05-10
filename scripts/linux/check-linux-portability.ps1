@@ -9,7 +9,8 @@ $scanPaths = @(
     "src\Simulator.Linux",
     "src\Simulator.Platform",
     "src\Simulator.Core",
-    "src\Simulator.Assets"
+    "src\Simulator.Assets",
+    "src\Simulator.Runtime"
 )
 
 Write-Host "[linux-portability] checking project references"
@@ -27,7 +28,7 @@ if (($packages | Select-String -Pattern "OpenCvSharp4\.runtime\.win|System\.Wind
 }
 
 Write-Host "[linux-portability] scanning source for Windows-only APIs"
-$pattern = 'net[0-9.]+-windows|UseWindowsForms|System\.Windows\.Forms|OpenCvSharp4\.runtime\.win|DllImport\("(user32|gdi32|kernel32)|Microsoft\.Win32\.Registry|WGL'
+$pattern = 'net[0-9.]+-windows|UseWindowsForms|System\.Windows\.Forms|OpenCvSharp4\.runtime\.win|DllImport\("(user32|gdi32|kernel32)|Microsoft\.Win32\.Registry|WGL|OpenFileDialog|SaveFileDialog|FolderBrowserDialog|System\.Drawing\.Graphics|TextRenderer'
 foreach ($path in $scanPaths) {
     if (!(Test-Path $path)) {
         continue

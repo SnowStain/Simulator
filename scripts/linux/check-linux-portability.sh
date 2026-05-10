@@ -11,6 +11,7 @@ SCAN_PATHS=(
   "src/Simulator.Platform"
   "src/Simulator.Core"
   "src/Simulator.Assets"
+  "src/Simulator.Runtime"
 )
 
 echo "[linux-portability] checking project references"
@@ -34,7 +35,7 @@ for path in "${SCAN_PATHS[@]}"; do
   if grep -RInE \
     --exclude-dir bin \
     --exclude-dir obj \
-    "net[0-9.]+-windows|UseWindowsForms|System\.Windows\.Forms|OpenCvSharp4\.runtime\.win|DllImport\\(\"(user32|gdi32|kernel32)|Microsoft\.Win32\.Registry|WGL" \
+    "net[0-9.]+-windows|UseWindowsForms|System\.Windows\.Forms|OpenCvSharp4\.runtime\.win|DllImport\\(\"(user32|gdi32|kernel32)|Microsoft\.Win32\.Registry|WGL|OpenFileDialog|SaveFileDialog|FolderBrowserDialog|System\.Drawing\.Graphics|TextRenderer" \
     "$path"; then
     echo "[linux-portability] forbidden Windows-only API found under $path" >&2
     exit 1

@@ -1,8 +1,10 @@
+using System.Drawing;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
 using OpenTK.Windowing.GraphicsLibraryFramework;
+using Simulator.Platform.Ui;
 using Simulator.Runtime.Input;
 
 namespace Simulator.Linux;
@@ -22,6 +24,7 @@ internal sealed class LinuxOperatorWindow : GameWindow
 
     private readonly LinuxOperatorRuntime _runtime;
     private readonly GameInputSnapshotAccumulator _inputAccumulator = new();
+    private readonly OpenGkUiButtonRegistry _uiButtons = new();
     private readonly GlPrimitiveRenderer _renderer = new();
     private readonly LinuxOperatorOptions _options;
 
@@ -56,6 +59,13 @@ internal sealed class LinuxOperatorWindow : GameWindow
         base.OnUpdateFrame(args);
         GameInputSnapshot input = CaptureInputSnapshot();
         _runtime.ApplyInput(input);
+        if (input.PressedMouseButtons.Contains(GameMouseButton.Left)
+            && _uiButtons.TryResolve(new Point((int)input.Pointer.X, (int)input.Pointer.Y), canExecute: null, out string? uiAction)
+            && uiAction is not null)
+        {
+            _runtime.ApplyUiAction(uiAction);
+        }
+
         _runtime.Tick(args.Time);
         if (_options.ExitAfterSec is double exitAfterSec && _runtime.TimeSec >= exitAfterSec)
         {
@@ -148,6 +158,7 @@ internal sealed class LinuxOperatorWindow : GameWindow
     {
         float width = Math.Max(1, ClientSize.X);
         float height = Math.Max(1, ClientSize.Y);
+
         _renderer.Rect(0, 0, width, height, new Vector4(0.50f, 0.62f, 0.68f, 1.0f));
         _renderer.Rect(0, height * 0.74f, width, height * 0.26f, new Vector4(0.02f, 0.03f, 0.04f, 1.0f));
         _renderer.Rect(width * 0.08f, height * 0.54f, width * 0.84f, 5, new Vector4(0.90f, 0.95f, 0.95f, 1.0f));
@@ -156,8 +167,30 @@ internal sealed class LinuxOperatorWindow : GameWindow
         _renderer.Rect(24, height - 90, 300, 10, new Vector4(0.82f, 0.18f, 0.18f, 1.0f));
         _renderer.Rect(24, height - 66, 300, 10, new Vector4(0.22f, 0.24f, 0.28f, 1.0f));
         _renderer.Rect(24, height - 42, 300, 10, new Vector4(0.78f, 0.68f, 0.18f, 1.0f));
-        _renderer.Rect(width - 230, height - 230, 205, 205, new Vector4(0.05f, 0.07f, 0.09f, 0.65f));
-        _renderer.Rect(width - 226, height - 226, 197, 197, new Vector4(0.10f, 0.14f, 0.18f, 0.35f));
+
+        var ui = new OpenGkUiDrawList();
+        _uiButtons.Clear();
+        OpenGkUiPainter.AddPanel(ui, new Rectangle((int)(width - 230), (int)(height - 230), 205, 205), 166);
+        OpenGkUiPainter.AddFlatButton(
+            ui,
+            new Rectangle(24, (int)(height - 104), 145, 34),
+            "Capture",
+            "linux:capture_mouse",
+            _runtime.CaptureMouse,
+            enabled: true,
+            hoverMix: 0.0f,
+            activeColor: Color.FromArgb(58, 124, 214));
+        OpenGkUiPainter.AddFlatButton(
+            ui,
+            new Rectangle(179, (int)(height - 104), 145, 34),
+            "Release",
+            "linux:release_mouse",
+            !_runtime.CaptureMouse,
+            enabled: true,
+            hoverMix: 0.0f,
+            activeColor: Color.FromArgb(70, 138, 154));
+        _renderer.Draw(ui);
+        _uiButtons.AddRange(ui.Buttons);
 
         // Deliberately primitive: this cross-platform shell is the migration target for the existing OpenGK UI calls.
         float pulse = 0.5f + 0.5f * MathF.Sin((float)_runtime.TimeSec * 2.0f);

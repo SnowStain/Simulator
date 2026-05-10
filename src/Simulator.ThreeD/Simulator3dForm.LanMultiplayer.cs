@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Windows.Forms;
 using Simulator.Core;
 using Simulator.Core.Gameplay;
+using UiButton = Simulator.Platform.Ui.OpenGkUiButton;
 
 namespace Simulator.ThreeD;
 

@@ -36,7 +36,7 @@ dotnet build src/Simulator.Runtime/Simulator.Runtime.csproj -c Debug
 
 Do not rewrite the game in one pass. Move these boundaries in order:
 
-1. **Platform-neutral contracts**: input enums, window services, clipboard, cursor capture, file dialog, frame timing.
+1. **Platform-neutral contracts**: input enums, OpenGK UI button registry, OpenGK draw list, window services, clipboard, cursor capture, file dialog, frame timing.
 2. **Runtime extraction**: match loop, LAN pump, scene interaction updates, and rule systems must not depend on WinForms.
 3. **OpenTK client**: create or extend a `net10.0` OpenTK host that feeds platform-neutral input and calls shared runtime tick/render APIs.
 4. **OpenGK UI renderer**: keep the visual design, but draw through OpenGL/Skia/ImGui-compatible primitives instead of WinForms `Graphics`/`TextRenderer`.
@@ -53,6 +53,9 @@ For Linux/OpenTK implementation tasks, read `references/opentk-port-checklist.md
 - Treat **OpenTK** as the future window/input/render host.
 - Treat **OpenGK** as the project UI style and immediate-mode/self-drawn UI layer, not a separate platform.
 - Treat **WinForms** as a compatibility shell to retire from the game runtime.
+- Use `Simulator.Platform.Ui.OpenGkUiButtonRegistry` for OpenGK button hit-testing and cached button lists in both Windows and Linux shells.
+- Use `Simulator.Platform.Ui.OpenGkUiDrawList` for simple OpenGK panel/button/text primitives before adding new shell-specific drawing.
+- Use `Simulator.Platform.Ui.OpenGkRoomLayout` for room-page column/sidebar/action placement.
 - New gameplay, LAN, rule, and scene interaction logic must not depend on `System.Windows.Forms`, `System.Drawing.Graphics`, `TextRenderer`, or `user32.dll`.
 - Do not add new Windows-only code unless it is isolated behind a small interface.
 - Keep Python appearance editor and Python map preview scripts intact unless explicitly asked otherwise.

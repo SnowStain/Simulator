@@ -28,14 +28,16 @@ LoadLargeTerrain       OpenTK/ImGui map editor, no WinForms dependency
    - `GameMouseButton`
    - `GameInputSnapshot`
 2. Convert WinForms and OpenTK input into these types.
-3. Move live-control decisions to platform-neutral input.
-4. Replace `System.Windows.Forms.Timer` with a runtime tick loop interface.
-5. Move cursor capture behind `ICursorCaptureService`.
-6. Move clipboard behind `IClipboardService`.
-7. Move file selection behind `IFileDialogService`; Linux can use ImGui path entry first.
-8. Move HUD drawing away from `Graphics`/`TextRenderer`.
-9. Keep GPU/OpenGL renderer as the shared scene renderer.
-10. Add `Simulator.OpenTkClient` only after runtime contracts are usable without WinForms.
+3. Move OpenGK UI button registration and hit-testing into `OpenGkUiButtonRegistry`.
+4. Move simple OpenGK panel/button/text rendering into `OpenGkUiDrawList`.
+5. Move live-control decisions to platform-neutral input.
+6. Replace `System.Windows.Forms.Timer` with a runtime tick loop interface.
+7. Move cursor capture behind `ICursorCaptureService`.
+8. Move clipboard behind `IClipboardService`.
+9. Move file selection behind `IFileDialogService`; Linux can use ImGui path entry first.
+10. Move HUD drawing away from `Graphics`/`TextRenderer`.
+11. Keep GPU/OpenGL renderer as the shared scene renderer.
+12. Add or expand the OpenTK client only after runtime contracts are usable without WinForms.
 
 ## Package And Project Changes
 
@@ -53,6 +55,17 @@ Windows:
 ```powershell
 dotnet build src/Simulator.ThreeD/Simulator.ThreeD.csproj -c Debug --no-restore
 ```
+
+Portable graph:
+
+```bash
+bash scripts/linux/check-linux-portability.sh
+```
+
+The portability gate scans `Simulator.Linux`, `Simulator.Platform`,
+`Simulator.Core`, `Simulator.Assets`, and `Simulator.Runtime` for Windows-only
+APIs. If a future extraction needs code from `Simulator.ThreeD`, move the
+platform-neutral contract first instead of adding a project reference.
 
 Linux-portable core:
 
