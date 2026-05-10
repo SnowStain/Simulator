@@ -937,7 +937,7 @@ internal sealed class TerrainMotionService
         if (enemy is null && !hasNonAttackTacticalCommand)
         {
             controlBranch = "lost_target_cruise_no_enemy";
-            ApplyLostTargetYawCruise(world, entity, autoState, dt, clearAim: true);
+            ApplyLostTargetYawCruise(world, runtimeGrid, entity, autoState, dt, clearAim: true);
             LogSlowAutoControlIfNeeded(entity, controlBranch, controlStartTicks, navigationTicks, autoAimTicks);
             return;
         }
@@ -960,7 +960,7 @@ internal sealed class TerrainMotionService
         if (tacticalTarget is null)
         {
             controlBranch = "lost_target_cruise_no_tactical";
-            ApplyLostTargetYawCruise(world, entity, autoState, dt, clearAim: true);
+            ApplyLostTargetYawCruise(world, runtimeGrid, entity, autoState, dt, clearAim: true);
             LogSlowAutoControlIfNeeded(entity, controlBranch, controlStartTicks, navigationTicks, autoAimTicks);
             return;
         }
@@ -1347,6 +1347,69 @@ internal sealed class TerrainMotionService
         return IsInsideAiDriveBoundary(runtimeGrid, entity, metersPerWorldUnit, probeX, probeY);
     }
 
+    private static bool TryResolveAiBoundarySafeYaw(
+        RuntimeGridData runtimeGrid,
+        SimulationEntity entity,
+        double metersPerWorldUnit,
+        double preferredYawDeg,
+        out double safeYawDeg)
+    {
+        safeYawDeg = SimulationCombatMath.NormalizeDeg(preferredYawDeg);
+        if (CanCachedDriveStayInsideAiBoundary(runtimeGrid, entity, metersPerWorldUnit, safeYawDeg, 1.0, 0.0))
+        {
+            return true;
+        }
+
+        double maxX = Math.Max(0.0, runtimeGrid.WidthCells * runtimeGrid.CellWidthWorld - 1e-4);
+        double maxY = Math.Max(0.0, runtimeGrid.HeightCells * runtimeGrid.CellHeightWorld - 1e-4);
+        double inwardX = maxX * 0.5 - entity.X;
+        double inwardY = maxY * 0.5 - entity.Y;
+        double inwardLength = Math.Sqrt(inwardX * inwardX + inwardY * inwardY);
+        double inwardYawDeg = inwardLength > 1e-6
+            ? SimulationCombatMath.NormalizeDeg(RadiansToDegrees(Math.Atan2(inwardY, inwardX)))
+            : safeYawDeg;
+        if (CanCachedDriveStayInsideAiBoundary(runtimeGrid, entity, metersPerWorldUnit, inwardYawDeg, 1.0, 0.0))
+        {
+            safeYawDeg = inwardYawDeg;
+            return true;
+        }
+
+        double bestScore = double.NegativeInfinity;
+        double bestYaw = safeYawDeg;
+        for (int index = 0; index < 8; index++)
+        {
+            double candidateYaw = index * 45.0;
+            if (!CanCachedDriveStayInsideAiBoundary(runtimeGrid, entity, metersPerWorldUnit, candidateYaw, 1.0, 0.0))
+            {
+                continue;
+            }
+
+            double yawRad = DegreesToRadians(candidateYaw);
+            double candidateX = Math.Cos(yawRad);
+            double candidateY = Math.Sin(yawRad);
+            double inwardScore = inwardLength > 1e-6
+                ? (candidateX * inwardX + candidateY * inwardY) / inwardLength
+                : 0.0;
+            double preferredScore = Math.Cos(DegreesToRadians(SimulationCombatMath.NormalizeSignedDeg(candidateYaw - preferredYawDeg))) * 0.25;
+            double score = inwardScore + preferredScore;
+            if (score <= bestScore)
+            {
+                continue;
+            }
+
+            bestScore = score;
+            bestYaw = candidateYaw;
+        }
+
+        if (double.IsNegativeInfinity(bestScore))
+        {
+            return false;
+        }
+
+        safeYawDeg = SimulationCombatMath.NormalizeDeg(bestYaw);
+        return true;
+    }
+
     private bool CanApplyDirectAiDrive(
         SimulationWorldState world,
         RuntimeGridData runtimeGrid,
@@ -1477,6 +1540,7 @@ internal sealed class TerrainMotionService
 
     private void ApplyLostTargetYawCruise(
         SimulationWorldState world,
+        RuntimeGridData runtimeGrid,
         SimulationEntity entity,
         NavigationPathState autoState,
         double dt,
@@ -1490,6 +1554,22 @@ internal sealed class TerrainMotionService
         entity.TraversalDirectionDeg = yawDeg;
         entity.ChassisTargetYawDeg = yawDeg;
         entity.SmallGyroActive = false;
+        if (!TryResolveAiBoundarySafeYaw(runtimeGrid, entity, Math.Max(world.MetersPerWorldUnit, 1e-6), yawDeg, out yawDeg))
+        {
+            CacheAutoDrive(autoState, 0.0, 0.0, entity.AngleDeg);
+            ApplyDriveControl(world, entity, 0.0, 0.0, dt, entity.AngleDeg);
+            entity.AiDecisionSelected = "edge_guard_cruise";
+            entity.AiDecision = "\u8fb9\u754c\u505c\u8f66";
+            if (clearAim)
+            {
+                ClearAutoAimState(entity);
+            }
+
+            return;
+        }
+
+        entity.TraversalDirectionDeg = yawDeg;
+        entity.ChassisTargetYawDeg = yawDeg;
         CacheAutoDrive(autoState, LostTargetYawCruiseInput, 0.0, yawDeg);
         ApplyDriveControl(world, entity, LostTargetYawCruiseInput, 0.0, dt, yawDeg);
         entity.AiDecisionSelected = residualGuided ? "residual_cruise" : "lost_target_cruise";
@@ -1528,6 +1608,17 @@ internal sealed class TerrainMotionService
         entity.ChassisTargetYawDeg = escapeYawDeg;
         entity.AiDecisionSelected = "unstuck";
         entity.AiDecision = "\u8131\u79bb\u5361\u6b7b";
+        if (!TryResolveAiBoundarySafeYaw(runtimeGrid, entity, Math.Max(world.MetersPerWorldUnit, 1e-6), escapeYawDeg, out escapeYawDeg))
+        {
+            CacheAutoDrive(autoState, 0.0, 0.0, entity.AngleDeg);
+            ApplyDriveControl(world, entity, 0.0, 0.0, dt, entity.AngleDeg);
+            entity.AiDecisionSelected = "edge_guard_unstuck";
+            entity.AiDecision = "\u8fb9\u754c\u505c\u8f66";
+            return true;
+        }
+
+        entity.TraversalDirectionDeg = escapeYawDeg;
+        entity.ChassisTargetYawDeg = escapeYawDeg;
         if (entity.ChassisSupportsJump
             && entity.AirborneHeightM <= 1e-3
             && remainingSec > AiUnstuckDurationSec * 0.48)
@@ -2109,6 +2200,23 @@ internal sealed class TerrainMotionService
                 else
                 {
                     entity.TraversalDirectionDeg = SimulationCombatMath.NormalizeDeg(RadiansToDegrees(Math.Atan2(dy, dx)));
+                    if (!TryResolveAiBoundarySafeYaw(
+                            runtimeGrid,
+                            entity,
+                            metersPerWorldUnit,
+                            entity.TraversalDirectionDeg,
+                            out double safeTacticalYawDeg))
+                    {
+                        entity.TraversalDirectionDeg = entity.AngleDeg;
+                        entity.ChassisTargetYawDeg = entity.AngleDeg;
+                        CacheAutoDrive(GetOrCreateNavigationState(entity.Id, world.GameTimeSec), 0.0, 0.0, entity.AngleDeg);
+                        ApplyDriveControl(world, entity, 0.0, 0.0, dt, entity.AngleDeg);
+                        entity.AiDecisionSelected = "edge_guard_tactical";
+                        entity.AiDecision = "\u8fb9\u754c\u505c\u8f66";
+                        return true;
+                    }
+
+                    entity.TraversalDirectionDeg = safeTacticalYawDeg;
                     entity.ChassisTargetYawDeg = entity.TraversalDirectionDeg;
                     CacheAutoDrive(GetOrCreateNavigationState(entity.Id, world.GameTimeSec), drive, 0.0, entity.TraversalDirectionDeg);
                     ApplyDriveControl(world, entity, drive, 0.0, dt, entity.TraversalDirectionDeg);
@@ -2751,6 +2859,16 @@ internal sealed class TerrainMotionService
 
         double heading = SimulationCombatMath.NormalizeDeg(RadiansToDegrees(Math.Atan2(dy, dx)));
         double driveScale = Math.Clamp(distanceToWaypointM / 1.4, 0.30, 1.0);
+        if (!TryResolveAiBoundarySafeYaw(runtimeGrid, entity, metersPerWorldUnit, heading, out heading))
+        {
+            state.HasCachedAutoDrive = false;
+            entity.TraversalDirectionDeg = entity.AngleDeg;
+            entity.ChassisTargetYawDeg = entity.AngleDeg;
+            ApplyDriveControl(world, entity, 0.0, 0.0, dt, entity.AngleDeg);
+            entity.AiDecision = $"{entity.AiDecision} edge_guard";
+            return true;
+        }
+
         entity.TraversalDirectionDeg = heading;
         entity.ChassisTargetYawDeg = heading;
         CacheAutoDrive(state, drive * driveScale, 0.0, heading);
@@ -4351,6 +4469,18 @@ internal sealed class TerrainMotionService
         double directDy = driveTargetY - entity.Y;
         ApplyAiBoundaryRepulsion(world, runtimeGrid, entity, ref directDx, ref directDy);
         double heading = SimulationCombatMath.NormalizeDeg(RadiansToDegrees(Math.Atan2(directDy, directDx)));
+        if (!TryResolveAiBoundarySafeYaw(runtimeGrid, entity, metersPerWorldUnit, heading, out heading))
+        {
+            entity.TraversalDirectionDeg = entity.AngleDeg;
+            entity.ChassisTargetYawDeg = entity.AngleDeg;
+            entity.SmallGyroActive = false;
+            CacheAutoDrive(autoState, 0.0, 0.0, entity.AngleDeg);
+            ApplyDriveControl(world, entity, 0.0, 0.0, dt, entity.AngleDeg);
+            entity.AiDecisionSelected = "edge_guard_supply";
+            entity.AiDecision = "\u8fb9\u754c\u505c\u8f66";
+            return true;
+        }
+
         entity.TraversalDirectionDeg = heading;
         entity.ChassisTargetYawDeg = heading;
         entity.SmallGyroActive = false;
@@ -8904,6 +9034,24 @@ internal sealed class TerrainMotionService
         double dy = driveTargetY - entity.Y;
         ApplyAiBoundaryRepulsion(world, runtimeGrid, entity, ref dx, ref dy);
         entity.TraversalDirectionDeg = SimulationCombatMath.NormalizeDeg(RadiansToDegrees(Math.Atan2(dy, dx)));
+        if (!TryResolveAiBoundarySafeYaw(
+                runtimeGrid,
+                entity,
+                metersPerWorldUnit,
+                entity.TraversalDirectionDeg,
+                out double safeRecoverYawDeg))
+        {
+            entity.TraversalDirectionDeg = entity.AngleDeg;
+            entity.ChassisTargetYawDeg = entity.AngleDeg;
+            CacheAutoDrive(autoState, 0.0, 0.0, entity.AngleDeg);
+            ApplyDriveControl(world, entity, 0.0, 0.0, dt, entity.AngleDeg);
+            entity.AiDecisionSelected = "edge_guard_recover";
+            entity.AiDecision = "\u8fb9\u754c\u505c\u8f66";
+            entity.BuyAmmoRequested = false;
+            return true;
+        }
+
+        entity.TraversalDirectionDeg = safeRecoverYawDeg;
         entity.ChassisTargetYawDeg = entity.TraversalDirectionDeg;
         CacheAutoDrive(autoState, 0.88, 0.0, entity.TraversalDirectionDeg);
         ApplyDriveControl(world, entity, 0.88, 0.0, dt, entity.TraversalDirectionDeg);

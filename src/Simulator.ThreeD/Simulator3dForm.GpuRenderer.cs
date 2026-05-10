@@ -868,7 +868,7 @@ internal sealed partial class Simulator3dForm
         {
             _projectionViewportRect = new Rectangle(0, 0, useSceneTexture ? sceneRenderSize.Width : clientWidth, useSceneTexture ? sceneRenderSize.Height : clientHeight);
             _projectionMatrix = useSceneTexture ? sceneProjectionMatrix : previousProjection;
-            glClearColor(0.030f, 0.037f, 0.050f, 1f);
+            glClearColor(1f, 1f, 1f, 1f);
             glClear(GlColorBufferBit | GlDepthBufferBit);
             glEnable(GlDepthTest);
             glEnable(GlBlend);
@@ -903,7 +903,7 @@ internal sealed partial class Simulator3dForm
 
                 if (deploymentSubviewOnly)
                 {
-                    glClearColor(0f, 0f, 0f, 1f);
+                    glClearColor(1f, 1f, 1f, 1f);
                     glClear(GlColorBufferBit | GlDepthBufferBit);
                     if (copiedDeploymentSubview)
                     {
