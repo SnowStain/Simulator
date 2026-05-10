@@ -21,6 +21,33 @@ Platform-neutral game runtime
 
 WinForms should become only a Windows compatibility shell until it can be retired.
 
+## ThreeD Extraction Status
+
+`Simulator.ThreeD` is still the feature source of truth and still targets
+`net10.0-windows`. Do not try to make it Linux by flipping the target framework
+in place. Continue extracting small seams:
+
+1. **Already extracted**
+   - `GameInputSnapshot` and input accumulator: `Simulator.Platform/Input`.
+   - OpenGK button registry/draw list/room/referee panel layout:
+     `Simulator.Platform/Ui`.
+   - Frame tick contract: `Simulator.Platform/Runtime/IFrameTicker`.
+   - Background-video contract: `Simulator.Platform/Media/IBackgroundVideoSource`.
+2. **Next extraction targets**
+   - HUD text renderer: replace `TextRenderer`/`Graphics.DrawString` sections
+     with draw-list commands and a Linux text adapter.
+   - Main loop services: move `Application.Idle`, cursor capture, activation,
+     focus loss, and repaint requests behind platform window services.
+   - Editor launchers: keep WinForms forms only as one implementation; expose
+     editor actions/data through shared services.
+   - GPU renderer: split WGL/Win32 context creation from renderer data so Linux
+     OpenTK can call the same scene drawing path.
+3. **Delete instead of port**
+   - Linux no longer needs LAN UI in `Simulator.Linux`; keep LAN in Windows
+     ThreeD until a shared LAN state machine is extracted.
+   - Old duplicated room/start pages should not be recreated on Linux. Use the
+     OpenGK layout contracts or remove the placeholder.
+
 ## Why The Original Project Was Windows-Locked
 
 The old runnable path was not portable because the executable entry was
@@ -37,10 +64,11 @@ compatibility shell:
 | Mixed executable/runtime ownership | `Simulator.Runtime` was an `Exe` and also held shared input types | Linux publish should not depend on an executable helper project for platform contracts | `Simulator.Platform` is now the pure shared contract library |
 | Asset and map assumptions | historical paths and empty legacy folders such as `map`, `rules`, `simulator3d`, `cpp` | A naive "all folders must be non-empty" check fails despite usable `maps`, `规则`, appearance data | Linux diagnostics now checks essential assets and reports legacy folders as warnings |
 
-The important practical rule: Linux must not reference `Simulator.ThreeD`,
-`Simulator.LoadLargeTerrain`, `Simulator.Decision`, or any WinForms editor
-project. Port features by extracting platform-neutral state, rendering data,
-and UI layout contracts first.
+The important practical rule: the Linux operator runtime must not reference
+`Simulator.ThreeD`, `Simulator.AutoAimCalibrationTool`, or any WinForms editor
+project. Cross-platform helper tools such as `LoadLargeTerrain` and `Decision`
+may live in the Linux solution only if they stay `net10.0` and free of
+WinForms/Windows-only packages.
 
 ## What Is Solved Now
 
@@ -49,12 +77,18 @@ The current `linux` branch has these portability foundations in place:
 | Area | Status | Files |
 | --- | --- | --- |
 | Linux executable entry | Added an OpenTK-only `net10.0` app with no WinForms reference | `src/Simulator.Linux` |
+| Linux-only solution | Added a default Linux branch solution that excludes Windows shells and builds only portable runtime/tool projects | `Simulator.Linux.sln` |
 | Shared input model | Moved `GameInputSnapshot` and accumulator out of executable runtime into a pure library | `src/Simulator.Platform/Input` |
+| Shared OpenTK input adapter | Moved OpenTK key/mouse mapping into one reusable adapter used by both Linux and the ThreeD OpenTK compatibility window | `src/Simulator.OpenTk/Input` |
 | Shared OpenGK button model | Moved UI button registration, cached button lists, and reverse hit-testing into a pure platform layer | `src/Simulator.Platform/Ui/OpenGkUiButton.cs` |
 | Shared OpenGK draw commands | Added a platform-neutral draw list for panel/button/text primitives; Windows renders it through GDI for now and Linux renders primitive rectangles through OpenGL | `src/Simulator.Platform/Ui/OpenGkUiDrawList.cs` |
+| Shared OpenGK text painter contract | Added a cross-platform text-painter interface; Windows ThreeD now uses a WinForms/GDI adapter for draw-list text | `src/Simulator.Platform/Ui/IOpenGkUiTextPainter.cs`, `src/Simulator.ThreeD/WinFormsOpenGkTextPainter.cs` |
 | Shared room layout | Extracted the OpenGK room top bar, red/blue columns, referee/settings side panel, and bottom actions into a pure layout resolver | `src/Simulator.Platform/Ui/OpenGkRoomLayout.cs` |
-| Linux dependency graph | Linux app references only `Simulator.Platform`, `Simulator.Core`, and `Simulator.Assets` | `src/Simulator.Linux/Simulator.Linux.csproj` |
-| Static portability gate | Checks for forbidden Windows project refs, Windows TFMs, WinForms, Win32 P/Invoke, and Windows OpenCV runtime | `scripts/linux/check-linux-portability.*` |
+| Shared frame ticker contract | Added a platform-neutral frame ticker interface; Windows ThreeD now uses a WinForms adapter instead of owning `Timer` directly | `src/Simulator.Platform/Runtime/IFrameTicker.cs`, `src/Simulator.ThreeD/WinFormsFrameTicker.cs` |
+| Shared background-video contract | Split main-menu background video into a platform-neutral BGRA frame source contract plus a Windows OpenCV implementation and null fallback | `src/Simulator.Platform/Media`, `src/Simulator.ThreeD/OpenCvBackgroundVideoSource.cs` |
+| Linux dependency graph | Linux app references only `Simulator.OpenTk`, `Simulator.Platform`, `Simulator.Core`, and `Simulator.Assets` | `src/Simulator.Linux/Simulator.Linux.csproj` |
+| Static portability gate | Builds `Simulator.Linux.sln` and checks for forbidden Windows project refs, Windows TFMs, WinForms, Win32 P/Invoke, and Windows OpenCV runtime | `scripts/linux/check-linux-portability.*` |
+| Blocker audit | Defaults to the Linux-callable graph; pass the legacy flag only when auditing old Windows shells | `scripts/linux/report-windows-blockers.*` |
 | Headless diagnostics | Verifies config, map preset, appearance data, rules, asset roots, logs, and input model without a display server | `--diagnostics`, `LinuxOperatorDiagnostics.cs` |
 | Linux publish gate | Produces `linux-x64` artifacts from Windows or Linux | `scripts/linux/verify-linux-port.*` |
 | OpenGL smoke path | Runs OpenTK frame loop and exits automatically; can use Xvfb when available | `scripts/linux/smoke-linux-operator.sh`, `--exit-after` |
@@ -70,7 +104,16 @@ dependencies.
 The Linux runnable graph is currently:
 
 ```text
-Simulator.Linux -> Simulator.Platform / Simulator.Core / Simulator.Assets
+Simulator.Linux.sln
+  -> Simulator.Linux
+  -> Simulator.OpenTk
+  -> Simulator.Platform
+  -> Simulator.Core
+  -> Simulator.Assets
+  -> Simulator.Editors
+  -> Simulator.LoadLargeTerrain
+  -> Simulator.Decision
+  -> Simulator.Runtime
 ```
 
 This graph passes the portability gate and must stay free of:
@@ -91,9 +134,15 @@ the Linux graph:
 | Main game shell | `src/Simulator.ThreeD`, `Program.cs`, `Simulator3dForm*.cs` | Continue extracting runtime state, UI layout, and render commands into `Simulator.Platform`/runtime-neutral code |
 | Existing OpenGL scene renderer | `Simulator3dForm.GpuRenderer.cs` uses Win32/WGL and `gdi32/opengl32` P/Invoke | Move scene renderer behind an OpenTK renderer facade, then call it from Linux |
 | P/O panel and complex HUD text | Many `TextRenderer` calls in `Simulator3dForm.cs` and `Simulator3dForm.OpenGkUi.cs` | Convert one panel section at a time into `OpenGkUiDrawList` plus a Linux text renderer |
-| Map editor executable | `src/Simulator.LoadLargeTerrain` targets `net10.0-windows` because of file dialogs | Keep data/document logic shared; replace `FileDialogService` with a platform service or ImGui path picker |
-| Decision tool | `src/Simulator.Decision` WinForms executable | Keep out of Linux graph; extract only decision data models if needed |
-| Windows-only OpenCV | `Simulator.ThreeD.csproj` references `OpenCvSharp4.runtime.win` | Keep in Windows shell; future Linux vision support must use a Linux-native runtime or optional service |
+| Editor forms inside ThreeD | `AppearanceEditorForm`, `RuleEditorForm`, `BehaviorEditorForm`, `FunctionalEditorForm`, `LightingEditorForm`, `PromptDialog` | Keep as Windows compatibility UI; move their data documents/actions into `Simulator.Editors` or `Simulator.Platform` before creating Linux UI |
+| Drive telemetry window | `DriveTelemetryForm` owns a WinForms timer and GDI drawing | Replace with shared telemetry data plus OpenGK/OpenTK overlay, or leave Windows-only |
+| Windows icon/cursor helpers | `Simulator3dForm.cs` and `LiveControl` still use `user32.dll`, `GetHicon`, cursor capture | Move behind window-service interfaces before making ThreeD portable |
+| Windows-only OpenCV runtime | `Simulator.ThreeD.csproj` conditionally references `OpenCvSharp4.runtime.win` | Windows shell uses `OpenCvBackgroundVideoSource`; Linux should use a Linux-native implementation or the null source |
+
+The former `LoadLargeTerrain` and `Decision` Windows locks have been removed
+from the Linux tool gate: both now build as `net10.0` helper tools. They still
+must stay outside the Linux operator runtime unless their UI/data contracts are
+explicitly extracted.
 
 Do not mark a feature Linux-complete because it exists in `Simulator.ThreeD`.
 It is Linux-complete only when the Linux project can call it without referencing
@@ -1029,13 +1078,10 @@ Windows compatibility:
 dotnet build src\Simulator.ThreeD\Simulator.ThreeD.csproj -c Debug --no-restore
 ```
 
-Pure runtime projects:
+Linux default solution:
 
 ```bash
-dotnet build src/Simulator.Core/Simulator.Core.csproj -c Debug
-dotnet build src/Simulator.Assets/Simulator.Assets.csproj -c Debug
-dotnet build src/Simulator.Editors/Simulator.Editors.csproj -c Debug
-dotnet build src/Simulator.Runtime/Simulator.Runtime.csproj -c Debug
+dotnet build Simulator.Linux.sln -c Debug
 ```
 
 Linux OpenTK operator:
@@ -1076,26 +1122,46 @@ Linux portability gate:
 bash scripts/linux/check-linux-portability.sh
 ```
 
+Linux-callable blocker report:
+
+```bash
+bash scripts/linux/report-windows-blockers.sh
+```
+
+Legacy Windows shell blocker report, only when planning another extraction:
+
+```bash
+bash scripts/linux/report-windows-blockers.sh --include-legacy-windows
+```
+
 On Windows before handing to the Linux partner, run the equivalent PowerShell
 gate:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\linux\check-linux-portability.ps1
+powershell -ExecutionPolicy Bypass -File scripts\linux\report-windows-blockers.ps1
+powershell -ExecutionPolicy Bypass -File scripts\linux\report-windows-blockers.ps1 -IncludeLegacyWindows
 ```
 
-This gate verifies the active Linux entry does not reference the Windows
+This gate verifies the active Linux solution does not reference the Windows
 compatibility shell, Windows-only TFMs, WinForms, Win32 P/Invoke, or the Windows
-OpenCV runtime. It is intentionally scoped to the Linux project graph:
+OpenCV runtime. It is intentionally scoped to the Linux-callable graph:
 
 ```text
-Simulator.Linux -> Simulator.Platform / Simulator.Core / Simulator.Assets
+Simulator.Linux.sln
+  -> Simulator.Linux / Simulator.OpenTk / Simulator.Platform
+  -> Simulator.Core / Simulator.Assets / Simulator.Editors
+  -> Simulator.LoadLargeTerrain / Simulator.Decision / Simulator.Runtime
 ```
 
-`Simulator.ThreeD`, `Simulator.LoadLargeTerrain`, and WinForms editor forms are
-still present for Windows compatibility and authoring tools, but they must not
-be pulled into the Linux operator. When moving a feature to Linux, extract the
-platform-neutral logic into `Simulator.Platform`, `Simulator.Runtime`, `Simulator.Core`,
-`Simulator.Assets`, or a new cross-platform rendering package first.
+`Simulator.ThreeD` and its WinForms editor forms are legacy Windows reference
+code on this branch. They are not part of `Simulator.Linux.sln`, the Linux
+portability gate, or the Linux handoff path. `Simulator.LoadLargeTerrain` and
+`Simulator.Decision` now build as cross-platform helper tools; the Linux
+operator should still consume only their extracted data contracts. When moving a
+feature to Linux, extract the platform-neutral logic into `Simulator.Platform`,
+`Simulator.Runtime`, `Simulator.Core`, `Simulator.Assets`, or a new
+cross-platform rendering package first.
 
 ## Linux Verification Strategy
 
@@ -1103,7 +1169,8 @@ Use these layers to decide whether a feature can be fully implemented on Linux:
 
 | Layer | Command | What It Proves | What It Does Not Prove |
 | --- | --- | --- | --- |
-| Static portability | `bash scripts/linux/check-linux-portability.sh` | Linux graph has no WinForms, Windows TFM, Windows OpenCV runtime, or Windows shell reference | Runtime feature parity |
+| Static portability | `bash scripts/linux/check-linux-portability.sh` | `Simulator.Linux.sln` has no WinForms, Windows TFM, Windows OpenCV runtime, or Windows shell reference | Runtime feature parity |
+| Blocker report | `bash scripts/linux/report-windows-blockers.sh` | Linux-callable graph has no Windows-only surfaces; legacy scan is opt-in | It does not fail the build or prove Linux parity |
 | Headless runtime | `dotnet run --project src/Simulator.Linux/Simulator.Linux.csproj -- --diagnostics --map rmuc2026` | Config, asset catalog, map preset, appearance files, logs, and input model load without a display server | OpenGL rendering correctness |
 | Publish | `dotnet publish src/Simulator.Linux/Simulator.Linux.csproj -c Debug -r linux-x64 --self-contained false` | Project can produce Linux binaries | GPU/driver behavior |
 | OpenGL smoke | `bash scripts/linux/smoke-linux-operator.sh rmuc2026 1280x720 6` | OpenTK window, GL context, frame loop, input capture, and log path work on Linux | Full UI/scene feature parity |

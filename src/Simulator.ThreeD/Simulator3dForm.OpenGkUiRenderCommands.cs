@@ -1,5 +1,4 @@
 using System.Drawing;
-using System.Windows.Forms;
 using Simulator.Platform.Ui;
 
 namespace Simulator.ThreeD;
@@ -36,34 +35,23 @@ internal sealed partial class Simulator3dForm
     }
 
     private void RenderOpenGkTextCommand(Graphics graphics, OpenGkUiDrawCommand command)
-    {
-        Font preferred = command.TextStyle switch
+        => _openGkTextPainter.DrawText(
+            graphics,
+            new OpenGkUiTextLayout(
+                command.Rect,
+                command.Text,
+                command.Color,
+                command.TextStyle,
+                command.TextAlign));
+
+    private Font ResolveOpenGkTextStyleFont(OpenGkUiTextStyle style)
+        => style switch
         {
             OpenGkUiTextStyle.Tiny => _tinyHudFont,
+            OpenGkUiTextStyle.HudMid => _hudMidFont,
+            OpenGkUiTextStyle.HudBig => _hudBigFont,
             OpenGkUiTextStyle.MenuSubtitle => _menuSubtitleFont,
             OpenGkUiTextStyle.MenuButton => _menuButtonFont,
             _ => _smallHudFont,
         };
-        Font fallback = command.TextStyle == OpenGkUiTextStyle.Tiny ? _tinyHudFont : _tinyHudFont;
-        Font font = ResolveUiButtonFont(graphics, command.Text, command.Rect, preferred, fallback);
-        TextFormatFlags align = command.TextAlign switch
-        {
-            OpenGkUiTextAlign.Left => TextFormatFlags.Left,
-            OpenGkUiTextAlign.Right => TextFormatFlags.Right,
-            _ => TextFormatFlags.HorizontalCenter,
-        };
-
-        TextRenderer.DrawText(
-            graphics,
-            command.Text,
-            font,
-            command.Rect,
-            command.Color,
-            align
-            | TextFormatFlags.VerticalCenter
-            | TextFormatFlags.EndEllipsis
-            | TextFormatFlags.SingleLine
-            | TextFormatFlags.PreserveGraphicsClipping
-            | TextFormatFlags.NoPrefix);
-    }
 }

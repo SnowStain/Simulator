@@ -20,6 +20,8 @@ public enum OpenGkUiTextStyle
 {
     Tiny,
     Small,
+    HudMid,
+    HudBig,
     MenuSubtitle,
     MenuButton,
 }

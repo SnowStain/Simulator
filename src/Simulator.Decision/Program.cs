@@ -2,7 +2,6 @@ using Simulator.Core;
 using Simulator.Core.Gameplay;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Windows.Forms;
 
 namespace Simulator.Decision;
 
@@ -14,17 +13,8 @@ internal static class Program
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
-    [STAThread]
     private static int Main(string[] args)
     {
-        if (args.Length == 0)
-        {
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new DecisionDeploymentForm());
-            return 0;
-        }
-
         return RunCli(args);
     }
 
@@ -38,7 +28,12 @@ internal static class Program
             JsonObject config = configService.LoadConfig(configPath);
             DecisionDeploymentConfig deployment = DecisionDeploymentConfig.LoadFromConfig(config);
 
-            if (args.Length == 0 || IsCommand(args, "show"))
+            if (args.Length == 0)
+            {
+                return RunInteractive(configService, deployment, configPath, config, layout);
+            }
+
+            if (IsCommand(args, "show"))
             {
                 PrintCurrent(deployment, configPath, layout);
                 return 0;
@@ -84,6 +79,73 @@ internal static class Program
         }
     }
 
+    private static int RunInteractive(
+        ConfigurationService configService,
+        DecisionDeploymentConfig deployment,
+        string configPath,
+        JsonObject config,
+        ProjectLayout layout)
+    {
+        Console.WriteLine("Simulator.Decision cross-platform console");
+        Console.WriteLine("Commands: show, preset <default|aggressive|defensive>, set <role> <aggressive|hold|support|flank>, help, quit");
+        PrintCurrent(deployment, configPath, layout);
+        while (true)
+        {
+            Console.Write("> ");
+            string? line = Console.ReadLine();
+            if (line is null)
+            {
+                return 0;
+            }
+
+            string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (parts.Length == 0)
+            {
+                continue;
+            }
+
+            if (IsCommand(parts, "quit") || IsCommand(parts, "exit"))
+            {
+                return 0;
+            }
+
+            if (IsCommand(parts, "show"))
+            {
+                PrintCurrent(deployment, configPath, layout);
+                continue;
+            }
+
+            if (IsCommand(parts, "help"))
+            {
+                PrintHelp();
+                continue;
+            }
+
+            if (IsCommand(parts, "preset") && parts.Length >= 2)
+            {
+                deployment.ApplyPreset(parts[1]);
+                WriteDeployment(configService, deployment, configPath, config);
+                Console.WriteLine($"Applied preset '{parts[1]}'.");
+                continue;
+            }
+
+            if (IsCommand(parts, "set") && parts.Length >= 3)
+            {
+                if (!deployment.SetRoleMode(parts[1], parts[2]))
+                {
+                    Console.WriteLine("Invalid role or mode.");
+                    continue;
+                }
+
+                WriteDeployment(configService, deployment, configPath, config);
+                Console.WriteLine($"Set {parts[1]} -> {DecisionDeploymentConfig.NormalizeMode(parts[2])}");
+                continue;
+            }
+
+            Console.WriteLine("Unknown command. Type help for usage.");
+        }
+    }
+
     private static void PrintCurrent(DecisionDeploymentConfig deployment, string configPath, ProjectLayout layout)
     {
         Console.WriteLine("Decision deployment configuration");
@@ -110,7 +172,8 @@ internal static class Program
     {
         Console.WriteLine("Simulator.Decision commands:");
         Console.WriteLine("- show");
-        Console.WriteLine("- preset <aggressive|defensive>");
+        Console.WriteLine("- preset <default|aggressive|defensive>");
         Console.WriteLine("- set <role> <aggressive|hold|support|flank>");
+        Console.WriteLine("- quit");
     }
 }

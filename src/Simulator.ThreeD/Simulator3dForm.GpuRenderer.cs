@@ -133,6 +133,7 @@ internal sealed partial class Simulator3dForm
     private bool _gpuContextReady;
     private bool _gpuContextFailed;
     private bool _gpuContextBorrowedExternally;
+    private GpuRenderContextBackend _gpuContextBackend = GpuRenderContextBackend.WindowsWgl;
     private int _gpuTerrainTexture;
     private string? _gpuTerrainTexturePath;
     private Size _gpuTerrainTextureSize = Size.Empty;
@@ -2220,7 +2221,7 @@ internal sealed partial class Simulator3dForm
         string line =
             $"{DateTime.Now:HH:mm:ss.fff} "
             + $"mode={(_host.SelectedEntity?.HeroDeploymentActive == true ? "deployment_subview" : "normal")} "
-            + $"pipeline={passPlan.Label} targetHz={pacingPlan.TargetHz:0.0} "
+            + $"pipeline={passPlan.Label} backend={_gpuContextBackend} targetHz={pacingPlan.TargetHz:0.0} "
             + $"frame={ElapsedMs(frameStartTicks, nowTicks):0.00}ms "
             + $"map={TicksToMs(terrainTicks):0.00}ms/{mapStats} "
             + $"facility={TicksToMs(facilityTicks):0.00}ms/{facilityVertices}v/{(facilityVertices > 0 ? 1 : 0)}draw "
@@ -2245,9 +2246,19 @@ internal sealed partial class Simulator3dForm
     private static double TicksToMs(long ticks)
         => ticks * 1000.0 / Stopwatch.Frequency;
 
+    private enum GpuRenderContextBackend
+    {
+        WindowsWgl,
+        ExternalOpenTk,
+    }
+
+    private static bool IsWindowsWglGpuBackendAvailable
+        => RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+
     internal void AttachExternalBorrowedGpuContext()
     {
         _gpuContextBorrowedExternally = true;
+        _gpuContextBackend = GpuRenderContextBackend.ExternalOpenTk;
         _gpuContextFailed = false;
         _gpuContextReady = true;
         TryInitializeGpuBufferApi();
@@ -2261,6 +2272,7 @@ internal sealed partial class Simulator3dForm
         }
 
         _gpuContextBorrowedExternally = true;
+        _gpuContextBackend = GpuRenderContextBackend.ExternalOpenTk;
         _gpuContextFailed = false;
         _gpuContextReady = true;
         TryInitializeGpuBufferApi();
@@ -2821,12 +2833,20 @@ internal sealed partial class Simulator3dForm
         if (_gpuContextBorrowedExternally)
         {
             _gpuContextReady = true;
+            _gpuContextBackend = GpuRenderContextBackend.ExternalOpenTk;
             TryInitializeGpuBufferApi();
             return true;
         }
 
         if (_gpuContextFailed || !IsHandleCreated)
         {
+            return false;
+        }
+
+        if (!IsWindowsWglGpuBackendAvailable)
+        {
+            _gpuContextFailed = true;
+            SimulatorRuntimeLog.Append("render_backend.log", $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} ThreeD legacy WGL backend skipped on non-Windows; attach an OpenTK context instead.");
             return false;
         }
 
@@ -2865,6 +2885,7 @@ internal sealed partial class Simulator3dForm
         TryDisableGpuVSync();
         TryInitializeGpuBufferApi();
         _gpuContextReady = true;
+        _gpuContextBackend = GpuRenderContextBackend.WindowsWgl;
         return true;
     }
 
@@ -7063,14 +7084,14 @@ internal sealed partial class Simulator3dForm
             _gpuTerrainTexture = 0;
         }
 
-        if (!_gpuContextBorrowedExternally && _gpuRenderContext != IntPtr.Zero)
+        if (!_gpuContextBorrowedExternally && IsWindowsWglGpuBackendAvailable && _gpuRenderContext != IntPtr.Zero)
         {
             wglMakeCurrent(IntPtr.Zero, IntPtr.Zero);
             wglDeleteContext(_gpuRenderContext);
             _gpuRenderContext = IntPtr.Zero;
         }
 
-        if (!_gpuContextBorrowedExternally && _gpuDeviceContext != IntPtr.Zero && IsHandleCreated)
+        if (!_gpuContextBorrowedExternally && IsWindowsWglGpuBackendAvailable && _gpuDeviceContext != IntPtr.Zero && IsHandleCreated)
         {
             ReleaseDC(Handle, _gpuDeviceContext);
             _gpuDeviceContext = IntPtr.Zero;
@@ -7078,6 +7099,7 @@ internal sealed partial class Simulator3dForm
 
         _gpuContextReady = false;
         _gpuContextBorrowedExternally = false;
+        _gpuContextBackend = GpuRenderContextBackend.WindowsWgl;
     }
 
     private void InvalidateGpuTerrainBuffers(bool preserveTerrainCacheGpuChunks = false)
@@ -7216,6 +7238,7 @@ internal sealed partial class Simulator3dForm
     {
         if (_gpuContextBorrowedExternally)
         {
+            _gpuContextBackend = GpuRenderContextBackend.ExternalOpenTk;
             return true;
         }
 
@@ -7224,6 +7247,12 @@ internal sealed partial class Simulator3dForm
             return false;
         }
 
+        if (!IsWindowsWglGpuBackendAvailable)
+        {
+            return false;
+        }
+
+        _gpuContextBackend = GpuRenderContextBackend.WindowsWgl;
         return wglMakeCurrent(_gpuDeviceContext, _gpuRenderContext);
     }
 

@@ -1,23 +1,18 @@
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
-using System.Runtime.InteropServices;
-using OpenCvSharp;
+using Simulator.Platform.Media;
 
 namespace Simulator.ThreeD;
 
 internal sealed partial class Simulator3dForm
 {
-    private const int BackgroundVideoMaxDecodeWidth = 960;
-    private const int BackgroundVideoMaxDecodeHeight = 540;
     private readonly object _backgroundVideoSync = new();
-    private CancellationTokenSource? _backgroundVideoCts;
-    private Task? _backgroundVideoTask;
+    private IBackgroundVideoSource? _backgroundVideoSource;
     private Bitmap? _backgroundVideoFrame;
     private Bitmap? _backgroundVideoCompositedFrame;
     private string? _backgroundVideoPath;
     private bool _backgroundVideoInitialized;
-    private double _backgroundVideoFrameIntervalSec = MainMenuTargetFrameIntervalSec;
-    private long _backgroundVideoFrameVersion;
+    private long _backgroundVideoBitmapVersion = -1;
     private long _backgroundVideoCompositedVersion = -1;
     private System.Drawing.Size _backgroundVideoCompositedSize = System.Drawing.Size.Empty;
 
@@ -38,39 +33,14 @@ internal sealed partial class Simulator3dForm
             return;
         }
 
-        _backgroundVideoCts = new CancellationTokenSource();
-        _backgroundVideoTask = Task.Run(() => RunBackgroundVideoLoop(_backgroundVideoPath, _backgroundVideoCts.Token));
+        _backgroundVideoSource = CreateBackgroundVideoSource();
+        _backgroundVideoSource.Start(_backgroundVideoPath, () => _appState == SimulatorAppState.MainMenu);
     }
 
     private void DisposeBackgroundVideo()
     {
-        CancellationTokenSource? cts = _backgroundVideoCts;
-        Task? task = _backgroundVideoTask;
-        _backgroundVideoCts = null;
-        _backgroundVideoTask = null;
-        if (cts is not null)
-        {
-            try
-            {
-                cts.Cancel();
-            }
-            catch
-            {
-            }
-
-            cts.Dispose();
-        }
-
-        if (task is not null)
-        {
-            try
-            {
-                task.Wait(500);
-            }
-            catch
-            {
-            }
-        }
+        _backgroundVideoSource?.Dispose();
+        _backgroundVideoSource = null;
 
         lock (_backgroundVideoSync)
         {
@@ -78,6 +48,7 @@ internal sealed partial class Simulator3dForm
             _backgroundVideoFrame = null;
             _backgroundVideoCompositedFrame?.Dispose();
             _backgroundVideoCompositedFrame = null;
+            _backgroundVideoBitmapVersion = -1;
             _backgroundVideoCompositedVersion = -1;
             _backgroundVideoCompositedSize = System.Drawing.Size.Empty;
         }
@@ -90,23 +61,35 @@ internal sealed partial class Simulator3dForm
             return false;
         }
 
+        IBackgroundVideoSource? source = _backgroundVideoSource;
+        if (source is null || !source.TryGetLatestFrame(out BackgroundVideoFrame sourceFrame))
+        {
+            return false;
+        }
+
         lock (_backgroundVideoSync)
         {
-            if (_backgroundVideoFrame is null
-                || ClientSize.Width <= 0
+            if (ClientSize.Width <= 0
                 || ClientSize.Height <= 0)
             {
                 return false;
             }
 
+            if (_backgroundVideoFrame is null || _backgroundVideoBitmapVersion != sourceFrame.Version)
+            {
+                _backgroundVideoFrame?.Dispose();
+                _backgroundVideoFrame = ConvertBgraFrameToBitmap(sourceFrame);
+                _backgroundVideoBitmapVersion = sourceFrame.Version;
+            }
+
             System.Drawing.Size targetSize = ClientSize;
             if (_backgroundVideoCompositedFrame is null
-                || _backgroundVideoCompositedVersion != _backgroundVideoFrameVersion
+                || _backgroundVideoCompositedVersion != _backgroundVideoBitmapVersion
                 || _backgroundVideoCompositedSize != targetSize)
             {
                 _backgroundVideoCompositedFrame?.Dispose();
                 _backgroundVideoCompositedFrame = ComposeBackgroundVideoFrame(_backgroundVideoFrame, targetSize);
-                _backgroundVideoCompositedVersion = _backgroundVideoFrameVersion;
+                _backgroundVideoCompositedVersion = _backgroundVideoBitmapVersion;
                 _backgroundVideoCompositedSize = targetSize;
             }
 
@@ -130,112 +113,21 @@ internal sealed partial class Simulator3dForm
         return composed;
     }
 
-    private async Task RunBackgroundVideoLoop(string path, CancellationToken cancellationToken)
+    private static Bitmap ConvertBgraFrameToBitmap(BackgroundVideoFrame frame)
     {
-        try
-        {
-            using var capture = new VideoCapture(path);
-            if (!capture.IsOpened())
-            {
-                return;
-            }
-
-            double fps = capture.Fps;
-            if (!double.IsFinite(fps) || fps < 1.0)
-            {
-                fps = 30.0;
-            }
-
-            fps = Math.Clamp(fps, 1.0, 30.0);
-            _backgroundVideoFrameIntervalSec = 1.0 / fps;
-            int delayMs = Math.Clamp((int)Math.Round(1000.0 / fps), 7, 1000);
-            using var frame = new Mat();
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                if (_appState != SimulatorAppState.MainMenu)
-                {
-                    await Task.Delay(120, cancellationToken);
-                    continue;
-                }
-
-                if (!capture.Read(frame) || frame.Empty())
-                {
-                    capture.Set(VideoCaptureProperties.PosFrames, 0);
-                    continue;
-                }
-
-                Bitmap bitmap = ConvertFrameToBitmap(frame);
-                lock (_backgroundVideoSync)
-                {
-                    _backgroundVideoFrame?.Dispose();
-                    _backgroundVideoFrame = bitmap;
-                    _backgroundVideoFrameVersion++;
-                }
-
-                await Task.Delay(delayMs, cancellationToken);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-        }
-        catch
-        {
-        }
-    }
-
-    private static Bitmap ConvertFrameToBitmap(Mat frame)
-    {
-        Mat source = frame;
-        Mat? resized = null;
-        try
-        {
-            if (frame.Width > BackgroundVideoMaxDecodeWidth || frame.Height > BackgroundVideoMaxDecodeHeight)
-            {
-                double scale = Math.Min(
-                    BackgroundVideoMaxDecodeWidth / (double)Math.Max(1, frame.Width),
-                    BackgroundVideoMaxDecodeHeight / (double)Math.Max(1, frame.Height));
-                int width = Math.Max(1, (int)Math.Round(frame.Width * scale));
-                int height = Math.Max(1, (int)Math.Round(frame.Height * scale));
-                resized = new Mat();
-                Cv2.Resize(frame, resized, new OpenCvSharp.Size(width, height), 0, 0, InterpolationFlags.Area);
-                source = resized;
-            }
-
-            return ConvertFrameToBitmapCore(source);
-        }
-        finally
-        {
-            resized?.Dispose();
-        }
-    }
-
-    private static Bitmap ConvertFrameToBitmapCore(Mat frame)
-    {
-        using var bgra = new Mat();
-        switch (frame.Channels())
-        {
-            case 4:
-                frame.CopyTo(bgra);
-                break;
-            case 3:
-                Cv2.CvtColor(frame, bgra, ColorConversionCodes.BGR2BGRA);
-                break;
-            default:
-                Cv2.CvtColor(frame, bgra, ColorConversionCodes.GRAY2BGRA);
-                break;
-        }
-
-        var bitmap = new Bitmap(bgra.Width, bgra.Height, PixelFormat.Format32bppArgb);
+        var bitmap = new Bitmap(frame.Width, frame.Height, PixelFormat.Format32bppArgb);
         Rectangle rect = new(0, 0, bitmap.Width, bitmap.Height);
         BitmapData data = bitmap.LockBits(rect, ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
         try
         {
             int rowBytes = bitmap.Width * 4;
-            byte[] row = new byte[rowBytes];
             for (int y = 0; y < bitmap.Height; y++)
             {
-                Marshal.Copy(IntPtr.Add(bgra.Data, y * (int)bgra.Step()), row, 0, rowBytes);
-                Marshal.Copy(row, 0, IntPtr.Add(data.Scan0, y * data.Stride), rowBytes);
+                System.Runtime.InteropServices.Marshal.Copy(
+                    frame.Bgra32,
+                    y * rowBytes,
+                    IntPtr.Add(data.Scan0, y * data.Stride),
+                    rowBytes);
             }
         }
         finally
@@ -244,6 +136,16 @@ internal sealed partial class Simulator3dForm
         }
 
         return bitmap;
+    }
+
+    private static IBackgroundVideoSource CreateBackgroundVideoSource()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return new OpenCvBackgroundVideoSource();
+        }
+
+        return NullBackgroundVideoSource.Instance;
     }
 
     private static Rectangle ComputeAspectFillSourceRect(System.Drawing.Size source, System.Drawing.Size target)
@@ -269,7 +171,7 @@ internal sealed partial class Simulator3dForm
 
     private double ResolveBackgroundVideoFrameIntervalSec()
     {
-        double interval = _backgroundVideoFrameIntervalSec;
+        double interval = _backgroundVideoSource?.FrameIntervalSec ?? MainMenuTargetFrameIntervalSec;
         return double.IsFinite(interval) && interval > 1e-6
             ? Math.Clamp(interval, 1.0 / 144.0, 1.0)
             : MainMenuTargetFrameIntervalSec;

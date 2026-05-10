@@ -1,10 +1,85 @@
 using OpenTK.Windowing.GraphicsLibraryFramework;
 using Simulator.Runtime.Input;
 
-namespace Simulator.Linux;
+namespace Simulator.OpenTk.Input;
 
-internal static class LinuxInputMapper
+public static class OpenTkGameInputMapper
 {
+    public static readonly Keys[] MonitoredKeys =
+    [
+        Keys.Enter,
+        Keys.Escape,
+        Keys.Tab,
+        Keys.Space,
+        Keys.Backspace,
+        Keys.Delete,
+        Keys.PageUp,
+        Keys.PageDown,
+        Keys.LeftShift,
+        Keys.RightShift,
+        Keys.LeftControl,
+        Keys.RightControl,
+        Keys.LeftAlt,
+        Keys.RightAlt,
+        Keys.A,
+        Keys.B,
+        Keys.C,
+        Keys.D,
+        Keys.E,
+        Keys.F,
+        Keys.H,
+        Keys.I,
+        Keys.J,
+        Keys.K,
+        Keys.L,
+        Keys.N,
+        Keys.O,
+        Keys.P,
+        Keys.Q,
+        Keys.R,
+        Keys.S,
+        Keys.T,
+        Keys.V,
+        Keys.W,
+        Keys.X,
+        Keys.Z,
+        Keys.D0,
+        Keys.D1,
+        Keys.D2,
+        Keys.D3,
+        Keys.D4,
+        Keys.D5,
+        Keys.D6,
+        Keys.D7,
+        Keys.D8,
+        Keys.D9,
+        Keys.KeyPad0,
+        Keys.KeyPad1,
+        Keys.KeyPad2,
+        Keys.KeyPad3,
+        Keys.KeyPad4,
+        Keys.KeyPad5,
+        Keys.KeyPad6,
+        Keys.KeyPad7,
+        Keys.KeyPad8,
+        Keys.KeyPad9,
+        Keys.KeyPadDecimal,
+        Keys.KeyPadSubtract,
+        Keys.F1,
+        Keys.F2,
+        Keys.F3,
+        Keys.F4,
+        Keys.F5,
+        Keys.F6,
+        Keys.F7,
+        Keys.F8,
+        Keys.F9,
+        Keys.Semicolon,
+        Keys.Period,
+        Keys.Minus,
+        Keys.Slash,
+    ];
+
     public static GameKey MapKey(Keys key)
         => key switch
         {
@@ -54,6 +129,18 @@ internal static class LinuxInputMapper
             Keys.D7 => GameKey.D7,
             Keys.D8 => GameKey.D8,
             Keys.D9 => GameKey.D9,
+            Keys.KeyPad0 => GameKey.NumPad0,
+            Keys.KeyPad1 => GameKey.NumPad1,
+            Keys.KeyPad2 => GameKey.NumPad2,
+            Keys.KeyPad3 => GameKey.NumPad3,
+            Keys.KeyPad4 => GameKey.NumPad4,
+            Keys.KeyPad5 => GameKey.NumPad5,
+            Keys.KeyPad6 => GameKey.NumPad6,
+            Keys.KeyPad7 => GameKey.NumPad7,
+            Keys.KeyPad8 => GameKey.NumPad8,
+            Keys.KeyPad9 => GameKey.NumPad9,
+            Keys.KeyPadDecimal => GameKey.NumPadDecimal,
+            Keys.KeyPadSubtract => GameKey.NumPadSubtract,
             Keys.F1 => GameKey.F1,
             Keys.F2 => GameKey.F2,
             Keys.F3 => GameKey.F3,
@@ -63,8 +150,18 @@ internal static class LinuxInputMapper
             Keys.F7 => GameKey.F7,
             Keys.F8 => GameKey.F8,
             Keys.F9 => GameKey.F9,
+            Keys.Semicolon => GameKey.Oem1,
+            Keys.Period => GameKey.OemPeriod,
+            Keys.Minus => GameKey.OemMinus,
+            Keys.Slash => GameKey.OemQuestion,
             _ => GameKey.None,
         };
+
+    public static bool TryMapKey(Keys key, out GameKey mapped)
+    {
+        mapped = MapKey(key);
+        return mapped != GameKey.None;
+    }
 
     public static GameMouseButton MapMouseButton(MouseButton button)
         => button switch

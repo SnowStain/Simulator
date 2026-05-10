@@ -4,6 +4,12 @@ using Simulator.Runtime.Input;
 
 namespace Simulator.Linux;
 
+internal enum LocalControlPanelPage
+{
+    Main,
+    Energy,
+}
+
 internal sealed class LinuxOperatorRuntime
 {
     private readonly LinuxOperatorOptions _options;
@@ -15,6 +21,7 @@ internal sealed class LinuxOperatorRuntime
     private string _status = "Booting";
     private double _timeSec;
     private long _frame;
+    private bool _captureMouse = true;
 
     public LinuxOperatorRuntime(LinuxOperatorOptions options)
     {
@@ -29,7 +36,11 @@ internal sealed class LinuxOperatorRuntime
 
     public long Frame => _frame;
 
-    public bool CaptureMouse { get; private set; } = true;
+    public bool OperatorPanelOpen { get; private set; }
+
+    public LocalControlPanelPage LocalPanelPage { get; private set; } = LocalControlPanelPage.Main;
+
+    public bool CaptureMouse => _captureMouse && !OperatorPanelOpen;
 
     public void Load()
     {
@@ -51,20 +62,30 @@ internal sealed class LinuxOperatorRuntime
 
     public void ApplyInput(GameInputSnapshot input)
     {
+        if (input.PressedKeys.Contains(GameKey.O))
+        {
+            OperatorPanelOpen = !OperatorPanelOpen;
+            if (OperatorPanelOpen)
+            {
+                _captureMouse = false;
+            }
+        }
+
         if (input.PressedKeys.Contains(GameKey.Escape))
         {
-            CaptureMouse = false;
+            _captureMouse = false;
         }
         else if (input.PressedMouseButtons.Contains(GameMouseButton.Left)
+            && !OperatorPanelOpen
             && !input.DownKeys.Contains(GameKey.LeftAlt)
             && !input.DownKeys.Contains(GameKey.RightAlt))
         {
-            CaptureMouse = true;
+            _captureMouse = true;
         }
 
         if (input.DownKeys.Contains(GameKey.LeftAlt) || input.DownKeys.Contains(GameKey.RightAlt))
         {
-            CaptureMouse = false;
+            _captureMouse = false;
         }
     }
 
@@ -72,11 +93,27 @@ internal sealed class LinuxOperatorRuntime
     {
         if (string.Equals(action, "linux:release_mouse", StringComparison.OrdinalIgnoreCase))
         {
-            CaptureMouse = false;
+            _captureMouse = false;
         }
         else if (string.Equals(action, "linux:capture_mouse", StringComparison.OrdinalIgnoreCase))
         {
-            CaptureMouse = true;
+            _captureMouse = true;
+            OperatorPanelOpen = false;
+        }
+        else if (string.Equals(action, "local_close", StringComparison.OrdinalIgnoreCase))
+        {
+            OperatorPanelOpen = false;
+        }
+        else if (string.Equals(action, "local_return", StringComparison.OrdinalIgnoreCase))
+        {
+            OperatorPanelOpen = false;
+            _captureMouse = false;
+        }
+        else if (action.StartsWith("local_page:", StringComparison.OrdinalIgnoreCase))
+        {
+            LocalPanelPage = action.EndsWith(":energy", StringComparison.OrdinalIgnoreCase)
+                ? LocalControlPanelPage.Energy
+                : LocalControlPanelPage.Main;
         }
 
         SimulatorRuntimeLog.Append(

@@ -4247,6 +4247,19 @@ internal sealed class TerrainViewerWindow : GameWindow
                 }
             }
 
+            var jsonCandidates = FileDialogService.FindJsonCandidates(_loadDialogPath, maxCount: 6);
+            if (jsonCandidates.Count > 0)
+            {
+                ImGui.TextDisabled("JSON candidates");
+                foreach (string candidate in jsonCandidates)
+                {
+                    if (ImGui.SmallButton(Path.GetFileName(candidate)))
+                    {
+                        _loadDialogPath = candidate;
+                    }
+                }
+            }
+
             if (ImGui.Button("读取", new System.Numerics.Vector2(120, 0)))
             {
                 LoadAnnotationsFromPath(_loadDialogPath, recordHistory: true);

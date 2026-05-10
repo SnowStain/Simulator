@@ -16,20 +16,20 @@ Use this skill inside the ARTINX simulator repo. Prefer incremental migration: k
    - `Simulator3dForm.GpuRenderer.cs`: OpenGL scene and GPU overlay rendering.
    - `SimulatorOpenTkWindow.cs`: current OpenTK bridge; still maps into WinForms keys/mouse.
    - `Simulator3dForm.LanMultiplayer.cs`: LAN room, roster, authoritative snapshots, referee flow.
-   - `src/Simulator.LoadLargeTerrain`: OpenTK/ImGui map editor; remove WinForms file dialogs first.
+   - `src/Simulator.LoadLargeTerrain`: OpenTK/ImGui map editor; it now builds as `net10.0`, so keep future UI additions free of WinForms.
+   - `src/Simulator.Platform/Runtime`: cross-platform frame loop contracts.
+   - `src/Simulator.Platform/Media`: cross-platform optional media/background-video contracts.
+   - `src/Simulator.OpenTk`: shared OpenTK input/window adapters that are allowed to depend on OpenTK but not on WinForms.
 3. Build Windows after any code change:
 
 ```powershell
 dotnet build src/Simulator.ThreeD/Simulator.ThreeD.csproj -c Debug --no-restore
 ```
 
-4. For Linux-facing code, also build pure projects:
+4. For Linux-facing code, build the Linux-only solution:
 
 ```powershell
-dotnet build src/Simulator.Core/Simulator.Core.csproj -c Debug
-dotnet build src/Simulator.Assets/Simulator.Assets.csproj -c Debug
-dotnet build src/Simulator.Editors/Simulator.Editors.csproj -c Debug
-dotnet build src/Simulator.Runtime/Simulator.Runtime.csproj -c Debug
+dotnet build Simulator.Linux.sln -c Debug
 ```
 
 ## Migration Strategy
@@ -71,11 +71,25 @@ dotnet build src/Simulator.ThreeD/Simulator.ThreeD.csproj -c Debug --no-restore
 For Linux portability pressure:
 
 ```powershell
-dotnet build src/Simulator.Runtime/Simulator.Runtime.csproj -c Debug
-dotnet build src/Simulator.LoadLargeTerrain/LoadLargeTerrain.csproj -c Debug
+powershell -ExecutionPolicy Bypass -File scripts/linux/check-linux-portability.ps1
 ```
 
-`LoadLargeTerrain` may fail until WinForms file dialog is removed; treat that as an expected migration target, not as permission to ignore it.
+For a Linux-callable source audit:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/linux/report-windows-blockers.ps1
+```
+
+For a legacy Windows shell audit before another extraction batch:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/linux/report-windows-blockers.ps1 -IncludeLegacyWindows
+```
+
+`Simulator.Linux.sln` is the Linux branch default build graph. It includes the
+Linux operator plus cross-platform helper tools and excludes the legacy
+`Simulator.ThreeD`/WinForms shell. Keep helper tools out of `Simulator.Linux`
+runtime references unless a specific data contract has been extracted.
 
 ## Logs
 

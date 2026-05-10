@@ -9,6 +9,7 @@ using OpenTK.Windowing.Common.Input;
 using OpenTK.Windowing.Desktop;
 using OpenTK.Windowing.GraphicsLibraryFramework;
 using Simulator.Core;
+using Simulator.OpenTk.Input;
 using Simulator.Runtime.Input;
 using TkKeys = OpenTK.Windowing.GraphicsLibraryFramework.Keys;
 using TkImage = OpenTK.Windowing.Common.Input.Image;
@@ -176,81 +177,6 @@ internal static class SimulatorOpenTkApplication
 
 internal sealed class SimulatorOpenTkWindow : GameWindow
 {
-    private static readonly TkKeys[] MonitoredKeys =
-    {
-        TkKeys.Enter,
-        TkKeys.Escape,
-        TkKeys.Tab,
-        TkKeys.Space,
-        TkKeys.A,
-        TkKeys.B,
-        TkKeys.C,
-        TkKeys.D,
-        TkKeys.F,
-        TkKeys.H,
-        TkKeys.I,
-        TkKeys.J,
-        TkKeys.K,
-        TkKeys.L,
-        TkKeys.E,
-        TkKeys.N,
-        TkKeys.O,
-        TkKeys.P,
-        TkKeys.Q,
-        TkKeys.R,
-        TkKeys.S,
-        TkKeys.T,
-        TkKeys.V,
-        TkKeys.W,
-        TkKeys.X,
-        TkKeys.Z,
-        TkKeys.Backspace,
-        TkKeys.Delete,
-        TkKeys.PageUp,
-        TkKeys.PageDown,
-        TkKeys.LeftShift,
-        TkKeys.RightShift,
-        TkKeys.LeftControl,
-        TkKeys.RightControl,
-        TkKeys.LeftAlt,
-        TkKeys.RightAlt,
-        TkKeys.F1,
-        TkKeys.F2,
-        TkKeys.F3,
-        TkKeys.F4,
-        TkKeys.F5,
-        TkKeys.F6,
-        TkKeys.F7,
-        TkKeys.F8,
-        TkKeys.F9,
-        TkKeys.Semicolon,
-        TkKeys.Period,
-        TkKeys.Minus,
-        TkKeys.Slash,
-        TkKeys.D1,
-        TkKeys.D2,
-        TkKeys.D3,
-        TkKeys.D4,
-        TkKeys.D5,
-        TkKeys.D6,
-        TkKeys.D7,
-        TkKeys.D8,
-        TkKeys.D9,
-        TkKeys.D0,
-        TkKeys.KeyPad0,
-        TkKeys.KeyPad1,
-        TkKeys.KeyPad2,
-        TkKeys.KeyPad3,
-        TkKeys.KeyPad4,
-        TkKeys.KeyPad5,
-        TkKeys.KeyPad6,
-        TkKeys.KeyPad7,
-        TkKeys.KeyPad8,
-        TkKeys.KeyPad9,
-        TkKeys.KeyPadDecimal,
-        TkKeys.KeyPadSubtract,
-    };
-
     private readonly ISimulatorOpenTkRuntime _runtime;
     private readonly GameInputSnapshotAccumulator _inputAccumulator = new();
     private readonly Stopwatch _inputClock = Stopwatch.StartNew();
@@ -414,9 +340,9 @@ internal sealed class SimulatorOpenTkWindow : GameWindow
     private void ProcessInputSnapshot()
     {
         HashSet<GameKey> downKeys = new();
-        foreach (TkKeys key in MonitoredKeys)
+        foreach (TkKeys key in OpenTkGameInputMapper.MonitoredKeys)
         {
-            if (KeyboardState.IsKeyDown(key) && TryMapKey(key, out GameKey downMapped))
+            if (KeyboardState.IsKeyDown(key) && OpenTkGameInputMapper.TryMapKey(key, out GameKey downMapped))
             {
                 downKeys.Add(downMapped);
             }
@@ -460,22 +386,11 @@ internal sealed class SimulatorOpenTkWindow : GameWindow
 
     private void CaptureMouseButton(TkMouseButton button, HashSet<GameMouseButton> downButtons)
     {
-        GameMouseButton mapped = MapMouseButton(button);
+        GameMouseButton mapped = OpenTkGameInputMapper.MapMouseButton(button);
         if (MouseState.IsButtonDown(button) && mapped != GameMouseButton.None)
         {
             downButtons.Add(mapped);
         }
-    }
-
-    private static GameMouseButton MapMouseButton(TkMouseButton button)
-    {
-        return button switch
-        {
-            TkMouseButton.Left => GameMouseButton.Left,
-            TkMouseButton.Right => GameMouseButton.Right,
-            TkMouseButton.Middle => GameMouseButton.Middle,
-            _ => GameMouseButton.None,
-        };
     }
 
     private void EnsureFrameSurface()
@@ -587,87 +502,6 @@ internal sealed class SimulatorOpenTkWindow : GameWindow
         GL.EnableVertexAttribArray(1);
         GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), 2 * sizeof(float));
         GL.BindVertexArray(0);
-    }
-
-    private static bool TryMapKey(TkKeys key, out GameKey mapped)
-    {
-        mapped = key switch
-        {
-            TkKeys.Enter => GameKey.Enter,
-            TkKeys.Escape => GameKey.Escape,
-            TkKeys.Tab => GameKey.Tab,
-            TkKeys.Space => GameKey.Space,
-            TkKeys.A => GameKey.A,
-            TkKeys.B => GameKey.B,
-            TkKeys.C => GameKey.C,
-            TkKeys.D => GameKey.D,
-            TkKeys.F => GameKey.F,
-            TkKeys.H => GameKey.H,
-            TkKeys.I => GameKey.I,
-            TkKeys.J => GameKey.J,
-            TkKeys.K => GameKey.K,
-            TkKeys.L => GameKey.L,
-            TkKeys.E => GameKey.E,
-            TkKeys.N => GameKey.N,
-            TkKeys.O => GameKey.O,
-            TkKeys.P => GameKey.P,
-            TkKeys.Q => GameKey.Q,
-            TkKeys.R => GameKey.R,
-            TkKeys.S => GameKey.S,
-            TkKeys.T => GameKey.T,
-            TkKeys.V => GameKey.V,
-            TkKeys.W => GameKey.W,
-            TkKeys.X => GameKey.X,
-            TkKeys.Z => GameKey.Z,
-            TkKeys.Backspace => GameKey.Backspace,
-            TkKeys.Delete => GameKey.Delete,
-            TkKeys.PageUp => GameKey.PageUp,
-            TkKeys.PageDown => GameKey.PageDown,
-            TkKeys.LeftShift => GameKey.LeftShift,
-            TkKeys.RightShift => GameKey.RightShift,
-            TkKeys.LeftControl => GameKey.LeftControl,
-            TkKeys.RightControl => GameKey.RightControl,
-            TkKeys.LeftAlt => GameKey.LeftAlt,
-            TkKeys.RightAlt => GameKey.RightAlt,
-            TkKeys.F1 => GameKey.F1,
-            TkKeys.F2 => GameKey.F2,
-            TkKeys.F3 => GameKey.F3,
-            TkKeys.F4 => GameKey.F4,
-            TkKeys.F5 => GameKey.F5,
-            TkKeys.F6 => GameKey.F6,
-            TkKeys.F7 => GameKey.F7,
-            TkKeys.F8 => GameKey.F8,
-            TkKeys.F9 => GameKey.F9,
-            TkKeys.Semicolon => GameKey.Oem1,
-            TkKeys.Period => GameKey.OemPeriod,
-            TkKeys.Minus => GameKey.OemMinus,
-            TkKeys.Slash => GameKey.OemQuestion,
-            TkKeys.D1 => GameKey.D1,
-            TkKeys.D2 => GameKey.D2,
-            TkKeys.D3 => GameKey.D3,
-            TkKeys.D4 => GameKey.D4,
-            TkKeys.D5 => GameKey.D5,
-            TkKeys.D6 => GameKey.D6,
-            TkKeys.D7 => GameKey.D7,
-            TkKeys.D8 => GameKey.D8,
-            TkKeys.D9 => GameKey.D9,
-            TkKeys.D0 => GameKey.D0,
-            TkKeys.KeyPad0 => GameKey.NumPad0,
-            TkKeys.KeyPad1 => GameKey.NumPad1,
-            TkKeys.KeyPad2 => GameKey.NumPad2,
-            TkKeys.KeyPad3 => GameKey.NumPad3,
-            TkKeys.KeyPad4 => GameKey.NumPad4,
-            TkKeys.KeyPad5 => GameKey.NumPad5,
-            TkKeys.KeyPad6 => GameKey.NumPad6,
-            TkKeys.KeyPad7 => GameKey.NumPad7,
-            TkKeys.KeyPad8 => GameKey.NumPad8,
-            TkKeys.KeyPad9 => GameKey.NumPad9,
-            TkKeys.KeyPadDecimal => GameKey.NumPadDecimal,
-            TkKeys.KeyPadSubtract => GameKey.NumPadSubtract,
-            _ => GameKey.None,
-        };
-
-        return mapped != GameKey.None;
     }
 
     private static int BuildShaderProgram()

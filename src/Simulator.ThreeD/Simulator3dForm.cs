@@ -15,6 +15,7 @@ using Simulator.Core;
 using Simulator.Core.Gameplay;
 using Simulator.Core.Map;
 using Simulator.Editors;
+using Simulator.Platform.Runtime;
 using Simulator.Platform.Ui;
 using Simulator.Runtime.Input;
 using UiButton = Simulator.Platform.Ui.OpenGkUiButton;
@@ -182,6 +183,11 @@ internal sealed partial class Simulator3dForm : Form
         Energy,
     }
 
+    private OpenGkRefereePanelPage RefereePanelPageForUi
+        => _refereePanelPage == RefereePanelPage.Energy
+            ? OpenGkRefereePanelPage.Energy
+            : OpenGkRefereePanelPage.Main;
+
     private readonly record struct DelayedLookInput(double DueTimeSec, double YawDeltaDeg, double PitchDeltaDeg);
 
     private readonly record struct TerrainFacePatch(
@@ -348,7 +354,7 @@ internal sealed partial class Simulator3dForm : Form
     private const double MatchStartupPreparationSec = 60.0;
 
     private readonly Simulator3dHost _host;
-    private readonly System.Windows.Forms.Timer _timer;
+    private readonly IFrameTicker _frameTicker;
     private readonly Stopwatch _frameClock = Stopwatch.StartNew();
     private readonly Font _tinyHudFont = new("Microsoft YaHei UI", 8.5f, FontStyle.Regular, GraphicsUnit.Point);
     private readonly Font _smallHudFont = new("Microsoft YaHei UI", 9.5f, FontStyle.Regular, GraphicsUnit.Point);
@@ -360,6 +366,7 @@ internal sealed partial class Simulator3dForm : Form
     private readonly Font _menuEyebrowFont = new("Microsoft YaHei UI", 8.8f, FontStyle.Bold, GraphicsUnit.Point);
     private readonly Font _menuButtonFont = new("Microsoft YaHei UI", 13f, FontStyle.Bold, GraphicsUnit.Point);
     private readonly Font _menuFootnoteFont = new("Microsoft YaHei UI", 9.2f, FontStyle.Regular, GraphicsUnit.Point);
+    private readonly IOpenGkUiTextPainter<Graphics> _openGkTextPainter;
     private readonly OpenGkUiButtonRegistry _uiButtons = new();
     private readonly HashSet<Keys> _heldKeys = new();
     private readonly HashSet<string> _energyAutoFireFiredShotKeys = new(StringComparer.OrdinalIgnoreCase);
@@ -634,6 +641,7 @@ internal sealed partial class Simulator3dForm : Form
         _previewOnly = options.PreviewOnly;
         _previewStructure = Simulator3dOptions.NormalizePreviewStructure(options.PreviewStructure);
         _previewTeam = Simulator3dOptions.NormalizePreviewTeam(options.PreviewTeam);
+        _openGkTextPainter = new WinFormsOpenGkTextPainter(ResolveOpenGkTextStyleFont, _tinyHudFont);
 
         Text = "RM ARTINX A-Soul\u6a21\u62df\u5668";
         StartPosition = FormStartPosition.CenterScreen;
@@ -694,14 +702,10 @@ internal sealed partial class Simulator3dForm : Form
             BeginMatchStartupSequence(resetWorld: !_host.RequiresDeferredLobbyBootstrap);
         }
 
-        _timer = new System.Windows.Forms.Timer
-        {
-            Interval = 1,
-        };
+        _frameTicker = new WinFormsFrameTicker(1, OnFrameTick);
         if (!_externallyDrivenCompatibilityMode)
         {
-            _timer.Tick += (_, _) => OnFrameTick();
-            _timer.Start();
+            _frameTicker.Start();
             Application.Idle += OnApplicationIdle;
 
             MouseDown += OnWinFormsMouseDownInput;
@@ -1016,7 +1020,7 @@ internal sealed partial class Simulator3dForm : Form
         {
             ExitMatchGcControl();
             Application.Idle -= OnApplicationIdle;
-            _timer.Dispose();
+            _frameTicker.Dispose();
             DisposeGpuRenderer();
             _tinyHudFont.Dispose();
             _smallHudFont.Dispose();
@@ -5011,42 +5015,24 @@ internal sealed partial class Simulator3dForm : Form
         using var dim = new SolidBrush(Color.FromArgb(154, 8, 10, 12));
         graphics.FillRectangle(dim, ClientRectangle);
 
-        int panelWidth = Math.Min(Math.Max(920, (int)(ClientSize.Width * 0.82)), ClientSize.Width - 24);
-        int panelHeight = Math.Min(Math.Max(610, (int)(ClientSize.Height * 0.76)), ClientSize.Height - 24);
-        Rectangle panel = new(
-            (ClientSize.Width - panelWidth) / 2,
-            (ClientSize.Height - panelHeight) / 2,
-            panelWidth,
-            panelHeight);
-
-        using var fill = new SolidBrush(Color.FromArgb(232, 10, 14, 18));
-        using var border = new Pen(Color.FromArgb(172, 126, 174, 190), 1.4f);
-        graphics.FillRectangle(fill, panel);
-        graphics.DrawRectangle(border, panel);
-
-        TextRenderer.DrawText(graphics, _localRefereePanelOpen ? "本地控制面板" : "裁判控制面板", _hudBigFont, new Rectangle(panel.X + 24, panel.Y + 16, 260, 38), Color.WhiteSmoke, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
         bool showLogout = IsLanMultiplayerActive || _localRefereePanelOpen;
-        int logoutWidth = showLogout ? 98 : 0;
-        int closeX = panel.Right - 116;
-        int helpRight = closeX - 14;
-        if (showLogout)
-        {
-            DrawPButton(graphics, new Rectangle(closeX - logoutWidth - 8, panel.Y + 20, logoutWidth, 30), _localRefereePanelOpen ? "返回" : "登出", "p_logout", active: true, enabled: true);
-            helpRight -= logoutWidth + 8;
-        }
+        OpenGkRefereePanelLayout layout = OpenGkRefereePanelLayoutResolver.Resolve(ClientSize, showLogout);
+        var chrome = new OpenGkUiDrawList();
+        OpenGkRefereePanelLayoutResolver.AddChrome(
+            chrome,
+            layout,
+            _localRefereePanelOpen ? "本地控制面板" : "裁判控制面板",
+            _localRefereePanelOpen ? "O 关闭 / V 切视角 / U 高亮 / 自由相机 WASD + F/C" : "P 关闭 / V 切视角 / U 高亮 / 自由相机 WASD + F/C",
+            showLogout,
+            _localRefereePanelOpen ? "返回" : "登出",
+            RefereePanelPageForUi);
+        RenderOpenGkDrawList(graphics, chrome);
 
-        TextRenderer.DrawText(graphics, _localRefereePanelOpen ? "O 关闭 / V 切视角 / U 高亮 / 自由相机 WASD + F/C" : "P 关闭 / V 切视角 / U 高亮 / 自由相机 WASD + F/C", _tinyHudFont, new Rectangle(panel.X + 290, panel.Y + 24, Math.Max(80, helpRight - (panel.X + 290)), 24), Color.FromArgb(190, 206, 218, 226), TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
-        DrawPButton(graphics, new Rectangle(closeX, panel.Y + 20, 84, 30), "关闭", "p_close", active: false, enabled: true);
-
-        int tabY = panel.Y + 54;
-        int tabX = panel.X + 24;
-        DrawPButton(graphics, new Rectangle(tabX, tabY, 88, 28), "总览", "ref_page:main", active: _refereePanelPage == RefereePanelPage.Main, enabled: true);
-        DrawPButton(graphics, new Rectangle(tabX + 98, tabY, 120, 28), "能量机关", "ref_page:energy", active: _refereePanelPage == RefereePanelPage.Energy, enabled: true);
+        Rectangle panel = layout.Panel;
 
         if (_refereePanelPage == RefereePanelPage.Energy)
         {
-            Rectangle energyContent = new(panel.X + 24, panel.Y + 94, panel.Width - 48, panel.Height - 118);
-            DrawLanRefereeEnergyPage(graphics, energyContent);
+            DrawLanRefereeEnergyPage(graphics, layout.Content);
             return;
         }
 
@@ -5795,11 +5781,9 @@ internal sealed partial class Simulator3dForm : Form
 
     private void DrawPPanelFrame(Graphics graphics, Rectangle rect, string title)
     {
-        using var fill = new SolidBrush(Color.FromArgb(116, 23, 25, 27));
-        using var border = new Pen(Color.FromArgb(96, 98, 104, 108), 2f);
-        graphics.FillRectangle(fill, rect);
-        graphics.DrawRectangle(border, rect);
-        TextRenderer.DrawText(graphics, title, _hudMidFont, new Rectangle(rect.X + 22, rect.Y + 24, rect.Width - 44, 32), Color.FromArgb(236, 238, 240), TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        var drawList = new OpenGkUiDrawList();
+        OpenGkRefereePanelLayoutResolver.AddPanelFrame(drawList, rect, title);
+        RenderOpenGkDrawList(graphics, drawList);
     }
 
     private void DrawPLoginColumn(Graphics graphics, Rectangle rect, SimulationEntity? selected)
@@ -12584,8 +12568,8 @@ internal sealed partial class Simulator3dForm : Form
             string root = _host.ProjectRootPath;
             string[] executableCandidates =
             {
-                Path.Combine(root, "src", "Simulator.Decision", "bin", "Debug", "net10.0-windows", "Simulator.Decision.exe"),
-                Path.Combine(root, "src", "Simulator.Decision", "bin", "Release", "net10.0-windows", "Simulator.Decision.exe"),
+                Path.Combine(root, "src", "Simulator.Decision", "bin", "Debug", "net10.0", "Simulator.Decision.exe"),
+                Path.Combine(root, "src", "Simulator.Decision", "bin", "Release", "net10.0", "Simulator.Decision.exe"),
             };
 
             foreach (string candidate in executableCandidates)

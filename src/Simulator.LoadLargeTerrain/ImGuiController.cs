@@ -176,12 +176,21 @@ internal sealed class ImGuiController : IDisposable
     {
         var fontCandidates = new[]
         {
+            Environment.GetEnvironmentVariable("ARTINX_IMGUI_FONT"),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "msyh.ttc"),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "simhei.ttf"),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "simsun.ttc"),
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+            "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+            "/usr/share/fonts/truetype/arphic/uming.ttc",
         };
 
-        var fontPath = fontCandidates.FirstOrDefault(File.Exists);
+        var fontPath = fontCandidates
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .FirstOrDefault(File.Exists);
         if (fontPath is null)
         {
             io.Fonts.AddFontDefault();

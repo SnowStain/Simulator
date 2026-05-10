@@ -4,17 +4,32 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
+SOLUTION="Simulator.Linux.sln"
 PROJECT="src/Simulator.Linux/Simulator.Linux.csproj"
+TOOL_PROJECTS=(
+  "src/Simulator.LoadLargeTerrain/LoadLargeTerrain.csproj"
+  "src/Simulator.Decision/Simulator.Decision.csproj"
+)
 SCAN_PATHS=(
   "$PROJECT"
   "src/Simulator.Linux"
+  "src/Simulator.OpenTk"
   "src/Simulator.Platform"
   "src/Simulator.Core"
   "src/Simulator.Assets"
   "src/Simulator.Runtime"
+  "src/Simulator.LoadLargeTerrain"
+  "src/Simulator.Decision"
 )
 
 echo "[linux-portability] checking project references"
+solution_refs="$(dotnet sln "$SOLUTION" list)"
+echo "$solution_refs"
+if echo "$solution_refs" | grep -E "Simulator\.ThreeD|Simulator\.AutoAimCalibrationTool"; then
+  echo "[linux-portability] forbidden Windows shell project in Linux solution" >&2
+  exit 1
+fi
+
 refs="$(dotnet list "$PROJECT" reference)"
 echo "$refs"
 if echo "$refs" | grep -E "Simulator\.ThreeD|Simulator\.LoadLargeTerrain|Simulator\.Decision|Simulator\.AutoAimCalibrationTool"; then
@@ -43,6 +58,11 @@ for path in "${SCAN_PATHS[@]}"; do
 done
 
 echo "[linux-portability] building Linux operator"
-dotnet build "$PROJECT" -c Debug --no-restore
+dotnet build "$SOLUTION" -c Debug
+
+for tool_project in "${TOOL_PROJECTS[@]}"; do
+  echo "[linux-portability] building cross-platform tool $tool_project"
+  dotnet build "$tool_project" -c Debug
+done
 
 echo "[linux-portability] OK"

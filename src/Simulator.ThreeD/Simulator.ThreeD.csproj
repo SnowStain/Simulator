@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Simulator.Platform\Simulator.Platform.csproj" />
+    <ProjectReference Include="..\Simulator.OpenTk\Simulator.OpenTk.csproj" />
     <ProjectReference Include="..\Simulator.Core\Simulator.Core.csproj" />
     <ProjectReference Include="..\Simulator.Assets\Simulator.Assets.csproj" />
     <ProjectReference Include="..\Simulator.Editors\Simulator.Editors.csproj" />
@@ -13,7 +14,7 @@
     <PackageReference Include="BepuPhysics" Version="2.4.0" />
     <PackageReference Include="BepuUtilities" Version="2.4.0" />
     <PackageReference Include="OpenCvSharp4" Version="4.10.0.20240616" />
-    <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.10.0.20240616" />
+    <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.10.0.20240616" Condition="'$(OS)' == 'Windows_NT'" />
     <PackageReference Include="OpenTK" Version="4.9.3" />
   </ItemGroup>
 
