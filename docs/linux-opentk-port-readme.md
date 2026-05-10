@@ -91,8 +91,19 @@ src/Simulator.Assets
 src/Simulator.Editors
   Shared editor documents/import/export helpers.
 
+src/Simulator.Platform
+  Platform-neutral contracts and adapters. `GameInputSnapshot` lives here so
+  Linux, OpenTK, and the Windows compatibility shell can share input without
+  referencing any executable runtime.
+
 src/Simulator.Runtime
-  Platform-neutral runtime landing zone. Put new input/window/runtime contracts here.
+  Platform-neutral runtime CLI and simulation/service extraction landing zone.
+  Do not make the Linux operator depend on this executable project until it is
+  split into a pure library.
+
+src/Simulator.Linux
+  New OpenTK-only Linux operator shell. It targets `net10.0`, does not reference
+  WinForms or `Simulator.ThreeD`, and is the active migration entry for Linux.
 
 src/Simulator.ThreeD
   Current Windows game shell and most existing UI/render/game integration.
@@ -108,7 +119,7 @@ Use this as the main index when porting a visible feature. The Linux shell shoul
 | Component | Current call/UI entry | Behavior/state entry | Linux port rule |
 | --- | --- | --- | --- |
 | OpenTK shell | `SimulatorOpenTkWindow` | `ISimulatorOpenTkRuntime` bridge: `ExternalAdvanceFrame`, `ExternalRender`, `ExternalApplyInput`, `ShouldCaptureMouseExternally` | Temporary bridge only. OpenTK already feeds `GameInputSnapshot`; replace the Form implementation with a pure runtime when ready. |
-| Platform input | `src/Simulator.Runtime/Input/GameInputTypes.cs` | `GameKey`, `GameMouseButton`, `GamePointerState`, `GameInputSnapshot` | This is the convergence point. OpenTK and WinForms both translate into this model. |
+| Platform input | `src/Simulator.Platform/Input/GameInputTypes.cs` | `GameKey`, `GameMouseButton`, `GamePointerState`, `GameInputSnapshot` | This is the convergence point. OpenTK and WinForms both translate into this model. |
 | Main menu | `DrawOpenGkMainMenu`, `DrawOpenGkUnifiedHomeMenu`, `DrawOpenGkMainActions` in `Simulator3dForm.OpenGkUi.cs` | menu state fields in `Simulator3dForm.cs`, click actions via `_uiButtons` and `ResolveUiAction` | Do not use a separate Linux menu. Port the OpenGK draw primitives. |
 | Local room | `OpenLocalRoom` in `Simulator3dForm.LanMultiplayer.cs`, room UI via `DrawOpenGkLanRoomScreen/Core` | local seats, preparation selection, `StartLanRoomMatchFromRoom` | Local mode uses the same room layout; old vehicle-selection lobby is retired. |
 | LAN room | `DrawOpenGkLanRoomScreen`, `DrawOpenGkTeamRoomColumn`, `DrawOpenGkRefereeAndSettingsPanel` | `CreateLanRoomRoster`, `HandleLanRoster`, `HandleLanSeatClaim`, `PublishLanLobbySelection` | Clients must see host referee and only active seats. Roster changes must freeze once live starts. |
@@ -414,7 +425,7 @@ Current status:
 
 ```text
 SimulatorOpenTkWindow / WinForms native events
-  -> GameInputSnapshotAccumulator in Simulator.Runtime
+  -> GameInputSnapshotAccumulator in Simulator.Platform
   -> GameInputSnapshot
   -> ISimulatorOpenTkRuntime.ExternalApplyInput
   -> current compatibility implementation: Simulator3dForm.ExternalApplyInput
@@ -896,11 +907,51 @@ dotnet build src/Simulator.Editors/Simulator.Editors.csproj -c Debug
 dotnet build src/Simulator.Runtime/Simulator.Runtime.csproj -c Debug
 ```
 
-Future Linux client:
+Linux OpenTK operator:
 
 ```bash
-dotnet run --project src/Simulator.OpenTkClient/Simulator.OpenTkClient.csproj -- --start-match
+dotnet run --project src/Simulator.Linux/Simulator.Linux.csproj -- --map rmuc2026 --size 1440x900
 ```
+
+The first Linux entry intentionally starts as a thin OpenTK shell. It already
+uses `GameInputSnapshot`, loads project layout/config/assets, writes
+`logs/linux_operator.log`, and renders a minimal operator placeholder without
+WinForms or `System.Drawing`. The next migration steps are to replace the
+placeholder drawing with extracted OpenGK scene/UI calls, not to add a second UI
+design.
+
+Convenience script:
+
+```bash
+bash scripts/linux/run-linux-operator.sh rmuc2026
+```
+
+Linux portability gate:
+
+```bash
+bash scripts/linux/check-linux-portability.sh
+```
+
+On Windows before handing to the Linux partner, run the equivalent PowerShell
+gate:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\linux\check-linux-portability.ps1
+```
+
+This gate verifies the active Linux entry does not reference the Windows
+compatibility shell, Windows-only TFMs, WinForms, Win32 P/Invoke, or the Windows
+OpenCV runtime. It is intentionally scoped to the Linux project graph:
+
+```text
+Simulator.Linux -> Simulator.Platform / Simulator.Core / Simulator.Assets
+```
+
+`Simulator.ThreeD`, `Simulator.LoadLargeTerrain`, and WinForms editor forms are
+still present for Windows compatibility and authoring tools, but they must not
+be pulled into the Linux operator. When moving a feature to Linux, extract the
+platform-neutral logic into `Simulator.Platform`, `Simulator.Runtime`, `Simulator.Core`,
+`Simulator.Assets`, or a new cross-platform rendering package first.
 
 ## Runtime Interaction Checklist
 

@@ -16,6 +16,9 @@
 9. [弹丸与模型碰撞](algorithms/projectile-collision.md)
 10. [经验、等级与左下角 HUD](algorithms/experience-hud.md)
 11. [Linux / OpenTK 迁移 README](linux-opentk-port-readme.md)
+    - 新 Linux 入口在 `src/Simulator.Linux`，运行：
+      `dotnet run --project src/Simulator.Linux/Simulator.Linux.csproj -- --map rmuc2026 --size 1440x900`
+    - 平台输入抽象在 `src/Simulator.Platform/Input`，Linux 入口不引用 Windows shell。
 12. [项目日志](project-log.md)
 13. [文档维护工作流](documentation-workflow.md)
 
