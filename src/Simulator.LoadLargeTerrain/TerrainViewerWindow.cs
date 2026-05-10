@@ -110,9 +110,9 @@ internal sealed class TerrainViewerWindow : GameWindow
     private float _topDownHalfHeight;
     private FacilityDrawMode _facilityDrawMode = FacilityDrawMode.Select;
     private EditorToolPanel _activeEditorToolPanel = EditorToolPanel.None;
-    private string _facilityDraftType = "supply";
+    private string _facilityDraftType = "buff_supply";
     private string _facilityDraftTeam = "neutral";
-    private string _facilityDraftBaseId = "facility";
+    private string _facilityDraftBaseId = "buff";
     private float _facilityDraftThickness = 12.0f;
     private float _facilityDraftHeightM;
     private int _selectedFacilityIndex = -1;
@@ -2684,8 +2684,15 @@ internal sealed class TerrainViewerWindow : GameWindow
 
         string[] facilityTypes =
         [
-            "supply",
             "buff_supply",
+            "buff_fort",
+            "buff_base",
+            "buff_outpost",
+            "buff_trapezoid_highland",
+            "buff_central_highland",
+            "buff_hero_deployment",
+            "debuff_zone",
+            "supply",
             "mineral_exchange",
             "mining_area",
             "dog_hole",
@@ -2714,6 +2721,21 @@ internal sealed class TerrainViewerWindow : GameWindow
         ImGui.InputFloat("厚度", ref _facilityDraftThickness, 1.0f, 10.0f, "%.2f");
         ImGui.InputFloat("高度(m)", ref _facilityDraftHeightM, 0.05f, 0.2f, "%.3f");
         _facilityDraftThickness = Math.Max(0.01f, _facilityDraftThickness);
+
+        if (ImGui.Button("Buff editor: draw rectangle in top view", new System.Numerics.Vector2(-1, 0)))
+        {
+            _facilityDraftType = _facilityDraftType.Contains("buff", StringComparison.OrdinalIgnoreCase)
+                || _facilityDraftType.Contains("debuff", StringComparison.OrdinalIgnoreCase)
+                    ? _facilityDraftType
+                    : "buff_supply";
+            _facilityDraftBaseId = string.IsNullOrWhiteSpace(_facilityDraftBaseId) || string.Equals(_facilityDraftBaseId, "facility", StringComparison.OrdinalIgnoreCase)
+                ? "buff"
+                : _facilityDraftBaseId;
+            _facilityDraftHeightM = _facilityDraftHeightM <= 1e-4f ? 0.08f : _facilityDraftHeightM;
+            _facilityDrawMode = FacilityDrawMode.Rect;
+            _viewMode = ViewMode.TopDown;
+            _statusMessage = "Buff editor armed: drag on the top-down map to draw a buff region, then Ctrl+S to save map.json.";
+        }
 
         if (ImGui.Button(_viewMode == ViewMode.TopDown ? "切到自由视角 (F6)" : "切到正顶视角 (F6)", new System.Numerics.Vector2(-1, 0)))
         {
@@ -3736,9 +3758,13 @@ internal sealed class TerrainViewerWindow : GameWindow
             return;
         }
 
+        if (_activeEditorToolPanel != EditorToolPanel.Composite)
+        {
+            return;
+        }
+
         const float panelWidth = 420.0f;
-        float mapEditorOffset = _mapEditingSession is null ? 0.0f : 390.0f;
-        ImGui.SetNextWindowPos(new System.Numerics.Vector2(MathF.Max(0.0f, ClientSize.X - panelWidth - mapEditorOffset), 0.0f), ImGuiCond.Always);
+        ImGui.SetNextWindowPos(new System.Numerics.Vector2(MathF.Max(0.0f, ClientSize.X - panelWidth), 0.0f), ImGuiCond.Always);
         ImGui.SetNextWindowSize(new System.Numerics.Vector2(panelWidth, ClientSize.Y), ImGuiCond.Always);
         ImGui.Begin("组合体编辑器", ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoSavedSettings);
 
@@ -5158,6 +5184,7 @@ internal sealed class TerrainViewerWindow : GameWindow
     {
         string normalized = type ?? string.Empty;
         return normalized.Contains("buff", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("debuff", StringComparison.OrdinalIgnoreCase)
             || normalized.Contains("supply", StringComparison.OrdinalIgnoreCase)
             || normalized.Contains("fort", StringComparison.OrdinalIgnoreCase)
             || normalized.Contains("highland", StringComparison.OrdinalIgnoreCase)
@@ -5181,7 +5208,10 @@ internal sealed class TerrainViewerWindow : GameWindow
             maxY = Math.Max(maxY, point.Y);
         }
 
-        double height = Math.Max(0.40, facility.HeightM > 0.02 ? facility.HeightM : facility.SizeZM);
+        bool buffLike = (facility.Type ?? string.Empty).Contains("buff", StringComparison.OrdinalIgnoreCase)
+            || (facility.Type ?? string.Empty).Contains("debuff", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(facility.Type, "supply", StringComparison.OrdinalIgnoreCase);
+        double height = Math.Max(buffLike ? 0.08 : 0.40, facility.HeightM > 0.02 ? facility.HeightM : facility.SizeZM);
         facility.VolumeShape = string.Equals(facility.Shape, "cylinder", StringComparison.OrdinalIgnoreCase) ? "cylinder" : "box";
         facility.CenterX = (minX + maxX) * 0.5;
         facility.CenterY = (minY + maxY) * 0.5;

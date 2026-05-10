@@ -341,11 +341,16 @@ internal sealed partial class Simulator3dForm
                     centerWorldX,
                     centerWorldY,
                     item);
+                Vector3 itemCenter = ModelToScenePoint(Vector3.Transform(item.PivotModel, compositeTransform), scene.WorldScale) + sceneAlignmentOffset;
+                bool drawDynamicEffects = ShouldDrawFineTerrainEnergyDynamicEffects(itemCenter);
                 drewFineBody |= item.Triangles.Count > 0;
                 DrawFineTerrainEnergyTrianglesGdi(graphics, scene.WorldScale, item, compositeTransform, sceneAlignmentOffset);
                 DrawFineTerrainEnergyBodyStripTriangles(graphics, scene.WorldScale, item, compositeTransform, sceneAlignmentOffset);
-                DrawFineTerrainEnergyUnitTriangles(graphics, scene.WorldScale, item, compositeTransform, sceneAlignmentOffset);
-                DrawFineTerrainEnergyInteractionFeedback(graphics, scene.WorldScale, item, compositeTransform, sceneAlignmentOffset);
+                DrawFineTerrainEnergyUnitTriangles(graphics, scene.WorldScale, item, compositeTransform, sceneAlignmentOffset, drawDynamicEffects);
+                if (drawDynamicEffects)
+                {
+                    DrawFineTerrainEnergyInteractionFeedback(graphics, scene.WorldScale, item, compositeTransform, sceneAlignmentOffset);
+                }
             }
 
             return drewFineBody;
@@ -375,8 +380,9 @@ internal sealed partial class Simulator3dForm
                 centerWorldX,
                 centerWorldY,
                 item);
+            Vector3 itemCenter = ModelToScenePoint(Vector3.Transform(item.PivotModel, compositeTransform), scene.WorldScale) + sceneAlignmentOffset;
             if (!IsFineTerrainItemPotentiallyVisible(
-                    ModelToScenePoint(Vector3.Transform(item.PivotModel, compositeTransform), scene.WorldScale) + sceneAlignmentOffset,
+                    itemCenter,
                     2.9f,
                     2.4f))
             {
@@ -390,8 +396,12 @@ internal sealed partial class Simulator3dForm
             drewFineBody |= item.Triangles.Count > 0;
 
             DrawFineTerrainEnergyBodyStripTriangles(null, scene.WorldScale, item, compositeTransform, sceneAlignmentOffset);
-            DrawFineTerrainEnergyUnitTriangles(null, scene.WorldScale, item, compositeTransform, sceneAlignmentOffset);
-            DrawFineTerrainEnergyInteractionFeedback(null, scene.WorldScale, item, compositeTransform, sceneAlignmentOffset);
+            bool drawDynamicEffects = ShouldDrawFineTerrainEnergyDynamicEffects(itemCenter);
+            DrawFineTerrainEnergyUnitTriangles(null, scene.WorldScale, item, compositeTransform, sceneAlignmentOffset, drawDynamicEffects);
+            if (drawDynamicEffects)
+            {
+                DrawFineTerrainEnergyInteractionFeedback(null, scene.WorldScale, item, compositeTransform, sceneAlignmentOffset);
+            }
         }
         return drewFineBody;
     }
@@ -1161,7 +1171,8 @@ internal sealed partial class Simulator3dForm
         FineTerrainWorldScale worldScale,
         FineTerrainEnergyMechanismVisualItem item,
         Matrix4x4 compositeTransform,
-        Vector3 sceneAlignmentOffset)
+        Vector3 sceneAlignmentOffset,
+        bool drawDynamicEffects = true)
     {
         foreach (FineTerrainEnergyMechanismUnitVisualItem unit in item.Units)
         {
@@ -1175,7 +1186,8 @@ internal sealed partial class Simulator3dForm
                 continue;
             }
 
-            if (TryDrawFineTerrainEnergyPendingDiskPattern(
+            if (drawDynamicEffects
+                && TryDrawFineTerrainEnergyPendingDiskPattern(
                     graphics,
                     worldScale,
                     item,
@@ -1192,7 +1204,8 @@ internal sealed partial class Simulator3dForm
                 : ResolveFineTerrainEnergyLightArmColor(item, unit);
 
             bool pendingStripFlow = ShouldDrawFineTerrainEnergyPendingStripFlow(item, unit);
-            if (!pendingStripFlow
+            if (drawDynamicEffects
+                && !pendingStripFlow
                 && TryDrawFineTerrainEnergyLightArmProgressUnit(
                     graphics,
                     worldScale,
@@ -1224,13 +1237,16 @@ internal sealed partial class Simulator3dForm
                     extraSceneOffset,
                     overrideColor))
             {
-                TryDrawFineTerrainEnergyPendingStripFlow(
-                    graphics,
-                    worldScale,
-                    item,
-                    unit,
-                    compositeTransform,
-                    sceneAlignmentOffset);
+                if (drawDynamicEffects)
+                {
+                    TryDrawFineTerrainEnergyPendingStripFlow(
+                        graphics,
+                        worldScale,
+                        item,
+                        unit,
+                        compositeTransform,
+                        sceneAlignmentOffset);
+                }
                 continue;
             }
 
@@ -1242,14 +1258,35 @@ internal sealed partial class Simulator3dForm
                 sceneAlignmentOffset,
                 extraSceneOffset,
                 overrideColor);
-            TryDrawFineTerrainEnergyPendingStripFlow(
-                graphics,
-                worldScale,
-                item,
-                unit,
-                compositeTransform,
-                sceneAlignmentOffset);
+            if (drawDynamicEffects)
+            {
+                TryDrawFineTerrainEnergyPendingStripFlow(
+                    graphics,
+                    worldScale,
+                    item,
+                    unit,
+                    compositeTransform,
+                    sceneAlignmentOffset);
+            }
         }
+    }
+
+    private bool ShouldDrawFineTerrainEnergyDynamicEffects(Vector3 itemCenterScene)
+    {
+        float distanceSq = Vector3.DistanceSquared(_cameraPositionM, itemCenterScene);
+        if (distanceSq > 13.5f * 13.5f)
+        {
+            return false;
+        }
+
+        if (!TryProject(itemCenterScene, out PointF center, out _)
+            || !TryProject(itemCenterScene + Vector3.UnitY * 1.25f, out PointF sample, out _))
+        {
+            return false;
+        }
+
+        float projectedRadiusPx = MathF.Abs(sample.Y - center.Y);
+        return projectedRadiusPx >= 96f;
     }
 
     private bool TryDrawFineTerrainEnergyPendingDiskPattern(

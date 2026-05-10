@@ -278,7 +278,7 @@ internal sealed class SimulatorOpenTkWindow : GameWindow
         {
             base.OnLoad();
             VSync = VSyncMode.Off;
-            GL.ClearColor(0.07f, 0.09f, 0.12f, 1.0f);
+            GL.ClearColor(1.0f, 1.0f, 1.0f, 1.0f);
             GL.Enable(EnableCap.Multisample);
             _shaderProgram = BuildShaderProgram();
             InitializeQuadBuffers();

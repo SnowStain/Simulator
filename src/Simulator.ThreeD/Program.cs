@@ -1,4 +1,3 @@
-using System.Windows.Forms;
 using Simulator.Assets;
 using Simulator.Core;
 using Simulator.Editors;
@@ -16,33 +15,21 @@ internal static class Program
             return;
         }
 
-        Application.EnableVisualStyles();
-        Application.SetCompatibleTextRenderingDefault(false);
         if (string.IsNullOrWhiteSpace(options.OpenEditor))
         {
-            if (SimulatorOpenTkApplication.TryRun(options))
-            {
-                return;
-            }
-
-            Application.Run(new Simulator3dForm(options));
+            SimulatorOpenTkApplication.Run(options);
             return;
         }
 
-        Form form = CreateEntryForm(options);
-        Application.Run(form);
-    }
-
-    private static Form CreateEntryForm(Simulator3dOptions options)
-    {
-        return options.OpenEditor switch
+        switch (options.OpenEditor)
         {
-            "appearance" => new AppearanceEditorForm(),
-            "rules" => new RuleEditorForm(),
-            "behavior" => new BehaviorEditorForm(),
-            "functional" => new FunctionalEditorForm(),
-            _ => new Simulator3dForm(options),
-        };
+            case "terrain":
+            case "map_component_test":
+                return;
+            default:
+                SimulatorOpenTkApplication.Run(options);
+                return;
+        }
     }
 
     private static bool TryRunLoadLargeTerrainEntry(Simulator3dOptions options)

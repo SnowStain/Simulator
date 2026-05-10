@@ -17,21 +17,26 @@ internal sealed class TerrainEditorForm : Form
     private readonly TerrainEditorService _service;
     private readonly ListBox _presetList = new();
     private readonly ListBox _facilityList = new();
+    private readonly ListBox _buffList = new();
     private readonly ListBox _facetList = new();
     private readonly PropertyGrid _mapGrid = new();
     private readonly PropertyGrid _surfaceGrid = new();
     private readonly PropertyGrid _facilityGrid = new();
+    private readonly PropertyGrid _buffGrid = new();
     private readonly PropertyGrid _facetGrid = new();
     private readonly PropertyGrid _fineTerrainGrid = new();
     private readonly ListBox _compositeList = new();
     private readonly PropertyGrid _compositeGrid = new();
     private readonly ListBox _collisionShapeList = new();
     private readonly PropertyGrid _collisionShapeGrid = new();
+    private readonly ComboBox _buffTypePicker = new();
+    private readonly ComboBox _buffTeamPicker = new();
     private readonly Label _statusLabel = new();
     private readonly Label _currentLabel = new();
     private readonly MapPresetPreviewControl _editPreview = new();
     private readonly EmbeddedSimulatorPreviewHost _gpuPreview = new();
     private readonly TabControl _tabControl = new();
+    private TabPage? _buffEditorTab;
 
     private MapPresetEditorSettings? _document;
     private FineTerrainAnnotationDocument? _activeFineTerrainAnnotation;
@@ -171,11 +176,13 @@ internal sealed class TerrainEditorForm : Form
         _mapGrid.Dock = DockStyle.Fill;
         _surfaceGrid.Dock = DockStyle.Fill;
         _facilityGrid.Dock = DockStyle.Fill;
+        _buffGrid.Dock = DockStyle.Fill;
         _facetGrid.Dock = DockStyle.Fill;
         _fineTerrainGrid.Dock = DockStyle.Fill;
         _mapGrid.ToolbarVisible = false;
         _surfaceGrid.ToolbarVisible = false;
         _facilityGrid.ToolbarVisible = false;
+        _buffGrid.ToolbarVisible = false;
         _facetGrid.ToolbarVisible = false;
         _fineTerrainGrid.ToolbarVisible = false;
         _compositeGrid.ToolbarVisible = false;
@@ -183,6 +190,7 @@ internal sealed class TerrainEditorForm : Form
         _mapGrid.HelpVisible = true;
         _surfaceGrid.HelpVisible = true;
         _facilityGrid.HelpVisible = true;
+        _buffGrid.HelpVisible = true;
         _facetGrid.HelpVisible = true;
         _fineTerrainGrid.HelpVisible = true;
         _compositeGrid.HelpVisible = true;
@@ -190,6 +198,7 @@ internal sealed class TerrainEditorForm : Form
         _mapGrid.PropertyValueChanged += (_, _) => OnDocumentModified();
         _surfaceGrid.PropertyValueChanged += (_, _) => OnDocumentModified();
         _facilityGrid.PropertyValueChanged += (_, _) => OnDocumentModified();
+        _buffGrid.PropertyValueChanged += (_, _) => OnDocumentModified();
         _facetGrid.PropertyValueChanged += (_, _) => OnDocumentModified();
         _collisionShapeGrid.PropertyValueChanged += (_, _) => SaveActiveFineTerrainAnnotation();
         _compositeGrid.PropertyValueChanged += (_, _) =>
@@ -206,9 +215,16 @@ internal sealed class TerrainEditorForm : Form
         _tabControl.TabPages.Add(new TabPage("精细地图") { Controls = { BuildFineTerrainPanel() } });
         _tabControl.TabPages.Add(new TabPage("碰撞组件") { Controls = { BuildCollisionShapePanel() } });
 
+        _buffEditorTab = new TabPage("Buff Editor") { Controls = { BuildBuffEditorPanel() } };
+        _tabControl.TabPages.Add(_buffEditorTab);
+
         _facilityList.Dock = DockStyle.Fill;
         _facilityList.DisplayMember = nameof(FacilityRegionEditorModel.Id);
         _facilityList.SelectedIndexChanged += (_, _) => BindSelectedFacility();
+
+        _buffList.Dock = DockStyle.Fill;
+        _buffList.DisplayMember = nameof(FacilityRegionEditorModel.Id);
+        _buffList.SelectedIndexChanged += (_, _) => BindSelectedBuff();
 
         _facetList.Dock = DockStyle.Fill;
         _facetList.DisplayMember = nameof(TerrainFacetEditorModel.Id);
@@ -288,6 +304,58 @@ internal sealed class TerrainEditorForm : Form
 
         layout.Controls.Add(toolbar, 0, 0);
         layout.Controls.Add(BuildListAndGrid(_collisionShapeList, _collisionShapeGrid, "局内可见 / 可碰撞组件"), 0, 1);
+        return layout;
+    }
+
+    private Control BuildBuffEditorPanel()
+    {
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+        };
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        _buffTypePicker.DropDownStyle = ComboBoxStyle.DropDownList;
+        _buffTypePicker.Width = 180;
+        _buffTypePicker.Items.Clear();
+        _buffTypePicker.Items.AddRange(new object[]
+        {
+            "buff_supply",
+            "buff_fort",
+            "buff_base",
+            "buff_outpost",
+            "buff_trapezoid_highland",
+            "buff_central_highland",
+            "buff_hero_deployment",
+            "debuff_zone",
+        });
+        _buffTypePicker.SelectedIndex = 0;
+
+        _buffTeamPicker.DropDownStyle = ComboBoxStyle.DropDownList;
+        _buffTeamPicker.Width = 92;
+        _buffTeamPicker.Items.Clear();
+        _buffTeamPicker.Items.AddRange(new object[] { "neutral", "red", "blue" });
+        _buffTeamPicker.SelectedIndex = 0;
+
+        var toolbar = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            Padding = new Padding(0, 5, 0, 0),
+        };
+        toolbar.Controls.Add(new Label { Text = "Type", Width = 34, TextAlign = ContentAlignment.MiddleLeft });
+        toolbar.Controls.Add(_buffTypePicker);
+        toolbar.Controls.Add(new Label { Text = "Team", Width = 42, TextAlign = ContentAlignment.MiddleLeft });
+        toolbar.Controls.Add(_buffTeamPicker);
+        toolbar.Controls.Add(CreateButton("Draw Buff", (_, _) => AddBuffFromSelection(), 92));
+        toolbar.Controls.Add(CreateButton("Default Buff", (_, _) => AddDefaultBuff(), 96));
+
+        layout.Controls.Add(toolbar, 0, 0);
+        layout.Controls.Add(BuildListAndGrid(_buffList, _buffGrid, "Buff / Debuff regions"), 0, 1);
         return layout;
     }
 
@@ -475,6 +543,7 @@ internal sealed class TerrainEditorForm : Form
             BindFineTerrainMetadata();
             ReloadFineTerrainAnnotation();
             RebindFacilityList();
+            RebindBuffList();
             RebindFacetList();
             _editPreview.MarkSceneDirty();
             _gpuPreview.QueueReload();
@@ -498,6 +567,30 @@ internal sealed class TerrainEditorForm : Form
         _facilityList.DisplayMember = nameof(FacilityRegionEditorModel.Id);
         _editPreview.SelectedFacilityId = _facilityList.SelectedItem is FacilityRegionEditorModel facility ? facility.Id : null;
         _editPreview.Invalidate();
+    }
+
+    private void RebindBuffList()
+    {
+        string? selectedId = _buffList.SelectedItem is FacilityRegionEditorModel selected
+            ? selected.Id
+            : null;
+        _buffList.DataSource = null;
+        _buffGrid.SelectedObject = null;
+        if (_document is null)
+        {
+            return;
+        }
+
+        List<FacilityRegionEditorModel> buffs = _document.Facilities
+            .Where(IsBuffFacility)
+            .ToList();
+        _buffList.DataSource = buffs;
+        _buffList.DisplayMember = nameof(FacilityRegionEditorModel.Id);
+        if (!string.IsNullOrWhiteSpace(selectedId))
+        {
+            _buffList.SelectedItem = buffs.FirstOrDefault(candidate =>
+                string.Equals(candidate.Id, selectedId, StringComparison.OrdinalIgnoreCase));
+        }
     }
 
     private void RebindFacetList()
@@ -568,6 +661,20 @@ internal sealed class TerrainEditorForm : Form
         _editPreview.Invalidate();
     }
 
+    private void BindSelectedBuff()
+    {
+        if (_buffList.SelectedItem is not FacilityRegionEditorModel facility)
+        {
+            return;
+        }
+
+        _buffGrid.SelectedObject = facility;
+        _facilityList.SelectedItem = facility;
+        _editPreview.SelectedFacilityId = facility.Id;
+        _editPreview.SelectedFacetId = null;
+        _editPreview.Invalidate();
+    }
+
     private void BindSelectedFacet()
     {
         if (_facetList.SelectedItem is not TerrainFacetEditorModel facet)
@@ -626,8 +733,98 @@ internal sealed class TerrainEditorForm : Form
         _document.Facilities.Add(facility);
         RebindFacilityList();
         _facilityList.SelectedItem = facility;
-        _tabControl.SelectedIndex = 2;
+        if (IsBuffFacility(facility) && _buffEditorTab is not null)
+        {
+            _tabControl.SelectedTab = _buffEditorTab;
+        }
+        else
+        {
+            _tabControl.SelectedIndex = 2;
+        }
         _statusLabel.Text = $"已新增 {facility.Id}。";
+    }
+
+    private void AddDefaultBuff()
+    {
+        if (_document is null)
+        {
+            return;
+        }
+
+        float width = Math.Min(96f, Math.Max(24f, (float)_document.Width * 0.10f));
+        float height = Math.Min(72f, Math.Max(24f, (float)_document.Height * 0.10f));
+        float left = Math.Max(0f, ((float)_document.Width - width) * 0.5f);
+        float top = Math.Max(0f, ((float)_document.Height - height) * 0.5f);
+        AddBuffRegion(RectangleF.FromLTRB(left, top, left + width, top + height));
+    }
+
+    private void AddBuffFromSelection()
+    {
+        if (_document is null)
+        {
+            return;
+        }
+
+        if (_editPreview.MapSelection is not RectangleF selection
+            || selection.Width < 2f
+            || selection.Height < 2f)
+        {
+            AddDefaultBuff();
+            return;
+        }
+
+        AddBuffRegion(selection);
+    }
+
+    private void AddBuffRegion(RectangleF selection)
+    {
+        if (_document is null)
+        {
+            return;
+        }
+
+        string type = _buffTypePicker.SelectedItem?.ToString() ?? "buff_supply";
+        string team = _buffTeamPicker.SelectedItem?.ToString() ?? "neutral";
+        int nextIndex = _document.Facilities.Count(IsBuffFacility) + 1;
+        string idPrefix = type.Replace('-', '_').Replace(' ', '_');
+        var facility = new FacilityRegionEditorModel
+        {
+            Id = $"{idPrefix}_{nextIndex}",
+            Type = type,
+            Team = team,
+            Shape = "rect",
+            X1 = Math.Clamp(selection.Left, 0f, Math.Max(0f, (float)_document.Width)),
+            Y1 = Math.Clamp(selection.Top, 0f, Math.Max(0f, (float)_document.Height)),
+            X2 = Math.Clamp(selection.Right, 0f, Math.Max(0f, (float)_document.Width)),
+            Y2 = Math.Clamp(selection.Bottom, 0f, Math.Max(0f, (float)_document.Height)),
+            HeightM = 0.08,
+            Thickness = 12.0,
+            VolumeShape = "box",
+            BlocksMovement = false,
+        };
+        facility.CenterX = (facility.X1 + facility.X2) * 0.5;
+        facility.CenterY = (facility.Y1 + facility.Y2) * 0.5;
+        facility.CenterZM = 0.04;
+        facility.SizeX = Math.Max(0.01, Math.Abs(facility.X2 - facility.X1));
+        facility.SizeY = Math.Max(0.01, Math.Abs(facility.Y2 - facility.Y1));
+        facility.SizeZM = 0.08;
+        facility.CollisionHeightM = 0.08;
+
+        _document.Facilities.Add(facility);
+        RebindFacilityList();
+        RebindBuffList();
+        _facilityList.SelectedItem = facility;
+        _buffList.SelectedItem = (_buffList.DataSource as IEnumerable<FacilityRegionEditorModel>)?
+            .FirstOrDefault(candidate => string.Equals(candidate.Id, facility.Id, StringComparison.OrdinalIgnoreCase));
+        if (_buffEditorTab is not null)
+        {
+            _tabControl.SelectedTab = _buffEditorTab;
+        }
+
+        _editPreview.SelectedFacilityId = facility.Id;
+        _editPreview.SelectedFacetId = null;
+        _editPreview.MarkSceneDirty();
+        _statusLabel.Text = $"Buff region added: {facility.Id}. Save the map to use it in match.";
     }
 
     private void AddStaticMeshShape(string shapeType)
@@ -916,7 +1113,14 @@ internal sealed class TerrainEditorForm : Form
         _document.Facilities.Add(facility);
         RebindFacilityList();
         _facilityList.SelectedItem = facility;
-        _tabControl.SelectedIndex = 2;
+        if (IsBuffFacility(facility) && _buffEditorTab is not null)
+        {
+            _tabControl.SelectedTab = _buffEditorTab;
+        }
+        else
+        {
+            _tabControl.SelectedIndex = 2;
+        }
         _statusLabel.Text = result.AnnotationLoaded
             ? $"已根据框选区域创建整体设施 {facility.Id}，关联 {result.CompositeCount} 个组合体、{result.ComponentCount} 个组件。"
             : $"已根据框选区域创建整体设施 {facility.Id}。当前未找到精细地图注解，先按空间区域保存。";
@@ -972,6 +1176,15 @@ internal sealed class TerrainEditorForm : Form
 
         bounds = RectangleF.FromLTRB(left, top, right, bottom);
         return bounds.Width >= 0.01f || bounds.Height >= 0.01f;
+    }
+
+    private static bool IsBuffFacility(FacilityRegionEditorModel facility)
+    {
+        string type = facility.Type ?? string.Empty;
+        return type.Contains("buff", StringComparison.OrdinalIgnoreCase)
+            || type.Contains("debuff", StringComparison.OrdinalIgnoreCase)
+            || type.Equals("supply", StringComparison.OrdinalIgnoreCase)
+            || type.Equals("fort", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool TryResolvePointBounds(IReadOnlyList<Simulator.Core.Map.Point2D> points, out RectangleF bounds)
@@ -1116,6 +1329,7 @@ internal sealed class TerrainEditorForm : Form
     {
         _editPreview.MarkSceneDirty();
         _facilityList.Refresh();
+        _buffList.Refresh();
         _facetList.Refresh();
         _collisionShapeList.Refresh();
         if (_facilityGrid.SelectedObject is FacilityRegionEditorModel facility)
@@ -1256,7 +1470,14 @@ internal sealed class TerrainEditorForm : Form
             if (facility is not null)
             {
                 _facilityList.SelectedItem = facility;
-                _tabControl.SelectedIndex = 2;
+                if (IsBuffFacility(facility) && _buffEditorTab is not null)
+                {
+                    _tabControl.SelectedTab = _buffEditorTab;
+                }
+                else
+                {
+                    _tabControl.SelectedIndex = 2;
+                }
                 _statusLabel.Text = $"正在俯视图中编辑增益/互动区域 {facility.Id}。";
             }
 

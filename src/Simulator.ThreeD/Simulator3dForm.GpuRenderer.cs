@@ -1849,7 +1849,7 @@ internal sealed partial class Simulator3dForm
         {
             if (CopyGpuHeroLobSubviewTexture(sourceRect, ClientSize, grayscale))
             {
-                glClearColor(0f, 0f, 0f, 1f);
+                glClearColor(1f, 1f, 1f, 1f);
                 glClear(GlColorBufferBit | GlDepthBufferBit);
                 PresentGpuHeroLobSubviewCached(viewport);
             }
@@ -2341,7 +2341,7 @@ internal sealed partial class Simulator3dForm
         try
         {
             glViewport(0, 0, width, height);
-            glClearColor(0.030f, 0.037f, 0.050f, 1f);
+            glClearColor(1f, 1f, 1f, 1f);
             glClear(GlColorBufferBit | GlDepthBufferBit);
             glEnable(GlDepthTest);
             glEnable(GlBlend);
@@ -2487,7 +2487,7 @@ internal sealed partial class Simulator3dForm
         try
         {
             glViewport(0, 0, width, height);
-            glClearColor(0.030f, 0.037f, 0.050f, 1f);
+            glClearColor(1f, 1f, 1f, 1f);
             glClear(GlColorBufferBit | GlDepthBufferBit);
             glEnable(GlDepthTest);
             glEnable(GlBlend);
@@ -2608,7 +2608,7 @@ internal sealed partial class Simulator3dForm
         {
             _glBindFramebuffer(GlFramebuffer, _gpuSceneFramebuffer);
             glViewport(0, 0, width, height);
-            glClearColor(0.080f, 0.095f, 0.118f, 1f);
+            glClearColor(1f, 1f, 1f, 1f);
             glClear(GlColorBufferBit | GlDepthBufferBit);
             glEnable(GlDepthTest);
             glEnable(GlBlend);
@@ -2727,7 +2727,7 @@ internal sealed partial class Simulator3dForm
         {
             _glBindFramebuffer(GlFramebuffer, _gpuSceneFramebuffer);
             glViewport(0, 0, width, height);
-            glClearColor(0.035f, 0.042f, 0.055f, 1f);
+            glClearColor(1f, 1f, 1f, 1f);
             glClear(GlColorBufferBit | GlDepthBufferBit);
             glEnable(GlDepthTest);
             glEnable(GlBlend);

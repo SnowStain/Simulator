@@ -478,7 +478,6 @@ internal sealed partial class Simulator3dForm : Form
     private readonly Dictionary<string, EntityRenderDecisionCache> _entityRenderDecisionCache = new(StringComparer.OrdinalIgnoreCase);
     private string? _selectedBuffSnapshotEntityId;
     private string _facilityDrawOrderSignature = string.Empty;
-    private DriveTelemetryForm? _driveTelemetryForm;
     private Icon? _windowIcon;
     private Bitmap? _cachedTerrainLayerBitmap;
     private Bitmap? _cachedStaticStructureLayerBitmap;
@@ -1032,7 +1031,6 @@ internal sealed partial class Simulator3dForm : Form
             _lanSession?.Dispose();
             _lanRoomDiscovery?.Dispose();
             DisposeBackgroundVideo();
-            _driveTelemetryForm?.Dispose();
             _cachedTerrainLayerBitmap?.Dispose();
             _cachedStaticStructureLayerBitmap?.Dispose();
             _cpuProjectileLayerGraphics?.Dispose();
@@ -1084,8 +1082,16 @@ internal sealed partial class Simulator3dForm : Form
             && allowGpuScene;
         if (!gpuSceneAvailable)
         {
-            graphics.Clear(BackColor);
-            DrawBackground(graphics);
+            graphics.Clear(_appState == SimulatorAppState.InMatch ? Color.White : BackColor);
+            if (_appState == SimulatorAppState.InMatch)
+            {
+                using var brush = new SolidBrush(Color.White);
+                graphics.FillRectangle(brush, ClientRectangle);
+            }
+            else
+            {
+                DrawBackground(graphics);
+            }
         }
         switch (_appState)
         {
@@ -11158,26 +11164,26 @@ internal sealed partial class Simulator3dForm : Form
                 OpenMapComponentTestWindow();
                 break;
             case "menu_open_appearance_editor":
-                OpenEditorDialog(new AppearanceEditorForm());
+                ReportOpenTkEditorOnly("外观编辑器");
                 break;
             case "menu_open_terrain_editor":
                 LoadLargeTerrainInProcessLauncher.OpenTerrainEditorAsync(_host.ActiveMapPreset);
                 break;
             case "menu_open_rule_editor":
-                OpenEditorDialog(new RuleEditorForm());
+                ReportOpenTkEditorOnly("规则编辑器");
                 break;
             case "menu_open_lighting_editor":
-                OpenEditorDialog(new LightingEditorForm(_host));
+                ReportOpenTkEditorOnly("光照编辑器");
                 break;
             case "menu_toggle_lighting":
                 _host.ToggleLightingEnabled();
                 Invalidate();
                 break;
             case "menu_open_behavior_editor":
-                OpenEditorDialog(new BehaviorEditorForm());
+                ReportOpenTkEditorOnly("行为编辑器");
                 break;
             case "menu_open_functional_editor":
-                OpenEditorDialog(new FunctionalEditorForm());
+                ReportOpenTkEditorOnly("功能编辑器");
                 break;
             case "menu_open_decision_deployment":
                 LaunchDecisionDeploymentProgram();
@@ -12535,6 +12541,13 @@ internal sealed partial class Simulator3dForm : Form
         Invalidate();
     }
 
+    private void ReportOpenTkEditorOnly(string editorName)
+    {
+        _lanStatusLine = $"{editorName} 已从主界面切换为 OpenTK-only 路径；请使用地形编辑器或后续 OpenTK 工具入口。";
+        InvalidateGpuOverlayLayer();
+        Invalidate();
+    }
+
     private void LaunchPythonEditor(string scriptName)
     {
         string root = _host.ProjectRootPath;
@@ -12635,23 +12648,7 @@ internal sealed partial class Simulator3dForm : Form
 
     private void ToggleDriveTelemetryWindow()
     {
-        if (_driveTelemetryForm is not null && !_driveTelemetryForm.IsDisposed)
-        {
-            if (_driveTelemetryForm.Visible)
-            {
-                _driveTelemetryForm.Close();
-            }
-            else
-            {
-                _driveTelemetryForm.Show(this);
-            }
-
-            return;
-        }
-
-        _driveTelemetryForm = new DriveTelemetryForm(_host);
-        _driveTelemetryForm.FormClosed += (_, _) => _driveTelemetryForm = null;
-        _driveTelemetryForm.Show(this);
+        ReportOpenTkEditorOnly("驱动遥测窗口");
     }
 
     private void DrawPanel(Graphics graphics, Rectangle rect, int alpha = 152)
@@ -12938,24 +12935,10 @@ internal sealed partial class Simulator3dForm : Form
 
     private void SpawnPinnedSpectatorWindow()
     {
-        Simulator3dOptions options = new()
-        {
-            MapPreset = _host.ActiveMapPreset,
-            RendererMode = _host.ActiveRendererMode,
-            MatchMode = _host.MatchMode,
-            DeltaTimeSec = _host.DeltaTimeSec,
-            SelectedTeam = _host.SelectedTeam,
-            SelectedEntityId = _host.SelectedEntity?.Id,
-            StartInMatch = true,
-        };
-        var spectator = new Simulator3dForm(_host, options, sharedHostSimulation: true, externallyDrivenCompatibilityMode: false)
-        {
-            Text = "RM ARTINX A-Soul模拟器 - Spectator",
-            StartPosition = FormStartPosition.Manual,
-            Location = new Point(Location.X + 48, Location.Y + 48),
-        };
-        spectator.ConfigurePinnedSpectatorCamera(_observerPositionM, _observerYawRad, _observerPitchRad);
-        spectator.Show(this);
+        _observerPinned = true;
+        _followSelection = false;
+        _firstPersonView = false;
+        ReportOpenTkEditorOnly("观察者独立窗口");
     }
 
     private static float WrapAngleRadians(float angle)
