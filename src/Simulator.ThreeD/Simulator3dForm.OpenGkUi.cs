@@ -2001,14 +2001,22 @@ internal sealed partial class Simulator3dForm
     private void DrawOpenGkMainHeader(Graphics graphics)
     {
         ResolveOpenGkMainMenuLayout(out Rectangle headerRect, out _, out _, out _, out _, out _, out _);
+        using GraphicsPath backdropPath = CreateRoundedRectangle(headerRect, 5);
+        using var backdropFill = new SolidBrush(Color.FromArgb(168, 2, 7, 13));
+        using var backdropBorder = new Pen(Color.FromArgb(92, 178, 196, 216), 1f);
+        graphics.FillPath(backdropFill, backdropPath);
+        graphics.DrawPath(backdropBorder, backdropPath);
+
         using var titleBrush = new SolidBrush(Color.FromArgb(244, 247, 250));
         using var subBrush = new SolidBrush(Color.FromArgb(190, 204, 216, 226));
         using var accent = new SolidBrush(Color.FromArgb(220, 232, 194, 82));
-        graphics.FillRectangle(accent, headerRect.X, headerRect.Y + 4, 132, 4);
-        TextRenderer.DrawText(graphics, "\u6218\u672f\u6a21\u62df\u5e73\u53f0", _menuEyebrowFont, new Rectangle(headerRect.X, headerRect.Y + 16, headerRect.Width, 18), Color.FromArgb(214, 224, 232, 238), TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
-        TextRenderer.DrawText(graphics, "ARTINX A-SOUL", _menuTitleFont, new Rectangle(headerRect.X, headerRect.Y + 34, headerRect.Width, 34), titleBrush.Color, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
-        TextRenderer.DrawText(graphics, "OpenGK \u4e3b\u754c\u9762  /  RMUC 2026", _menuSubtitleFont, new Rectangle(headerRect.X, headerRect.Y + 70, headerRect.Width, 20), subBrush.Color, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
-        TextRenderer.DrawText(graphics, "OpenGL \u573a\u5730\u4e0e\u673a\u4eba\u9884\u89c8\u5df2\u5e38\u9a7b\u540e\u53f0", _menuEyebrowFont, new Rectangle(headerRect.X, headerRect.Y + 90, headerRect.Width + 36, 18), Color.FromArgb(176, 196, 208, 220), TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        int textX = headerRect.X + 12;
+        int textWidth = Math.Max(80, headerRect.Width - 24);
+        graphics.FillRectangle(accent, textX, headerRect.Y + 8, Math.Min(132, textWidth), 4);
+        TextRenderer.DrawText(graphics, "\u6218\u672f\u6a21\u62df\u5e73\u53f0", _menuEyebrowFont, new Rectangle(textX, headerRect.Y + 20, textWidth, 18), Color.FromArgb(214, 224, 232, 238), TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        TextRenderer.DrawText(graphics, "ARTINX A-SOUL", _menuTitleFont, new Rectangle(textX, headerRect.Y + 38, textWidth, 34), titleBrush.Color, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        TextRenderer.DrawText(graphics, "OpenGK \u4e3b\u754c\u9762  /  RMUC 2026", _menuSubtitleFont, new Rectangle(textX, headerRect.Y + 74, textWidth, 20), subBrush.Color, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        TextRenderer.DrawText(graphics, "OpenGL \u573a\u5730\u4e0e\u673a\u4eba\u9884\u89c8\u5df2\u5e38\u9a7b\u540e\u53f0", _menuEyebrowFont, new Rectangle(textX, headerRect.Y + 96, textWidth, 18), Color.FromArgb(176, 196, 208, 220), TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
     }
 
     private void DrawOpenGkMainActions(Graphics graphics)
@@ -2041,13 +2049,19 @@ internal sealed partial class Simulator3dForm
 
     private void ResolveOpenGkMainMenuLayout(out Rectangle headerRect, out int x, out int y, out int width, out int h, out int smallH, out int gap)
     {
-        x = 36;
-        width = Math.Clamp(ClientSize.Width / 4, 324, 392);
-        h = ClientSize.Height < 760 ? 40 : 46;
-        smallH = ClientSize.Height < 760 ? 32 : 36;
-        gap = ClientSize.Height < 760 ? 7 : 9;
-        headerRect = new Rectangle(x, 26, Math.Min(width + 92, 520), 116);
-        y = headerRect.Bottom + 22;
+        int viewWidth = Math.Max(1, ClientSize.Width);
+        int viewHeight = Math.Max(1, ClientSize.Height);
+        x = Math.Clamp(viewWidth / 16, 12, 36);
+        width = Math.Clamp(viewWidth / 4, 324, 392);
+        width = Math.Min(width, Math.Max(180, viewWidth - x * 2));
+        h = viewHeight < 760 ? 40 : 46;
+        smallH = viewHeight < 760 ? 32 : 36;
+        gap = viewHeight < 760 ? 7 : 9;
+        int headerWidth = Math.Min(width + 104, Math.Max(180, viewWidth - x * 2));
+        int headerHeight = viewHeight < 560 ? 124 : 132;
+        int headerY = Math.Clamp(viewHeight / 28, 10, 26);
+        headerRect = new Rectangle(x, headerY, headerWidth, headerHeight);
+        y = headerRect.Bottom + Math.Clamp(viewHeight / 26, 16, 26);
     }
 
     private void DrawOpenGkMenuButton(Graphics graphics, Rectangle rect, string label, string action, bool active, Color accentColor, float reveal, bool primary = false)

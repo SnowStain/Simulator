@@ -325,8 +325,9 @@ internal static class EnergyMechanismGeometry
             return animationTimeSec * smallSpeedRadPerSec * direction;
         }
 
-        bool largeActive = string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
-            && teamState.EnergyLargeMechanismActive;
+        bool largeActive = teamState.EnergyLargeMechanismActive
+            && (string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(teamState.EnergyMechanismState, "activated", StringComparison.OrdinalIgnoreCase));
         float safeTime = Math.Max(0f, animationTimeSec - (float)teamState.EnergyStateStartTimeSec);
         float basePhase = Math.Max(0f, (float)teamState.EnergyStateStartTimeSec) * smallSpeedRadPerSec;
         if (!largeActive)

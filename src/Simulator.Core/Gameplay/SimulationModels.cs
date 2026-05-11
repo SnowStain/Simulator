@@ -13,6 +13,17 @@ public readonly record struct ProjectileObstacleHit(
     bool SupportsRicochet,
     string Kind);
 
+public readonly record struct SimulationProjectileImpactPoint(
+    double TimeSec,
+    string ProjectileId,
+    string ShooterId,
+    string Team,
+    string AmmoType,
+    double X,
+    double Y,
+    double HeightM,
+    string Kind);
+
 public sealed class SimulationProjectile
 {
     public string Id { get; init; } = Guid.NewGuid().ToString("N");
@@ -634,6 +645,14 @@ public sealed class SimulationEntity
 
     public double Health { get; set; } = 100.0;
 
+    public string? LastDamageSourceId { get; set; }
+
+    public double LastDamageSourceX { get; set; }
+
+    public double LastDamageSourceY { get; set; }
+
+    public double LastDamageTimeSec { get; set; } = -999.0;
+
     public double DestroyedTimeSec { get; set; } = double.NegativeInfinity;
 
     public double MaxPower { get; set; } = 60.0;
@@ -902,6 +921,9 @@ public sealed class SimulationWorldState
     public IList<SimulationEntity> Entities { get; } = new List<SimulationEntity>();
 
     public IList<SimulationProjectile> Projectiles { get; } = new List<SimulationProjectile>();
+
+    public IList<SimulationProjectileImpactPoint> ProjectileImpactPoints { get; } =
+        new List<SimulationProjectileImpactPoint>();
 
     public IDictionary<string, double> SurfaceLastAcceptedHitTimes { get; } =
         new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);

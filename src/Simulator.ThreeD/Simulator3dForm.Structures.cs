@@ -1330,8 +1330,8 @@ internal sealed partial class Simulator3dForm
 
         Color hot = ResolveEnergyMechanismPendingDiskColor(activeColor);
         float scale = ResolveEnergyPendingPatternRadius(diskRadius) / 0.300f;
-        float ringWidth = 0.040f * scale;
-        foreach (float outerRadius in new[] { 0.070f * scale, 0.150f * scale, 0.270f * scale })
+        float ringWidth = 0.030f * scale;
+        foreach (float outerRadius in new[] { 0.068f * scale, 0.148f * scale, 0.266f * scale })
         {
             DrawEnergyMechanismAnnulus(
                 graphics,
@@ -1344,10 +1344,10 @@ internal sealed partial class Simulator3dForm
                 64);
         }
 
-        float spokeOuterRadius = 0.300f * scale;
-        float spokeInnerRadius = MathF.Max(0.0f, spokeOuterRadius - 0.200f * scale);
-        float spokeOuterHalfWidth = 0.0350f * scale;
-        float spokeInnerHalfWidth = 0.0100f * scale;
+        float spokeOuterRadius = 0.286f * scale;
+        float spokeInnerRadius = 0.058f * scale;
+        float spokeOuterHalfWidth = 0.0250f * scale;
+        float spokeInnerHalfWidth = 0.0080f * scale;
         Vector3 faceCenter = center + normal * 0.007f;
         for (int index = 0; index < 4; index++)
         {

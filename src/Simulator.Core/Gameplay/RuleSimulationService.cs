@@ -70,6 +70,10 @@ public sealed class RuleSimulationService
     private const double SurfaceAcceptedHitIntervalEnergySec = 0.0;
     private const double GroundRollingDeleteSpeedMps = 1.25;
     private const float RicochetSpeedRetention = 0.836660f;
+    private const float GroundRicochetTangentialRetention17 = 0.54f;
+    private const float GroundRicochetTangentialRetention42 = 0.48f;
+    private const float GroundRicochetNormalRetention17 = 0.32f;
+    private const float GroundRicochetNormalRetention42 = 0.38f;
     private const double EnergyAutoAimFireIntervalSec = 1.0 / 25.0;
 
     private const double RespawnRecoveryZoneLockSec = 3.0;
@@ -95,6 +99,36 @@ public sealed class RuleSimulationService
             => string.Equals(shooterTeam, "red", StringComparison.OrdinalIgnoreCase)
                 ? BlueTeamTargets
                 : RedTeamTargets;
+    }
+
+    private static void RegisterProjectileImpactPoint(
+        SimulationWorldState world,
+        SimulationProjectile projectile,
+        double x,
+        double y,
+        double heightM,
+        string kind)
+    {
+        if (!double.IsFinite(x) || !double.IsFinite(y) || !double.IsFinite(heightM))
+        {
+            return;
+        }
+
+        world.ProjectileImpactPoints.Add(new SimulationProjectileImpactPoint(
+            world.GameTimeSec,
+            projectile.Id,
+            projectile.ShooterId,
+            projectile.Team,
+            projectile.AmmoType,
+            x,
+            y,
+            heightM,
+            string.IsNullOrWhiteSpace(kind) ? "impact" : kind));
+
+        while (world.ProjectileImpactPoints.Count > 160)
+        {
+            world.ProjectileImpactPoints.RemoveAt(0);
+        }
     }
 
     private readonly RuleSet _rules;
@@ -1120,6 +1154,7 @@ public sealed class RuleSimulationService
                             report,
                             out bool energyObstacleProjectileAlive))
                     {
+                        RegisterProjectileImpactPoint(world, projectile, blockingHit.X, blockingHit.Y, blockingHit.HeightM, blockingHit.Kind);
                         if (!energyObstacleProjectileAlive)
                         {
                             world.Projectiles.RemoveAt(index);
@@ -1128,7 +1163,7 @@ public sealed class RuleSimulationService
                         continue;
                     }
 
-                    if (TryApplyRicochet(projectile, blockingHit, world.MetersPerWorldUnit))
+                    if (TryApplyRicochet(world, projectile, blockingHit, world.MetersPerWorldUnit))
                     {
                         continue;
                     }
@@ -1144,6 +1179,7 @@ public sealed class RuleSimulationService
                 Vector3 hitPointM = new((float)(hitX * metersPerWorldUnit), (float)hitHeightM, (float)(hitY * metersPerWorldUnit));
                 if (TryHandleEnergyMechanismHit(world, shooter, projectile, hitTarget, hitPlate, hitPointM, hitX, hitY, hitHeightM, hitSegmentT, metersPerWorldUnit, report, out bool energyProjectileAlive))
                 {
+                    RegisterProjectileImpactPoint(world, projectile, hitX, hitY, hitHeightM, "energy_mechanism");
                     if (!energyProjectileAlive)
                     {
                         world.Projectiles.RemoveAt(index);
@@ -1154,7 +1190,7 @@ public sealed class RuleSimulationService
 
                 if (!CanProjectileDealArmorDamage(projectile, ResolveProjectileSpeedMps(projectile, metersPerWorldUnit)))
                 {
-                    if (TryApplyArmorRicochet(projectile, hitPlate, hitX, hitY, hitHeightM, hitSegmentT, world.MetersPerWorldUnit))
+                    if (TryApplyArmorRicochet(world, projectile, hitPlate, hitX, hitY, hitHeightM, hitSegmentT, world.MetersPerWorldUnit))
                     {
                         continue;
                     }
@@ -1165,18 +1201,7 @@ public sealed class RuleSimulationService
 
                 if (!TryRegisterSurfaceAcceptedHit(world, projectile, hitTarget, hitPlate))
                 {
-                    if (TryApplyArmorRicochet(projectile, hitPlate, hitX, hitY, hitHeightM, hitSegmentT, world.MetersPerWorldUnit))
-                    {
-                        continue;
-                    }
-
-                    world.Projectiles.RemoveAt(index);
-                    continue;
-                }
-
-                if (IsBaseProtectedByLivingOutpost(world, hitTarget))
-                {
-                    if (TryApplyArmorRicochet(projectile, hitPlate, hitX, hitY, hitHeightM, hitSegmentT, world.MetersPerWorldUnit))
+                    if (TryApplyArmorRicochet(world, projectile, hitPlate, hitX, hitY, hitHeightM, hitSegmentT, world.MetersPerWorldUnit))
                     {
                         continue;
                     }
@@ -1187,7 +1212,7 @@ public sealed class RuleSimulationService
 
                 if (projectile.HasAppliedDamage)
                 {
-                    if (TryApplyArmorRicochet(projectile, hitPlate, hitX, hitY, hitHeightM, hitSegmentT, world.MetersPerWorldUnit))
+                    if (TryApplyArmorRicochet(world, projectile, hitPlate, hitX, hitY, hitHeightM, hitSegmentT, world.MetersPerWorldUnit))
                     {
                         continue;
                     }
@@ -1200,7 +1225,7 @@ public sealed class RuleSimulationService
                 double damage = ComputeDamage(shooter, hitTarget, hitPlate, criticalHit);
                 if (damage < MinimumEffectiveDamage)
                 {
-                    if (TryApplyArmorRicochet(projectile, hitPlate, hitX, hitY, hitHeightM, hitSegmentT, world.MetersPerWorldUnit))
+                    if (TryApplyArmorRicochet(world, projectile, hitPlate, hitX, hitY, hitHeightM, hitSegmentT, world.MetersPerWorldUnit))
                     {
                         continue;
                     }
@@ -1233,7 +1258,7 @@ public sealed class RuleSimulationService
                     damageResult is "invincible" or "base_protected",
                     damageResult,
                     hitPlate.Id));
-                if (TryApplyArmorRicochet(projectile, hitPlate, hitX, hitY, hitHeightM, hitSegmentT, world.MetersPerWorldUnit))
+                if (TryApplyArmorRicochet(world, projectile, hitPlate, hitX, hitY, hitHeightM, hitSegmentT, world.MetersPerWorldUnit))
                 {
                     continue;
                 }
@@ -1276,6 +1301,7 @@ public sealed class RuleSimulationService
                         report,
                         out bool energyObstacleProjectileAlive))
                 {
+                    RegisterProjectileImpactPoint(world, projectile, obstacleImpact.X, obstacleImpact.Y, obstacleImpact.HeightM, obstacleImpact.Kind);
                     if (!energyObstacleProjectileAlive)
                     {
                         world.Projectiles.RemoveAt(index);
@@ -1284,7 +1310,7 @@ public sealed class RuleSimulationService
                     continue;
                 }
 
-                if (TryApplyRicochet(projectile, obstacleImpact, world.MetersPerWorldUnit))
+                if (TryApplyRicochet(world, projectile, obstacleImpact, world.MetersPerWorldUnit))
                 {
                     continue;
                 }
@@ -1311,6 +1337,7 @@ public sealed class RuleSimulationService
                         (float)(projectile.X * world.MetersPerWorldUnit),
                         (float)projectile.HeightM,
                         (float)(projectile.Y * world.MetersPerWorldUnit)));
+                RegisterProjectileImpactPoint(world, projectile, projectile.X, projectile.Y, projectile.HeightM, "expired");
                 world.Projectiles.RemoveAt(index);
             }
         }
@@ -1414,11 +1441,12 @@ public sealed class RuleSimulationService
                                 report,
                                 out bool energyObstacleProjectileAlive))
                         {
+                            RegisterProjectileImpactPoint(world, projectile, blockingHit.X, blockingHit.Y, blockingHit.HeightM, blockingHit.Kind);
                             removeProjectile = !energyObstacleProjectileAlive;
                             break;
                         }
 
-                        if (TryApplyRicochet(projectile, blockingHit, metersPerWorldUnit))
+                        if (TryApplyRicochet(world, projectile, blockingHit, metersPerWorldUnit))
                         {
                             break;
                         }
@@ -1433,13 +1461,14 @@ public sealed class RuleSimulationService
                     Vector3 hitPointM = new((float)(hitX * metersPerWorldUnit), (float)hitHeightM, (float)(hitY * metersPerWorldUnit));
                     if (TryHandleEnergyMechanismHit(world, shooter, projectile, hitTarget, hitPlate, hitPointM, hitX, hitY, hitHeightM, hitSegmentT, metersPerWorldUnit, report, out bool energyProjectileAlive))
                     {
+                        RegisterProjectileImpactPoint(world, projectile, hitX, hitY, hitHeightM, "energy_mechanism");
                         removeProjectile = !energyProjectileAlive;
                         break;
                     }
 
                     if (!CanProjectileDealArmorDamage(projectile, ResolveProjectileSpeedMps(projectile, metersPerWorldUnit)))
                     {
-                        if (TryApplyArmorRicochet(projectile, hitPlate, hitX, hitY, hitHeightM, hitSegmentT, metersPerWorldUnit))
+                        if (TryApplyArmorRicochet(world, projectile, hitPlate, hitX, hitY, hitHeightM, hitSegmentT, metersPerWorldUnit))
                         {
                             break;
                         }
@@ -1450,18 +1479,7 @@ public sealed class RuleSimulationService
 
                     if (!TryRegisterSurfaceAcceptedHit(world, projectile, hitTarget, hitPlate))
                     {
-                        if (TryApplyArmorRicochet(projectile, hitPlate, hitX, hitY, hitHeightM, hitSegmentT, metersPerWorldUnit))
-                        {
-                            break;
-                        }
-
-                        removeProjectile = true;
-                        break;
-                    }
-
-                    if (IsBaseProtectedByLivingOutpost(world, hitTarget))
-                    {
-                        if (TryApplyArmorRicochet(projectile, hitPlate, hitX, hitY, hitHeightM, hitSegmentT, metersPerWorldUnit))
+                        if (TryApplyArmorRicochet(world, projectile, hitPlate, hitX, hitY, hitHeightM, hitSegmentT, metersPerWorldUnit))
                         {
                             break;
                         }
@@ -1472,7 +1490,7 @@ public sealed class RuleSimulationService
 
                     if (projectile.HasAppliedDamage)
                     {
-                        if (TryApplyArmorRicochet(projectile, hitPlate, hitX, hitY, hitHeightM, hitSegmentT, metersPerWorldUnit))
+                        if (TryApplyArmorRicochet(world, projectile, hitPlate, hitX, hitY, hitHeightM, hitSegmentT, metersPerWorldUnit))
                         {
                             break;
                         }
@@ -1485,7 +1503,7 @@ public sealed class RuleSimulationService
                     double damage = ComputeDamage(shooter, hitTarget, hitPlate, criticalHit);
                     if (damage < MinimumEffectiveDamage)
                     {
-                        if (TryApplyArmorRicochet(projectile, hitPlate, hitX, hitY, hitHeightM, hitSegmentT, metersPerWorldUnit))
+                        if (TryApplyArmorRicochet(world, projectile, hitPlate, hitX, hitY, hitHeightM, hitSegmentT, metersPerWorldUnit))
                         {
                             break;
                         }
@@ -1499,26 +1517,26 @@ public sealed class RuleSimulationService
                     double appliedDamage = ApplyDamage(world, shooter, hitTarget, damage, report, out string damageResult);
                     projectile.HasAppliedDamage = true;
                     report.HitShots++;
-                report.CombatEvents.Add(new SimulationCombatEvent(
-                    world.GameTimeSec,
-                    shooter.Id,
-                    hitTarget.Id,
-                    shooter.AmmoType,
-                    distanceM,
-                    projectile.AimHitProbability,
-                    true,
-                    appliedDamage,
-                    damageResult switch
-                    {
-                        "invincible" => $"Hit {hitPlate.Id} for 0 invincible",
-                        "base_protected" => $"Hit {hitPlate.Id} for 0 base protected",
-                        _ => $"Hit {hitPlate.Id} for {appliedDamage:0.##}",
-                    },
-                    criticalHit,
-                    damageResult is "invincible" or "base_protected",
-                    damageResult,
-                    hitPlate.Id));
-                    if (TryApplyArmorRicochet(projectile, hitPlate, hitX, hitY, hitHeightM, hitSegmentT, metersPerWorldUnit))
+                    report.CombatEvents.Add(new SimulationCombatEvent(
+                        world.GameTimeSec,
+                        shooter.Id,
+                        hitTarget.Id,
+                        shooter.AmmoType,
+                        distanceM,
+                        projectile.AimHitProbability,
+                        true,
+                        appliedDamage,
+                        damageResult switch
+                        {
+                            "invincible" => $"Hit {hitPlate.Id} for 0 invincible",
+                            "base_protected" => $"Hit {hitPlate.Id} for 0 base protected",
+                            _ => $"Hit {hitPlate.Id} for {appliedDamage:0.##}",
+                        },
+                        criticalHit,
+                        damageResult is "invincible" or "base_protected",
+                        damageResult,
+                        hitPlate.Id));
+                    if (TryApplyArmorRicochet(world, projectile, hitPlate, hitX, hitY, hitHeightM, hitSegmentT, metersPerWorldUnit))
                     {
                         break;
                     }
@@ -1561,11 +1579,12 @@ public sealed class RuleSimulationService
                             report,
                             out bool energyObstacleProjectileAlive))
                     {
+                        RegisterProjectileImpactPoint(world, projectile, obstacleImpact.X, obstacleImpact.Y, obstacleImpact.HeightM, obstacleImpact.Kind);
                         removeProjectile = !energyObstacleProjectileAlive;
                         break;
                     }
 
-                    if (TryApplyRicochet(projectile, obstacleImpact, metersPerWorldUnit))
+                    if (TryApplyRicochet(world, projectile, obstacleImpact, metersPerWorldUnit))
                     {
                         break;
                     }
@@ -1592,6 +1611,7 @@ public sealed class RuleSimulationService
                             (float)(projectile.X * metersPerWorldUnit),
                             (float)projectile.HeightM,
                             (float)(projectile.Y * metersPerWorldUnit)));
+                    RegisterProjectileImpactPoint(world, projectile, projectile.X, projectile.Y, projectile.HeightM, "expired");
                     removeProjectile = true;
                     break;
                 }
@@ -2108,6 +2128,7 @@ public sealed class RuleSimulationService
     }
 
     private bool TryApplyArmorRicochet(
+        SimulationWorldState world,
         SimulationProjectile projectile,
         ArmorPlateTarget plate,
         double hitX,
@@ -2127,14 +2148,23 @@ public sealed class RuleSimulationService
             hitSegmentT,
             SupportsRicochet: true,
             Kind: "armor_plate");
-        return TryApplyRicochet(projectile, armorHit, metersPerWorldUnit);
+        return TryApplyRicochet(world, projectile, armorHit, metersPerWorldUnit);
     }
 
     private bool TryApplyRicochet(
+        SimulationWorldState world,
         SimulationProjectile projectile,
         ProjectileObstacleHit obstacleHit,
         double metersPerWorldUnit)
     {
+        RegisterProjectileImpactPoint(
+            world,
+            projectile,
+            obstacleHit.X,
+            obstacleHit.Y,
+            obstacleHit.HeightM,
+            obstacleHit.Kind);
+
         if (!obstacleHit.SupportsRicochet)
         {
             return false;
@@ -2296,28 +2326,36 @@ public sealed class RuleSimulationService
             return false;
         }
 
-        bool rollingContact = tangentSpeed > 0.35f && normalSpeed < MathF.Max(1.60f, tangentSpeed * 0.34f);
-        float rollingRetention = rollingContact
-            ? (smallProjectile ? 0.992f : 0.996f)
-            : (smallProjectile ? 0.82f : 0.88f);
-        float bounceRetention = rollingContact
-            ? (smallProjectile ? 0.055f : 0.075f)
-            : (smallProjectile ? 0.34f : 0.42f);
+        float disturbanceA = ResolveProjectileRicochetNoise(projectile, obstacleHit, 0);
+        float disturbanceB = ResolveProjectileRicochetNoise(projectile, obstacleHit, 1);
+        float tangentialRetention = (smallProjectile ? GroundRicochetTangentialRetention17 : GroundRicochetTangentialRetention42)
+            * (0.86f + disturbanceA * 0.22f);
+        float normalRetention = (smallProjectile ? GroundRicochetNormalRetention17 : GroundRicochetNormalRetention42)
+            * (0.84f + disturbanceB * 0.30f);
         if (normal.Y < 0.82f)
         {
-            rollingRetention *= rollingContact ? 0.982f : 0.94f;
-            bounceRetention *= 0.90f;
+            tangentialRetention *= 0.82f;
+            normalRetention *= 0.86f;
         }
 
         Vector3 retainedTangent = tangentSpeed <= 1e-5f
             ? Vector3.Zero
-            : Vector3.Normalize(tangent) * tangentSpeed * rollingRetention;
-        Vector3 retainedNormal = normal * MathF.Max(0f, normalSpeed * bounceRetention - (rollingContact ? 0.025f : 0.070f));
-        Vector3 nextVelocity = retainedTangent + retainedNormal;
-        if (!rollingContact && nextVelocity.LengthSquared() > 1e-8f)
+            : Vector3.Normalize(tangent) * tangentSpeed * tangentialRetention;
+        if (retainedTangent.LengthSquared() > 1e-8f)
         {
-            nextVelocity = Vector3.Normalize(nextVelocity) * velocityMps.Length() * RicochetSpeedRetention;
+            Vector3 perturbedTangentDirection = Vector3.Normalize(retainedTangent);
+            Vector3 side = Vector3.Cross(normal, perturbedTangentDirection);
+            if (side.LengthSquared() > 1e-8f)
+            {
+                float sideImpulse = tangentSpeed * (disturbanceA - 0.5f) * (smallProjectile ? 0.18f : 0.14f);
+                retainedTangent += Vector3.Normalize(side) * sideImpulse;
+            }
         }
+
+        float minimumLiftMps = smallProjectile ? 0.82f : 1.10f;
+        float liftedNormalSpeed = MathF.Max(minimumLiftMps, normalSpeed * normalRetention + disturbanceB * (smallProjectile ? 0.58f : 0.78f));
+        Vector3 retainedNormal = normal * liftedNormalSpeed;
+        Vector3 nextVelocity = retainedTangent + retainedNormal;
 
         float nextSpeed = nextVelocity.Length();
         if (nextSpeed < GroundRollingDeleteSpeedMps
@@ -2338,12 +2376,38 @@ public sealed class RuleSimulationService
         projectile.VelocityYWorldPerSec = nextVelocity.Z / Math.Max(metersPerWorldUnit, 1e-6);
         projectile.VelocityZMps = nextVelocity.Y;
         projectile.DamageScale *= projectile.GroundRicochetCount == 0
-            ? (smallProjectile ? 0.58 : 0.54)
-            : (smallProjectile ? 0.985 : 0.990);
+            ? (smallProjectile ? 0.42 : 0.40)
+            : (smallProjectile ? 0.68 : 0.62);
         projectile.RicochetCount++;
         projectile.GroundRicochetCount++;
-        projectile.RemainingLifeSec = Math.Max(0.0, projectile.RemainingLifeSec - (rollingContact ? 0.004 : 0.020));
+        projectile.RemainingLifeSec = Math.Max(0.0, projectile.RemainingLifeSec - (smallProjectile ? 0.055 : 0.075));
         return true;
+    }
+
+    private static float ResolveProjectileRicochetNoise(
+        SimulationProjectile projectile,
+        ProjectileObstacleHit obstacleHit,
+        int channel)
+    {
+        unchecked
+        {
+            uint hash = 2166136261u;
+            foreach (char c in projectile.Id)
+            {
+                hash ^= c;
+                hash *= 16777619u;
+            }
+
+            hash ^= (uint)Math.Round(obstacleHit.X * 997.0);
+            hash *= 16777619u;
+            hash ^= (uint)Math.Round(obstacleHit.Y * 991.0);
+            hash *= 16777619u;
+            hash ^= (uint)Math.Round(obstacleHit.HeightM * 983.0);
+            hash *= 16777619u;
+            hash ^= (uint)(projectile.RicochetCount * 31 + projectile.GroundRicochetCount * 131 + channel * 8191);
+            hash *= 16777619u;
+            return (hash & 0x00FFFFFFu) / 16777215f;
+        }
     }
 
     private static float Lerp(float from, float to, float t)
@@ -2610,7 +2674,12 @@ public sealed class RuleSimulationService
             return false;
         }
 
-        if (entity.IsPlayerControlled && !entity.IsFireCommandActive)
+        bool playerEnergyAutoFire =
+            entity.IsPlayerControlled
+            && (string.Equals(entity.AutoAimTargetMode, "energy", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(entity.AutoAimTargetKind, "energy_disk", StringComparison.OrdinalIgnoreCase))
+            && (entity.AutoAimRequested || entity.AutoAimLocked);
+        if (entity.IsPlayerControlled && !entity.IsFireCommandActive && !playerEnergyAutoFire)
         {
             return false;
         }
@@ -3241,6 +3310,14 @@ public sealed class RuleSimulationService
         SimulationRunReport report,
         out string damageResult)
     {
+        if (damage > 0.0)
+        {
+            target.LastDamageSourceId = shooter.Id;
+            target.LastDamageSourceX = shooter.X;
+            target.LastDamageSourceY = shooter.Y;
+            target.LastDamageTimeSec = world.GameTimeSec;
+        }
+
         if (IsBaseProtectedByLivingOutpost(world, target))
         {
             damageResult = "base_protected";
@@ -3852,6 +3929,10 @@ public sealed class RuleSimulationService
             TestForcedDecisionId = source.TestForcedDecisionId,
             MaxHealth = source.MaxHealth,
             Health = source.Health,
+            LastDamageSourceId = source.LastDamageSourceId,
+            LastDamageSourceX = source.LastDamageSourceX,
+            LastDamageSourceY = source.LastDamageSourceY,
+            LastDamageTimeSec = source.LastDamageTimeSec,
             DestroyedTimeSec = source.DestroyedTimeSec,
             MaxPower = source.MaxPower,
             Power = source.Power,

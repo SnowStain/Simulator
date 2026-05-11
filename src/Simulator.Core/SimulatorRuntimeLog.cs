@@ -6,6 +6,19 @@ namespace Simulator.Core;
 public static class SimulatorRuntimeLog
 {
     private const int MaxQueuedLines = 4096;
+    private static readonly HashSet<string> DefaultMutedLogFiles = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "frame_pump.log",
+        "motion_control_slow.log",
+        "motion_perf.log",
+        "render_perf.log",
+        "rule_perf.log",
+        "simulation_perf.log",
+        "terrain_cache_render.log",
+        "terrain_movement_block.log",
+    };
+
+    private static readonly Lazy<bool> VerboseRuntimeLogsEnabled = new(ResolveVerboseRuntimeLogsEnabled);
     private static readonly ConcurrentQueue<(string FileName, string Line)> PendingLines = new();
     private static readonly SemaphoreSlim Signal = new(0);
     private static readonly Lazy<string> LogDirectory = new(ResolveLogDirectory);
@@ -19,6 +32,12 @@ public static class SimulatorRuntimeLog
             return;
         }
 
+        string safeFileName = Path.GetFileName(fileName);
+        if (!VerboseRuntimeLogsEnabled.Value && DefaultMutedLogFiles.Contains(safeFileName))
+        {
+            return;
+        }
+
         EnsureWorker();
         if (Interlocked.Increment(ref _pendingCount) > MaxQueuedLines)
         {
@@ -26,8 +45,16 @@ public static class SimulatorRuntimeLog
             return;
         }
 
-        PendingLines.Enqueue((Path.GetFileName(fileName), line));
+        PendingLines.Enqueue((safeFileName, line));
         Signal.Release();
+    }
+
+    private static bool ResolveVerboseRuntimeLogsEnabled()
+    {
+        string? value = Environment.GetEnvironmentVariable("ARTINX_VERBOSE_LOGS");
+        return string.Equals(value, "1", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void EnsureWorker()

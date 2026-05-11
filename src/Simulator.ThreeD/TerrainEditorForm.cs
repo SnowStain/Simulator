@@ -215,8 +215,7 @@ internal sealed class TerrainEditorForm : Form
         _tabControl.TabPages.Add(new TabPage("精细地图") { Controls = { BuildFineTerrainPanel() } });
         _tabControl.TabPages.Add(new TabPage("碰撞组件") { Controls = { BuildCollisionShapePanel() } });
 
-        _buffEditorTab = new TabPage("Buff Editor") { Controls = { BuildBuffEditorPanel() } };
-        _tabControl.TabPages.Add(_buffEditorTab);
+        _buffEditorTab = null;
 
         _facilityList.Dock = DockStyle.Fill;
         _facilityList.DisplayMember = nameof(FacilityRegionEditorModel.Id);

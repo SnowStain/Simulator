@@ -166,7 +166,9 @@ internal sealed partial class Simulator3dForm
                 : GpuThirdPersonOverlayUploadIntervalSec);
         if (mode.IsInMatch && UseOpenGkMatchHud() && !mode.IsPreview)
         {
-            uiInterval = Math.Min(uiInterval, 1.0 / 18.0);
+            // Dynamic health/energy bars are drawn as GPU primitives; the full-resolution
+            // GDI UI texture only needs labels and coarse timers, so keep it off the hot path.
+            uiInterval = Math.Max(uiInterval, 1.0 / 5.0);
         }
 
         if (mode.IsInMatch && (_pSettingsPanelOpen || _localRefereePanelOpen))

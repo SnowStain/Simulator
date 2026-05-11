@@ -868,7 +868,7 @@ internal sealed partial class Simulator3dForm
         {
             _projectionViewportRect = new Rectangle(0, 0, useSceneTexture ? sceneRenderSize.Width : clientWidth, useSceneTexture ? sceneRenderSize.Height : clientHeight);
             _projectionMatrix = useSceneTexture ? sceneProjectionMatrix : previousProjection;
-            glClearColor(1f, 1f, 1f, 1f);
+            glClearColor(0f, 0f, 0f, 1f);
             glClear(GlColorBufferBit | GlDepthBufferBit);
             glEnable(GlDepthTest);
             glEnable(GlBlend);
@@ -903,7 +903,7 @@ internal sealed partial class Simulator3dForm
 
                 if (deploymentSubviewOnly)
                 {
-                    glClearColor(1f, 1f, 1f, 1f);
+                    glClearColor(0f, 0f, 0f, 1f);
                     glClear(GlColorBufferBit | GlDepthBufferBit);
                     if (copiedDeploymentSubview)
                     {
@@ -931,6 +931,11 @@ internal sealed partial class Simulator3dForm
             else
             {
                 DrawGpuHeroLobSecondaryViewport(graphics);
+            }
+
+            if (ShouldApplyGpuDuelRespawnGrayscale())
+            {
+                PresentGpuDuelRespawnGrayscaleFrame(clientWidth, clientHeight);
             }
 
             _hasPresentedGpuFrame = true;
@@ -969,6 +974,31 @@ internal sealed partial class Simulator3dForm
             _projectionViewportRect = previousViewport;
             _projectionMatrix = previousProjection;
         }
+    }
+
+    private bool ShouldApplyGpuDuelRespawnGrayscale()
+    {
+        if (!_host.IsDuelMode)
+        {
+            return false;
+        }
+
+        Simulator3dHost.DuelMatchSnapshot snapshot = _host.GetDuelMatchSnapshot();
+        return snapshot.WaitingForNextRound
+            && !snapshot.Finished
+            && snapshot.FriendlyDestroyedLastRound;
+    }
+
+    private void PresentGpuDuelRespawnGrayscaleFrame(int clientWidth, int clientHeight)
+    {
+        Rectangle fullScreen = new(0, 0, Math.Max(1, clientWidth), Math.Max(1, clientHeight));
+        if (!CopyGpuHeroLobSubviewTexture(fullScreen, fullScreen.Size, grayscale: true))
+        {
+            return;
+        }
+
+        glClear(GlColorBufferBit);
+        PresentGpuHeroLobSubviewCached(fullScreen);
     }
 
     private void RenderGpuWorldScene(
@@ -1060,6 +1090,7 @@ internal sealed partial class Simulator3dForm
         if (!_previewOnly && !deploymentSubviewOnly)
         {
             DrawGpuProjectileTrailLines();
+            DrawGpuProjectileImpactPoints();
             DrawGpuDebugReference();
         }
     }
@@ -1849,7 +1880,7 @@ internal sealed partial class Simulator3dForm
         {
             if (CopyGpuHeroLobSubviewTexture(sourceRect, ClientSize, grayscale))
             {
-                glClearColor(1f, 1f, 1f, 1f);
+                glClearColor(0f, 0f, 0f, 1f);
                 glClear(GlColorBufferBit | GlDepthBufferBit);
                 PresentGpuHeroLobSubviewCached(viewport);
             }
@@ -2341,7 +2372,7 @@ internal sealed partial class Simulator3dForm
         try
         {
             glViewport(0, 0, width, height);
-            glClearColor(1f, 1f, 1f, 1f);
+            glClearColor(0f, 0f, 0f, 1f);
             glClear(GlColorBufferBit | GlDepthBufferBit);
             glEnable(GlDepthTest);
             glEnable(GlBlend);
@@ -2487,7 +2518,7 @@ internal sealed partial class Simulator3dForm
         try
         {
             glViewport(0, 0, width, height);
-            glClearColor(1f, 1f, 1f, 1f);
+            glClearColor(0f, 0f, 0f, 1f);
             glClear(GlColorBufferBit | GlDepthBufferBit);
             glEnable(GlDepthTest);
             glEnable(GlBlend);
@@ -2608,7 +2639,7 @@ internal sealed partial class Simulator3dForm
         {
             _glBindFramebuffer(GlFramebuffer, _gpuSceneFramebuffer);
             glViewport(0, 0, width, height);
-            glClearColor(1f, 1f, 1f, 1f);
+            glClearColor(0f, 0f, 0f, 1f);
             glClear(GlColorBufferBit | GlDepthBufferBit);
             glEnable(GlDepthTest);
             glEnable(GlBlend);
@@ -2727,7 +2758,7 @@ internal sealed partial class Simulator3dForm
         {
             _glBindFramebuffer(GlFramebuffer, _gpuSceneFramebuffer);
             glViewport(0, 0, width, height);
-            glClearColor(1f, 1f, 1f, 1f);
+            glClearColor(0f, 0f, 0f, 1f);
             glClear(GlColorBufferBit | GlDepthBufferBit);
             glEnable(GlDepthTest);
             glEnable(GlBlend);
@@ -4700,6 +4731,33 @@ internal sealed partial class Simulator3dForm
         glEnable(GlDepthTest);
     }
 
+    private void DrawGpuProjectileImpactPoints()
+    {
+        if (!_showProjectileTrails || _host.World.ProjectileImpactPoints.Count == 0)
+        {
+            return;
+        }
+
+        PruneProjectileImpactPoints();
+        if (_host.World.ProjectileImpactPoints.Count == 0)
+        {
+            return;
+        }
+
+        foreach (SimulationProjectileImpactPoint impact in _host.World.ProjectileImpactPoints)
+        {
+            Vector3 center = ToScenePoint(impact.X, impact.Y, (float)impact.HeightM) + Vector3.UnitY * 0.026f;
+            if (!IsSceneBoundsPotentiallyVisible(center, 0.08f, 0.08f))
+            {
+                continue;
+            }
+
+            bool largeRound = string.Equals(impact.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase);
+            float halfSize = largeRound ? 0.045f : 0.034f;
+            DrawGpuBox(center, halfSize, halfSize, halfSize * 1.6f, Color.FromArgb(238, 34, 138, 255));
+        }
+    }
+
     private void DrawGpuPredictedProjectileTrajectory()
     {
         if (!_showProjectileTrails || _paused)
@@ -5152,8 +5210,8 @@ internal sealed partial class Simulator3dForm
 
         Color hot = ResolveEnergyMechanismPendingDiskColor(activeColor);
         float scale = ResolveEnergyPendingPatternRadius(diskRadius) / 0.300f;
-        float ringWidth = 0.040f * scale;
-        foreach (float outerRadius in new[] { 0.070f * scale, 0.150f * scale, 0.270f * scale })
+        float ringWidth = 0.030f * scale;
+        foreach (float outerRadius in new[] { 0.068f * scale, 0.148f * scale, 0.266f * scale })
         {
             DrawGpuAnnulus(
                 center + normal * 0.006f,
@@ -5165,10 +5223,10 @@ internal sealed partial class Simulator3dForm
                 64);
         }
 
-        float spokeOuterRadius = 0.300f * scale;
-        float spokeInnerRadius = MathF.Max(0.0f, spokeOuterRadius - 0.200f * scale);
-        float spokeOuterHalfWidth = 0.0350f * scale;
-        float spokeInnerHalfWidth = 0.0100f * scale;
+        float spokeOuterRadius = 0.286f * scale;
+        float spokeInnerRadius = 0.058f * scale;
+        float spokeOuterHalfWidth = 0.0250f * scale;
+        float spokeInnerHalfWidth = 0.0080f * scale;
         Vector3 faceCenter = center + normal * 0.007f;
         for (int index = 0; index < 4; index++)
         {

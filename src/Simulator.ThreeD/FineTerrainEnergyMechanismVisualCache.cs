@@ -14,6 +14,8 @@ internal static class FineTerrainEnergyMechanismVisualCache
     private const string GlowArmKeyword = "\u5149\u81c2";
     private const string LightStripKeyword = "\u706f\u6761";
     private const string InteractiveKeyword = "\u4e92\u52a8";
+    private const string MiddleLightArmKeyword = "\u4e2d";
+    private const string OuterLightArmKeyword = "\u5916";
     private const string CenterKeyword = "\u4e2d\u592e";
     private const string MarkKeyword = "\u6807";
 
@@ -281,6 +283,19 @@ internal static class FineTerrainEnergyMechanismVisualCache
                 || role.Contains(GlowArmKeyword, StringComparison.Ordinal))
             {
                 kind = FineTerrainEnergyUnitKind.LightArm;
+                if (parts.Length >= 4)
+                {
+                    string section = string.Join('-', parts.Skip(3));
+                    if (section.Contains(MiddleLightArmKeyword, StringComparison.Ordinal))
+                    {
+                        kind = FineTerrainEnergyUnitKind.MiddleLightArm;
+                    }
+                    else if (section.Contains(OuterLightArmKeyword, StringComparison.Ordinal))
+                    {
+                        kind = FineTerrainEnergyUnitKind.OuterLightArm;
+                    }
+                }
+
                 return true;
             }
         }
@@ -675,6 +690,8 @@ internal enum FineTerrainEnergyUnitKind
 {
     Ring,
     LightArm,
+    MiddleLightArm,
+    OuterLightArm,
     LightStrip,
     CenterMark,
 }

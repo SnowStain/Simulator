@@ -140,6 +140,13 @@ internal sealed class TerrainMotionService
         double Y,
         double RadiusWorld);
 
+    private readonly record struct NavigationForbiddenZoneSnapshot(
+        string Id,
+        double MinX,
+        double MinY,
+        double MaxX,
+        double MaxY);
+
     private sealed record NavigationPlanResult(
         bool Success,
         string NavigationKey,
@@ -937,15 +944,17 @@ internal sealed class TerrainMotionService
         if (enemy is null && !hasNonAttackTacticalCommand)
         {
             controlBranch = "lost_target_cruise_no_enemy";
-            ApplyLostTargetYawCruise(world, runtimeGrid, entity, autoState, dt, clearAim: true);
+            ApplyLostTargetYawCruise(world, entity, autoState, dt, clearAim: true);
             LogSlowAutoControlIfNeeded(entity, controlBranch, controlStartTicks, navigationTicks, autoAimTicks);
             return;
         }
 
         navigationStartTicks = SimulatorRuntimePerformance.Timestamp();
-        SimulationEntity? tacticalTarget = ResolveStrategicAttackTarget(world, entity)
+        SimulationEntity? tacticalTarget = ResolveFriendlyStructureDamageSource(world, entity)
+            ?? ResolveStrategicAttackTarget(world, entity)
             ?? ResolveTacticalAttackTarget(world, entity, metersPerWorldUnit)
             ?? enemy;
+        bool structureDefenseTarget = string.Equals(entity.AiDecisionSelected, "structure_defense", StringComparison.OrdinalIgnoreCase);
         navigationTicks += SimulatorRuntimePerformance.ElapsedTicksSince(navigationStartTicks);
         navigationStartTicks = SimulatorRuntimePerformance.Timestamp();
         if (TryApplyTacticalNavigation(world, runtimeGrid, entity, autoState, tacticalTarget, dt, metersPerWorldUnit))
@@ -960,7 +969,7 @@ internal sealed class TerrainMotionService
         if (tacticalTarget is null)
         {
             controlBranch = "lost_target_cruise_no_tactical";
-            ApplyLostTargetYawCruise(world, runtimeGrid, entity, autoState, dt, clearAim: true);
+            ApplyLostTargetYawCruise(world, entity, autoState, dt, clearAim: true);
             LogSlowAutoControlIfNeeded(entity, controlBranch, controlStartTicks, navigationTicks, autoAimTicks);
             return;
         }
@@ -998,6 +1007,11 @@ internal sealed class TerrainMotionService
                 aggressionScale = 0.88;
                 entity.AiDecision = "鐏姏鍘嬪埗";
                 break;
+        }
+        if (structureDefenseTarget)
+        {
+            entity.AiDecisionSelected = "structure_defense";
+            entity.AiDecision = "回防追击伤害源";
         }
 
         SimulationEntity? navigationTargetEntity = tacticalTarget;
@@ -1347,69 +1361,6 @@ internal sealed class TerrainMotionService
         return IsInsideAiDriveBoundary(runtimeGrid, entity, metersPerWorldUnit, probeX, probeY);
     }
 
-    private static bool TryResolveAiBoundarySafeYaw(
-        RuntimeGridData runtimeGrid,
-        SimulationEntity entity,
-        double metersPerWorldUnit,
-        double preferredYawDeg,
-        out double safeYawDeg)
-    {
-        safeYawDeg = SimulationCombatMath.NormalizeDeg(preferredYawDeg);
-        if (CanCachedDriveStayInsideAiBoundary(runtimeGrid, entity, metersPerWorldUnit, safeYawDeg, 1.0, 0.0))
-        {
-            return true;
-        }
-
-        double maxX = Math.Max(0.0, runtimeGrid.WidthCells * runtimeGrid.CellWidthWorld - 1e-4);
-        double maxY = Math.Max(0.0, runtimeGrid.HeightCells * runtimeGrid.CellHeightWorld - 1e-4);
-        double inwardX = maxX * 0.5 - entity.X;
-        double inwardY = maxY * 0.5 - entity.Y;
-        double inwardLength = Math.Sqrt(inwardX * inwardX + inwardY * inwardY);
-        double inwardYawDeg = inwardLength > 1e-6
-            ? SimulationCombatMath.NormalizeDeg(RadiansToDegrees(Math.Atan2(inwardY, inwardX)))
-            : safeYawDeg;
-        if (CanCachedDriveStayInsideAiBoundary(runtimeGrid, entity, metersPerWorldUnit, inwardYawDeg, 1.0, 0.0))
-        {
-            safeYawDeg = inwardYawDeg;
-            return true;
-        }
-
-        double bestScore = double.NegativeInfinity;
-        double bestYaw = safeYawDeg;
-        for (int index = 0; index < 8; index++)
-        {
-            double candidateYaw = index * 45.0;
-            if (!CanCachedDriveStayInsideAiBoundary(runtimeGrid, entity, metersPerWorldUnit, candidateYaw, 1.0, 0.0))
-            {
-                continue;
-            }
-
-            double yawRad = DegreesToRadians(candidateYaw);
-            double candidateX = Math.Cos(yawRad);
-            double candidateY = Math.Sin(yawRad);
-            double inwardScore = inwardLength > 1e-6
-                ? (candidateX * inwardX + candidateY * inwardY) / inwardLength
-                : 0.0;
-            double preferredScore = Math.Cos(DegreesToRadians(SimulationCombatMath.NormalizeSignedDeg(candidateYaw - preferredYawDeg))) * 0.25;
-            double score = inwardScore + preferredScore;
-            if (score <= bestScore)
-            {
-                continue;
-            }
-
-            bestScore = score;
-            bestYaw = candidateYaw;
-        }
-
-        if (double.IsNegativeInfinity(bestScore))
-        {
-            return false;
-        }
-
-        safeYawDeg = SimulationCombatMath.NormalizeDeg(bestYaw);
-        return true;
-    }
-
     private bool CanApplyDirectAiDrive(
         SimulationWorldState world,
         RuntimeGridData runtimeGrid,
@@ -1540,7 +1491,6 @@ internal sealed class TerrainMotionService
 
     private void ApplyLostTargetYawCruise(
         SimulationWorldState world,
-        RuntimeGridData runtimeGrid,
         SimulationEntity entity,
         NavigationPathState autoState,
         double dt,
@@ -1554,22 +1504,6 @@ internal sealed class TerrainMotionService
         entity.TraversalDirectionDeg = yawDeg;
         entity.ChassisTargetYawDeg = yawDeg;
         entity.SmallGyroActive = false;
-        if (!TryResolveAiBoundarySafeYaw(runtimeGrid, entity, Math.Max(world.MetersPerWorldUnit, 1e-6), yawDeg, out yawDeg))
-        {
-            CacheAutoDrive(autoState, 0.0, 0.0, entity.AngleDeg);
-            ApplyDriveControl(world, entity, 0.0, 0.0, dt, entity.AngleDeg);
-            entity.AiDecisionSelected = "edge_guard_cruise";
-            entity.AiDecision = "\u8fb9\u754c\u505c\u8f66";
-            if (clearAim)
-            {
-                ClearAutoAimState(entity);
-            }
-
-            return;
-        }
-
-        entity.TraversalDirectionDeg = yawDeg;
-        entity.ChassisTargetYawDeg = yawDeg;
         CacheAutoDrive(autoState, LostTargetYawCruiseInput, 0.0, yawDeg);
         ApplyDriveControl(world, entity, LostTargetYawCruiseInput, 0.0, dt, yawDeg);
         entity.AiDecisionSelected = residualGuided ? "residual_cruise" : "lost_target_cruise";
@@ -1608,17 +1542,6 @@ internal sealed class TerrainMotionService
         entity.ChassisTargetYawDeg = escapeYawDeg;
         entity.AiDecisionSelected = "unstuck";
         entity.AiDecision = "\u8131\u79bb\u5361\u6b7b";
-        if (!TryResolveAiBoundarySafeYaw(runtimeGrid, entity, Math.Max(world.MetersPerWorldUnit, 1e-6), escapeYawDeg, out escapeYawDeg))
-        {
-            CacheAutoDrive(autoState, 0.0, 0.0, entity.AngleDeg);
-            ApplyDriveControl(world, entity, 0.0, 0.0, dt, entity.AngleDeg);
-            entity.AiDecisionSelected = "edge_guard_unstuck";
-            entity.AiDecision = "\u8fb9\u754c\u505c\u8f66";
-            return true;
-        }
-
-        entity.TraversalDirectionDeg = escapeYawDeg;
-        entity.ChassisTargetYawDeg = escapeYawDeg;
         if (entity.ChassisSupportsJump
             && entity.AirborneHeightM <= 1e-3
             && remainingSec > AiUnstuckDurationSec * 0.48)
@@ -2200,23 +2123,6 @@ internal sealed class TerrainMotionService
                 else
                 {
                     entity.TraversalDirectionDeg = SimulationCombatMath.NormalizeDeg(RadiansToDegrees(Math.Atan2(dy, dx)));
-                    if (!TryResolveAiBoundarySafeYaw(
-                            runtimeGrid,
-                            entity,
-                            metersPerWorldUnit,
-                            entity.TraversalDirectionDeg,
-                            out double safeTacticalYawDeg))
-                    {
-                        entity.TraversalDirectionDeg = entity.AngleDeg;
-                        entity.ChassisTargetYawDeg = entity.AngleDeg;
-                        CacheAutoDrive(GetOrCreateNavigationState(entity.Id, world.GameTimeSec), 0.0, 0.0, entity.AngleDeg);
-                        ApplyDriveControl(world, entity, 0.0, 0.0, dt, entity.AngleDeg);
-                        entity.AiDecisionSelected = "edge_guard_tactical";
-                        entity.AiDecision = "\u8fb9\u754c\u505c\u8f66";
-                        return true;
-                    }
-
-                    entity.TraversalDirectionDeg = safeTacticalYawDeg;
                     entity.ChassisTargetYawDeg = entity.TraversalDirectionDeg;
                     CacheAutoDrive(GetOrCreateNavigationState(entity.Id, world.GameTimeSec), drive, 0.0, entity.TraversalDirectionDeg);
                     ApplyDriveControl(world, entity, drive, 0.0, dt, entity.TraversalDirectionDeg);
@@ -2707,6 +2613,7 @@ internal sealed class TerrainMotionService
 
         NavigationUnitSnapshot unit = CaptureNavigationUnitSnapshot(entity, world.MetersPerWorldUnit);
         List<NavigationObstacleSnapshot> obstacles = CaptureNavigationObstacleSnapshot(world, entity);
+        List<NavigationForbiddenZoneSnapshot> forbiddenZones = CaptureNavigationForbiddenZones();
         state.PendingGoalNavigationKey = navigationKey;
         state.LastGoalResolveQueuedSec = world.GameTimeSec;
         state.PendingGoalTask = Task.Run(() =>
@@ -2714,6 +2621,7 @@ internal sealed class TerrainMotionService
                 runtimeGrid,
                 unit,
                 obstacles,
+                forbiddenZones,
                 navigationKey,
                 targetX,
                 targetY,
@@ -2749,12 +2657,13 @@ internal sealed class TerrainMotionService
 
         NavigationUnitSnapshot unit = CaptureNavigationUnitSnapshot(entity, world.MetersPerWorldUnit);
         List<NavigationObstacleSnapshot> obstacles = CaptureNavigationObstacleSnapshot(world, entity);
+        List<NavigationForbiddenZoneSnapshot> forbiddenZones = CaptureNavigationForbiddenZones();
         state.PendingNavigationKey = navigationKey;
         state.PendingGoalCellX = goalCellX;
         state.PendingGoalCellY = goalCellY;
         state.LastPlanQueuedSec = world.GameTimeSec;
         state.PendingPlanTask = Task.Run(() =>
-            BuildNavigationPathFromSnapshot(runtimeGrid, unit, obstacles, navigationKey, goalCellX, goalCellY));
+            BuildNavigationPathFromSnapshot(runtimeGrid, unit, obstacles, forbiddenZones, navigationKey, goalCellX, goalCellY));
     }
 
     private int CountPendingNavigationPlans()
@@ -2822,6 +2731,24 @@ internal sealed class TerrainMotionService
         return obstacles;
     }
 
+    private List<NavigationForbiddenZoneSnapshot> CaptureNavigationForbiddenZones()
+    {
+        var zones = new List<NavigationForbiddenZoneSnapshot>(8);
+        foreach (FacilityRegion facility in _facilities)
+        {
+            if (!IsAiForbiddenNavigationFacility(facility))
+            {
+                continue;
+            }
+
+            ResolveFacilityWorldBounds(facility, out double minX, out double minY, out double maxX, out double maxY);
+            double pad = Math.Max(0.0, 0.16 / Math.Max(_metersPerWorldUnit, 1e-6));
+            zones.Add(new NavigationForbiddenZoneSnapshot(facility.Id, minX - pad, minY - pad, maxX + pad, maxY + pad));
+        }
+
+        return zones;
+    }
+
     private static bool IsNavigationObstacleEntity(SimulationEntity entity)
         => IsCollidableEntity(entity) && !entity.IsSimulationSuppressed;
 
@@ -2859,16 +2786,6 @@ internal sealed class TerrainMotionService
 
         double heading = SimulationCombatMath.NormalizeDeg(RadiansToDegrees(Math.Atan2(dy, dx)));
         double driveScale = Math.Clamp(distanceToWaypointM / 1.4, 0.30, 1.0);
-        if (!TryResolveAiBoundarySafeYaw(runtimeGrid, entity, metersPerWorldUnit, heading, out heading))
-        {
-            state.HasCachedAutoDrive = false;
-            entity.TraversalDirectionDeg = entity.AngleDeg;
-            entity.ChassisTargetYawDeg = entity.AngleDeg;
-            ApplyDriveControl(world, entity, 0.0, 0.0, dt, entity.AngleDeg);
-            entity.AiDecision = $"{entity.AiDecision} edge_guard";
-            return true;
-        }
-
         entity.TraversalDirectionDeg = heading;
         entity.ChassisTargetYawDeg = heading;
         CacheAutoDrive(state, drive * driveScale, 0.0, heading);
@@ -3334,6 +3251,7 @@ internal sealed class TerrainMotionService
         RuntimeGridData runtimeGrid,
         NavigationUnitSnapshot unit,
         IReadOnlyList<NavigationObstacleSnapshot> obstacles,
+        IReadOnlyList<NavigationForbiddenZoneSnapshot> forbiddenZones,
         string navigationKey,
         double targetX,
         double targetY,
@@ -3379,7 +3297,7 @@ internal sealed class TerrainMotionService
 
             int candidateIndex = runtimeGrid.IndexOf(cellX, cellY);
             if (!visitedCandidates.Add(candidateIndex)
-                || !CanStandAtNavigationCellCachedSnapshot(runtimeGrid, unit, obstacles, cellX, cellY, standCache))
+                || !CanStandAtNavigationCellCachedSnapshot(runtimeGrid, unit, obstacles, forbiddenZones, cellX, cellY, standCache))
             {
                 return false;
             }
@@ -3479,11 +3397,12 @@ internal sealed class TerrainMotionService
         RuntimeGridData runtimeGrid,
         NavigationUnitSnapshot unit,
         IReadOnlyList<NavigationObstacleSnapshot> obstacles,
+        IReadOnlyList<NavigationForbiddenZoneSnapshot> forbiddenZones,
         string navigationKey,
         int goalCellX,
         int goalCellY)
     {
-        if (!TryBuildNavigationPathFromSnapshot(runtimeGrid, unit, obstacles, goalCellX, goalCellY, out List<(double X, double Y)> waypoints))
+        if (!TryBuildNavigationPathFromSnapshot(runtimeGrid, unit, obstacles, forbiddenZones, goalCellX, goalCellY, out List<(double X, double Y)> waypoints))
         {
             return new NavigationPlanResult(false, navigationKey, goalCellX, goalCellY, new List<(double X, double Y)>());
         }
@@ -3495,6 +3414,7 @@ internal sealed class TerrainMotionService
         RuntimeGridData runtimeGrid,
         NavigationUnitSnapshot unit,
         IReadOnlyList<NavigationObstacleSnapshot> obstacles,
+        IReadOnlyList<NavigationForbiddenZoneSnapshot> forbiddenZones,
         int goalCellX,
         int goalCellY,
         out List<(double X, double Y)> waypoints)
@@ -3574,7 +3494,7 @@ internal sealed class TerrainMotionService
 
                 int nextIndex = runtimeGrid.IndexOf(nextCellX, nextCellY);
                 if (closed[nextIndex]
-                    || !CanStandAtNavigationCellCachedSnapshot(runtimeGrid, unit, obstacles, nextCellX, nextCellY, standCache))
+                    || !CanStandAtNavigationCellCachedSnapshot(runtimeGrid, unit, obstacles, forbiddenZones, nextCellX, nextCellY, standCache))
                 {
                     continue;
                 }
@@ -3652,6 +3572,7 @@ internal sealed class TerrainMotionService
         RuntimeGridData runtimeGrid,
         NavigationUnitSnapshot unit,
         IReadOnlyList<NavigationObstacleSnapshot> obstacles,
+        IReadOnlyList<NavigationForbiddenZoneSnapshot> forbiddenZones,
         int cellX,
         int cellY,
         sbyte[] standCache)
@@ -3669,7 +3590,7 @@ internal sealed class TerrainMotionService
 
         double worldX = CellCenterWorldX(runtimeGrid, cellX);
         double worldY = CellCenterWorldY(runtimeGrid, cellY);
-        bool result = CanStandAtNavigationCellSnapshot(runtimeGrid, unit, obstacles, cellX, cellY, worldX, worldY);
+        bool result = CanStandAtNavigationCellSnapshot(runtimeGrid, unit, obstacles, forbiddenZones, cellX, cellY, worldX, worldY);
         standCache[index] = result ? (sbyte)2 : (sbyte)1;
         return result;
     }
@@ -3678,11 +3599,17 @@ internal sealed class TerrainMotionService
         RuntimeGridData runtimeGrid,
         NavigationUnitSnapshot unit,
         IReadOnlyList<NavigationObstacleSnapshot> obstacles,
+        IReadOnlyList<NavigationForbiddenZoneSnapshot> forbiddenZones,
         int cellX,
         int cellY,
         double worldX,
         double worldY)
     {
+        if (IsInsideNavigationForbiddenZone(forbiddenZones, worldX, worldY))
+        {
+            return false;
+        }
+
         double referenceHeight = SampleTerrainHeight(runtimeGrid, worldX, worldY);
         double maxStep = ResolveEffectiveTraversalStepHeightM(unit);
         double jumpClearance = ResolveTerrainClearanceAllowanceM(unit);
@@ -3965,6 +3892,11 @@ internal sealed class TerrainMotionService
             double sampleX = Lerp(startX, endX, t);
             double sampleY = Lerp(startY, endY, t);
             double sampleHeight = SampleTerrainHeight(runtimeGrid, sampleX, sampleY);
+            if (IsAiForbiddenNavigationPoint(sampleX, sampleY))
+            {
+                return false;
+            }
+
             if (sampleHeight - previousHeight > maxStep + jumpClearance + 1e-6)
             {
                 return false;
@@ -4037,6 +3969,11 @@ internal sealed class TerrainMotionService
         double referenceHeight = SampleTerrainHeight(runtimeGrid, worldX, worldY);
         double maxStep = ResolveEffectiveTraversalStepHeightM(entity);
         double jumpClearance = ResolveTerrainClearanceAllowanceM(entity);
+        if (IsAiForbiddenNavigationPoint(worldX, worldY))
+        {
+            return false;
+        }
+
         if (!IsNavigationHeightPatchAllowed(runtimeGrid, cellX, cellY, referenceHeight, maxStep + jumpClearance, worldX, worldY))
         {
             return false;
@@ -4149,6 +4086,66 @@ internal sealed class TerrainMotionService
             && worldX <= maxX + pad
             && worldY >= minY - pad
             && worldY <= maxY + pad;
+    }
+
+    private bool IsAiForbiddenNavigationPoint(double worldX, double worldY)
+    {
+        foreach (FacilityRegion facility in _facilities)
+        {
+            if (IsAiForbiddenNavigationFacility(facility)
+                && FacilityContainsWorldPoint(facility, worldX, worldY))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsInsideNavigationForbiddenZone(
+        IReadOnlyList<NavigationForbiddenZoneSnapshot> forbiddenZones,
+        double worldX,
+        double worldY)
+    {
+        for (int index = 0; index < forbiddenZones.Count; index++)
+        {
+            NavigationForbiddenZoneSnapshot zone = forbiddenZones[index];
+            if (worldX >= zone.MinX
+                && worldX <= zone.MaxX
+                && worldY >= zone.MinY
+                && worldY <= zone.MaxY)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsAiForbiddenNavigationFacility(FacilityRegion facility)
+        => facility.Type.Equals("base", StringComparison.OrdinalIgnoreCase)
+            || facility.Type.Equals("outpost", StringComparison.OrdinalIgnoreCase);
+
+    private static void ResolveFacilityWorldBounds(
+        FacilityRegion facility,
+        out double minX,
+        out double minY,
+        out double maxX,
+        out double maxY)
+    {
+        if (facility.Points.Count > 0)
+        {
+            minX = facility.Points.Min(point => point.X);
+            minY = facility.Points.Min(point => point.Y);
+            maxX = facility.Points.Max(point => point.X);
+            maxY = facility.Points.Max(point => point.Y);
+            return;
+        }
+
+        minX = Math.Min(facility.X1, facility.X2);
+        minY = Math.Min(facility.Y1, facility.Y2);
+        maxX = Math.Max(facility.X1, facility.X2);
+        maxY = Math.Max(facility.Y1, facility.Y2);
     }
 
     private static bool HasNavigationEntityObstacleAt(
@@ -4368,11 +4365,6 @@ internal sealed class TerrainMotionService
 
     private static SimulationEntity? ResolveStrategicAttackTarget(SimulationWorldState world, SimulationEntity entity)
     {
-        if (!SimulationCombatMath.IsHeroLobAutoAimMode(entity))
-        {
-            return null;
-        }
-
         string enemyTeam = string.Equals(entity.Team, "red", StringComparison.OrdinalIgnoreCase) ? "blue" : "red";
         SimulationEntity? enemyOutpost = world.Entities.FirstOrDefault(candidate =>
             candidate.IsAlive
@@ -4390,6 +4382,56 @@ internal sealed class TerrainMotionService
             && string.Equals(candidate.Team, enemyTeam, StringComparison.OrdinalIgnoreCase)
             && string.Equals(candidate.EntityType, "base", StringComparison.OrdinalIgnoreCase));
         return enemyBase;
+    }
+
+    private static SimulationEntity? ResolveFriendlyStructureDamageSource(SimulationWorldState world, SimulationEntity entity)
+    {
+        const double threatMemorySec = 8.0;
+        SimulationEntity? bestSource = null;
+        double bestScore = double.MaxValue;
+        foreach (SimulationEntity structure in world.Entities)
+        {
+            if (!structure.IsAlive
+                || structure.IsSimulationSuppressed
+                || !string.Equals(structure.Team, entity.Team, StringComparison.OrdinalIgnoreCase)
+                || (!string.Equals(structure.EntityType, "base", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(structure.EntityType, "outpost", StringComparison.OrdinalIgnoreCase))
+                || world.GameTimeSec - structure.LastDamageTimeSec > threatMemorySec
+                || string.IsNullOrWhiteSpace(structure.LastDamageSourceId))
+            {
+                continue;
+            }
+
+            SimulationEntity? source = world.Entities.FirstOrDefault(candidate =>
+                candidate.IsAlive
+                && !candidate.IsSimulationSuppressed
+                && string.Equals(candidate.Id, structure.LastDamageSourceId, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(candidate.Team, entity.Team, StringComparison.OrdinalIgnoreCase));
+            if (source is null)
+            {
+                continue;
+            }
+
+            double agePenalty = Math.Max(0.0, world.GameTimeSec - structure.LastDamageTimeSec) * 4.0;
+            double distanceSq = DistanceSquared(entity.X, entity.Y, source.X, source.Y);
+            double structurePriority = string.Equals(structure.EntityType, "base", StringComparison.OrdinalIgnoreCase) ? -600.0 : 0.0;
+            double score = distanceSq + agePenalty + structurePriority;
+            if (score >= bestScore)
+            {
+                continue;
+            }
+
+            bestScore = score;
+            bestSource = source;
+        }
+
+        if (bestSource is not null)
+        {
+            entity.AiDecisionSelected = "structure_defense";
+            entity.AiDecision = "回防追击伤害源";
+        }
+
+        return bestSource;
     }
 
     private bool TryApplyAmmoResupplyNavigation(
@@ -4469,18 +4511,6 @@ internal sealed class TerrainMotionService
         double directDy = driveTargetY - entity.Y;
         ApplyAiBoundaryRepulsion(world, runtimeGrid, entity, ref directDx, ref directDy);
         double heading = SimulationCombatMath.NormalizeDeg(RadiansToDegrees(Math.Atan2(directDy, directDx)));
-        if (!TryResolveAiBoundarySafeYaw(runtimeGrid, entity, metersPerWorldUnit, heading, out heading))
-        {
-            entity.TraversalDirectionDeg = entity.AngleDeg;
-            entity.ChassisTargetYawDeg = entity.AngleDeg;
-            entity.SmallGyroActive = false;
-            CacheAutoDrive(autoState, 0.0, 0.0, entity.AngleDeg);
-            ApplyDriveControl(world, entity, 0.0, 0.0, dt, entity.AngleDeg);
-            entity.AiDecisionSelected = "edge_guard_supply";
-            entity.AiDecision = "\u8fb9\u754c\u505c\u8f66";
-            return true;
-        }
-
         entity.TraversalDirectionDeg = heading;
         entity.ChassisTargetYawDeg = heading;
         entity.SmallGyroActive = false;
@@ -5349,35 +5379,16 @@ internal sealed class TerrainMotionService
             return aimPlate;
         }
 
-        if (!SimulationCombatMath.TryParseEnergyArmIndex(aimPlate.Id, out string team, out int armIndex))
+        if (!SimulationCombatMath.TryParseEnergyArmIndex(aimPlate.Id, out _, out _))
         {
             return aimPlate;
         }
 
-        world.Teams.TryGetValue(team, out SimulationTeamState? teamState);
-        foreach (ArmorPlateTarget candidate in SimulationCombatMath.GetEnergyMechanismTargets(
-                     target,
-                     Math.Max(world.MetersPerWorldUnit, 1e-6),
-                     world.GameTimeSec,
-                     team,
-                     teamState))
-        {
-            int ringScore = candidate.EnergyRingScore;
-            if (ringScore <= 0 && !SimulationCombatMath.TryParseEnergyRingScore(candidate.Id, out ringScore))
-            {
-                continue;
-            }
-
-            if (ringScore == 1
-                && SimulationCombatMath.TryParseEnergyArmIndex(candidate.Id, out string candidateTeam, out int candidateArm)
-                && string.Equals(candidateTeam, team, StringComparison.OrdinalIgnoreCase)
-                && candidateArm == armIndex)
-            {
-                return candidate;
-            }
-        }
-
+        // The light/outer rings are useful for acquisition visibility, but the
+        // solver must observe the actual locked 10-ring point or the debug lock
+        // marker drifts away from the disk center as the wheel rotates.
         return aimPlate;
+
     }
 
     private AutoAimObservedState ResolveAutoAimObservationState(
@@ -5621,8 +5632,8 @@ internal sealed class TerrainMotionService
         }
         else
         {
-            double yawDeadbandDeg = energyDiskTarget ? 0.16 : (smallGyroVehicleTarget ? 0.22 : 0.05);
-            double pitchDeadbandDeg = energyDiskTarget ? 0.10 : (smallGyroVehicleTarget ? 0.10 : 0.04);
+            double yawDeadbandDeg = energyDiskTarget ? 0.32 : (smallGyroVehicleTarget ? 0.22 : 0.05);
+            double pitchDeadbandDeg = energyDiskTarget ? 0.18 : (smallGyroVehicleTarget ? 0.10 : 0.04);
             if (playerHardLock)
             {
                 yawDeadbandDeg *= energyDiskTarget ? 1.20 : (heroLobAxisAimTarget ? 1.45 : 1.62);
@@ -5633,7 +5644,7 @@ internal sealed class TerrainMotionService
             desiredPitch = ApplyScalarDeadband(entity.AutoAimSmoothedPitchDeg, desiredPitch, pitchDeadbandDeg);
 
             double tau = energyDiskTarget
-                ? (lockChanged ? 0.075 : 0.105)
+                ? (lockChanged ? 0.120 : 0.155)
                 : smallGyroVehicleTarget
                     ? (lockChanged ? (sameTargetSwitch ? 0.090 : 0.135) : 0.125)
                     : (lockChanged ? (sameTargetSwitch ? 0.070 : 0.110) : 0.090);
@@ -5705,10 +5716,10 @@ internal sealed class TerrainMotionService
         {
             double filteredPitchDeg = Math.Clamp(entity.GimbalPitchDeg, -40.0, 40.0);
             double outputDt = Math.Clamp(dt, 0.005, 0.08);
-            double outputPitchTau = energyDiskTarget ? 0.090 : smallGyroVehicleTarget ? 0.085 : (heroLobPitchHoldTarget ? 0.070 : 0.045);
-            double outputYawTau = energyDiskTarget ? 0.095 : smallGyroVehicleTarget ? 0.090 : (heroLobAxisAimTarget ? 0.070 : 0.045);
-            double outputPitchRateDegPerSec = energyDiskTarget ? 260.0 : smallGyroVehicleTarget ? 260.0 : (heroLobPitchHoldTarget ? 240.0 : 420.0);
-            double outputYawRateDegPerSec = energyDiskTarget ? 320.0 : smallGyroVehicleTarget ? 320.0 : 520.0;
+            double outputPitchTau = energyDiskTarget ? 0.140 : smallGyroVehicleTarget ? 0.085 : (heroLobPitchHoldTarget ? 0.070 : 0.045);
+            double outputYawTau = energyDiskTarget ? 0.150 : smallGyroVehicleTarget ? 0.090 : (heroLobAxisAimTarget ? 0.070 : 0.045);
+            double outputPitchRateDegPerSec = energyDiskTarget ? 210.0 : smallGyroVehicleTarget ? 260.0 : (heroLobPitchHoldTarget ? 240.0 : 420.0);
+            double outputYawRateDegPerSec = energyDiskTarget ? 260.0 : smallGyroVehicleTarget ? 320.0 : 520.0;
             if (heroHeavyGimbal && !energyDiskTarget)
             {
                 outputPitchTau *= heroLobPitchHoldTarget ? 1.30 : 1.40;
@@ -9034,24 +9045,6 @@ internal sealed class TerrainMotionService
         double dy = driveTargetY - entity.Y;
         ApplyAiBoundaryRepulsion(world, runtimeGrid, entity, ref dx, ref dy);
         entity.TraversalDirectionDeg = SimulationCombatMath.NormalizeDeg(RadiansToDegrees(Math.Atan2(dy, dx)));
-        if (!TryResolveAiBoundarySafeYaw(
-                runtimeGrid,
-                entity,
-                metersPerWorldUnit,
-                entity.TraversalDirectionDeg,
-                out double safeRecoverYawDeg))
-        {
-            entity.TraversalDirectionDeg = entity.AngleDeg;
-            entity.ChassisTargetYawDeg = entity.AngleDeg;
-            CacheAutoDrive(autoState, 0.0, 0.0, entity.AngleDeg);
-            ApplyDriveControl(world, entity, 0.0, 0.0, dt, entity.AngleDeg);
-            entity.AiDecisionSelected = "edge_guard_recover";
-            entity.AiDecision = "\u8fb9\u754c\u505c\u8f66";
-            entity.BuyAmmoRequested = false;
-            return true;
-        }
-
-        entity.TraversalDirectionDeg = safeRecoverYawDeg;
         entity.ChassisTargetYawDeg = entity.TraversalDirectionDeg;
         CacheAutoDrive(autoState, 0.88, 0.0, entity.TraversalDirectionDeg);
         ApplyDriveControl(world, entity, 0.88, 0.0, dt, entity.TraversalDirectionDeg);

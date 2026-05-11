@@ -389,6 +389,75 @@ public static class SimulationCombatMath
         return GetLegacyEnergyMechanismTargets(target, metersPerWorldUnit, gameTimeSec, targetTeam, teamState);
     }
 
+    public static bool TryResolveEnergyMechanismRotorFrame(
+        SimulationWorldState world,
+        SimulationEntity target,
+        string team,
+        double metersPerWorldUnit,
+        out Vector3 pivotM,
+        out Vector3 rotorAxisM)
+    {
+        pivotM = default;
+        rotorAxisM = default;
+        double safeMeters = Math.Max(metersPerWorldUnit, 1e-6);
+        if (target.AnnotatedEnergyMechanism?.Teams.TryGetValue(team, out AnnotatedEnergyTeamDefinition? teamDefinition) == true)
+        {
+            pivotM = new Vector3(
+                (float)(teamDefinition.PivotWorldX * safeMeters),
+                (float)teamDefinition.PivotHeightM,
+                (float)(teamDefinition.PivotWorldY * safeMeters));
+            rotorAxisM = teamDefinition.RotorAxisWorld.LengthSquared() <= 1e-8f
+                ? Vector3.UnitZ
+                : Vector3.Normalize(teamDefinition.RotorAxisWorld);
+            return true;
+        }
+
+        world.Teams.TryGetValue(team, out SimulationTeamState? teamState);
+        IReadOnlyList<ArmorPlateTarget> currentTargets = GetEnergyMechanismTargets(
+            target,
+            safeMeters,
+            world.GameTimeSec,
+            team,
+            teamState);
+        if (currentTargets.Count == 0)
+        {
+            return false;
+        }
+
+        Vector3 sum = Vector3.Zero;
+        Vector3 normalSum = Vector3.Zero;
+        int count = 0;
+        foreach (ArmorPlateTarget targetPlate in currentTargets)
+        {
+            if (!TryParseEnergyArmIndex(targetPlate.Id, out string targetTeam, out _)
+                || !string.Equals(targetTeam, team, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            sum += new Vector3(
+                (float)(targetPlate.X * safeMeters),
+                (float)targetPlate.HeightM,
+                (float)(targetPlate.Y * safeMeters));
+            Vector3 normal = new((float)targetPlate.NormalXM, (float)targetPlate.NormalYM, (float)targetPlate.NormalZM);
+            if (normal.LengthSquared() > 1e-8f)
+            {
+                normalSum += Vector3.Normalize(normal);
+            }
+
+            count++;
+        }
+
+        if (count <= 0)
+        {
+            return false;
+        }
+
+        pivotM = sum / count;
+        rotorAxisM = normalSum.LengthSquared() > 1e-8f ? Vector3.Normalize(normalSum) : Vector3.UnitZ;
+        return true;
+    }
+
     private static IReadOnlyList<ArmorPlateTarget> GetAnnotatedEnergyMechanismTargets(
         SimulationEntity target,
         AnnotatedEnergyMechanismDefinition annotated,
@@ -824,8 +893,9 @@ public static class SimulationCombatMath
             return direction * gameTimeSec * smallSpeedRadPerSec;
         }
 
-        bool largeActive = string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
-            && teamState.EnergyLargeMechanismActive;
+        bool largeActive = teamState.EnergyLargeMechanismActive
+            && (string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(teamState.EnergyMechanismState, "activated", StringComparison.OrdinalIgnoreCase));
         double safeTime = Math.Max(0.0, gameTimeSec - teamState.EnergyStateStartTimeSec);
         double basePhase = Math.Max(0.0, teamState.EnergyStateStartTimeSec) * smallSpeedRadPerSec;
         if (!largeActive)
@@ -836,6 +906,33 @@ public static class SimulationCombatMath
         double speedIntegral = largeActiveB * safeTime
             + largeActiveA / largeActiveOmega * (1.0 - Math.Cos(largeActiveOmega * safeTime));
         return direction * (basePhase + speedIntegral);
+    }
+
+    private static double ResolveEnergyRotorAngularVelocityRadPerSec(double gameTimeSec, SimulationTeamState? teamState)
+    {
+        const double smallSpeedRadPerSec = Math.PI / 3.0;
+        const double largeActiveA = 0.9125;
+        const double largeActiveOmega = 1.942;
+        const double largeActiveB = 2.090 - largeActiveA;
+        int direction = teamState?.EnergyRotorDirectionSign != 0 ? teamState?.EnergyRotorDirectionSign ?? 1 : 1;
+        if (teamState is null
+            || (!string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(teamState.EnergyMechanismState, "activated", StringComparison.OrdinalIgnoreCase)))
+        {
+            return direction * smallSpeedRadPerSec;
+        }
+
+        bool largeActive = teamState.EnergyLargeMechanismActive
+            && (string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(teamState.EnergyMechanismState, "activated", StringComparison.OrdinalIgnoreCase));
+        if (!largeActive)
+        {
+            return direction * smallSpeedRadPerSec;
+        }
+
+        double safeTime = Math.Max(0.0, gameTimeSec - teamState.EnergyStateStartTimeSec);
+        double instantaneousSpeed = largeActiveB + largeActiveA * Math.Sin(largeActiveOmega * safeTime);
+        return direction * instantaneousSpeed;
     }
 
 public static bool TryAcquireEnergyMechanismTarget(
@@ -1616,7 +1713,9 @@ public static bool TryAcquireEnergyMechanismTarget(
             return false;
         }
 
-        ArmorPlateTarget observationPlate = ResolveEnergyObservationRingPlate(world, shooter, target, plate, world.GameTimeSec);
+        // Lock calculations should use the authored aim disk itself. The outer
+        // observation ring is only used during target acquisition/visibility.
+        ArmorPlateTarget observationPlate = plate;
         double dxWorld = observationPlate.X - shooter.X;
         double dyWorld = observationPlate.Y - shooter.Y;
         double distanceM = Math.Sqrt(dxWorld * dxWorld + dyWorld * dyWorld) * metersPerWorldUnit;
@@ -3192,7 +3291,7 @@ public static bool TryAcquireEnergyMechanismTarget(
         ArmorPlateTarget plate,
         double maxDistanceM)
     {
-        ArmorPlateTarget visualObservationPlate = ResolveEnergyObservationRingPlate(world, shooter, target, plate, world.GameTimeSec);
+        ArmorPlateTarget visualObservationPlate = plate;
         (double observedVxWorld, double observedVyWorld, double observedVzMps) =
             ResolveArmorPlatePointObservedVelocityWorld(world, target, visualObservationPlate);
         double observedOmegaRadPerSec = ResolveAutoAimAngularVelocityRadPerSec(world, target, visualObservationPlate);
@@ -3572,7 +3671,7 @@ public static bool TryAcquireEnergyMechanismTarget(
         }
 
         ResolveArmorPlatePlaneBasis(plate, out Vector3 normal, out Vector3 side, out Vector3 up);
-        if (!IsProjectileApproachingArmorFrontFace(normal, segment))
+        if (!IsTwoSidedProjectileArmorPlate(plate) && !IsProjectileApproachingArmorFrontFace(normal, segment))
         {
             return false;
         }
@@ -3620,6 +3719,10 @@ public static bool TryAcquireEnergyMechanismTarget(
         float approach = Vector3.Dot(Vector3.Normalize(segment), Vector3.Normalize(normal));
         return approach <= -0.05f;
     }
+
+    private static bool IsTwoSidedProjectileArmorPlate(ArmorPlateTarget plate)
+        => plate.Id.Equals("base_top_slide", StringComparison.OrdinalIgnoreCase)
+            || plate.Id.StartsWith("base_top", StringComparison.OrdinalIgnoreCase);
 
     private static bool TryIntersectProjectileWithEnergyDisk(
         ArmorPlateTarget plate,
@@ -3907,7 +4010,10 @@ public static bool TryAcquireEnergyMechanismTarget(
         if (string.Equals(target.EntityType, "outpost", StringComparison.OrdinalIgnoreCase)
             && IsHeroDeploymentOutpostRingPlate(plate))
         {
-            return IsOutpostRingEffectivelyRotating(target, plate, world.GameTimeSec);
+            // The outpost target for hero lob is the rotating armor plate itself.
+            // Use the future plate pose, but keep the low ballistic root; the high
+            // root easily drives 42 mm shots into an over-lofted, non-convergent arc.
+            return false;
         }
 
         return true;
@@ -5326,6 +5432,18 @@ public static bool TryAcquireEnergyMechanismTarget(
     {
         pivotM = default;
         rotorAxisM = default;
+        if (target.AnnotatedEnergyMechanism?.Teams.TryGetValue(team, out AnnotatedEnergyTeamDefinition? teamDefinition) == true)
+        {
+            pivotM = new Vector3(
+                (float)(teamDefinition.PivotWorldX * metersPerWorldUnit),
+                (float)teamDefinition.PivotHeightM,
+                (float)(teamDefinition.PivotWorldY * metersPerWorldUnit));
+            rotorAxisM = teamDefinition.RotorAxisWorld.LengthSquared() <= 1e-8f
+                ? Vector3.UnitZ
+                : Vector3.Normalize(teamDefinition.RotorAxisWorld);
+            return true;
+        }
+
         IReadOnlyList<ArmorPlateTarget> currentTargets = GetEnergyMechanismTargets(
             target,
             metersPerWorldUnit,
@@ -5895,6 +6013,11 @@ public static bool TryAcquireEnergyMechanismTarget(
         SimulationEntity target,
         ArmorPlateTarget plate)
     {
+        if (TryResolveEnergyMechanismPlateVelocityWorld(world, target, plate, out (double VelocityXWorldPerSec, double VelocityYWorldPerSec, double VelocityZMps) energyVelocity))
+        {
+            return energyVelocity;
+        }
+
         double offsetXWorld = plate.X - target.X;
         double offsetYWorld = plate.Y - target.Y;
         double omegaRadPerSec = ResolveAutoAimAngularVelocityRadPerSec(world, target, plate);
@@ -5910,6 +6033,11 @@ public static bool TryAcquireEnergyMechanismTarget(
         SimulationEntity target,
         ArmorPlateTarget plate)
     {
+        if (TryResolveEnergyMechanismPlateVelocityWorld(world, target, plate, out (double VelocityXWorldPerSec, double VelocityYWorldPerSec, double VelocityZMps) energyVelocity))
+        {
+            return energyVelocity;
+        }
+
         if (TryResolveDynamicStructurePlateVelocityWorld(world, target, plate, out (double VelocityXWorldPerSec, double VelocityYWorldPerSec, double VelocityZMps) structureVelocity))
         {
             return structureVelocity;
@@ -5925,6 +6053,42 @@ public static bool TryAcquireEnergyMechanismTarget(
             ResolveObservedVelocityYWorldPerSec(target) + angularVelocityYWorld,
             target.VerticalVelocityMps);
     }
+
+    private static bool TryResolveEnergyMechanismPlateVelocityWorld(
+        SimulationWorldState world,
+        SimulationEntity target,
+        ArmorPlateTarget plate,
+        out (double VelocityXWorldPerSec, double VelocityYWorldPerSec, double VelocityZMps) velocity)
+    {
+        velocity = default;
+        if (!string.Equals(target.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase)
+            || !TryParseEnergyArmIndex(plate.Id, out string team, out _))
+        {
+            return false;
+        }
+
+        const double sampleDtSec = 1.0 / 120.0;
+        double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
+        world.Teams.TryGetValue(team, out SimulationTeamState? teamState);
+        ArmorPlateTarget futurePlate = GetEnergyMechanismTargets(
+                target,
+                metersPerWorldUnit,
+                world.GameTimeSec + sampleDtSec,
+                team,
+                teamState)
+            .FirstOrDefault(candidate => string.Equals(candidate.Id, plate.Id, StringComparison.OrdinalIgnoreCase));
+        if (string.IsNullOrWhiteSpace(futurePlate.Id))
+        {
+            return false;
+        }
+
+        velocity = (
+            (futurePlate.X - plate.X) / sampleDtSec,
+            (futurePlate.Y - plate.Y) / sampleDtSec,
+            (futurePlate.HeightM - plate.HeightM) / sampleDtSec);
+        return true;
+    }
+
     private static bool TryResolveDynamicStructurePlateVelocityWorld(
         SimulationWorldState world,
         SimulationEntity target,
@@ -5993,6 +6157,13 @@ public static bool TryAcquireEnergyMechanismTarget(
         if (plate.Id.StartsWith("outpost_ring_", StringComparison.OrdinalIgnoreCase))
         {
             return ResolveOutpostRingWorldAngularVelocityRadPerSec(target, world.GameTimeSec);
+        }
+
+        if (string.Equals(target.EntityType, "energy_mechanism", StringComparison.OrdinalIgnoreCase)
+            && TryParseEnergyArmIndex(plate.Id, out string team, out _))
+        {
+            world.Teams.TryGetValue(team, out SimulationTeamState? teamState);
+            return Math.Clamp(ResolveEnergyRotorAngularVelocityRadPerSec(world.GameTimeSec, teamState), -12.0, 12.0);
         }
 
         return ResolveAutoAimAngularVelocityRadPerSec(target);

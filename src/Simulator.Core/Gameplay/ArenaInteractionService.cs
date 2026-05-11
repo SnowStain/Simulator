@@ -52,6 +52,10 @@ public sealed class ArenaInteractionService
                 team.EnergyBuffDamageDealtMult = 1.0;
                 team.EnergyBuffDamageTakenMult = 1.0;
                 team.EnergyBuffCoolingMult = 1.0;
+                if (string.Equals(team.EnergyMechanismState, "activated", StringComparison.OrdinalIgnoreCase))
+                {
+                    StopEnergyAttempt(world, team);
+                }
             }
 
             TickEnergyMechanismActivation(world, team, deltaTimeSec, events);
@@ -665,6 +669,12 @@ public sealed class ArenaInteractionService
         {
             return;
         }
+
+        if (IsEnergyMechanismActivationLocked(teamState))
+        {
+            return;
+        }
+
         if (!TryConsumeEnergyOpportunityToken(teamState, world.GameTimeSec, out bool large))
         {
             return;
@@ -690,6 +700,11 @@ public sealed class ArenaInteractionService
         ArmorPlateTarget? firstHitPlate = null)
     {
         SimulationTeamState teamState = world.GetOrCreateTeamState(team);
+        if (IsEnergyMechanismActivationLocked(teamState))
+        {
+            return false;
+        }
+
         if (!teamState.EnergyTestAlwaysAvailable)
         {
             return false;
@@ -732,6 +747,11 @@ public sealed class ArenaInteractionService
         }
 
         SimulationTeamState teamState = world.GetOrCreateTeamState(shooter.Team);
+        if (IsEnergyMechanismActivationLocked(teamState))
+        {
+            return false;
+        }
+
         if (teamState.EnergyTestAlwaysAvailable)
         {
             return EnsureEnergyMechanismTestAttemptActive(world, shooter.Team, gameTimeSec, firstHitPlate);
@@ -780,6 +800,11 @@ public sealed class ArenaInteractionService
             return null;
         }
         SimulationTeamState teamState = world.GetOrCreateTeamState(shooter.Team);
+        if (IsEnergyMechanismActivationLocked(teamState))
+        {
+            return null;
+        }
+
         if (!string.Equals(teamState.EnergyMechanismState, "activating", StringComparison.OrdinalIgnoreCase))
         {
             return null;
@@ -841,7 +866,11 @@ public sealed class ArenaInteractionService
             : CountActivatedEnergyDisks(teamState) >= 5;
         if (completed)
         {
-            teamState.EnergyStateStartTimeSec = world.GameTimeSec;
+            if (!teamState.EnergyLargeMechanismActive)
+            {
+                teamState.EnergyStateStartTimeSec = world.GameTimeSec;
+            }
+
             if (teamState.EnergyLargeMechanismActive)
             {
                 teamState.EnergyLastLargeAttemptSlot = ResolveLargeEnergyAttemptSlot(world.GameTimeSec);
@@ -909,6 +938,10 @@ public sealed class ArenaInteractionService
     private static bool IsExperienceRobot(SimulationEntity entity)
         => string.Equals(entity.EntityType, "robot", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(entity.RoleKey, "engineer", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsEnergyMechanismActivationLocked(SimulationTeamState teamState)
+        => string.Equals(teamState.EnergyMechanismState, "activated", StringComparison.OrdinalIgnoreCase)
+            && teamState.EnergyBuffTimerSec > 1e-6;
 
     internal static void GrantDamageExperience(SimulationEntity shooter, SimulationEntity target, double appliedDamage)
     {

@@ -55,6 +55,12 @@ internal static class EnergyMechanismAnnotationLoader
     private const string EnergyMechanismKeyword = "\u80fd\u91cf\u673a\u5173";
     private const string RedTeamKeyword = "\u7ea2\u65b9";
     private const string BlueTeamKeyword = "\u84dd\u65b9";
+    private const string LightArmKeyword = "\u706f\u81c2";
+    private const string GlowArmKeyword = "\u5149\u81c2";
+    private const string LightStripKeyword = "\u706f\u6761";
+    private const string InteractiveKeyword = "\u4e92\u52a8";
+    private const string MiddleLightArmKeyword = "\u4e2d";
+    private const string OuterLightArmKeyword = "\u5916";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -183,6 +189,8 @@ internal static class EnergyMechanismAnnotationLoader
 
             var targets = new List<ArmorPlateTarget>(64);
             var plateStates = new List<AnnotatedEnergyPlateState>(64);
+            var targetIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var middleArmCenters = new Dictionary<int, EnergyUnitCenterSample>();
             double compositeSumWorldX = 0.0;
             double compositeSumWorldY = 0.0;
             int compositeTargetCount = 0;
@@ -190,7 +198,7 @@ internal static class EnergyMechanismAnnotationLoader
             {
                 if (string.IsNullOrWhiteSpace(unit.Name)
                     || unit.ComponentIds is null
-                    || !TryParseEnergyUnit(unit.Name, out int armIndex, out int ringScore))
+                    || !TryParseEnergyUnit(unit.Name, out EnergyAnnotationUnitKind unitKind, out int armIndex, out int ringScore))
                 {
                     continue;
                 }
@@ -223,39 +231,76 @@ internal static class EnergyMechanismAnnotationLoader
                         bounds.SizeModelX * xMetersPerModelUnit,
                         bounds.SizeModelZ * zMetersPerModelUnit));
                 double heightSpanM = Math.Max(0.02, bounds.SizeModelY * yMetersPerModelUnit);
-                var target = new ArmorPlateTarget(
-                    $"energy_{team}_arm_{armIndex}_ring_{ringScore}",
-                    worldX,
-                    worldY,
-                    heightM,
-                    yawDeg,
-                    Math.Max(widthM, heightSpanM),
-                    widthM,
-                    heightSpanM,
-                    ringScore);
-                targets.Add(target);
-                double baseYawRad = yawDeg * Math.PI / 180.0;
-                plateStates.Add(new AnnotatedEnergyPlateState(
-                    target.Id,
-                    ringScore,
-                    (worldX - pivotWorldX) * metersPerWorldUnit,
-                    heightM - pivotHeightM,
-                    (worldY - pivotWorldY) * metersPerWorldUnit,
-                    Math.Cos(baseYawRad),
-                    0.0,
-                    Math.Sin(baseYawRad),
-                    target.SideLengthM,
-                    target.WidthM,
-                    target.HeightSpanM,
-                    target.YawDeg));
-                allTargets.Add(target);
-                compositeSumWorldX += worldX;
-                compositeSumWorldY += worldY;
-                compositeTargetCount++;
+                if (unitKind == EnergyAnnotationUnitKind.MiddleLightArm)
+                {
+                    middleArmCenters[armIndex] = middleArmCenters.TryGetValue(armIndex, out EnergyUnitCenterSample existing)
+                        ? existing.Add(worldX, worldY, heightM, widthM, heightSpanM)
+                        : EnergyUnitCenterSample.Create(worldX, worldY, heightM, widthM, heightSpanM);
+                }
+
+                if (unitKind == EnergyAnnotationUnitKind.Ring)
+                {
+                    AddEnergyTarget(
+                        targets,
+                        allTargets,
+                        targetIds,
+                        team,
+                        armIndex,
+                        ringScore,
+                        worldX,
+                        worldY,
+                        heightM,
+                        yawDeg,
+                        widthM,
+                        heightSpanM,
+                        ref compositeSumWorldX,
+                        ref compositeSumWorldY,
+                        ref compositeTargetCount);
+                }
+
                 fallbackSumWorldX += worldX;
                 fallbackSumWorldY += worldY;
                 fallbackCenterCount++;
                 maxHeightM = Math.Max(maxHeightM, heightM + heightSpanM * 0.5);
+            }
+
+            foreach (KeyValuePair<int, EnergyUnitCenterSample> entry in middleArmCenters)
+            {
+                EnergyUnitCenterSample center = entry.Value;
+                // If a map only authors the middle light arm, still expose enough target
+                // points for observation and 10-ring aiming. Authored numeric rings win.
+                AddEnergyTarget(
+                    targets,
+                    allTargets,
+                    targetIds,
+                    team,
+                    entry.Key,
+                    1,
+                    center.WorldX,
+                    center.WorldY,
+                    center.HeightM,
+                    yawDeg,
+                    center.WidthM,
+                    center.HeightSpanM,
+                    ref compositeSumWorldX,
+                    ref compositeSumWorldY,
+                    ref compositeTargetCount);
+                AddEnergyTarget(
+                    targets,
+                    allTargets,
+                    targetIds,
+                    team,
+                    entry.Key,
+                    10,
+                    center.WorldX,
+                    center.WorldY,
+                    center.HeightM,
+                    yawDeg,
+                    center.WidthM,
+                    center.HeightSpanM,
+                    ref compositeSumWorldX,
+                    ref compositeSumWorldY,
+                    ref compositeTargetCount);
             }
 
             if (targets.Count == 0)
@@ -263,8 +308,37 @@ internal static class EnergyMechanismAnnotationLoader
                 continue;
             }
 
-            double compositeCenterWorldX = compositeSumWorldX / Math.Max(1, compositeTargetCount);
-            double compositeCenterWorldY = compositeSumWorldY / Math.Max(1, compositeTargetCount);
+            if (TryResolveRotorPivotFromMiddleArms(
+                middleArmCenters,
+                out double authoredPivotWorldX,
+                out double authoredPivotWorldY,
+                out double authoredPivotHeightM))
+            {
+                pivotWorldX = authoredPivotWorldX;
+                pivotWorldY = authoredPivotWorldY;
+                pivotHeightM = authoredPivotHeightM;
+            }
+
+            double baseYawRad = yawDeg * Math.PI / 180.0;
+            foreach (ArmorPlateTarget target in targets)
+            {
+                plateStates.Add(new AnnotatedEnergyPlateState(
+                    target.Id,
+                    target.EnergyRingScore,
+                    (target.X - pivotWorldX) * metersPerWorldUnit,
+                    target.HeightM - pivotHeightM,
+                    (target.Y - pivotWorldY) * metersPerWorldUnit,
+                    Math.Cos(baseYawRad),
+                    0.0,
+                    Math.Sin(baseYawRad),
+                    target.SideLengthM,
+                    target.WidthM,
+                    target.HeightSpanM,
+                    target.YawDeg));
+            }
+
+            double compositeCenterWorldX = pivotWorldX;
+            double compositeCenterWorldY = pivotWorldY;
             foreach (ArmorPlateTarget target in targets)
             {
                 double dxM = (target.X - compositeCenterWorldX) * metersPerWorldUnit;
@@ -378,25 +452,136 @@ internal static class EnergyMechanismAnnotationLoader
         return false;
     }
 
-    private static bool TryParseEnergyUnit(string name, out int armIndex, out int ringScore)
+    private static void AddEnergyTarget(
+        ICollection<ArmorPlateTarget> targets,
+        ICollection<ArmorPlateTarget> allTargets,
+        ISet<string> targetIds,
+        string team,
+        int armIndex,
+        int ringScore,
+        double worldX,
+        double worldY,
+        double heightM,
+        double yawDeg,
+        double widthM,
+        double heightSpanM,
+        ref double compositeSumWorldX,
+        ref double compositeSumWorldY,
+        ref int compositeTargetCount)
     {
+        string targetId = $"energy_{team}_arm_{armIndex}_ring_{ringScore}";
+        if (!targetIds.Add(targetId))
+        {
+            return;
+        }
+
+        var target = new ArmorPlateTarget(
+            targetId,
+            worldX,
+            worldY,
+            heightM,
+            yawDeg,
+            Math.Max(widthM, heightSpanM),
+            widthM,
+            heightSpanM,
+            ringScore);
+        targets.Add(target);
+        allTargets.Add(target);
+        compositeSumWorldX += worldX;
+        compositeSumWorldY += worldY;
+        compositeTargetCount++;
+    }
+
+    private static bool TryResolveRotorPivotFromMiddleArms(
+        IReadOnlyDictionary<int, EnergyUnitCenterSample> middleArmCenters,
+        out double pivotWorldX,
+        out double pivotWorldY,
+        out double pivotHeightM)
+    {
+        pivotWorldX = 0.0;
+        pivotWorldY = 0.0;
+        pivotHeightM = 0.0;
+        if (middleArmCenters.Count < 5)
+        {
+            return false;
+        }
+
+        for (int armIndex = 0; armIndex < 5; armIndex++)
+        {
+            if (!middleArmCenters.TryGetValue(armIndex, out EnergyUnitCenterSample center))
+            {
+                return false;
+            }
+
+            pivotWorldX += center.WorldX;
+            pivotWorldY += center.WorldY;
+            pivotHeightM += center.HeightM;
+        }
+
+        pivotWorldX /= 5.0;
+        pivotWorldY /= 5.0;
+        pivotHeightM /= 5.0;
+        return true;
+    }
+
+    private static bool TryParseEnergyUnit(
+        string name,
+        out EnergyAnnotationUnitKind kind,
+        out int armIndex,
+        out int ringScore)
+    {
+        kind = EnergyAnnotationUnitKind.Ring;
         armIndex = -1;
         ringScore = 0;
         string[] parts = name.Split('-', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (parts.Length < 3
             || !int.TryParse(parts[1], out int parsedArm)
             || parsedArm < 1
-            || parsedArm > 5
-            || !int.TryParse(parts[2], out int parsedRing)
-            || parsedRing < 1
-            || parsedRing > 10)
+            || parsedArm > 5)
         {
             return false;
         }
 
         armIndex = parsedArm - 1;
-        ringScore = parsedRing;
-        return true;
+        if (int.TryParse(parts[2], out int parsedRing)
+            && parsedRing >= 1
+            && parsedRing <= 10)
+        {
+            kind = EnergyAnnotationUnitKind.Ring;
+            ringScore = parsedRing;
+            return true;
+        }
+
+        string role = parts[2];
+        if (role.Contains(LightStripKeyword, StringComparison.Ordinal)
+            || role.Contains(InteractiveKeyword, StringComparison.Ordinal)
+            || role.Contains("interaction", StringComparison.OrdinalIgnoreCase))
+        {
+            kind = EnergyAnnotationUnitKind.LightStrip;
+            return true;
+        }
+
+        if (role.Contains(LightArmKeyword, StringComparison.Ordinal)
+            || role.Contains(GlowArmKeyword, StringComparison.Ordinal))
+        {
+            kind = EnergyAnnotationUnitKind.LightArm;
+            if (parts.Length >= 4)
+            {
+                string section = string.Join('-', parts.Skip(3));
+                if (section.Contains(MiddleLightArmKeyword, StringComparison.Ordinal))
+                {
+                    kind = EnergyAnnotationUnitKind.MiddleLightArm;
+                }
+                else if (section.Contains(OuterLightArmKeyword, StringComparison.Ordinal))
+                {
+                    kind = EnergyAnnotationUnitKind.OuterLightArm;
+                }
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     private static bool TryResolveMergedBounds(
@@ -552,6 +737,46 @@ internal static class EnergyMechanismAnnotationLoader
         float SizeModelX,
         float SizeModelY,
         float SizeModelZ);
+
+    private enum EnergyAnnotationUnitKind
+    {
+        Ring,
+        LightStrip,
+        LightArm,
+        MiddleLightArm,
+        OuterLightArm,
+    }
+
+    private readonly record struct EnergyUnitCenterSample(
+        double WorldX,
+        double WorldY,
+        double HeightM,
+        double WidthM,
+        double HeightSpanM,
+        int Count)
+    {
+        public static EnergyUnitCenterSample Create(
+            double worldX,
+            double worldY,
+            double heightM,
+            double widthM,
+            double heightSpanM)
+            => new(worldX, worldY, heightM, widthM, heightSpanM, 1);
+
+        public EnergyUnitCenterSample Add(
+            double worldX,
+            double worldY,
+            double heightM,
+            double widthM,
+            double heightSpanM)
+            => new(
+                (WorldX * Count + worldX) / (Count + 1),
+                (WorldY * Count + worldY) / (Count + 1),
+                (HeightM * Count + heightM) / (Count + 1),
+                (WidthM * Count + widthM) / (Count + 1),
+                (HeightSpanM * Count + heightSpanM) / (Count + 1),
+                Count + 1);
+    }
 
     private sealed class ComponentAnnotationFile
     {

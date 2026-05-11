@@ -603,6 +603,17 @@ internal sealed class AutoAimSolverService
 
         double metersPerWorldUnit = Math.Max(world.MetersPerWorldUnit, 1e-6);
         world.Teams.TryGetValue(team, out SimulationTeamState? teamState);
+        if (SimulationCombatMath.TryResolveEnergyMechanismRotorFrame(
+                world,
+                target,
+                team,
+                metersPerWorldUnit,
+                out pivotM,
+                out rotorAxisM))
+        {
+            return true;
+        }
+
         IReadOnlyList<ArmorPlateTarget> targets = SimulationCombatMath.GetEnergyMechanismTargets(
             target,
             metersPerWorldUnit,

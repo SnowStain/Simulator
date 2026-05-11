@@ -278,7 +278,7 @@ internal sealed class SimulatorOpenTkWindow : GameWindow
         {
             base.OnLoad();
             VSync = VSyncMode.Off;
-            GL.ClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+            GL.ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             GL.Enable(EnableCap.Multisample);
             _shaderProgram = BuildShaderProgram();
             InitializeQuadBuffers();
@@ -400,15 +400,22 @@ internal sealed class SimulatorOpenTkWindow : GameWindow
 
     protected override void OnFocusedChanged(FocusedChangedEventArgs e)
     {
-        base.OnFocusedChanged(e);
-        if (IsFocused)
+        try
         {
-            return;
-        }
+            base.OnFocusedChanged(e);
+            if (IsFocused || _runtime is null || _inputAccumulator is null || _inputClock is null)
+            {
+                return;
+            }
 
-        _runtime.ExternalApplyInput(_inputAccumulator.ReleaseAll(
-            _inputClock.Elapsed.TotalSeconds,
-            new GamePointerState(0, 0, 0, 0, 0, CursorCaptured: false)));
+            _runtime.ExternalApplyInput(_inputAccumulator.ReleaseAll(
+                _inputClock.Elapsed.TotalSeconds,
+                new GamePointerState(0, 0, 0, 0, 0, CursorCaptured: false)));
+        }
+        catch (Exception exception)
+        {
+            ReportOpenTkFailure("OnFocusedChanged", exception);
+        }
     }
 
     private void ProcessInputSnapshot()

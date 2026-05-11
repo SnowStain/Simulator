@@ -461,6 +461,7 @@ internal sealed partial class Simulator3dForm : Form
     private long _lastGpuProxyEntityRenderTicks;
     private long _lastGpuStructureEntityRenderTicks;
     private long _lastGpuEnergyEntityRenderTicks;
+    private const double ProjectileImpactPointDisplaySec = 12.0;
     private readonly Dictionary<string, List<Vector3>> _projectileTrailPoints = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _projectileTrailActiveIds = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<string> _projectileTrailStaleIds = new(64);
@@ -481,6 +482,8 @@ internal sealed partial class Simulator3dForm : Form
     private Icon? _windowIcon;
     private Bitmap? _cachedTerrainLayerBitmap;
     private Bitmap? _cachedStaticStructureLayerBitmap;
+    private Bitmap? _duelRespawnGrayscaleSnapshot;
+    private Size _duelRespawnGrayscaleSnapshotSize = Size.Empty;
     private Bitmap? _cpuProjectileLayerBitmap;
     private Graphics? _cpuProjectileLayerGraphics;
     private Size _cpuProjectileLayerClientSize = Size.Empty;
@@ -1033,6 +1036,7 @@ internal sealed partial class Simulator3dForm : Form
             DisposeBackgroundVideo();
             _cachedTerrainLayerBitmap?.Dispose();
             _cachedStaticStructureLayerBitmap?.Dispose();
+            _duelRespawnGrayscaleSnapshot?.Dispose();
             _cpuProjectileLayerGraphics?.Dispose();
             _cpuProjectileLayerBitmap?.Dispose();
             _fastEntityLayerGraphics?.Dispose();
@@ -1082,10 +1086,10 @@ internal sealed partial class Simulator3dForm : Form
             && allowGpuScene;
         if (!gpuSceneAvailable)
         {
-            graphics.Clear(_appState == SimulatorAppState.InMatch ? Color.White : BackColor);
+            graphics.Clear(_appState == SimulatorAppState.InMatch ? Color.Black : BackColor);
             if (_appState == SimulatorAppState.InMatch)
             {
-                using var brush = new SolidBrush(Color.White);
+                using var brush = new SolidBrush(Color.Black);
                 graphics.FillRectangle(brush, ClientRectangle);
             }
             else
@@ -1964,6 +1968,7 @@ internal sealed partial class Simulator3dForm : Form
         {
             _simulationAccumulatorSec = 0.0;
             _projectileTrailPoints.Clear();
+            _host.World.ProjectileImpactPoints.Clear();
             _combatMarkers.Clear();
         }
         else
@@ -2978,6 +2983,12 @@ internal sealed partial class Simulator3dForm : Form
             if (_matchStartupPhase is MatchStartupPhase.Preparation or MatchStartupPhase.SelfCheck or MatchStartupPhase.Countdown
                 && IsInMatchActionKey(eventArgs, InMatchKeyAction.OpenPMenu))
             {
+                if (IsLanRefereeClient)
+                {
+                    ToggleRefereeControlWindow(localMode: false);
+                    return;
+                }
+
                 _pSettingsPanelOpen = !_pSettingsPanelOpen;
                 _localRefereePanelOpen = false;
                 _pendingPKeyBindingAction = null;
@@ -3005,6 +3016,12 @@ internal sealed partial class Simulator3dForm : Form
 
         if (IsInMatchActionKey(eventArgs, InMatchKeyAction.OpenPMenu))
         {
+            if (IsLanRefereeClient)
+            {
+                ToggleRefereeControlWindow(localMode: false);
+                return;
+            }
+
             _pSettingsPanelOpen = !_pSettingsPanelOpen;
             _localRefereePanelOpen = false;
             _pendingPKeyBindingAction = null;
@@ -3294,18 +3311,84 @@ internal sealed partial class Simulator3dForm : Form
             return;
         }
 
-        _pSettingsPanelOpen = !_pSettingsPanelOpen || !_localRefereePanelOpen;
-        _localRefereePanelOpen = _pSettingsPanelOpen;
-        _matchSelfCheckPanelOpen = false;
-        _pendingPKeyBindingAction = null;
-        if (!_pSettingsPanelOpen)
+        ToggleRefereeControlWindow(localMode: true);
+    }
+
+    private void ToggleRefereeControlWindow(bool localMode)
+    {
+        if (_refereeControlWindow is { IsDisposed: false })
         {
-            _pKeyBindingEditorOpen = false;
-            ClearPPanelInteractionState();
+            _refereeControlWindow.Close();
+            _refereeControlWindow = null;
+            return;
         }
 
+        _localRefereePanelOpen = false;
+        _pSettingsPanelOpen = false;
+        _matchSelfCheckPanelOpen = false;
+        _pendingPKeyBindingAction = null;
+        _pKeyBindingEditorOpen = false;
+        ClearPPanelInteractionState();
         UpdateMouseCaptureState();
-        Invalidate();
+
+        _refereeControlWindow = new RefereeControlWindow(this, localMode);
+        PositionDetachedRefereeControlWindow(_refereeControlWindow);
+        _refereeControlWindow.FormClosed += (_, _) =>
+        {
+            _refereeControlWindow = null;
+        };
+        _refereeControlWindow.Show();
+    }
+
+    private void PositionDetachedRefereeControlWindow(Form window)
+    {
+        Rectangle workingArea = Screen.FromControl(this).WorkingArea;
+        int x = Math.Clamp(
+            Bounds.Right + 12,
+            workingArea.Left,
+            Math.Max(workingArea.Left, workingArea.Right - window.Width));
+        int y = Math.Clamp(
+            Bounds.Top,
+            workingArea.Top,
+            Math.Max(workingArea.Top, workingArea.Bottom - window.Height));
+
+        window.Location = new Point(x, y);
+    }
+
+    internal void InvokeRefereeControlWindowAction(string action)
+    {
+        if (string.Equals(action, "p_close", StringComparison.OrdinalIgnoreCase))
+        {
+            _refereeControlWindow?.Close();
+            return;
+        }
+
+        if (HandleLanRefereePanelAction(action))
+        {
+            InvalidateHudPortraitCache();
+            InvalidateGpuOverlayLayer();
+            Invalidate();
+            return;
+        }
+
+        HandlePSettingsAction(action);
+        if (string.Equals(action, "p_logout", StringComparison.OrdinalIgnoreCase))
+        {
+            _refereeControlWindow?.Close();
+        }
+    }
+
+    internal string BuildRefereeControlWindowStatusText()
+    {
+        SimulationEntity? selected = _host.SelectedEntity;
+        string selectedText = selected is null
+            ? "当前目标：未选中"
+            : $"当前目标：{ResolveRefereeEntityLabel(selected.Id)}  HP {Math.Ceiling(selected.Health):0}/{Math.Ceiling(selected.MaxHealth):0}  弹药 {selected.Ammo17Mm}/{selected.Ammo42Mm}";
+        string linkText = IsLanMultiplayerActive
+            ? $"LAN tx/rx {_lanInputFramesSent}/{_lanInputFramesReceived}  tick {_lanSimulationSequence}"
+            : $"本地时间 {_host.World.GameTimeSec:0.0}s";
+        string pageText = _refereePanelPage == RefereePanelPage.Energy ? "能量机关页" : "总览页";
+        return $"{pageText}    {selectedText}    {linkText}";
     }
 
     private bool IsEnergyActivatorSelected()
@@ -3378,7 +3461,7 @@ internal sealed partial class Simulator3dForm : Form
         int multiplayerBlockHeight = multiplayerExpand > 0.05f ? subButtonHeight + 8 : 0;
         int startBaseHeight = subButtonHeight * 2 + subButtonGap;
         int startReserve = startExpand > 0.05f ? startBaseHeight + singleBlockHeight + multiplayerBlockHeight + 14 : 0;
-        int submenuBlockHeight = subButtonHeight * 5 + subButtonGap * 4;
+        int submenuBlockHeight = subButtonHeight * 6 + subButtonGap * 5;
         int editorReserve = editorExpand > 0.05f ? submenuBlockHeight + 12 : 0;
         int panelHeight = headerHeight + buttonHeight * 3 + sectionGap * 2 + startReserve + editorReserve + 34;
         int maxPanelHeight = Math.Max(260, ClientSize.Height - verticalMargin * 2);
@@ -3390,7 +3473,7 @@ internal sealed partial class Simulator3dForm : Form
             singleBlockHeight = singleExpand > 0.05f ? subButtonHeight * 3 + subButtonGap * 2 + 8 : 0;
             multiplayerBlockHeight = multiplayerExpand > 0.05f ? subButtonHeight + 8 : 0;
             startBaseHeight = subButtonHeight * 2 + subButtonGap;
-            submenuBlockHeight = subButtonHeight * 5 + subButtonGap * 4;
+            submenuBlockHeight = subButtonHeight * 6 + subButtonGap * 5;
             startReserve = startExpand > 0.05f ? startBaseHeight + singleBlockHeight + multiplayerBlockHeight + 12 : 0;
             editorReserve = editorExpand > 0.05f ? submenuBlockHeight + 10 : 0;
             panelHeight = Math.Min(maxPanelHeight, headerHeight + buttonHeight * 3 + sectionGap * 2 + startReserve + editorReserve + 30);
@@ -3478,11 +3561,13 @@ internal sealed partial class Simulator3dForm : Form
         {
             int subOffsetY = (int)MathF.Round((1f - editorExpand) * 12f);
             Rectangle terrainEditor = new(panel.X + 42, cursorY + subOffsetY, rowWidth - 14, subButtonHeight);
-            Rectangle appearanceEditor = new(panel.X + 42, cursorY + subButtonHeight + subButtonGap + subOffsetY, rowWidth - 14, subButtonHeight);
-            Rectangle ruleEditor = new(panel.X + 42, cursorY + (subButtonHeight + subButtonGap) * 2 + subOffsetY, rowWidth - 14, subButtonHeight);
-            Rectangle lightingEditor = new(panel.X + 42, cursorY + (subButtonHeight + subButtonGap) * 3 + subOffsetY, rowWidth - 14, subButtonHeight);
-            Rectangle lightingToggle = new(panel.X + 42, cursorY + (subButtonHeight + subButtonGap) * 4 + subOffsetY, rowWidth - 14, subButtonHeight);
+            Rectangle buffEditor = new(panel.X + 42, cursorY + subButtonHeight + subButtonGap + subOffsetY, rowWidth - 14, subButtonHeight);
+            Rectangle appearanceEditor = new(panel.X + 42, cursorY + (subButtonHeight + subButtonGap) * 2 + subOffsetY, rowWidth - 14, subButtonHeight);
+            Rectangle ruleEditor = new(panel.X + 42, cursorY + (subButtonHeight + subButtonGap) * 3 + subOffsetY, rowWidth - 14, subButtonHeight);
+            Rectangle lightingEditor = new(panel.X + 42, cursorY + (subButtonHeight + subButtonGap) * 4 + subOffsetY, rowWidth - 14, subButtonHeight);
+            Rectangle lightingToggle = new(panel.X + 42, cursorY + (subButtonHeight + subButtonGap) * 5 + subOffsetY, rowWidth - 14, subButtonHeight);
             DrawMainMenuActionButton(graphics, terrainEditor, "地图编辑器", "menu_open_terrain_editor", quietAccent, false, editorExpand);
+            DrawMainMenuActionButton(graphics, buffEditor, "Buff 编辑器", "menu_open_buff_editor", quietAccent, false, editorExpand);
             DrawMainMenuActionButton(graphics, appearanceEditor, "外观编辑器", "menu_open_appearance_editor", quietAccent, false, editorExpand);
             DrawMainMenuActionButton(graphics, ruleEditor, "规则编辑器", "menu_open_rule_editor", quietAccent, false, editorExpand);
             DrawMainMenuActionButton(graphics, lightingEditor, "局内光照编辑器", "menu_open_lighting_editor", quietAccent, false, editorExpand);
@@ -4310,13 +4395,24 @@ internal sealed partial class Simulator3dForm : Form
         Simulator3dHost.DuelMatchSnapshot snapshot = _host.GetDuelMatchSnapshot();
         if (!snapshot.WaitingForNextRound || snapshot.Finished)
         {
+            InvalidateDuelRespawnGrayscaleSnapshot();
             return;
         }
 
         if (snapshot.FriendlyDestroyedLastRound)
         {
-            using var grayWash = new SolidBrush(Color.FromArgb(150, 214, 218, 222));
-            graphics.FillRectangle(grayWash, ClientRectangle);
+            if (UseGpuRenderer && !UseFastFlatRenderer)
+            {
+                InvalidateDuelRespawnGrayscaleSnapshot();
+            }
+            else
+            {
+                DrawDuelRespawnGrayscaleFrame(graphics);
+            }
+        }
+        else
+        {
+            InvalidateDuelRespawnGrayscaleSnapshot();
         }
 
         int panelWidth = Math.Min(680, Math.Max(360, ClientSize.Width - 48));
@@ -4355,6 +4451,76 @@ internal sealed partial class Simulator3dForm : Form
         string enemyTeam = string.Equals(friendlyTeam, "blue", StringComparison.OrdinalIgnoreCase) ? "red" : "blue";
         DrawDuelRoundStatColumn(graphics, friendlyRect, "我方", snapshot.FriendlyStats, ResolveTeamColor(friendlyTeam));
         DrawDuelRoundStatColumn(graphics, enemyRect, IsLanMultiplayerActive ? "敌方玩家" : "敌方 AI", snapshot.EnemyStats, ResolveTeamColor(enemyTeam));
+    }
+
+    private void DrawDuelRespawnGrayscaleFrame(Graphics graphics)
+    {
+        Size size = ClientSize;
+        if (size.Width <= 1 || size.Height <= 1)
+        {
+            return;
+        }
+
+        if (_duelRespawnGrayscaleSnapshot is null || _duelRespawnGrayscaleSnapshotSize != size)
+        {
+            CaptureDuelRespawnGrayscaleSnapshot(size);
+        }
+
+        if (_duelRespawnGrayscaleSnapshot is not null)
+        {
+            graphics.DrawImageUnscaled(_duelRespawnGrayscaleSnapshot, 0, 0);
+        }
+    }
+
+    private void CaptureDuelRespawnGrayscaleSnapshot(Size size)
+    {
+        try
+        {
+            using Bitmap source = new(size.Width, size.Height, PixelFormat.Format32bppArgb);
+            using (Graphics capture = Graphics.FromImage(source))
+            {
+                capture.CopyFromScreen(PointToScreen(Point.Empty), Point.Empty, size, CopyPixelOperation.SourceCopy);
+            }
+
+            Bitmap grayscale = new(size.Width, size.Height, PixelFormat.Format32bppPArgb);
+            using (Graphics grayGraphics = Graphics.FromImage(grayscale))
+            using (ImageAttributes attributes = new())
+            {
+                ColorMatrix matrix = new(new[]
+                {
+                    new[] { 0.299f, 0.299f, 0.299f, 0f, 0f },
+                    new[] { 0.587f, 0.587f, 0.587f, 0f, 0f },
+                    new[] { 0.114f, 0.114f, 0.114f, 0f, 0f },
+                    new[] { 0.000f, 0.000f, 0.000f, 1f, 0f },
+                    new[] { 0.000f, 0.000f, 0.000f, 0f, 1f },
+                });
+                attributes.SetColorMatrix(matrix);
+                grayGraphics.DrawImage(
+                    source,
+                    new Rectangle(Point.Empty, size),
+                    0,
+                    0,
+                    size.Width,
+                    size.Height,
+                    GraphicsUnit.Pixel,
+                    attributes);
+            }
+
+            _duelRespawnGrayscaleSnapshot?.Dispose();
+            _duelRespawnGrayscaleSnapshot = grayscale;
+            _duelRespawnGrayscaleSnapshotSize = size;
+        }
+        catch
+        {
+            InvalidateDuelRespawnGrayscaleSnapshot();
+        }
+    }
+
+    private void InvalidateDuelRespawnGrayscaleSnapshot()
+    {
+        _duelRespawnGrayscaleSnapshot?.Dispose();
+        _duelRespawnGrayscaleSnapshot = null;
+        _duelRespawnGrayscaleSnapshotSize = Size.Empty;
     }
 
     private void DrawDuelRoundStatColumn(
@@ -4956,7 +5122,15 @@ internal sealed partial class Simulator3dForm : Form
 
     private void DrawPSettingsPanel(Graphics graphics, bool allowPerformanceChanges)
     {
-        if (IsLanRefereeClient || _localRefereePanelOpen)
+        if (IsLanRefereeClient)
+        {
+            _pSettingsPanelOpen = false;
+            _matchSelfCheckPanelOpen = false;
+            ClearPPanelInteractionState();
+            return;
+        }
+
+        if (_localRefereePanelOpen)
         {
             DrawLanRefereePanel(graphics);
             return;
@@ -11169,6 +11343,9 @@ internal sealed partial class Simulator3dForm : Form
             case "menu_open_terrain_editor":
                 LoadLargeTerrainInProcessLauncher.OpenTerrainEditorAsync(_host.ActiveMapPreset);
                 break;
+            case "menu_open_buff_editor":
+                OpenEditorDialog(new BuffEditorForm());
+                break;
             case "menu_open_rule_editor":
                 ReportOpenTkEditorOnly("规则编辑器");
                 break;
@@ -15290,7 +15467,51 @@ internal sealed partial class Simulator3dForm : Form
             }
         }
 
+        DrawProjectileImpactPoints(layerGraphics);
         graphics.DrawImageUnscaled(_cpuProjectileLayerBitmap, 0, 0);
+    }
+
+    private void DrawProjectileImpactPoints(Graphics graphics)
+    {
+        if (!_showProjectileTrails || _host.World.ProjectileImpactPoints.Count == 0)
+        {
+            return;
+        }
+
+        PruneProjectileImpactPoints();
+        if (_host.World.ProjectileImpactPoints.Count == 0)
+        {
+            return;
+        }
+
+        using var fillBrush = new SolidBrush(Color.FromArgb(230, 34, 138, 255));
+        using var outlinePen = new Pen(Color.FromArgb(245, 190, 226, 255), 1f);
+        foreach (SimulationProjectileImpactPoint impact in _host.World.ProjectileImpactPoints)
+        {
+            Vector3 center = ToScenePoint(impact.X, impact.Y, (float)impact.HeightM) + Vector3.UnitY * 0.018f;
+            if (!TryProject(center, out PointF point, out _))
+            {
+                continue;
+            }
+
+            float halfSize = string.Equals(impact.AmmoType, "42mm", StringComparison.OrdinalIgnoreCase) ? 3.4f : 2.8f;
+            RectangleF rect = new(point.X - halfSize, point.Y - halfSize, halfSize * 2f, halfSize * 2f);
+            graphics.FillRectangle(fillBrush, rect);
+            graphics.DrawRectangle(outlinePen, rect.X, rect.Y, rect.Width, rect.Height);
+        }
+    }
+
+    private void PruneProjectileImpactPoints()
+    {
+        double cutoff = _host.World.GameTimeSec - ProjectileImpactPointDisplaySec;
+        IList<SimulationProjectileImpactPoint> impacts = _host.World.ProjectileImpactPoints;
+        for (int index = impacts.Count - 1; index >= 0; index--)
+        {
+            if (impacts[index].TimeSec < cutoff)
+            {
+                impacts.RemoveAt(index);
+            }
+        }
     }
 
     private int BuildProjectileRenderCommands(out ProjectileRenderCommand[] commands)

@@ -36,6 +36,7 @@ internal sealed partial class Simulator3dForm
     private readonly Dictionary<string, long> _lanProcessedInputSequenceByEntity = new(StringComparer.OrdinalIgnoreCase);
     private long _lanSimulationSequence;
     private long _lanInputSequence;
+    private long _lastLanPublishedPlayerInputSequence;
     private long _lanLobbySequence;
     private long _lanDigestSequence;
     private long _lanSnapshotSequence;
@@ -112,6 +113,7 @@ internal sealed partial class Simulator3dForm
     private bool _localRoomPanelOpen;
     private bool _localRoomMatchActive;
     private bool _localRefereePanelOpen;
+    private RefereeControlWindow? _refereeControlWindow;
     private string _localRoomStatusText = "本地房间默认不填充机器人，点击席位添加本地玩家或 AI。";
 
     private bool IsLanMultiplayerActive
@@ -772,6 +774,7 @@ internal sealed partial class Simulator3dForm
         _lanProcessedInputSequenceByEntity.Clear();
         _lanSimulationSequence = 0;
         _lanInputSequence = 0;
+        _lastLanPublishedPlayerInputSequence = 0;
         _lanDigestSequence = 0;
         _lanSnapshotSequence = 0;
         _lanRefereeReportSequence = 0;
@@ -825,6 +828,7 @@ internal sealed partial class Simulator3dForm
         _lanProcessedInputSequenceByEntity.Clear();
         _lanSimulationSequence = 0;
         _lanInputSequence = 0;
+        _lastLanPublishedPlayerInputSequence = 0;
         _lastLanSnapshotSentAtSec = double.NegativeInfinity;
         _lastLanSnapshotReceivedAtSec = double.NegativeInfinity;
         _lastLanPoseDriftLogSec = 0.0;
@@ -853,6 +857,7 @@ internal sealed partial class Simulator3dForm
         _lanProcessedInputSequenceByEntity.Clear();
         _lanSimulationSequence = Math.Max(0, snapshot.SimulationTick);
         _lanInputSequence = _lanSimulationSequence;
+        _lastLanPublishedPlayerInputSequence = _lanSimulationSequence;
         _simulationAccumulatorSec = 0.0;
         _lastFrameClockTicks = _frameClock.ElapsedTicks;
         _host.World.GameTimeSec = Math.Max(0.0, snapshot.GameTimeSec);
@@ -2157,6 +2162,13 @@ internal sealed partial class Simulator3dForm
         }
 
         _lanInputSequence = _lanSimulationSequence + 1;
+        if (_lanInputSequence <= _lastLanPublishedPlayerInputSequence)
+        {
+            // Render frames can outnumber simulation ticks; publish one input packet per tick and coalesce duplicates.
+            Interlocked.Increment(ref _lanCoalescedInputTxLogs);
+            return;
+        }
+
         if (!_lanLocalInputFrames.TryGetValue(_lanInputSequence, out PlayerControlState? bufferedState)
             || bufferedState is null)
         {
@@ -2183,6 +2195,7 @@ internal sealed partial class Simulator3dForm
         }
 
         _ = _lanSession.SendPlayerInputAsync(playerInput);
+        _lastLanPublishedPlayerInputSequence = _lanInputSequence;
     }
 
     private bool TryBuildLanStepStates(PlayerControlState localState, out IReadOnlyList<PlayerControlState> states, out bool waitingForRemoteInput)
