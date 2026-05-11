@@ -91,21 +91,7 @@ static string ResolveDefaultLogPath(string repoRoot)
         return rootLog;
     }
 
-    string threeDDebugRoot = Path.Combine(repoRoot, "src", "Simulator.ThreeD", "bin", "Debug");
-    if (Directory.Exists(threeDDebugRoot))
-    {
-        foreach (string targetDir in Directory.EnumerateDirectories(threeDDebugRoot, "net10.0*", SearchOption.TopDirectoryOnly))
-        {
-            string candidate = Path.Combine(targetDir, "logs", "autoaim_training.log");
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-        }
-    }
-
-    string launcherLog = Path.Combine(repoRoot, "build_verify", "launcher_builds", "debug", "threeD", "logs", "autoaim_training.log");
-    return File.Exists(launcherLog) ? launcherLog : rootLog;
+    return rootLog;
 }
 
 static List<CalibrationSample> LoadSamples(string path)

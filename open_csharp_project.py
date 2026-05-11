@@ -52,13 +52,13 @@ def repo_root() -> Path:
 
 
 def project_targets(root: Path) -> dict[str, TargetSpec]:
-    three_d = root / "src" / "Simulator.ThreeD" / "Simulator.ThreeD.csproj"
+    linux = root / "src" / "Simulator.Linux" / "Simulator.Linux.csproj"
     runtime = root / "src" / "Simulator.Runtime" / "Simulator.Runtime.csproj"
     large_terrain = root / "src" / "Simulator.LoadLargeTerrain" / "LoadLargeTerrain.csproj"
     return {
-        # Running "solution" maps to the default runnable app (ThreeD).
-        "solution": TargetSpec(path=root / "Simulator.sln", run_project=three_d),
-        "threeD": TargetSpec(path=three_d, run_project=three_d),
+        # Running "solution" maps to the default runnable app.
+        "solution": TargetSpec(path=root / "Simulator.sln", run_project=linux),
+        "linux": TargetSpec(path=linux, run_project=linux),
         "appearanceEditor": TargetSpec(path=root / "py_client" / "appearance_editor.py", python_script=root / "py_client" / "appearance_editor.py"),
         "largeTerrainViewer": TargetSpec(path=root / "run_viewer.py", python_script=root / "run_viewer.py"),
         "loadLargeTerrain": TargetSpec(path=large_terrain, run_project=large_terrain),
@@ -144,6 +144,9 @@ def resolve_built_executable(run_project: Path, configuration: str, output_dir: 
         target_framework = resolve_target_framework(run_project)
         executable = run_project.parent / "bin" / configuration / target_framework / f"{project_name}.exe"
     if not executable.is_file():
+        extensionless = executable.with_suffix("")
+        if extensionless.is_file():
+            return extensionless
         raise FileNotFoundError(f"Built executable not found: {executable}")
     return executable
 
@@ -152,7 +155,7 @@ def resolve_target_framework(project_path: Path) -> str:
     try:
         text = project_path.read_text(encoding="utf-8", errors="replace")
     except OSError:
-        return "net10.0-windows"
+        return "net10.0"
 
     match = re.search(r"<TargetFramework>\s*([^<\s]+)\s*</TargetFramework>", text)
     if match:
@@ -162,7 +165,7 @@ def resolve_target_framework(project_path: Path) -> str:
     if match:
         return match.group(1)
 
-    return "net10.0-windows"
+    return "net10.0"
 
 
 def locate_dotnet() -> str | None:
@@ -194,7 +197,7 @@ def run_with_dotnet(
     run_project = target_spec.run_project
     if run_project is None:
         print(
-            f"Target '{target_name}' is not runnable. Use 'threeD' or 'runtime'.",
+            f"Target '{target_name}' is not runnable. Use 'linux' or 'runtime'.",
             file=sys.stderr,
         )
         return False
@@ -387,7 +390,7 @@ def main() -> int:
 
     target_name = args.target
     if target_name is None:
-        target_name = "threeD" if args.action == "run" else "solution"
+        target_name = "linux" if args.action == "run" else "solution"
 
     target_spec = targets[target_name]
     target = target_spec.path

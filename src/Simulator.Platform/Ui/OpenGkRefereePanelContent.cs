@@ -7,9 +7,19 @@ public readonly record struct OpenGkRefereeEnergyCard(
     string ActionPrefix,
     int ActiveCount = 0);
 
+public readonly record struct OpenGkRefereeQuickAction(
+    string Label,
+    string Action,
+    bool Active = false,
+    bool Enabled = true);
+
 public static class OpenGkRefereePanelContent
 {
-    public static void AddLocalOverview(OpenGkUiDrawList drawList, Rectangle content, string status)
+    public static void AddLocalOverview(
+        OpenGkUiDrawList drawList,
+        Rectangle content,
+        string status,
+        IReadOnlyList<OpenGkRefereeQuickAction>? quickActions = null)
     {
         int gap = 14;
         int colWidth = (content.Width - gap * 2) / 3;
@@ -28,6 +38,27 @@ public static class OpenGkRefereePanelContent
             Color.FromArgb(224, 232, 238),
             OpenGkUiTextStyle.Small,
             OpenGkUiTextAlign.Left);
+        if (quickActions is null || quickActions.Count == 0)
+        {
+            return;
+        }
+
+        int x = right.X + 18;
+        int y = right.Y + 72;
+        int buttonWidth = Math.Max(92, (right.Width - 48) / 2);
+        for (int index = 0; index < quickActions.Count; index++)
+        {
+            OpenGkRefereeQuickAction action = quickActions[index];
+            int column = index % 2;
+            int row = index / 2;
+            OpenGkUiPainter.AddPButton(
+                drawList,
+                new Rectangle(x + column * (buttonWidth + 8), y + row * 36, buttonWidth, 28),
+                action.Label,
+                action.Action,
+                action.Active,
+                action.Enabled);
+        }
     }
 
     public static void AddEnergyGrid(OpenGkUiDrawList drawList, Rectangle content, IReadOnlyList<OpenGkRefereeEnergyCard> cards)

@@ -3379,26 +3379,16 @@ class AppearanceEditorApp:
             return
 
         workspace_root = WORKSPACE_ROOT
-        project_path = os.path.join(workspace_root, 'src', 'Simulator.ThreeD', 'Simulator.ThreeD.csproj')
+        project_path = os.path.join(workspace_root, 'src', 'Simulator.Linux', 'Simulator.Linux.csproj')
         command = [
             'dotnet',
             'run',
             '--project',
             project_path,
             '--',
-            '--renderer',
-            'gpu',
-            '--start-match',
-            '--preview-only',
-            '--appearance-path',
-            preview_path,
-            '--preview-structure',
-            role_key,
+            '--map',
+            'rmuc2026',
         ]
-        preview_team = self._runtime_preview_team()
-        if preview_team:
-            command.extend(['--preview-team', preview_team])
-
         creationflags = 0
         if os.name == 'nt':
             creationflags = getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0)

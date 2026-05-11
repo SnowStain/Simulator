@@ -84,10 +84,10 @@ public sealed class FacilityRegion
             return false;
         }
 
-        double centerZ = ReadAdditionalDouble("center_z_m", ReadAdditionalDouble("z_m", ResolveDefaultVolumeHeightM() * 0.5));
+        double centerZ = ReadAdditionalDouble("center_z_m", ReadAdditionalDouble("collision_center_z_m", ReadAdditionalDouble("z_m", ResolveDefaultVolumeHeightM() * 0.5)));
         double height = ResolveVolumeHeightM();
-        double bottom = ReadAdditionalDouble("bottom_m", centerZ - height * 0.5);
-        double top = ReadAdditionalDouble("top_m", centerZ + height * 0.5);
+        double bottom = ReadAdditionalDouble("bottom_m", ReadAdditionalDouble("collision_bottom_m", centerZ - height * 0.5));
+        double top = ReadAdditionalDouble("top_m", ReadAdditionalDouble("collision_top_m", bottom + height));
         if (top < bottom)
         {
             (bottom, top) = (top, bottom);
@@ -95,6 +95,45 @@ public sealed class FacilityRegion
 
         return heightM >= bottom - 1e-6 && heightM <= top + 1e-6;
     }
+
+    public bool BlocksMovement
+    {
+        get
+        {
+            if (TryReadAdditionalBoolean("blocks_movement", out bool explicitValue))
+            {
+                return explicitValue;
+            }
+
+            string type = Type ?? string.Empty;
+            if (type.StartsWith("buff_", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(type, "supply", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(type, "fort", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(type, "energy_mechanism", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            return HeightM > 0.25
+                || type.Contains("collision", StringComparison.OrdinalIgnoreCase)
+                || type.Contains("wall", StringComparison.OrdinalIgnoreCase)
+                || type.Contains("barrier", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(type, "base", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(type, "outpost", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    public double CollisionBottomM
+        => ReadAdditionalDouble("collision_bottom_m", ReadAdditionalDouble("bottom_m", 0.0));
+
+    public double CollisionHeightM
+        => Math.Max(0.02, ReadAdditionalDouble("collision_height_m", ResolveVolumeHeightM()));
+
+    public double CollisionTopM
+        => ReadAdditionalDouble("collision_top_m", ReadAdditionalDouble("top_m", CollisionBottomM + CollisionHeightM));
+
+    public double CollisionExpandM
+        => ReadAdditionalDouble("collision_expand_m", 0.0);
 
     public override string ToString()
     {
@@ -185,7 +224,7 @@ public sealed class FacilityRegion
         return false;
     }
 
-    private bool HasVolumeDefinition()
+    public bool HasVolumeDefinition()
         => AdditionalProperties is not null
             && (AdditionalProperties.ContainsKey("volume_shape")
                 || AdditionalProperties.ContainsKey("center_x")
@@ -194,7 +233,15 @@ public sealed class FacilityRegion
                 || AdditionalProperties.ContainsKey("size_y")
                 || AdditionalProperties.ContainsKey("radius"));
 
-    private bool ContainsVolumeProjection(double x, double y)
+    public bool ContainsVolumeProjection(double x, double y)
+        => ContainsVolumeProjectionCore(x, y, expandWorld: 0.0);
+
+    public bool ContainsCollisionProjection(double x, double y, double metersPerWorldUnit)
+        => HasVolumeDefinition()
+            ? ContainsVolumeProjectionCore(x, y, Math.Max(0.0, CollisionExpandM) / Math.Max(1e-6, metersPerWorldUnit))
+            : Contains(x, y);
+
+    private bool ContainsVolumeProjectionCore(double x, double y, double expandWorld)
     {
         string volumeShape = ReadAdditionalString("volume_shape", Shape);
         double centerX = ReadAdditionalDouble("center_x", (X1 + X2) * 0.5);
@@ -212,11 +259,12 @@ public sealed class FacilityRegion
             double radius = ReadAdditionalDouble(
                 "radius",
                 Math.Max(Math.Abs(X2 - X1), Math.Abs(Y2 - Y1)) * 0.5);
-            return localX * localX + localY * localY <= Math.Max(0.01, radius) * Math.Max(0.01, radius);
+            double expandedRadius = Math.Max(0.01, radius + expandWorld);
+            return localX * localX + localY * localY <= expandedRadius * expandedRadius;
         }
 
-        double sizeX = ReadAdditionalDouble("size_x", Math.Abs(X2 - X1));
-        double sizeY = ReadAdditionalDouble("size_y", Math.Abs(Y2 - Y1));
+        double sizeX = ReadAdditionalDouble("size_x", Math.Abs(X2 - X1)) + expandWorld * 2.0;
+        double sizeY = ReadAdditionalDouble("size_y", Math.Abs(Y2 - Y1)) + expandWorld * 2.0;
         return Math.Abs(localX) <= Math.Max(0.01, sizeX) * 0.5
             && Math.Abs(localY) <= Math.Max(0.01, sizeY) * 0.5;
     }
@@ -225,7 +273,7 @@ public sealed class FacilityRegion
         => Math.Max(0.05, HeightM);
 
     private double ResolveVolumeHeightM()
-        => Math.Max(0.02, ReadAdditionalDouble("size_z_m", ReadAdditionalDouble("height_m", ResolveDefaultVolumeHeightM())));
+        => Math.Max(0.02, ReadAdditionalDouble("size_z_m", ReadAdditionalDouble("collision_height_m", ReadAdditionalDouble("height_m", ResolveDefaultVolumeHeightM()))));
 
     private string ReadAdditionalString(string key, string fallback)
     {
@@ -257,6 +305,31 @@ public sealed class FacilityRegion
             && double.TryParse(element.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed)
                 ? parsed
                 : fallback;
+    }
+
+    private bool TryReadAdditionalBoolean(string key, out bool value)
+    {
+        value = false;
+        if (AdditionalProperties is null
+            || !AdditionalProperties.TryGetValue(key, out JsonElement element))
+        {
+            return false;
+        }
+
+        if (element.ValueKind is JsonValueKind.True or JsonValueKind.False)
+        {
+            value = element.GetBoolean();
+            return true;
+        }
+
+        if (element.ValueKind == JsonValueKind.String
+            && bool.TryParse(element.GetString(), out bool parsed))
+        {
+            value = parsed;
+            return true;
+        }
+
+        return false;
     }
 }
 

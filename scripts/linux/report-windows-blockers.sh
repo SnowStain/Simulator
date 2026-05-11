@@ -4,17 +4,17 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
-INCLUDE_LEGACY_WINDOWS=0
-if [[ "${1:-}" == "--include-legacy-windows" ]]; then
-  INCLUDE_LEGACY_WINDOWS=1
+INCLUDE_ALL_SOURCE=0
+if [[ "${1:-}" == "--include-all-source" ]]; then
+  INCLUDE_ALL_SOURCE=1
 fi
 
-if [[ "$INCLUDE_LEGACY_WINDOWS" -eq 1 ]]; then
-  echo "[windows-blockers] full legacy source audit"
+if [[ "$INCLUDE_ALL_SOURCE" -eq 1 ]]; then
+  echo "[windows-blockers] full source audit"
   SCAN_ROOTS=("src")
 else
   echo "[windows-blockers] Linux-callable graph audit"
-  echo "[windows-blockers] pass --include-legacy-windows to include the legacy ThreeD/WinForms shell"
+  echo "[windows-blockers] pass --include-all-source to scan every source project"
   SCAN_ROOTS=(
     "src/Simulator.Linux"
     "src/Simulator.OpenTk"

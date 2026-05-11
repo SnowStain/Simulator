@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Simulator.Platform\Simulator.Platform.csproj" />
+    <ProjectReference Include="..\Simulator.Assets\Simulator.Assets.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,5 +1,5 @@
 param(
-    [switch]$IncludeLegacyWindows
+    [switch]$IncludeAllSource
 )
 
 $ErrorActionPreference = "Stop"
@@ -27,13 +27,13 @@ $linuxScanRoots = @(
     "src\Simulator.Decision",
     "src\Simulator.Runtime"
 )
-$scanRoots = if ($IncludeLegacyWindows) { @("src") } else { $linuxScanRoots }
+$scanRoots = if ($IncludeAllSource) { @("src") } else { $linuxScanRoots }
 
-if ($IncludeLegacyWindows) {
-    Write-Host "[windows-blockers] full legacy source audit"
+if ($IncludeAllSource) {
+    Write-Host "[windows-blockers] full source audit"
 } else {
     Write-Host "[windows-blockers] Linux-callable graph audit"
-    Write-Host "[windows-blockers] pass -IncludeLegacyWindows to include the legacy ThreeD/WinForms shell"
+    Write-Host "[windows-blockers] pass -IncludeAllSource to scan every source project"
 }
 foreach ($entry in $patterns.GetEnumerator()) {
     Write-Host ""

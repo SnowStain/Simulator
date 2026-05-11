@@ -19,8 +19,13 @@
     - 新 Linux 入口在 `src/Simulator.Linux`，运行：
       `dotnet run --project src/Simulator.Linux/Simulator.Linux.csproj -- --map rmuc2026 --size 1440x900`
     - 平台输入抽象在 `src/Simulator.Platform/Input`，Linux 入口不引用 Windows shell。
-12. [项目日志](project-log.md)
-13. [文档维护工作流](documentation-workflow.md)
+    - Linux 真机 parity 包脚本：
+      `bash scripts/linux/run-linux-parity.sh rmuc2026 1280x720 10`
+      会输出截图、日志、操作流程和功能清单到 `artifacts/linux-parity/<timestamp>/`。
+12. [Linux 迁移状态清单](linux-migration-status.md)
+13. [Linux 迁移缺口审计](linux-migration-gap-audit.md)
+14. [项目日志](project-log.md)
+15. [文档维护工作流](documentation-workflow.md)
 
 ## 文档目标
 
@@ -42,22 +47,26 @@ Linux 迁移时按下面的层级看项目：
 | `src/Simulator.Core` | 规则、实体、战斗、弹丸、增益、能量机关状态 | Linux 入口直接依赖 |
 | `src/Simulator.Assets` | 配置、地图 preset、外观和资源加载 | Linux 入口直接依赖 |
 | `src/Simulator.Linux` | 新 OpenTK-only Linux 操作端入口 | 当前 Linux 主入口 |
-| `src/Simulator.Runtime` | CLI 和未来 runtime 抽取暂存区，目前仍是 Exe | 暂不让 Linux 入口依赖 |
-| `src/Simulator.ThreeD` | Windows 兼容主程序，现有 UI/渲染/LAN 功能源 | 只能抽取代码，Linux 不直接引用 |
+| `src/Simulator.Linux/LinuxOperatorRuntime.cs` | Linux 本地游戏循环：加载配置/地图/规则，创建 Core world，固定步进并输出渲染快照 | 已替换静态占位画面 |
+| `src/Simulator.Linux/LinuxGameRenderSnapshot.cs` | Linux 窗口和真实 world 之间的不可变渲染边界 | 地图、设施、实体、弹丸、互动组件同源输出 |
+| `src/Simulator.OpenTk` | 跨平台 OpenTK 输入与 GPU scene renderer 契约 | 普通游戏入口默认通过 OpenTK 当前 GL context 渲染 |
+| `src/Simulator.Platform/Rendering` | 跨平台 scene-space 渲染数据契约 | 互动组件、buff、collision debug 已开始抽成共享 render list |
+| `src/Simulator.Platform/Runtime` | 跨平台 runtime 状态机与窗口服务契约 | 准备/自检/倒计时/局内/复活/O/P 面板状态已开始抽取 |
+| `src/Simulator.Platform/Ui` | OpenGK 风格跨平台 UI draw list、房间/裁判面板/运行态 HUD painter | Linux/Windows 可同源绘制，平台只实现渲染适配 |
+| `src/Simulator.Runtime` | CLI 和未来 runtime 服务暂存区，目前仍是 Exe | 暂不让 Linux 入口依赖 |
 | `src/Simulator.LoadLargeTerrain` | 地图/地形编辑器入口 | 仍是 Windows/editor 工具 |
 | `scripts/linux` | Linux 迁移验证和启动脚本 | Linux/交接必跑 |
 
-原项目不能直接在 Linux 上完整运行的核心原因是主入口 `Simulator.ThreeD` 使用
-`net10.0-windows`、WinForms、Windows OpenCV runtime，并且大量 OpenGK UI、LAN
-面板、渲染和编辑器调用还在 Windows shell 内。当前 `linux` 分支已经把 Linux
-入口收紧为：
+原项目不能直接在 Linux 上完整运行的核心原因曾经是主入口 `Simulator.ThreeD`
+使用 `net10.0-windows`、WinForms、Windows OpenCV runtime。当前分支已经删除
+这个 legacy shell，并把默认入口收紧为：
 
 ```text
-Simulator.Linux -> Simulator.Platform / Simulator.Core / Simulator.Assets
+Simulator.Linux -> Simulator.OpenTk / Simulator.Platform / Simulator.Core / Simulator.Assets
 ```
 
-Linux 迁移继续推进时，应从 `Simulator.ThreeD` 抽取平台无关的状态、布局、渲染数据和规则，
-不要把 `Simulator.ThreeD` 作为 Linux 项目引用。
+后续迁移只允许继续向 `Simulator.Platform`、`Simulator.OpenTk`、`Simulator.Core`
+等跨平台层沉淀功能，不再恢复 WinForms/ThreeD 壳。
 
 如果现在要改自瞄、吊射、自动扳机、提前量或能量机关目标建模，优先读：
 

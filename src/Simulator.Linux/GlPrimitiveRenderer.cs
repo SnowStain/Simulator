@@ -50,6 +50,35 @@ internal sealed class GlPrimitiveRenderer : IDisposable
         Add(x, y2, color);
     }
 
+    public void Triangle(float ax, float ay, float bx, float by, float cx, float cy, Vector4 color)
+    {
+        Add(ax, ay, color);
+        Add(bx, by, color);
+        Add(cx, cy, color);
+    }
+
+    public void Line(float x1, float y1, float x2, float y2, float thickness, Vector4 color)
+    {
+        float dx = x2 - x1;
+        float dy = y2 - y1;
+        float length = MathF.Sqrt(dx * dx + dy * dy);
+        if (length <= 1e-4f)
+        {
+            Rect(x1 - thickness * 0.5f, y1 - thickness * 0.5f, thickness, thickness, color);
+            return;
+        }
+
+        float half = MathF.Max(0.5f, thickness * 0.5f);
+        float nx = -dy / length * half;
+        float ny = dx / length * half;
+        Add(x1 + nx, y1 + ny, color);
+        Add(x2 + nx, y2 + ny, color);
+        Add(x1 - nx, y1 - ny, color);
+        Add(x2 + nx, y2 + ny, color);
+        Add(x2 - nx, y2 - ny, color);
+        Add(x1 - nx, y1 - ny, color);
+    }
+
     public void Draw(OpenGkUiDrawList drawList)
     {
         foreach (OpenGkUiDrawCommand command in drawList.Commands)
